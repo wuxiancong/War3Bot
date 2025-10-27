@@ -16,7 +16,7 @@ public:
     ~GameSession();
 
     bool startSession(const QHostAddress &target, quint16 port);
-    bool reconnectToTarget(const QHostAddress &target, quint16 port);
+    bool updateTarget(const QHostAddress &target, quint16 port);
     bool forwardToGame(const QByteArray &data);
     void forwardToClient(const QByteArray &data);
     bool isRunning() const;
@@ -46,6 +46,7 @@ private:
 
     void cleanup();
     void setupGameSocket();
+    bool reconnectToTarget(const QHostAddress &target, quint16 port);
 };
 
 #endif // GAMESESSION_H

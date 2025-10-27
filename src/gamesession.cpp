@@ -65,6 +65,46 @@ bool GameSession::reconnectToTarget(const QHostAddress &target, quint16 port)
     return true;
 }
 
+bool GameSession::updateTarget(const QHostAddress &target, quint16 port)
+{
+    if (target.isNull() || port == 0) {
+        LOG_ERROR(QString("Session %1: Invalid target address or port").arg(m_sessionId));
+        return false;
+    }
+
+    // 检查目标是否发生变化
+    if (m_targetAddress == target && m_targetPort == port) {
+        LOG_DEBUG(QString("Session %1: Target unchanged (%2:%3)")
+                      .arg(m_sessionId).arg(target.toString()).arg(port));
+        return true;
+    }
+
+    LOG_INFO(QString("Session %1: Updating target from %2:%3 to %4:%5")
+                 .arg(m_sessionId)
+                 .arg(m_targetAddress.toString()).arg(m_targetPort)
+                 .arg(target.toString()).arg(port));
+
+    // 更新目标地址
+    m_targetAddress = target;
+    m_targetPort = port;
+
+    // 如果已经连接，需要重新连接到新目标
+    if (m_gameSocket && m_gameSocket->state() == QAbstractSocket::ConnectedState) {
+        LOG_INFO(QString("Session %1: Reconnecting to new target").arg(m_sessionId));
+
+        // 断开现有连接
+        m_gameSocket->disconnectFromHost();
+        m_gameSocket->deleteLater();
+        m_gameSocket = nullptr;
+        m_isConnected = false;
+
+        // 重置重连计数器
+        m_reconnectAttempts = 0;
+    }
+
+    return true;
+}
+
 void GameSession::setupGameSocket()
 {
     m_gameSocket = new QTcpSocket(this);
@@ -78,6 +118,9 @@ void GameSession::setupGameSocket()
 
 bool GameSession::forwardToGame(const QByteArray &data)
 {
+    LOG_DEBUG(QString("Session %1: Attempting to forward %2 bytes to game server")
+                  .arg(m_sessionId).arg(data.size()));
+
     // 如果还没有连接，先建立连接
     if (!m_gameSocket || m_gameSocket->state() != QAbstractSocket::ConnectedState) {
         LOG_DEBUG(QString("Session %1: Establishing connection to game server %2:%3")
@@ -90,7 +133,7 @@ bool GameSession::forwardToGame(const QByteArray &data)
         }
 
         // 等待连接建立
-        if (!m_gameSocket->waitForConnected(5000)) {
+        if (!m_gameSocket->waitForConnected(3000)) {
             LOG_ERROR(QString("Session %1: Connection timeout to game server")
                           .arg(m_sessionId));
             return false;
@@ -105,6 +148,11 @@ bool GameSession::forwardToGame(const QByteArray &data)
         return false;
     }
 
+    // 记录要发送的数据
+    LOG_DEBUG(QString("Session %1: Sending data to game server, first 8 bytes: %2")
+                  .arg(m_sessionId)
+                  .arg(QString(data.left(8).toHex())));
+
     qint64 bytesWritten = m_gameSocket->write(data);
     if (bytesWritten == -1) {
         LOG_ERROR(QString("Session %1: Failed to write data to game server: %2")
@@ -115,8 +163,8 @@ bool GameSession::forwardToGame(const QByteArray &data)
                         .arg(m_sessionId).arg(bytesWritten).arg(data.size()));
         return false;
     } else {
-        LOG_DEBUG(QString("Session %1: Successfully forwarded %2 bytes to game server")
-                      .arg(m_sessionId).arg(bytesWritten));
+        LOG_INFO(QString("Session %1: Successfully forwarded %2 bytes to game server")
+                     .arg(m_sessionId).arg(bytesWritten));
         return true;
     }
 }
@@ -200,27 +248,8 @@ void GameSession::onGameDisconnected()
 
 void GameSession::onGameError(QAbstractSocket::SocketError error)
 {
-    QString errorString = m_gameSocket->errorString();
     LOG_ERROR(QString("Session %1: Game socket error: %2 (%3)")
-                  .arg(m_sessionId).arg(errorString).arg(error));
-
-    // 对于连接被拒绝的情况，不立即重连，等待客户端数据
-    if (error == QAbstractSocket::ConnectionRefusedError) {
-        LOG_WARNING(QString("Session %1: Game server refused connection, waiting for valid data")
-                        .arg(m_sessionId));
-        m_isConnected = false;
-        return;
-    }
-
-    // 其他错误仍然触发重连逻辑
-    if (m_reconnectAttempts < 3) {
-        LOG_INFO(QString("Session %1: Attempting to reconnect in 2 seconds (attempt %2/3)")
-                     .arg(m_sessionId).arg(m_reconnectAttempts + 1));
-        m_reconnectTimer->start(2000);
-    } else {
-        LOG_ERROR(QString("Session %1: Max reconnection attempts reached, ending session").arg(m_sessionId));
-        emit sessionEnded(m_sessionId);
-    }
+                  .arg(m_sessionId).arg(m_gameSocket->errorString()).arg(error));
 }
 
 void GameSession::onReconnectTimeout()

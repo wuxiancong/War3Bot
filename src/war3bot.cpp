@@ -156,24 +156,120 @@ void War3Bot::processClientPacket(QTcpSocket *clientSocket, const QByteArray &da
     GameSession *session = m_sessions.value(sessionKey);
 
     if (!session) {
-        LOG_ERROR(QString("processClientPacket: No session found for client: %1").arg(sessionKey));
+        LOG_ERROR(QString("No session found for client: %1").arg(sessionKey));
         return;
     }
 
-    LOG_DEBUG(QString("Session %1: Processing %2 bytes of data")
-                  .arg(sessionKey).arg(data.size()));
+    LOG_INFO(QString("Session %1: Processing %2 bytes from client")
+                 .arg(sessionKey).arg(data.size()));
 
-    // 首先分析数据包
+    // 分析数据包
     analyzeUnknownPacket(data, sessionKey);
 
-    // 然后尝试转发到游戏服务器
-    if (session->forwardToGame(data)) {
-        LOG_DEBUG(QString("Session %1: Successfully forwarded data to game server")
-                      .arg(sessionKey));
+    // 解析包装的数据
+    QPair<QHostAddress, quint16> targetInfo = parseWrappedPacket(data);
+
+    bool dynamicTarget = m_settings->value("game/dynamic_target", false).toBool();
+    bool fallbackToConfig = m_settings->value("game/fallback_to_config", true).toBool();
+
+    QHostAddress finalTarget;
+    quint16 finalPort = 0;
+
+    if (dynamicTarget && !targetInfo.first.isNull() && targetInfo.second != 0) {
+        // 使用动态解析的目标
+        finalTarget = targetInfo.first;
+        finalPort = targetInfo.second;
+        LOG_INFO(QString("Session %1: Using dynamic target %2:%3")
+                     .arg(sessionKey).arg(finalTarget.toString()).arg(finalPort));
+    } else if (fallbackToConfig) {
+        // 使用配置的静态目标
+        QString host = m_settings->value("game/host", "127.0.0.1").toString();
+        quint16 gamePort = m_settings->value("game/port", 6112).toUInt();
+        finalTarget = QHostAddress(host);
+        finalPort = gamePort;
+        LOG_INFO(QString("Session %1: Using configured target %2:%3")
+                     .arg(sessionKey).arg(finalTarget.toString()).arg(finalPort));
     } else {
-        LOG_ERROR(QString("Session %1: Failed to forward data to game server")
+        LOG_ERROR(QString("Session %1: No valid target address found").arg(sessionKey));
+        return;
+    }
+
+    // 提取原始数据
+    QByteArray originalData = extractOriginalData(data);
+    if (originalData.isEmpty()) {
+        LOG_ERROR(QString("Session %1: Failed to extract original data").arg(sessionKey));
+        return;
+    }
+
+    // 更新目标并转发
+    session->updateTarget(finalTarget, finalPort);
+
+    if (session->forwardToGame(originalData)) {
+        LOG_INFO(QString("Session %1: Successfully forwarded %2 bytes to game host")
+                     .arg(sessionKey).arg(originalData.size()));
+    } else {
+        LOG_ERROR(QString("Session %1: Failed to forward data to game host")
                       .arg(sessionKey));
     }
+}
+
+QPair<QHostAddress, quint16> War3Bot::parseWrappedPacket(const QByteArray &data)
+{
+    QHostAddress targetAddr;
+    quint16 targetPort = 0;
+
+    if (data.size() < 14) { // 魔数4 + IP4 + 端口2 + 长度4 = 14字节
+        return qMakePair(targetAddr, targetPort);
+    }
+
+    // 解析包装头
+    const char *ptr = data.constData();
+    uint32_t magic = *reinterpret_cast<const uint32_t*>(ptr);
+
+    if (magic != 0x57415233) { // "WAR3"
+        LOG_DEBUG("Not a wrapped packet, missing magic number");
+        return qMakePair(targetAddr, targetPort);
+    }
+
+    ptr += 4;
+    uint32_t targetIP = *reinterpret_cast<const uint32_t*>(ptr);
+    ptr += 4;
+    targetPort = *reinterpret_cast<const uint16_t*>(ptr);
+    ptr += 2;
+    uint32_t dataLength = *reinterpret_cast<const uint32_t*>(ptr);
+
+    // 验证数据长度
+    if (data.size() != 14 + dataLength) {
+        LOG_WARNING(QString("Wrapped packet size mismatch: expected %1, got %2")
+                        .arg(14 + dataLength).arg(data.size()));
+        return qMakePair(targetAddr, targetPort);
+    }
+
+    // 转换IP地址
+    targetAddr = QHostAddress(ntohl(targetIP));
+    targetPort = ntohs(targetPort);
+
+    LOG_INFO(QString("Parsed wrapped packet: target=%1:%2, data_length=%3")
+                 .arg(targetAddr.toString()).arg(targetPort).arg(dataLength));
+
+    return qMakePair(targetAddr, targetPort);
+}
+
+QByteArray War3Bot::extractOriginalData(const QByteArray &wrappedData)
+{
+    if (wrappedData.size() < 14) {
+        return QByteArray();
+    }
+
+    // 跳过包装头 (4魔数 + 4IP + 2端口 + 4长度 = 14字节)
+    const char *originalData = wrappedData.constData() + 14;
+    uint32_t dataLength = *reinterpret_cast<const uint32_t*>(wrappedData.constData() + 10);
+
+    if (dataLength > static_cast<uint32_t>(wrappedData.size() - 14)) {
+        return QByteArray();
+    }
+
+    return QByteArray(originalData, dataLength);
 }
 
 bool War3Bot::isValidW3GSPacket(const QByteArray &data)
