@@ -35,7 +35,6 @@ private:
     QMap<QString, GameSession*> m_sessions;
     QMap<QTcpSocket*, QString> m_clientSessions;
 
-    // 函数声明保持不变...
     bool isValidW3GSPacket(const QByteArray &data);
     QPair<QHostAddress, quint16> parseWrappedPacket(const QByteArray &data);
     QByteArray extractOriginalData(const QByteArray &wrappedData);
@@ -44,6 +43,7 @@ private:
     void analyzeUnknownPacket(const QByteArray &data, const QString &sessionKey);
     void processClientPacket(QTcpSocket *clientSocket, const QByteArray &data);
     QString generateSessionId();
+    void createDefaultConfig();
 };
 
 #endif // WAR3BOT_H

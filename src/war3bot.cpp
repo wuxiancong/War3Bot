@@ -2,10 +2,11 @@
 #include "war3bot.h"
 #include "gamesession.h"
 #include "logger.h"
-#include <QNetworkDatagram>
 #include <QCryptographicHash>
-#include <QDateTime>
+#include <QNetworkDatagram>
 #include <QDataStream>
+#include <QDateTime>
+#include <QDir>
 
 // 跨平台字节序支持
 #ifdef Q_OS_WIN
@@ -20,8 +21,36 @@ War3Bot::War3Bot(QObject *parent) : QObject(parent)
     , m_sessions()
     , m_clientSessions()
 {
+    createDefaultConfig(); // 确保配置文件存在
+
+    // 在构造函数中添加文件路径检查
+    QString configPath = QDir::current().absoluteFilePath("war3bot.ini");
+    LOG_INFO(QString("Config file path: %1").arg(configPath));
+
+    QFile configFile(configPath);
+    if (!configFile.exists()) {
+        LOG_ERROR(QString("Config file does not exist: %1").arg(configPath));
+    } else {
+        LOG_INFO("Config file exists");
+        if (!configFile.open(QIODevice::ReadOnly)) {
+            LOG_ERROR(QString("Cannot open config file for reading: %1").arg(configFile.errorString()));
+        } else {
+            LOG_INFO("Config file is readable");
+            configFile.close();
+        }
+    }
+
     m_tcpServer = new QTcpServer(this);
     m_settings = new QSettings("war3bot.ini", QSettings::IniFormat, this);
+
+    // 验证配置读取
+    bool dynamicTarget = m_settings->value("game/dynamic_target", false).toBool();
+    bool fallbackToConfig = m_settings->value("game/fallback_to_config", true).toBool();
+    QString host = m_settings->value("game/host", "127.0.0.1").toString();
+    quint16 port = m_settings->value("game/port", 6112).toUInt();
+
+    LOG_INFO(QString("Configuration loaded - dynamic_target: %1, fallback_to_config: %2, host: %3, port: %4")
+                 .arg(dynamicTarget).arg(fallbackToConfig).arg(host).arg(port));
 
     connect(m_tcpServer, &QTcpServer::newConnection, this, &War3Bot::onNewConnection);
 }
@@ -30,6 +59,32 @@ War3Bot::~War3Bot()
 {
     stopServer();
     delete m_settings;
+}
+
+void War3Bot::createDefaultConfig()
+{
+    QFile configFile("war3bot.ini");
+    if (!configFile.exists()) {
+        if (configFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+            QTextStream out(&configFile);
+            out << "[server]\n";
+            out << "port=6113\n";
+            out << "max_sessions=100\n";
+            out << "ping_interval=30000\n\n";
+            out << "[game]\n";
+            out << "host=127.0.0.1\n";
+            out << "port=6112\n";
+            out << "dynamic_target=true\n";
+            out << "fallback_to_config=true\n\n";
+            out << "[logging]\n";
+            out << "level=DEBUG\n";
+            out << "file=/var/log/war3bot/war3bot.log\n";
+            configFile.close();
+            LOG_INFO("Created default configuration file: war3bot.ini");
+        } else {
+            LOG_ERROR("Failed to create default configuration file");
+        }
+    }
 }
 
 bool War3Bot::startServer(quint16 port) {
@@ -171,11 +226,13 @@ void War3Bot::processClientPacket(QTcpSocket *clientSocket, const QByteArray &da
     // 解析包装的数据
     QPair<QHostAddress, quint16> targetInfo = parseWrappedPacket(data);
 
+    // 每次都重新读取配置，确保获取最新值
+    m_settings->sync(); // 强制重新读取配置文件
     bool dynamicTarget = m_settings->value("game/dynamic_target", false).toBool();
     bool fallbackToConfig = m_settings->value("game/fallback_to_config", true).toBool();
 
-    LOG_DEBUG(QString("Session %1: Configuration - dynamic_target=%2, fallback_to_config=%3")
-                  .arg(sessionKey).arg(dynamicTarget).arg(fallbackToConfig));
+    LOG_INFO(QString("Session %1: Current config - dynamic_target=%2, fallback_to_config=%3")
+                 .arg(sessionKey).arg(dynamicTarget).arg(fallbackToConfig));
 
     QHostAddress finalTarget;
     quint16 finalPort = 0;
@@ -192,8 +249,8 @@ void War3Bot::processClientPacket(QTcpSocket *clientSocket, const QByteArray &da
             LOG_INFO(QString("Session %1: Using dynamic target %2:%3")
                          .arg(sessionKey).arg(finalTarget.toString()).arg(finalPort));
         } else {
-            LOG_INFO(QString("Session %1: Dynamic target disabled, ignoring parsed target %2:%3")
-                         .arg(sessionKey).arg(targetInfo.first.toString()).arg(targetInfo.second));
+            LOG_WARNING(QString("Session %1: Dynamic target disabled in config, ignoring parsed target %2:%3")
+                            .arg(sessionKey).arg(targetInfo.first.toString()).arg(targetInfo.second));
         }
     }
 
