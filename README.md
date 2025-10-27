@@ -61,3 +61,32 @@ level=info
 file=/var/log/war3bot/war3bot.log
 ```
 
+##使用方法
+#命令行运行
+```bash
+# 启动服务
+sudo systemctl start war3bot
+```
+```bash
+# 查看状态
+sudo systemctl status war3bot
+```
+```bash
+# 查看日志
+sudo journalctl -u war3bot -f
+```
+
+##测试验证
+#基本测试
+```bash
+# 检查端口
+sudo netstat -tulpn | grep 6113
+```
+```bash
+# 发送测试数据
+echo "test" | nc -u localhost 6113
+```
+```bash
+# 监控流量
+sudo tcpdump -i lo -n udp port 6112 or port 6113
+```
