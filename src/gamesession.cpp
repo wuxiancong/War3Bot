@@ -171,8 +171,27 @@ void GameSession::onGameDisconnected()
 
 void GameSession::onGameError(QAbstractSocket::SocketError error)
 {
+    QString errorString = m_gameSocket->errorString();
     LOG_ERROR(QString("Session %1: Game socket error: %2 (%3)")
-                  .arg(m_sessionId).arg(m_gameSocket->errorString()).arg(error));
+                  .arg(m_sessionId).arg(errorString).arg(error));
+
+    // 对于连接被拒绝的情况，不立即重连，等待客户端数据
+    if (error == QAbstractSocket::ConnectionRefusedError) {
+        LOG_WARNING(QString("Session %1: Game server refused connection, waiting for valid data")
+                        .arg(m_sessionId));
+        m_isConnected = false;
+        return;
+    }
+
+    // 其他错误仍然触发重连逻辑
+    if (m_reconnectAttempts < 3) {
+        LOG_INFO(QString("Session %1: Attempting to reconnect in 2 seconds (attempt %2/3)")
+                     .arg(m_sessionId).arg(m_reconnectAttempts + 1));
+        m_reconnectTimer->start(2000);
+    } else {
+        LOG_ERROR(QString("Session %1: Max reconnection attempts reached, ending session").arg(m_sessionId));
+        emit sessionEnded(m_sessionId);
+    }
 }
 
 void GameSession::onReconnectTimeout()

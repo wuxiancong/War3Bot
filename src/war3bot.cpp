@@ -151,7 +151,10 @@ void War3Bot::processClientPacket(QTcpSocket *clientSocket, const QByteArray &da
         return;
     }
 
-    // 解析目标地址（如果需要动态目标）
+    // 首先直接转发数据到游戏服务器，确保连接建立
+    session->forwardToGame(data);
+
+    // 然后尝试解析目标地址（如果需要动态目标）
     bool dynamicTarget = m_settings->value("game/dynamic_target", true).toBool();
     if (dynamicTarget && data.size() >= 4) {
         QPair<QHostAddress, quint16> targetInfo = parseTargetFromPacket(data, true);
@@ -162,11 +165,11 @@ void War3Bot::processClientPacket(QTcpSocket *clientSocket, const QByteArray &da
 
             // 重新配置会话目标
             session->reconnectToTarget(targetInfo.first, targetInfo.second);
+        } else {
+            LOG_DEBUG(QString("Session %1: No dynamic target found in packet, using configured target")
+                          .arg(sessionKey));
         }
     }
-
-    // 转发数据到游戏服务器
-    session->forwardToGame(data);
 }
 
 void War3Bot::onClientDisconnected()
@@ -218,9 +221,10 @@ QPair<QHostAddress, quint16> War3Bot::parseTargetFromPacket(const QByteArray &da
     quint16 targetPort = 0;
 
     LOG_DEBUG(QString("=== Starting packet parsing ==="));
-    LOG_DEBUG(QString("Packet size: %1 bytes, Direction: %2")
+    LOG_DEBUG(QString("Packet size: %1 bytes, Direction: %2, First 8 bytes: %3")
                   .arg(data.size())
-                  .arg(isFromClient ? "C->S" : "S->C"));
+                  .arg(isFromClient ? "C->S" : "S->C")
+                  .arg(QString(data.left(8).toHex())));
     LOG_DEBUG(QString("Packet hex: %1").arg(QString(data.toHex())));
 
     if (data.size() < 4) {
@@ -455,7 +459,16 @@ QPair<QHostAddress, quint16> War3Bot::parseReqJoinPacket(QDataStream &stream, in
     LOG_DEBUG("Starting W3GS_REQJOIN (0x1E) packet parsing...");
     LOG_DEBUG(QString("Remaining data size: %1 bytes").arg(remainingSize));
 
+    // 添加最小数据大小检查
+    if (remainingSize < 20) { // REQJOIN包的最小合理大小
+        LOG_WARNING(QString("REQJOIN packet too small: %1 bytes").arg(remainingSize));
+        return qMakePair(targetAddr, targetPort);
+    }
+
     try {
+        // 保存当前位置，以便在解析失败时恢复
+        qint64 startPos = stream.device()->pos();
+
         // REQJOIN 载荷使用小端序
         stream.setByteOrder(QDataStream::LittleEndian);
 
@@ -475,14 +488,25 @@ QPair<QHostAddress, quint16> War3Bot::parseReqJoinPacket(QDataStream &stream, in
         LOG_DEBUG(QString("REQJOIN basic fields - HostCounter: %1, EntryKey: %2, ListenPort: %3, PeerKey: %4")
                       .arg(hostCounter).arg(entryKey).arg(listenPort).arg(peerKey));
 
-        // 读取玩家名字
+        // 读取玩家名字长度，添加更严格的检查
         uint8_t nameLength;
         stream >> nameLength;
 
         LOG_DEBUG(QString("Player name length: %1").arg(nameLength));
 
-        if (nameLength == 0 || nameLength > 50) {
-            LOG_WARNING(QString("Invalid player name length: %1").arg(nameLength));
+        // 更严格的长度检查
+        if (nameLength == 0 || nameLength > 30) { // 正常玩家名字不会超过30字符
+            LOG_WARNING(QString("Invalid player name length: %1, likely not a REQJOIN packet").arg(nameLength));
+            // 重置流位置，避免影响后续解析
+            stream.device()->seek(startPos);
+            return qMakePair(targetAddr, targetPort);
+        }
+
+        // 检查是否有足够的数据读取玩家名字
+        if (stream.device()->bytesAvailable() < nameLength) {
+            LOG_WARNING(QString("Insufficient data for player name: need %1, have %2")
+                            .arg(nameLength).arg(stream.device()->bytesAvailable()));
+            stream.device()->seek(startPos);
             return qMakePair(targetAddr, targetPort);
         }
 
@@ -490,22 +514,24 @@ QPair<QHostAddress, quint16> War3Bot::parseReqJoinPacket(QDataStream &stream, in
         nameData.resize(nameLength);
         if (stream.readRawData(nameData.data(), nameLength) != nameLength) {
             LOG_ERROR("Failed to read player name");
+            stream.device()->seek(startPos);
             return qMakePair(targetAddr, targetPort);
         }
 
         QString playerName = QString::fromUtf8(nameData);
         LOG_DEBUG(QString("Player name: %1").arg(playerName));
 
+        // 检查剩余数据是否足够读取后续字段
+        if (stream.device()->bytesAvailable() < 10) { // unknown2 + internalPort + internalIP
+            LOG_WARNING("Insufficient data for internal IP/port fields");
+            stream.device()->seek(startPos);
+            return qMakePair(targetAddr, targetPort);
+        }
+
         // 跳过未知字段
         uint32_t unknown2;
         stream >> unknown2;
         LOG_DEBUG(QString("Unknown2: 0x%1").arg(unknown2, 8, 16, QLatin1Char('0')));
-
-        // 检查剩余数据是否足够读取内部IP和端口
-        if (stream.device()->bytesAvailable() < 6) {
-            LOG_ERROR("Insufficient data for internal IP/port");
-            return qMakePair(targetAddr, targetPort);
-        }
 
         // 读取内部端口和IP（关键信息）
         uint16_t internalPort;
