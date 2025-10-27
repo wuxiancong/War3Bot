@@ -1,15 +1,19 @@
+// war3bot.h
 #ifndef WAR3BOT_H
 #define WAR3BOT_H
 
 #include <QObject>
-#include <QUdpSocket>
-#include <QMap>
+#include <QTcpServer>
+#include <QTcpSocket>
 #include <QSettings>
-#include <QHostAddress>
-#include "gamesession.h"
+#include <QMap>
 
-class War3Bot : public QObject {
+class GameSession; // 前向声明
+
+class War3Bot : public QObject
+{
     Q_OBJECT
+
 public:
     explicit War3Bot(QObject *parent = nullptr);
     ~War3Bot();
@@ -19,22 +23,21 @@ public:
     QString getServerStatus() const;
 
 private slots:
-    void onReadyRead();
+    void onNewConnection();
+    void onClientDataReady();
+    void onClientDisconnected();
     void onSessionEnded(const QString &sessionId);
 
 private:
-    QUdpSocket *m_udpSocket;
-    QMap<QString, GameSession*> m_sessions;
+    QTcpServer *m_tcpServer;
     QSettings *m_settings;
+    QMap<QString, GameSession*> m_sessions;
+    QMap<QTcpSocket*, QString> m_clientSessions;
 
-    QString generateSessionId();
-    GameSession* findOrCreateSession(const QHostAddress &clientAddr, quint16 clientPort);
-    void processInitialPacket(const QByteArray &data, const QHostAddress &from, quint16 port);
-
-    quint16 extractRealPortFromPacket(const QByteArray &data);
-    QPair<QHostAddress, quint16> parseReqJoinPacket(QDataStream &stream, int remainingSize);
     QPair<QHostAddress, quint16> parseTargetFromPacket(const QByteArray &data, bool isFromClient = true);
-    QHostAddress extractRealTargetFromPacket(const QByteArray &data, const QHostAddress &from, quint16 port);
+    QPair<QHostAddress, quint16> parseReqJoinPacket(QDataStream &stream, int remainingSize);
+    void processClientPacket(QTcpSocket *clientSocket, const QByteArray &data);
+    QString generateSessionId();
 };
 
 #endif // WAR3BOT_H
