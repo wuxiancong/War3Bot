@@ -80,21 +80,25 @@ void GameSession::forwardToGame(const QByteArray &data)
 {
     // 如果还没有连接，先建立连接
     if (!m_gameSocket || m_gameSocket->state() != QAbstractSocket::ConnectedState) {
+        LOG_DEBUG(QString("Session %1: Establishing connection to game server for data forwarding")
+                      .arg(m_sessionId));
+
         if (!reconnectToTarget(m_targetAddress, m_targetPort)) {
-            LOG_ERROR(QString("Session %1: Cannot forward data, failed to connect to game server")
+            LOG_ERROR(QString("Session %1: Failed to connect to game server")
                           .arg(m_sessionId));
             return;
         }
+
         // 等待连接建立
-        if (!m_gameSocket->waitForConnected(5000)) {
+        if (!m_gameSocket->waitForConnected(3000)) {
             LOG_ERROR(QString("Session %1: Connection timeout to game server")
                           .arg(m_sessionId));
             return;
         }
     }
 
-    if (!m_isConnected || !m_gameSocket) {
-        LOG_WARNING(QString("Session %1: Cannot forward data, game not connected").arg(m_sessionId));
+    if (!m_gameSocket) {
+        LOG_ERROR(QString("Session %1: No game socket available").arg(m_sessionId));
         return;
     }
 
@@ -106,7 +110,7 @@ void GameSession::forwardToGame(const QByteArray &data)
         LOG_WARNING(QString("Session %1: Partial write to game server: %3/%4 bytes")
                         .arg(m_sessionId).arg(bytesWritten).arg(data.size()));
     } else {
-        LOG_DEBUG(QString("Session %1: Forwarded %2 bytes to game server")
+        LOG_DEBUG(QString("Session %1: Successfully forwarded %2 bytes to game server")
                       .arg(m_sessionId).arg(bytesWritten));
     }
 }
