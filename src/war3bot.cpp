@@ -190,7 +190,7 @@ QPair<QHostAddress, quint16> War3Bot::parseTargetFromPacket(const QByteArray &da
     try {
         // 重要：War3协议头部使用大端序，但字段顺序需要调整！
         QDataStream stream(data);
-        stream.setByteOrder(QDataStream::BigEndian);
+        stream.setByteOrder(QDataStream::LittleEndian);
 
         // 解析 W3GS 头部 - 正确的顺序应该是：
         // 字节0: 协议ID (0xF7)
