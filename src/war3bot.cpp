@@ -402,12 +402,15 @@ bool War3Bot::isValidW3GSPacket(const QByteArray &data)
         return false;
     }
 
-    // 检查包大小字段
-    uint16_t packetSize = (static_cast<uint8_t>(data[2]) << 8) | static_cast<uint8_t>(data[3]);
+    // 修复：W3GS使用小端序！
+    uint16_t packetSize = (static_cast<uint8_t>(data[3]) << 8) | static_cast<uint8_t>(data[2]);
+
     if (packetSize != data.size()) {
         LOG_WARNING(QString("W3GS packet size mismatch: header=%1, actual=%2")
                         .arg(packetSize).arg(data.size()));
         // 有些实现可能不严格，这里不直接返回false
+    } else {
+        LOG_DEBUG(QString("W3GS packet size matches: %1 bytes").arg(packetSize));
     }
 
     LOG_DEBUG(QString("Valid W3GS packet - protocol: 0xF7, type: 0x%1, size: %2")

@@ -88,20 +88,19 @@ bool GameSession::updateTarget(const QHostAddress &target, quint16 port)
     m_targetAddress = target;
     m_targetPort = port;
 
-    // 如果已经连接，需要重新连接到新目标
-    if (m_gameSocket && m_gameSocket->state() == QAbstractSocket::ConnectedState) {
-        LOG_INFO(QString("Session %1: Reconnecting to new target").arg(m_sessionId));
-
-        // 断开现有连接
+    // 清理现有连接并创建新的套接字
+    if (m_gameSocket) {
         m_gameSocket->disconnectFromHost();
         m_gameSocket->deleteLater();
         m_gameSocket = nullptr;
-        m_isConnected = false;
-
-        // 重置重连计数器
-        m_reconnectAttempts = 0;
     }
 
+    // 总是创建新的套接字
+    setupGameSocket();
+    m_isConnected = false;
+    m_reconnectAttempts = 0;
+
+    LOG_INFO(QString("Session %1: Socket recreated for new target").arg(m_sessionId));
     return true;
 }
 
@@ -122,23 +121,43 @@ bool GameSession::forwardToGame(const QByteArray &data)
                   .arg(m_sessionId).arg(data.size())
                   .arg(m_targetAddress.toString()).arg(m_targetPort));
 
-    // 检查连接状态
+    // 确保套接字存在
     if (!m_gameSocket) {
-        LOG_ERROR(QString("Session %1: Game socket is null").arg(m_sessionId));
-        return false;
+        LOG_WARNING(QString("Session %1: Game socket is null, creating new socket").arg(m_sessionId));
+        setupGameSocket();
     }
 
+    // 检查连接状态
     QAbstractSocket::SocketState state = m_gameSocket->state();
+    LOG_DEBUG(QString("Session %1: Socket state: %2").arg(m_sessionId).arg(state));
+
     if (state != QAbstractSocket::ConnectedState) {
-        LOG_ERROR(QString("Session %1: Socket not connected, state: %2")
-                      .arg(m_sessionId).arg(state));
-        return false;
+        LOG_INFO(QString("Session %1: Establishing connection to %2:%3")
+                     .arg(m_sessionId).arg(m_targetAddress.toString()).arg(m_targetPort));
+
+        if (!reconnectToTarget(m_targetAddress, m_targetPort)) {
+            LOG_ERROR(QString("Session %1: Failed to connect to game server")
+                          .arg(m_sessionId));
+            return false;
+        }
+
+        // 等待连接建立
+        if (!m_gameSocket->waitForConnected(5000)) {
+            LOG_ERROR(QString("Session %1: Connection timeout to game server %2:%3")
+                          .arg(m_sessionId).arg(m_targetAddress.toString()).arg(m_targetPort));
+            return false;
+        }
+
+        LOG_INFO(QString("Session %1: Successfully connected to game server")
+                     .arg(m_sessionId));
     }
 
     // 记录详细的发送信息
-    LOG_DEBUG(QString("Session %1: Sending data - first 16 bytes: %2")
+    LOG_DEBUG(QString("Session %1: Sending W3GS data - protocol: 0x%2, type: 0x%3, size: %4")
                   .arg(m_sessionId)
-                  .arg(QString(data.left(16).toHex())));
+                  .arg(static_cast<uint8_t>(data[0]), 2, 16, QLatin1Char('0'))
+                  .arg(static_cast<uint8_t>(data[1]), 2, 16, QLatin1Char('0'))
+                  .arg(data.size()));
 
     qint64 bytesWritten = m_gameSocket->write(data);
 
@@ -158,8 +177,9 @@ bool GameSession::forwardToGame(const QByteArray &data)
                         .arg(m_sessionId).arg(bytesWritten).arg(data.size()));
         return false;
     } else {
-        LOG_INFO(QString("Session %1: Successfully forwarded %2 bytes to game server, socket state: %3")
-                     .arg(m_sessionId).arg(bytesWritten).arg(m_gameSocket->state()));
+        LOG_INFO(QString("Session %1: Successfully forwarded %2 bytes to game server %3:%4")
+                     .arg(m_sessionId).arg(bytesWritten)
+                     .arg(m_targetAddress.toString()).arg(m_targetPort));
         return true;
     }
 }
