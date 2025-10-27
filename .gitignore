@@ -1,5 +1,8 @@
 # Build directories
 build/
+*/build/
+*/*/build/
+*/*/*/build/
 
 # CMake generated files
 CMakeLists.txt.user
@@ -14,13 +17,55 @@ compile_commands.json
 CTestTestfile.cmake
 _deps/
 CMakeUserPresets.json
+*.cmake
+!*.cmake.in
+
+# Executables and binaries
+war3bot
+*.exe
+*.out
+*.app
+
+# Object files
+*.o
+*.obj
+*.ko
+
+# Libraries
+*.a
+*.so
+*.so.*
+*.dylib
+*.dll
+*.lib
 
 # IDE files
 .vscode/
 .idea/
 *.swp
 *.swo
+*~
+
+# Qt specific
+moc_*
+qrc_*
+ui_*
+*.pro.user
+*.autosave
 
 # OS generated files
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
+
+# Log files
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp

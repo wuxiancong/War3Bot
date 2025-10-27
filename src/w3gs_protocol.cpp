@@ -1,7 +1,13 @@
 #include "w3gs_protocol.h"
 #include <QDataStream>
 #include <QDebug>
+
+// 跨平台字节序支持
+#ifdef Q_OS_WIN
 #include <winsock2.h>
+#else
+#include <arpa/inet.h>
+#endif
 
 W3GSProtocol::W3GSProtocol(QObject *parent)
     : QObject(parent)
