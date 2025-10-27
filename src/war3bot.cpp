@@ -171,62 +171,252 @@ void War3Bot::processInitialPacket(const QByteArray &data, const QHostAddress &f
     session->forwardData(data, from, port);
 }
 
-QPair<QHostAddress, quint16> War3Bot::parseTargetFromPacket(const QByteArray &data)
+QPair<QHostAddress, quint16> War3Bot::parseTargetFromPacket(const QByteArray &data, bool isFromClient)
 {
     QHostAddress targetAddr;
     quint16 targetPort = 0;
 
-    // 添加更详细的数据包信息
     LOG_DEBUG(QString("=== Starting packet parsing ==="));
-    LOG_DEBUG(QString("Packet size: %1 bytes").arg(data.size()));
-    LOG_DEBUG(QString("Packet hex (first 64 bytes): %1").arg(QString(data.left(64).toHex())));
+    LOG_DEBUG(QString("Packet size: %1 bytes, Direction: %2")
+                  .arg(data.size())
+                  .arg(isFromClient ? "C->S" : "S->C"));
 
-    // 检查数据包大小是否足够（至少包含头部和基本字段）
-    if (data.size() < 20) { // 最小长度检查
-        LOG_WARNING(QString("Packet too small for W3GS_REQJOIN parsing: %1 bytes, minimum 20 required").arg(data.size()));
+    if (data.size() < 4) {
+        LOG_WARNING(QString("Packet too small for header parsing: %1 bytes").arg(data.size()));
         return qMakePair(targetAddr, targetPort);
     }
 
     try {
+        // War3 协议头部使用大端序
         QDataStream stream(data);
-        stream.setByteOrder(QDataStream::LittleEndian);
+        stream.setByteOrder(QDataStream::BigEndian);
 
         // 解析 W3GS 头部
         uint8_t protocol;
         uint16_t packetSize;
         uint16_t packetType;
-        uint8_t unknownHeader;
 
         stream >> protocol;
         stream >> packetSize;
         stream >> packetType;
-        stream >> unknownHeader;
 
-        LOG_DEBUG(QString("Header parsed - Protocol: 0x%1, Type: 0x%2, Size: %3, Unknown: 0x%4")
+        LOG_DEBUG(QString("Header parsed - Protocol: 0x%1, Type: 0x%2, Size: %3")
                       .arg(protocol, 2, 16, QLatin1Char('0'))
                       .arg(packetType, 4, 16, QLatin1Char('0'))
-                      .arg(packetSize)
-                      .arg(unknownHeader, 2, 16, QLatin1Char('0')));
+                      .arg(packetSize));
 
-        // 验证包大小与实际数据大小是否一致
+        // 验证包大小
         if (packetSize != static_cast<uint16_t>(data.size())) {
             LOG_WARNING(QString("Packet size mismatch: header says %1, actual is %2")
                             .arg(packetSize).arg(data.size()));
         }
 
-        // 检查是否是 W3GS_REQJOIN 数据包 (0x15)
-        if (packetType != 0x15) {
-            LOG_DEBUG(QString("Not a REQJOIN packet (type: 0x%1), skipping target parsing").arg(packetType, 4, 16, QLatin1Char('0')));
-            return qMakePair(targetAddr, targetPort);
+        // 根据文档和方向检查包类型
+        LOG_DEBUG(QString("Packet type identification: 0x%1, Direction: %2")
+                      .arg(packetType, 4, 16, QLatin1Char('0'))
+                      .arg(isFromClient ? "C->S" : "S->C"));
+
+        // 处理所有包类型，考虑方向
+        switch (packetType) {
+        // Server to Client packets (S>C)
+        case 0x01:
+            if (!isFromClient) LOG_DEBUG("W3GS_PING_FROM_HOST - Host keepalive");
+            else LOG_DEBUG("W3GS_PING_FROM_HOST (unexpected direction)");
+            break;
+        case 0x04:
+            if (!isFromClient) LOG_DEBUG("W3GS_SLOTINFOJOIN - Game slots info on lobby entry");
+            else LOG_DEBUG("W3GS_SLOTINFOJOIN (unexpected direction)");
+            break;
+        case 0x05:
+            if (!isFromClient) LOG_DEBUG("W3GS_REJECTJOIN - Join request denied");
+            else LOG_DEBUG("W3GS_REJECTJOIN (unexpected direction)");
+            break;
+        case 0x06:
+            if (!isFromClient) LOG_DEBUG("W3GS_PLAYERINFO - Player information");
+            else LOG_DEBUG("W3GS_PLAYERINFO (unexpected direction)");
+            break;
+        case 0x07:
+            if (!isFromClient) LOG_DEBUG("W3GS_PLAYERLEFT - Player left game");
+            else LOG_DEBUG("W3GS_PLAYERLEFT (unexpected direction)");
+            break;
+        case 0x08:
+            if (!isFromClient) LOG_DEBUG("W3GS_PLAYERLOADED - Player finished loading");
+            else LOG_DEBUG("W3GS_PLAYERLOADED (unexpected direction)");
+            break;
+        case 0x09:
+            if (!isFromClient) LOG_DEBUG("W3GS_SLOTINFO - Slot updates");
+            else LOG_DEBUG("W3GS_SLOTINFO (unexpected direction)");
+            break;
+        case 0x0A:
+            if (!isFromClient) LOG_DEBUG("W3GS_COUNTDOWN_START - Game countdown started");
+            else LOG_DEBUG("W3GS_COUNTDOWN_START (unexpected direction)");
+            break;
+        case 0x0B:
+            if (!isFromClient) LOG_DEBUG("W3GS_COUNTDOWN_END - Game started");
+            else LOG_DEBUG("W3GS_COUNTDOWN_END (unexpected direction)");
+            break;
+        case 0x0C:
+            if (!isFromClient) LOG_DEBUG("W3GS_INCOMING_ACTION - In-game action");
+            else LOG_DEBUG("W3GS_INCOMING_ACTION (unexpected direction)");
+            break;
+        case 0x0F:
+            if (!isFromClient) LOG_DEBUG("W3GS_CHAT_FROM_HOST - Chat from host");
+            else LOG_DEBUG("W3GS_CHAT_FROM_HOST (unexpected direction)");
+            break;
+        case 0x10:
+            if (!isFromClient) LOG_DEBUG("W3GS_START_LAG - Players start lagging");
+            else LOG_DEBUG("W3GS_START_LAG (unexpected direction)");
+            break;
+        case 0x11:
+            if (!isFromClient) LOG_DEBUG("W3GS_STOP_LAG - Player returned from lag");
+            else LOG_DEBUG("W3GS_STOP_LAG (unexpected direction)");
+            break;
+        case 0x1B:
+            if (!isFromClient) LOG_DEBUG("W3GS_LEAVERS - Response to leave request");
+            else LOG_DEBUG("W3GS_LEAVERS (unexpected direction)");
+            break;
+        case 0x1C:
+            if (!isFromClient) LOG_DEBUG("W3GS_HOST_KICK_PLAYER - Host kick player");
+            else LOG_DEBUG("W3GS_HOST_KICK_PLAYER (unexpected direction)");
+            break;
+        case 0x30:
+            if (!isFromClient) LOG_DEBUG("W3GS_GAMEINFO - Game info broadcast");
+            else LOG_DEBUG("W3GS_GAMEINFO (unexpected direction)");
+            break;
+        case 0x31:
+            if (!isFromClient) LOG_DEBUG("W3GS_CREATEGAME - Game created notification");
+            else LOG_DEBUG("W3GS_CREATEGAME (unexpected direction)");
+            break;
+        case 0x32:
+            if (!isFromClient) LOG_DEBUG("W3GS_REFRESHGAME - Game refresh broadcast");
+            else LOG_DEBUG("W3GS_REFRESHGAME (unexpected direction)");
+            break;
+        case 0x33:
+            if (!isFromClient) LOG_DEBUG("W3GS_DECREATEGAME - Game no longer hosted");
+            else LOG_DEBUG("W3GS_DECREATEGAME (unexpected direction)");
+            break;
+        case 0x3D:
+            if (!isFromClient) LOG_DEBUG("W3GS_MAPCHECK - Map check request");
+            else LOG_DEBUG("W3GS_MAPCHECK (unexpected direction)");
+            break;
+        case 0x43:
+            if (!isFromClient) LOG_DEBUG("W3GS_MAPPART - Map part download");
+            else LOG_DEBUG("W3GS_MAPPART (unexpected direction)");
+            break;
+        case 0x48:
+            if (!isFromClient) LOG_DEBUG("W3GS_INCOMING_ACTION2 - In-game action");
+            else LOG_DEBUG("W3GS_INCOMING_ACTION2 (unexpected direction)");
+            break;
+
+        // Client to Server packets (C>S)
+        case 0x1E:
+            if (isFromClient) {
+                LOG_DEBUG("W3GS_REQJOIN - Client request to join game lobby (THIS IS WHAT WE NEED!)");
+                // 只有 REQJOIN 包才包含目标地址信息
+                return parseReqJoinPacket(stream, data.size() - stream.device()->pos());
+            } else {
+                LOG_DEBUG("W3GS_REQJOIN (unexpected direction)");
+            }
+            break;
+
+        case 0x21:
+            if (isFromClient) LOG_DEBUG("W3GS_LEAVEREQ - Client leave request");
+            else LOG_DEBUG("W3GS_LEAVEREQ (unexpected direction)");
+            break;
+        case 0x23:
+            if (isFromClient) LOG_DEBUG("W3GS_GAMELOADED_SELF - Client finished loading map");
+            else LOG_DEBUG("W3GS_GAMELOADED_SELF (unexpected direction)");
+            break;
+        case 0x26:
+            if (isFromClient) LOG_DEBUG("W3GS_OUTGOING_ACTION - Client game action");
+            else LOG_DEBUG("W3GS_OUTGOING_ACTION (unexpected direction)");
+            break;
+        case 0x27:
+            if (isFromClient) LOG_DEBUG("W3GS_OUTGOING_KEEPALIVE - Client keepalive");
+            else LOG_DEBUG("W3GS_OUTGOING_KEEPALIVE (unexpected direction)");
+            break;
+        case 0x28:
+            if (isFromClient) LOG_DEBUG("W3GS_CHAT_TO_HOST - Client chat to host");
+            else LOG_DEBUG("W3GS_CHAT_TO_HOST (unexpected direction)");
+            break;
+        case 0x29:
+            if (isFromClient) LOG_DEBUG("W3GS_DROPREQ - Drop request");
+            else LOG_DEBUG("W3GS_DROPREQ (unexpected direction)");
+            break;
+        case 0x42:
+            if (isFromClient) LOG_DEBUG("W3GS_MAPSIZE - Client map file info");
+            else LOG_DEBUG("W3GS_MAPSIZE (unexpected direction)");
+            break;
+        case 0x44:
+            if (isFromClient) LOG_DEBUG("W3GS_MAPPARTOK - Map part received OK");
+            else LOG_DEBUG("W3GS_MAPPARTOK (unexpected direction)");
+            break;
+        case 0x45:
+            if (isFromClient) LOG_DEBUG("W3GS_MAPPARTNOTOK - Map part not OK");
+            else LOG_DEBUG("W3GS_MAPPARTNOTOK (unexpected direction)");
+            break;
+        case 0x46:
+            if (isFromClient) LOG_DEBUG("W3GS_PONG_TO_HOST - Response to host echo");
+            else LOG_DEBUG("W3GS_PONG_TO_HOST (unexpected direction)");
+            break;
+
+        // 双向包类型 (需要在两个方向都处理)
+        case 0x2F:
+            if (isFromClient) {
+                LOG_DEBUG("W3GS_SEARCHGAME - Client game search");
+            } else {
+                LOG_DEBUG("W3GS_SEARCHGAME - Reply to game search");
+            }
+            break;
+
+        case 0x3F:
+            if (isFromClient) {
+                LOG_DEBUG("W3GS_STARTDOWNLOAD - Client initiate map download");
+            } else {
+                LOG_DEBUG("W3GS_STARTDOWNLOAD - Start download state");
+            }
+            break;
+
+        // P2P packets (可以在任何方向)
+        case 0x35: LOG_DEBUG("W3GS_PING_FROM_OTHERS - Client echo request"); break;
+        case 0x36: LOG_DEBUG("W3GS_PONG_TO_OTHERS - Client echo response"); break;
+        case 0x37: LOG_DEBUG("W3GS_CLIENTINFO - Client info request"); break;
+
+        default:
+            LOG_DEBUG(QString("Unknown packet type: 0x%1").arg(packetType, 4, 16, QLatin1Char('0')));
+            break;
         }
 
-        LOG_DEBUG("Confirmed REQJOIN packet (0x15), proceeding with parsing...");
+        // 如果不是 REQJOIN 包，返回空目标
+        LOG_DEBUG("Packet is not REQJOIN (0x1E) from client, no target address to parse");
+        return qMakePair(targetAddr, targetPort);
 
-        // 解析 W3GS_REQJOIN 载荷
-        uint32_t hostCounter;    // Game ID
-        uint32_t entryKey;       // Used in LAN
+    } catch (const std::exception &e) {
+        LOG_ERROR(QString("Exception while parsing packet: %1").arg(e.what()));
+    } catch (...) {
+        LOG_ERROR("Unknown exception while parsing packet");
+    }
+
+    return qMakePair(targetAddr, targetPort);
+}
+
+QPair<QHostAddress, quint16> War3Bot::parseReqJoinPacket(QDataStream &stream, int remainingSize)
+{
+    QHostAddress targetAddr;
+    quint16 targetPort = 0;
+
+    LOG_DEBUG("Starting W3GS_REQJOIN (0x1E) packet parsing...");
+    LOG_DEBUG(QString("Remaining data size: %1 bytes").arg(remainingSize));
+
+    try {
+        // REQJOIN 载荷使用小端序
+        stream.setByteOrder(QDataStream::LittleEndian);
+
+        // 解析 REQJOIN 载荷
+        uint32_t hostCounter;
+        uint32_t entryKey;
         uint8_t unknown1;
-        uint16_t listenPort;     // 监听端口
+        uint16_t listenPort;
         uint32_t peerKey;
 
         stream >> hostCounter;
@@ -235,59 +425,38 @@ QPair<QHostAddress, quint16> War3Bot::parseTargetFromPacket(const QByteArray &da
         stream >> listenPort;
         stream >> peerKey;
 
-        LOG_DEBUG(QString("REQJOIN basic fields - HostCounter: %1, EntryKey: %2, Unknown1: 0x%3, ListenPort: %4, PeerKey: %5")
-                      .arg(hostCounter).arg(entryKey).arg(unknown1, 2, 16, QLatin1Char('0')).arg(listenPort).arg(peerKey));
+        LOG_DEBUG(QString("REQJOIN basic fields - HostCounter: %1, EntryKey: %2, ListenPort: %3, PeerKey: %4")
+                      .arg(hostCounter).arg(entryKey).arg(listenPort).arg(peerKey));
 
-        // 检查流状态
-        if (stream.status() != QDataStream::Ok) {
-            LOG_ERROR("Stream error after reading basic fields");
-            return qMakePair(targetAddr, targetPort);
-        }
-
-        // 读取玩家名字（字符串）
+        // 读取玩家名字
         uint8_t nameLength;
         stream >> nameLength;
 
         LOG_DEBUG(QString("Player name length: %1").arg(nameLength));
 
-        // 检查名字长度是否合理
-        if (nameLength == 0 || nameLength > 100) {
+        if (nameLength == 0 || nameLength > 50) {
             LOG_WARNING(QString("Invalid player name length: %1").arg(nameLength));
-            return qMakePair(targetAddr, targetPort);
-        }
-
-        // 检查剩余数据是否足够
-        if (stream.device()->pos() + nameLength > data.size()) {
-            LOG_ERROR(QString("Insufficient data for player name: need %1 bytes, only %2 remaining")
-                          .arg(nameLength).arg(data.size() - stream.device()->pos()));
             return qMakePair(targetAddr, targetPort);
         }
 
         QByteArray nameData;
         nameData.resize(nameLength);
-        int bytesRead = stream.readRawData(nameData.data(), nameLength);
-        if (bytesRead != nameLength) {
-            LOG_ERROR(QString("Failed to read player name: expected %1 bytes, got %2").arg(nameLength).arg(bytesRead));
+        if (stream.readRawData(nameData.data(), nameLength) != nameLength) {
+            LOG_ERROR("Failed to read player name");
             return qMakePair(targetAddr, targetPort);
         }
 
         QString playerName = QString::fromUtf8(nameData);
-        LOG_DEBUG(QString("Player name: '%1'").arg(playerName));
+        LOG_DEBUG(QString("Player name: %1").arg(playerName));
 
         // 跳过未知字段
         uint32_t unknown2;
-        if (stream.atEnd()) {
-            LOG_WARNING("Stream ended unexpectedly before reading internal IP/port");
-            return qMakePair(targetAddr, targetPort);
-        }
         stream >> unknown2;
+        LOG_DEBUG(QString("Unknown2: 0x%1").arg(unknown2, 8, 16, QLatin1Char('0')));
 
-        LOG_DEBUG(QString("Unknown2 field: 0x%1").arg(unknown2, 8, 16, QLatin1Char('0')));
-
-        // 检查是否还有足够的数据读取内部IP和端口
-        if (stream.device()->bytesAvailable() < 6) { // 2 bytes port + 4 bytes IP
-            LOG_ERROR(QString("Insufficient data for internal IP/port: need 6 bytes, only %1 available")
-                          .arg(stream.device()->bytesAvailable()));
+        // 检查剩余数据是否足够读取内部IP和端口
+        if (stream.device()->bytesAvailable() < 6) {
+            LOG_ERROR("Insufficient data for internal IP/port");
             return qMakePair(targetAddr, targetPort);
         }
 
@@ -303,38 +472,23 @@ QPair<QHostAddress, quint16> War3Bot::parseTargetFromPacket(const QByteArray &da
                       .arg(internalIP)
                       .arg(internalPort));
 
-        // 转换内部IP为QHostAddress
         if (internalIP == 0) {
             LOG_WARNING("Internal IP is 0, cannot create valid target address");
             return qMakePair(targetAddr, targetPort);
         }
 
-// 字节序处理：War3协议通常使用小端序，但QHostAddress期望网络字节序（大端序）
-// 使用标准的htonl函数或者手动转换
-#if Q_BYTE_ORDER == Q_LITTLE_ENDIAN
-        // 在小端序系统上，需要将小端序的IP转换为大端序
-        uint32_t networkOrderIP = (internalIP << 24) |
-                                  ((internalIP << 8) & 0x00FF0000) |
-                                  ((internalIP >> 8) & 0x0000FF00) |
-                                  (internalIP >> 24);
-#else
-        // 在大端序系统上，直接使用
-        uint32_t networkOrderIP = internalIP;
-#endif
-
+        // 字节序转换：War3 使用小端序，需要转换为网络字节序（大端序）
+        uint32_t networkOrderIP = htonl(internalIP);
         targetAddr = QHostAddress(networkOrderIP);
         targetPort = internalPort;
 
-        LOG_INFO(QString("Successfully parsed target from packet:"));
-        LOG_INFO(QString("  Player: %1").arg(playerName));
-        LOG_INFO(QString("  Internal IP (raw): 0x%1 (%2)").arg(internalIP, 8, 16, QLatin1Char('0')).arg(internalIP));
-        LOG_INFO(QString("  Target address: %1:%2").arg(targetAddr.toString()).arg(targetPort));
-        LOG_INFO(QString("  Listen port: %1").arg(listenPort));
+        LOG_INFO(QString("Successfully parsed dynamic target from REQJOIN: %1:%2 (player: %3)")
+                     .arg(targetAddr.toString()).arg(targetPort).arg(playerName));
 
     } catch (const std::exception &e) {
-        LOG_ERROR(QString("Exception while parsing packet: %1").arg(e.what()));
+        LOG_ERROR(QString("Exception while parsing REQJOIN packet: %1").arg(e.what()));
     } catch (...) {
-        LOG_ERROR("Unknown exception while parsing packet");
+        LOG_ERROR("Unknown exception while parsing REQJOIN packet");
     }
 
     return qMakePair(targetAddr, targetPort);
