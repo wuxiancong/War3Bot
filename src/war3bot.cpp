@@ -135,34 +135,6 @@ void War3Bot::onClientDataReady()
     processClientPacket(clientSocket, data);
 }
 
-bool War3Bot::isValidW3GSPacket(const QByteArray &data)
-{
-    if (data.size() < 4) {
-        return false;
-    }
-
-    // 检查W3GS协议标识
-    uint8_t protocol = static_cast<uint8_t>(data[0]);
-    if (protocol != 0xF7) {
-        return false;
-    }
-
-    // 检查包大小字段的合理性
-    uint16_t packetSize = (static_cast<uint8_t>(data[2]) << 8) | static_cast<uint8_t>(data[3]);
-    if (packetSize < 4 || packetSize > 8192) { // 合理的W3GS包大小范围
-        return false;
-    }
-
-    // 如果包大小字段与实际数据大小匹配，则很可能是有效的W3GS包
-    if (packetSize == static_cast<uint16_t>(data.size())) {
-        return true;
-    }
-
-    // 即使大小不匹配，也可能是W3GS包（有些实现可能不严格）
-    // 但至少要有协议标识和合理的大小范围
-    return true;
-}
-
 void War3Bot::processClientPacket(QTcpSocket *clientSocket, const QByteArray &data)
 {
     QString sessionKey = m_clientSessions.value(clientSocket);
