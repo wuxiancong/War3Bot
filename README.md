@@ -33,7 +33,7 @@ make -j$(nproc)
 ./war3bot --help
 
 # 5. 重新编译
-cd cd /root/War3Bot/build
+cd /root/War3Bot/build
 rm -rf *
 cd War3Bot
 rm -rf *
