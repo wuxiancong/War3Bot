@@ -40,7 +40,7 @@ cd War3Bot
 rm -rf *
 
 ```
-##系统服务配置
+## 系统服务配置
 # 创建系统用户
 ```bash
 sudo useradd -r -s /bin/false -d /opt/war3bot war3bot
@@ -77,7 +77,7 @@ sudo systemctl enable war3bot
 sudo systemctl start war3bot
 sudo systemctl stop war3bot
 ```
-##配置文件
+## 配置文件
 /etc/war3bot/war3bot.ini:
 ```bash
 [server]
@@ -94,9 +94,9 @@ level=info
 file=/var/log/war3bot/war3bot.log
 ```
 
-##使用方法
-#命令行运行
+## 使用方法
 ```bash
+#命令行运行
 # 停止服务
 sudo systemctl stop war3bot
 # 启动服务
@@ -111,8 +111,8 @@ sudo systemctl status war3bot
 sudo journalctl -u war3bot -f
 ```
 
-##测试验证
-#基本测试
+## 测试验证
+# 基本测试
 ```bash
 # 检查端口
 sudo netstat -tulpn | grep 6113
@@ -125,7 +125,7 @@ echo "test" | nc -u localhost 6113
 # 监控流量
 sudo tcpdump -i lo -n udp port 6112 or port 6113
 ```
-#Python 测试客户端
+# Python 测试客户端
 ```bash
 #!/usr/bin/env python3
 import socket
@@ -144,7 +144,7 @@ if __name__ == "__main__":
     test_war3bot()
 
 ```
-##项目结构
+## 项目结构
 ```bash
 War3Bot/
 ├── CMakeLists.txt
@@ -164,7 +164,7 @@ War3Bot/
     └── war3bot.service
 ```
 
-##故障排查
+## 故障排查
 ```bash
 # 检查服务状态
 sudo systemctl status war3bot
@@ -180,8 +180,8 @@ sudo ufw allow 6113/udp
 ./war3bot -l debug -p 6113
 ```
 
-##协议支持
-#C->S 数据包
+## 协议支持
+# C->S 数据包
 - 0x01 - PING_FROM_HOST
 
 - 0x04 - SLOT_INFOJOIN
@@ -192,7 +192,7 @@ sudo ufw allow 6113/udp
 
 - 0x0A - INCOMING_ACTION
 
-#S->C 数据包
+# S->C 数据包
 - 0x02 - PONG_TO_HOST
 
 - 0x03 - REJECT
