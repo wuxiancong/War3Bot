@@ -188,18 +188,21 @@ QPair<QHostAddress, quint16> War3Bot::parseTargetFromPacket(const QByteArray &da
     }
 
     try {
-        // 重要：War3协议头部使用小端序！
+        // 重要：War3协议头部使用大端序，但字段顺序需要调整！
         QDataStream stream(data);
-        stream.setByteOrder(QDataStream::LittleEndian);  // 改为小端序
+        stream.setByteOrder(QDataStream::BigEndian);
 
-        // 解析 W3GS 头部
+        // 解析 W3GS 头部 - 正确的顺序应该是：
+        // 字节0: 协议ID (0xF7)
+        // 字节1: 包类型 (0x1E)
+        // 字节2-3: 包大小 (0x0029 = 41字节)
         uint8_t protocol;
-        uint8_t packetType;      // 改为 uint8_t
-        uint16_t packetSize;     // 大小字段是16位
+        uint8_t packetType;      // 第二个字节是包类型
+        uint16_t packetSize;     // 第三、四个字节是包大小
 
         stream >> protocol;
-        stream >> packetType;    // 第二个字节是包类型
-        stream >> packetSize;    // 第三、四个字节是包大小
+        stream >> packetType;
+        stream >> packetSize;
 
         LOG_DEBUG(QString("Header parsed - Protocol: 0x%1, Type: 0x%2, Size: %3")
                       .arg(protocol, 2, 16, QLatin1Char('0'))
@@ -210,7 +213,6 @@ QPair<QHostAddress, quint16> War3Bot::parseTargetFromPacket(const QByteArray &da
         if (packetSize != static_cast<uint16_t>(data.size())) {
             LOG_WARNING(QString("Packet size mismatch: header says %1, actual is %2")
                             .arg(packetSize).arg(data.size()));
-            // 继续尝试解析，不立即返回
         }
 
         // 根据文档和方向检查包类型
@@ -315,6 +317,8 @@ QPair<QHostAddress, quint16> War3Bot::parseTargetFromPacket(const QByteArray &da
             if (isFromClient) {
                 LOG_DEBUG("W3GS_REQJOIN - Client request to join game lobby (THIS IS WHAT WE NEED!)");
                 // 只有 REQJOIN 包才包含目标地址信息
+                // 切换到小端序解析载荷
+                stream.setByteOrder(QDataStream::LittleEndian);
                 return parseReqJoinPacket(stream, data.size() - stream.device()->pos());
             } else {
                 LOG_DEBUG("W3GS_REQJOIN (unexpected direction)");
