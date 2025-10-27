@@ -29,17 +29,22 @@ public:
     PlayerInfo getPlayer(uint8_t playerId) const;
     bool hasPlayer(uint8_t playerId) const;
 
+    void learnTargetFromFirstPacket(const QByteArray &data, const QHostAddress &from, quint16 port);
+    void setTargetAddress(const QHostAddress &hostAddr, quint16 hostPort);
+
 signals:
     void sessionEnded(const QString &sessionId);
     void dataForwarded(const QByteArray &data, const QHostAddress &from);
     void playerJoined(const PlayerInfo &player);
     void playerLeft(uint8_t playerId, uint32_t reason);
     void chatMessage(uint8_t fromPlayer, uint8_t toPlayer, const QString &message);
+    void targetAddressChanged(const QHostAddress &hostAddr, quint16 hostPort);
 
 public slots:
+    void broadcastToClients(const QByteArray &data);
+    void updateTargetAddress(const QHostAddress &newAddr, quint16 newPort);
     void forwardData(const QByteArray &data, const QHostAddress &from, quint16 port);
     void sendToClient(const QByteArray &data, const QHostAddress &clientAddr, quint16 clientPort);
-    void broadcastToClients(const QByteArray &data);
 
 private slots:
     void onSocketReadyRead();

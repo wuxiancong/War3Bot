@@ -30,6 +30,11 @@ private:
     QString generateSessionId();
     GameSession* findOrCreateSession(const QHostAddress &clientAddr, quint16 clientPort);
     void processInitialPacket(const QByteArray &data, const QHostAddress &from, quint16 port);
+
+    // 新增的解析方法
+    QPair<QHostAddress, quint16> parseTargetFromPacket(const QByteArray &data);
+    QHostAddress extractRealTargetFromPacket(const QByteArray &data, const QHostAddress &from, quint16 port);
+    quint16 extractRealPortFromPacket(const QByteArray &data);
 };
 
 #endif // WAR3BOT_H

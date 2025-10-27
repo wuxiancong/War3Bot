@@ -123,6 +123,11 @@ void GameSession::forwardData(const QByteArray &data, const QHostAddress &from, 
 
     processClientToServerPacket(data, header, from, port);
 
+    // 如果是第一个数据包，可以尝试从数据包中提取目标信息
+    if (m_hostAddress.isNull() || m_hostPort == 0) {
+        learnTargetFromFirstPacket(data, from, port);
+    }
+
     qint64 bytesWritten = m_socket->writeDatagram(data, m_hostAddress, m_hostPort);
     if (bytesWritten == -1) {
         LOG_ERROR(QString("Session %1 failed to forward data to %2:%3: %4")
@@ -130,6 +135,32 @@ void GameSession::forwardData(const QByteArray &data, const QHostAddress &from, 
     } else {
         LOG_DEBUG(QString("Session %1 forwarded %2 bytes to %3:%4")
                       .arg(m_sessionId).arg(bytesWritten).arg(m_hostAddress.toString()).arg(m_hostPort));
+    }
+}
+
+void GameSession::learnTargetFromFirstPacket(const QByteArray &data, const QHostAddress &from, quint16 port)
+{
+    Q_UNUSED(data)
+    Q_UNUSED(from)
+    Q_UNUSED(port)
+
+    if (m_hostAddress.isNull()) {
+        LOG_INFO(QString("Session %1: Learning target address from configuration").arg(m_sessionId));
+    }
+}
+
+void GameSession::setTargetAddress(const QHostAddress &hostAddr, quint16 hostPort)
+{
+    if (m_hostAddress != hostAddr || m_hostPort != hostPort) {
+        m_hostAddress = hostAddr;
+        m_hostPort = hostPort;
+
+        LOG_INFO(QString("Session %1: Target address updated to %2:%3")
+                     .arg(m_sessionId).arg(hostAddr.toString()).arg(hostPort));
+
+        if (m_isRunning) {
+            emit targetAddressChanged(hostAddr, hostPort);
+        }
     }
 }
 
@@ -150,6 +181,19 @@ void GameSession::sendToClient(const QByteArray &data, const QHostAddress &clien
 void GameSession::broadcastToClients(const QByteArray &data)
 {
     sendToAllClients(data);
+}
+
+void GameSession::updateTargetAddress(const QHostAddress &newAddr, quint16 newPort)
+{
+    if (m_hostAddress != newAddr || m_hostPort != newPort) {
+        m_hostAddress = newAddr;
+        m_hostPort = newPort;
+
+        LOG_INFO(QString("Session %1: Target address updated to %2:%3")
+                     .arg(m_sessionId).arg(newAddr.toString()).arg(newPort));
+
+        emit targetAddressChanged(newAddr, newPort);
+    }
 }
 
 void GameSession::onSocketReadyRead()
