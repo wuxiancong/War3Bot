@@ -52,6 +52,25 @@ sudo chown -R war3bot:war3bot /var/log/war3bot
 ```
 # 配置服务
 ```bash
+[Unit]
+Description=War3Bot Warcraft III Proxy
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/War3Bot/build
+ExecStart=/root/War3Bot/build/war3bot -p 6113
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
 sudo systemctl daemon-reload
 sudo systemctl enable war3bot
 sudo systemctl start war3bot
