@@ -32,6 +32,12 @@ make -j$(nproc)
 # 4. 测试运行
 ./war3bot --help
 
+# 5. 重新编译
+cd cd /root/War3Bot/build
+rm -rf *
+cd War3Bot
+rm -rf *
+
 ```
 ##系统服务配置
 # 创建系统用户
