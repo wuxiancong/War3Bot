@@ -15,17 +15,19 @@ War3Bot 是一个专为《魔兽争霸 III》设计的游戏会话代理服务�
 ### Ubuntu 系统
 
 ```bash
-# 安装依赖
+# 更新系统
 sudo apt update
-sudo apt install -y build-essential cmake qt5-default qtbase5-dev
+sudo apt upgrade -y
 
-# 编译安装
-git clone https://github.com/wuxiancong/War3Bot.git
-cd War3Bot
-mkdir build && cd build
-cmake ..
-make -j$(nproc)
-sudo make install
+# 安装编译工具和 Qt5 开发包
+sudo apt install -y build-essential cmake
+sudo apt install -y qtbase5-dev qt5-qmake qtchooser qttools5-dev-tools
+
+# 可选：安装额外的 Qt 模块（如果需要）
+sudo apt install -y libqt5network5 libqt5core5a
+
+# 验证 Qt 安装
+qmake --version
 
 ```
 ##系统服务配置
