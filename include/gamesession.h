@@ -17,7 +17,7 @@ public:
 
     bool startSession(const QHostAddress &target, quint16 port);
     bool reconnectToTarget(const QHostAddress &target, quint16 port);
-    void forwardToGame(const QByteArray &data);
+    bool forwardToGame(const QByteArray &data);
     void forwardToClient(const QByteArray &data);
     bool isRunning() const;
     QString getSessionId() const { return m_sessionId; }

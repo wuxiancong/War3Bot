@@ -76,42 +76,48 @@ void GameSession::setupGameSocket()
             this, &GameSession::onGameError);
 }
 
-void GameSession::forwardToGame(const QByteArray &data)
+bool GameSession::forwardToGame(const QByteArray &data)
 {
     // 如果还没有连接，先建立连接
     if (!m_gameSocket || m_gameSocket->state() != QAbstractSocket::ConnectedState) {
-        LOG_DEBUG(QString("Session %1: Establishing connection to game server for data forwarding")
-                      .arg(m_sessionId));
+        LOG_DEBUG(QString("Session %1: Establishing connection to game server %2:%3")
+                      .arg(m_sessionId).arg(m_targetAddress.toString()).arg(m_targetPort));
 
         if (!reconnectToTarget(m_targetAddress, m_targetPort)) {
             LOG_ERROR(QString("Session %1: Failed to connect to game server")
                           .arg(m_sessionId));
-            return;
+            return false;
         }
 
         // 等待连接建立
-        if (!m_gameSocket->waitForConnected(3000)) {
+        if (!m_gameSocket->waitForConnected(5000)) {
             LOG_ERROR(QString("Session %1: Connection timeout to game server")
                           .arg(m_sessionId));
-            return;
+            return false;
         }
+
+        LOG_INFO(QString("Session %1: Successfully connected to game server")
+                     .arg(m_sessionId));
     }
 
     if (!m_gameSocket) {
         LOG_ERROR(QString("Session %1: No game socket available").arg(m_sessionId));
-        return;
+        return false;
     }
 
     qint64 bytesWritten = m_gameSocket->write(data);
     if (bytesWritten == -1) {
         LOG_ERROR(QString("Session %1: Failed to write data to game server: %2")
                       .arg(m_sessionId).arg(m_gameSocket->errorString()));
+        return false;
     } else if (bytesWritten != data.size()) {
         LOG_WARNING(QString("Session %1: Partial write to game server: %3/%4 bytes")
                         .arg(m_sessionId).arg(bytesWritten).arg(data.size()));
+        return false;
     } else {
         LOG_DEBUG(QString("Session %1: Successfully forwarded %2 bytes to game server")
                       .arg(m_sessionId).arg(bytesWritten));
+        return true;
     }
 }
 
