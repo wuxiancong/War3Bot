@@ -277,6 +277,25 @@ void War3Bot::processClientPacket(QTcpSocket *clientSocket, const QByteArray &da
         return;
     }
 
+    // 验证原始数据是否是有效的W3GS包
+    if (!isValidW3GSPacket(originalData)) {
+        LOG_ERROR(QString("Session %1: Extracted data is not a valid W3GS packet")
+                      .arg(sessionKey));
+        LOG_DEBUG(QString("Session %1: Invalid packet content: %2")
+                      .arg(sessionKey)
+                      .arg(QString(originalData.left(16).toHex())));
+        return;
+    }
+
+    // 记录原始数据的详细信息
+    uint8_t protocol = static_cast<uint8_t>(originalData[0]);
+    uint8_t packetType = static_cast<uint8_t>(originalData[1]);
+    LOG_INFO(QString("Session %1: Forwarding W3GS packet - protocol: 0x%2, type: 0x%3, size: %4")
+                 .arg(sessionKey)
+                 .arg(protocol, 2, 16, QLatin1Char('0'))
+                 .arg(packetType, 2, 16, QLatin1Char('0'))
+                 .arg(originalData.size()));
+
     // 更新目标并转发
     session->updateTarget(finalTarget, finalPort);
 
@@ -287,6 +306,15 @@ void War3Bot::processClientPacket(QTcpSocket *clientSocket, const QByteArray &da
     } else {
         LOG_ERROR(QString("Session %1: Failed to forward data to game host %2:%3")
                       .arg(sessionKey).arg(finalTarget.toString()).arg(finalPort));
+
+        // 检查连接状态
+        if (session->isRunning()) {
+            LOG_INFO(QString("Session %1: Session is still running but forward failed")
+                         .arg(sessionKey));
+        } else {
+            LOG_INFO(QString("Session %1: Session is not running after forward attempt")
+                         .arg(sessionKey));
+        }
     }
 }
 
@@ -362,12 +390,31 @@ QByteArray War3Bot::extractOriginalData(const QByteArray &wrappedData)
 bool War3Bot::isValidW3GSPacket(const QByteArray &data)
 {
     if (data.size() < 4) {
+        LOG_DEBUG("Packet too small for W3GS validation");
         return false;
     }
 
     // 检查W3GS协议标识 (0xF7)
     uint8_t protocol = static_cast<uint8_t>(data[0]);
-    return (protocol == 0xF7);
+    if (protocol != 0xF7) {
+        LOG_DEBUG(QString("Invalid W3GS protocol: 0x%1, expected 0xF7")
+                      .arg(protocol, 2, 16, QLatin1Char('0')));
+        return false;
+    }
+
+    // 检查包大小字段
+    uint16_t packetSize = (static_cast<uint8_t>(data[2]) << 8) | static_cast<uint8_t>(data[3]);
+    if (packetSize != data.size()) {
+        LOG_WARNING(QString("W3GS packet size mismatch: header=%1, actual=%2")
+                        .arg(packetSize).arg(data.size()));
+        // 有些实现可能不严格，这里不直接返回false
+    }
+
+    LOG_DEBUG(QString("Valid W3GS packet - protocol: 0xF7, type: 0x%1, size: %2")
+                  .arg(static_cast<uint8_t>(data[1]), 2, 16, QLatin1Char('0'))
+                  .arg(data.size()));
+
+    return true;
 }
 
 void War3Bot::analyzeUnknownPacket(const QByteArray &data, const QString &sessionKey)

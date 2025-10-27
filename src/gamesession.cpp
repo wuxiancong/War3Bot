@@ -118,42 +118,37 @@ void GameSession::setupGameSocket()
 
 bool GameSession::forwardToGame(const QByteArray &data)
 {
-    LOG_DEBUG(QString("Session %1: Attempting to forward %2 bytes to game server")
-                  .arg(m_sessionId).arg(data.size()));
+    LOG_DEBUG(QString("Session %1: Attempting to forward %2 bytes to game server %3:%4")
+                  .arg(m_sessionId).arg(data.size())
+                  .arg(m_targetAddress.toString()).arg(m_targetPort));
 
-    // 如果还没有连接，先建立连接
-    if (!m_gameSocket || m_gameSocket->state() != QAbstractSocket::ConnectedState) {
-        LOG_DEBUG(QString("Session %1: Establishing connection to game server %2:%3")
-                      .arg(m_sessionId).arg(m_targetAddress.toString()).arg(m_targetPort));
-
-        if (!reconnectToTarget(m_targetAddress, m_targetPort)) {
-            LOG_ERROR(QString("Session %1: Failed to connect to game server")
-                          .arg(m_sessionId));
-            return false;
-        }
-
-        // 等待连接建立
-        if (!m_gameSocket->waitForConnected(3000)) {
-            LOG_ERROR(QString("Session %1: Connection timeout to game server")
-                          .arg(m_sessionId));
-            return false;
-        }
-
-        LOG_INFO(QString("Session %1: Successfully connected to game server")
-                     .arg(m_sessionId));
-    }
-
+    // 检查连接状态
     if (!m_gameSocket) {
-        LOG_ERROR(QString("Session %1: No game socket available").arg(m_sessionId));
+        LOG_ERROR(QString("Session %1: Game socket is null").arg(m_sessionId));
         return false;
     }
 
-    // 记录要发送的数据
-    LOG_DEBUG(QString("Session %1: Sending data to game server, first 8 bytes: %2")
+    QAbstractSocket::SocketState state = m_gameSocket->state();
+    if (state != QAbstractSocket::ConnectedState) {
+        LOG_ERROR(QString("Session %1: Socket not connected, state: %2")
+                      .arg(m_sessionId).arg(state));
+        return false;
+    }
+
+    // 记录详细的发送信息
+    LOG_DEBUG(QString("Session %1: Sending data - first 16 bytes: %2")
                   .arg(m_sessionId)
-                  .arg(QString(data.left(8).toHex())));
+                  .arg(QString(data.left(16).toHex())));
 
     qint64 bytesWritten = m_gameSocket->write(data);
+
+    // 立即刷新缓冲区
+    if (!m_gameSocket->waitForBytesWritten(3000)) {
+        LOG_ERROR(QString("Session %1: Wait for bytes written timeout")
+                      .arg(m_sessionId));
+        return false;
+    }
+
     if (bytesWritten == -1) {
         LOG_ERROR(QString("Session %1: Failed to write data to game server: %2")
                       .arg(m_sessionId).arg(m_gameSocket->errorString()));
@@ -163,8 +158,8 @@ bool GameSession::forwardToGame(const QByteArray &data)
                         .arg(m_sessionId).arg(bytesWritten).arg(data.size()));
         return false;
     } else {
-        LOG_INFO(QString("Session %1: Successfully forwarded %2 bytes to game server")
-                     .arg(m_sessionId).arg(bytesWritten));
+        LOG_INFO(QString("Session %1: Successfully forwarded %2 bytes to game server, socket state: %3")
+                     .arg(m_sessionId).arg(bytesWritten).arg(m_gameSocket->state()));
         return true;
     }
 }
@@ -204,8 +199,19 @@ void GameSession::onGameConnected()
     m_isConnected = true;
     m_reconnectAttempts = 0;
 
-    LOG_INFO(QString("Session %1: Successfully connected to game server %2:%3")
-                 .arg(m_sessionId).arg(m_targetAddress.toString()).arg(m_targetPort));
+    LOG_INFO(QString("Session %1: Successfully connected to game server %2:%3, socket state: %4")
+                 .arg(m_sessionId)
+                 .arg(m_targetAddress.toString())
+                 .arg(m_targetPort)
+                 .arg(m_gameSocket->state()));
+
+    // 记录连接详细信息
+    LOG_DEBUG(QString("Session %1: Socket details - local: %2:%3, peer: %4:%5")
+                  .arg(m_sessionId)
+                  .arg(m_gameSocket->localAddress().toString())
+                  .arg(m_gameSocket->localPort())
+                  .arg(m_gameSocket->peerAddress().toString())
+                  .arg(m_gameSocket->peerPort()));
 }
 
 void GameSession::onGameDataReady()
