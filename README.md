@@ -75,6 +75,7 @@ WantedBy=multi-user.target
 sudo systemctl daemon-reload
 sudo systemctl enable war3bot
 sudo systemctl start war3bot
+sudo systemctl stop war3bot
 ```
 ##配置文件
 /etc/war3bot/war3bot.ini:
