@@ -10,7 +10,7 @@ int main(int argc, char *argv[]) {
     QCoreApplication::setApplicationVersion("1.0");
 
     // 初始化日志系统
-    Logger::instance()->setLogLevel(Logger::INFO);
+    Logger::instance()->setLogLevel(Logger::DEBUG);
     Logger::instance()->enableConsoleOutput(true);
 
     // 确保日志目录存在
