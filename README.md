@@ -90,3 +90,80 @@ echo "test" | nc -u localhost 6113
 # 监控流量
 sudo tcpdump -i lo -n udp port 6112 or port 6113
 ```
+#Python 测试客户端
+```bash
+#!/usr/bin/env python3
+import socket
+import struct
+
+def test_war3bot():
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    war3bot_addr = ('localhost', 6113)
+    
+    # 创建 W3GS PING 数据包
+    header = struct.pack('<BHHB', 0xF7, 8, 0x01, 0)
+    sock.sendto(header, war3bot_addr)
+    print("测试数据包已发送")
+
+if __name__ == "__main__":
+    test_war3bot()
+
+```
+##项目结构
+```bash
+War3Bot/
+├── CMakeLists.txt
+├── include/
+│   ├── war3bot.h
+│   ├── gamesession.h
+│   ├── w3gs_protocol.h
+│   └── logger.h
+├── src/
+│   ├── main.cpp
+│   ├── war3bot.cpp
+│   ├── gamesession.cpp
+│   ├── w3gs_protocol.cpp
+│   └── logger.cpp
+└── config/
+    ├── war3bot.ini
+    └── war3bot.service
+```
+
+##故障排查
+```bash
+# 检查服务状态
+sudo systemctl status war3bot
+
+# 查看详细日志
+sudo journalctl -u war3bot --no-pager -n 50
+
+# 检查防火墙
+sudo ufw status
+sudo ufw allow 6113/udp
+
+# 调试模式运行
+./war3bot -l debug -p 6113
+```
+
+##协议支持
+#C->S 数据包
+- 0x01 - PING_FROM_HOST
+
+- 0x04 - SLOT_INFOJOIN
+
+- 0x0F - CHAT_TO_HOST
+
+- 0x11 - LEAVE_GAME
+
+- 0x0A - INCOMING_ACTION
+
+#S->C 数据包
+-0x02 - PONG_TO_HOST
+
+-0x03 - REJECT
+
+-0x08 - SLOT_INFO
+
+-0x18 - PLAYER_LEFT
+
+-0x0E - CHAT_FROM_HOST
