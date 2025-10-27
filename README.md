@@ -18,7 +18,7 @@ War3Bot 是一个专为《魔兽争霸 III》设计的游戏会话代理服务�
 # 1. 安装依赖
 sudo apt update
 sudo apt install -y build-essential cmake
-sudo apt install -y qtbase5-dev qt5-qmake qtchooser
+sudo apt install qtbase5-dev qt5-qmake libqt5core5a libqt5network5
 
 # 2. 克隆项目
 git clone https://github.com/wuxiancong/War3Bot.git
@@ -32,6 +32,13 @@ make -j$(nproc)
 # 4. 测试运行
 ./war3bot --help
 
+# 5. 重新编译
+cd /root/War3Bot/build
+rm -rf *
+cd ~
+cd War3Bot
+rm -rf *
+
 ```
 ##系统服务配置
 # 创建系统用户
@@ -44,6 +51,26 @@ sudo mkdir -p /var/log/war3bot /etc/war3bot
 sudo chown -R war3bot:war3bot /var/log/war3bot
 ```
 # 配置服务
+war3bot.service:
+```bash
+[Unit]
+Description=War3Bot Warcraft III Proxy
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/War3Bot/build
+ExecStart=/root/War3Bot/build/war3bot -p 6113
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+```
+
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable war3bot
