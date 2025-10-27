@@ -29,18 +29,21 @@ private slots:
     void onSessionEnded(const QString &sessionId);
 
 private:
-    QSettings *m_settings;
+    // 调整顺序：先声明 m_tcpServer，再声明 m_settings
     QTcpServer *m_tcpServer;
-    QString generateSessionId();
+    QSettings *m_settings;
     QMap<QString, GameSession*> m_sessions;
     QMap<QTcpSocket*, QString> m_clientSessions;
+
+    // 函数声明保持不变...
     bool isValidW3GSPacket(const QByteArray &data);
-    QByteArray extractOriginalData(const QByteArray &wrappedData);
     QPair<QHostAddress, quint16> parseWrappedPacket(const QByteArray &data);
-    void processClientPacket(QTcpSocket *clientSocket, const QByteArray &data);
-    void analyzeUnknownPacket(const QByteArray &data, const QString &sessionKey);
-    QPair<QHostAddress, quint16> parseReqJoinPacket(QDataStream &stream, int remainingSize);
+    QByteArray extractOriginalData(const QByteArray &wrappedData);
     QPair<QHostAddress, quint16> parseTargetFromPacket(const QByteArray &data, bool isFromClient = true);
+    QPair<QHostAddress, quint16> parseReqJoinPacket(QDataStream &stream, int remainingSize);
+    void analyzeUnknownPacket(const QByteArray &data, const QString &sessionKey);
+    void processClientPacket(QTcpSocket *clientSocket, const QByteArray &data);
+    QString generateSessionId();
 };
 
 #endif // WAR3BOT_H

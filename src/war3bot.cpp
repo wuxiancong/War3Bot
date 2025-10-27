@@ -17,6 +17,8 @@
 War3Bot::War3Bot(QObject *parent) : QObject(parent)
     , m_tcpServer(nullptr)
     , m_settings(nullptr)
+    , m_sessions()
+    , m_clientSessions()
 {
     m_tcpServer = new QTcpServer(this);
     m_settings = new QSettings("war3bot.ini", QSettings::IniFormat, this);
@@ -238,8 +240,8 @@ QPair<QHostAddress, quint16> War3Bot::parseWrappedPacket(const QByteArray &data)
     ptr += 2;
     uint32_t dataLength = *reinterpret_cast<const uint32_t*>(ptr);
 
-    // 验证数据长度
-    if (data.size() != 14 + dataLength) {
+    // 修复有符号/无符号比较警告
+    if (static_cast<uint32_t>(data.size()) != 14 + dataLength) {
         LOG_WARNING(QString("Wrapped packet size mismatch: expected %1, got %2")
                         .arg(14 + dataLength).arg(data.size()));
         return qMakePair(targetAddr, targetPort);
@@ -265,6 +267,7 @@ QByteArray War3Bot::extractOriginalData(const QByteArray &wrappedData)
     const char *originalData = wrappedData.constData() + 14;
     uint32_t dataLength = *reinterpret_cast<const uint32_t*>(wrappedData.constData() + 10);
 
+    // 修复有符号/无符号比较警告
     if (dataLength > static_cast<uint32_t>(wrappedData.size() - 14)) {
         return QByteArray();
     }
@@ -683,7 +686,8 @@ QPair<QHostAddress, quint16> War3Bot::parseReqJoinPacket(QDataStream &stream, in
         }
 
         // 检查是否有足够的数据读取玩家名字
-        if (stream.device()->bytesAvailable() < nameLength) {
+        // 修复有符号/无符号比较
+        if (static_cast<uint32_t>(stream.device()->bytesAvailable()) < nameLength) {
             LOG_WARNING(QString("Insufficient data for player name: need %1, have %2")
                             .arg(nameLength).arg(stream.device()->bytesAvailable()));
             stream.device()->seek(startPos);
