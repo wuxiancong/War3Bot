@@ -26,3 +26,38 @@ mkdir build && cd build
 cmake ..
 make -j$(nproc)
 sudo make install
+
+```
+##系统服务配置
+# 创建系统用户
+```bash
+sudo useradd -r -s /bin/false -d /opt/war3bot war3bot
+```
+# 创建目录
+```bash
+sudo mkdir -p /var/log/war3bot /etc/war3bot
+sudo chown -R war3bot:war3bot /var/log/war3bot
+```
+# 配置服务
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable war3bot
+sudo systemctl start war3bot
+```
+##配置文件
+/etc/war3bot/war3bot.ini:
+```bash
+[server]
+port=6113
+max_sessions=100
+ping_interval=30000
+
+[game]
+host=127.0.0.1
+port=6112
+
+[logging]
+level=info
+file=/var/log/war3bot/war3bot.log
+```
+
