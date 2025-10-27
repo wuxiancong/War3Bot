@@ -28,7 +28,11 @@ bool GameSession::startSession(const QHostAddress &target, quint16 port)
     m_targetAddress = target;
     m_targetPort = port;
 
-    return reconnectToTarget(target, port);
+    // 不立即连接，等待第一个有效的W3GS数据包
+    LOG_INFO(QString("Session %1: Session created, waiting for valid W3GS data to connect to %2:%3")
+                 .arg(m_sessionId).arg(target.toString()).arg(port));
+
+    return true; // 返回true表示会话已创建，但尚未连接
 }
 
 bool GameSession::reconnectToTarget(const QHostAddress &target, quint16 port)
@@ -74,6 +78,21 @@ void GameSession::setupGameSocket()
 
 void GameSession::forwardToGame(const QByteArray &data)
 {
+    // 如果还没有连接，先建立连接
+    if (!m_gameSocket || m_gameSocket->state() != QAbstractSocket::ConnectedState) {
+        if (!reconnectToTarget(m_targetAddress, m_targetPort)) {
+            LOG_ERROR(QString("Session %1: Cannot forward data, failed to connect to game server")
+                          .arg(m_sessionId));
+            return;
+        }
+        // 等待连接建立
+        if (!m_gameSocket->waitForConnected(5000)) {
+            LOG_ERROR(QString("Session %1: Connection timeout to game server")
+                          .arg(m_sessionId));
+            return;
+        }
+    }
+
     if (!m_isConnected || !m_gameSocket) {
         LOG_WARNING(QString("Session %1: Cannot forward data, game not connected").arg(m_sessionId));
         return;
@@ -114,7 +133,7 @@ void GameSession::forwardToClient(const QByteArray &data)
 
 bool GameSession::isRunning() const
 {
-    return m_isConnected && m_gameSocket && m_gameSocket->state() == QAbstractSocket::ConnectedState;
+    return m_gameSocket && m_gameSocket->state() == QAbstractSocket::ConnectedState;
 }
 
 void GameSession::setClientSocket(QTcpSocket *clientSocket)

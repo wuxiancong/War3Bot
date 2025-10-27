@@ -83,7 +83,7 @@ void War3Bot::onNewConnection()
         connect(clientSocket, &QTcpSocket::readyRead, this, &War3Bot::onClientDataReady);
         connect(clientSocket, &QTcpSocket::disconnected, this, &War3Bot::onClientDisconnected);
 
-        // 创建游戏会话
+        // 创建游戏会话（但不立即连接）
         GameSession *session = new GameSession(sessionKey, this);
         connect(session, &GameSession::sessionEnded, this, &War3Bot::onSessionEnded);
         connect(session, &GameSession::dataToClient, this, [clientSocket](const QByteArray &data) {
@@ -97,21 +97,15 @@ void War3Bot::onNewConnection()
         // 设置客户端套接字
         session->setClientSocket(clientSocket);
 
-        // 配置目标地址
-        bool dynamicTarget = m_settings->value("game/dynamic_target", true).toBool();
+        // 配置目标地址（但不立即连接）
         QString host = m_settings->value("game/host", "127.0.0.1").toString();
         quint16 gamePort = m_settings->value("game/port", 6112).toUInt();
 
-        LOG_INFO(QString("Session %1: Configuration - dynamic_target=%2, target=%3:%4")
-                     .arg(sessionKey).arg(dynamicTarget).arg(host).arg(gamePort));
+        LOG_INFO(QString("Session %1: Target configured as %2:%3 (connection deferred until first W3GS packet)")
+                     .arg(sessionKey).arg(host).arg(gamePort));
 
-        if (session->startSession(QHostAddress(host), gamePort)) {
-            LOG_INFO(QString("Game session started: %1 -> %2:%3")
-                         .arg(sessionKey).arg(host).arg(gamePort));
-        } else {
-            LOG_ERROR(QString("Failed to start game session: %1").arg(sessionKey));
-            clientSocket->disconnectFromHost();
-        }
+        // 只配置目标，不立即连接
+        session->startSession(QHostAddress(host), gamePort);
     }
 }
 
@@ -141,22 +135,63 @@ void War3Bot::onClientDataReady()
     processClientPacket(clientSocket, data);
 }
 
+bool War3Bot::isValidW3GSPacket(const QByteArray &data)
+{
+    if (data.size() < 4) {
+        return false;
+    }
+
+    // 检查W3GS协议标识
+    uint8_t protocol = static_cast<uint8_t>(data[0]);
+    if (protocol != 0xF7) {
+        return false;
+    }
+
+    // 检查包大小字段的合理性
+    uint16_t packetSize = (static_cast<uint8_t>(data[2]) << 8) | static_cast<uint8_t>(data[3]);
+    if (packetSize < 4 || packetSize > 8192) { // 合理的W3GS包大小范围
+        return false;
+    }
+
+    // 如果包大小字段与实际数据大小匹配，则很可能是有效的W3GS包
+    if (packetSize == static_cast<uint16_t>(data.size())) {
+        return true;
+    }
+
+    // 即使大小不匹配，也可能是W3GS包（有些实现可能不严格）
+    // 但至少要有协议标识和合理的大小范围
+    return true;
+}
+
 void War3Bot::processClientPacket(QTcpSocket *clientSocket, const QByteArray &data)
 {
     QString sessionKey = m_clientSessions.value(clientSocket);
     GameSession *session = m_sessions.value(sessionKey);
 
-    if (!session || !session->isRunning()) {
+    if (!session) {
         LOG_ERROR(QString("Session not available for client: %1").arg(sessionKey));
         return;
     }
 
-    // 首先直接转发数据到游戏服务器，确保连接建立
-    session->forwardToGame(data);
+    // 首先检查是否是有效的W3GS数据包
+    if (!isValidW3GSPacket(data)) {
+        LOG_WARNING(QString("Session %1: Received non-W3GS data (%2 bytes)")
+                        .arg(sessionKey)
+                        .arg(data.size()));
 
-    // 然后尝试解析目标地址（如果需要动态目标）
+        // 使用分析函数来识别数据包类型
+        analyzeUnknownPacket(data, sessionKey);
+
+        // 对于非W3GS数据，直接丢弃或记录，但不转发到游戏服务器
+        return;
+    }
+
+    LOG_DEBUG(QString("Session %1: Received valid W3GS packet (%2 bytes)")
+                  .arg(sessionKey).arg(data.size()));
+
+    // 只有有效的W3GS包才尝试解析目标地址
     bool dynamicTarget = m_settings->value("game/dynamic_target", true).toBool();
-    if (dynamicTarget && data.size() >= 4) {
+    if (dynamicTarget) {
         QPair<QHostAddress, quint16> targetInfo = parseTargetFromPacket(data, true);
 
         if (!targetInfo.first.isNull() && targetInfo.second != 0) {
@@ -164,11 +199,106 @@ void War3Bot::processClientPacket(QTcpSocket *clientSocket, const QByteArray &da
                          .arg(sessionKey).arg(targetInfo.first.toString()).arg(targetInfo.second));
 
             // 重新配置会话目标
-            session->reconnectToTarget(targetInfo.first, targetInfo.second);
+            if (session->reconnectToTarget(targetInfo.first, targetInfo.second)) {
+                LOG_INFO(QString("Session %1: Successfully reconnected to dynamic target")
+                             .arg(sessionKey));
+            }
         } else {
-            LOG_DEBUG(QString("Session %1: No dynamic target found in packet, using configured target")
+            LOG_DEBUG(QString("Session %1: No dynamic target found in W3GS packet")
                           .arg(sessionKey));
         }
+    }
+
+    // 转发有效的W3GS数据到游戏服务器
+    if (session->isRunning()) {
+        session->forwardToGame(data);
+    } else {
+        // 如果会话还没运行，先建立连接再转发
+        QString host = m_settings->value("game/host", "127.0.0.1").toString();
+        quint16 gamePort = m_settings->value("game/port", 6112).toUInt();
+
+        if (session->reconnectToTarget(QHostAddress(host), gamePort)) {
+            LOG_INFO(QString("Session %1: Established connection to game server for first W3GS packet")
+                         .arg(sessionKey));
+            session->forwardToGame(data);
+        } else {
+            LOG_ERROR(QString("Session %1: Failed to establish connection for W3GS packet")
+                          .arg(sessionKey));
+        }
+    }
+}
+
+void War3Bot::analyzeUnknownPacket(const QByteArray &data, const QString &sessionKey)
+{
+    LOG_DEBUG(QString("Session %1: Analyzing unknown packet (%2 bytes)").arg(sessionKey).arg(data.size()));
+
+    if (data.size() >= 8) {
+        QByteArray hexData = data.left(16).toHex(); // 显示前16字节的hex
+        LOG_DEBUG(QString("First 16 bytes (hex): %1").arg(QString(hexData)));
+
+        // 构建可读的字节字符串
+        QString byteString;
+        for (int i = 0; i < qMin(16, data.size()); ++i) {
+            byteString += QString("%1 ").arg(static_cast<uint8_t>(data[i]), 2, 16, QLatin1Char('0'));
+        }
+        LOG_DEBUG(QString("First 16 bytes (decimal): %1").arg(byteString));
+
+        // 检查常见的协议标识
+        if (data.size() >= 2) {
+            uint8_t firstByte = static_cast<uint8_t>(data[0]);
+            uint8_t secondByte = static_cast<uint8_t>(data[1]);
+
+            if (firstByte == 0xF7) {
+                LOG_DEBUG("Protocol: W3GS (but structure may be different)");
+                LOG_DEBUG(QString("Packet type: 0x%1").arg(secondByte, 2, 16, QLatin1Char('0')));
+            }
+            else if (firstByte == 0x16 && secondByte == 0x03) {
+                LOG_DEBUG("Protocol: TLS/SSL Handshake");
+            }
+            else if (data.startsWith("GET ") || data.startsWith("POST") || data.startsWith("HTTP")) {
+                LOG_DEBUG("Protocol: HTTP");
+                // 提取HTTP方法/状态
+                QString httpStart = QString::fromLatin1(data.left(20));
+                LOG_DEBUG(QString("HTTP data: %1").arg(httpStart));
+            }
+            else if (data.startsWith("\x00\x00")) {
+                LOG_DEBUG("Protocol: Possible Battle.net protocol or other binary protocol");
+            }
+            else if (firstByte == 0x00 || firstByte == 0xFF) {
+                LOG_DEBUG("Protocol: Possible game query protocol or custom protocol");
+            }
+            else {
+                LOG_DEBUG("Protocol: Unknown binary protocol");
+            }
+
+            // 检查数据包大小字段（如果可能）
+            if (data.size() >= 4) {
+                uint16_t possibleSize = (static_cast<uint8_t>(data[2]) << 8) | static_cast<uint8_t>(data[3]);
+                LOG_DEBUG(QString("Possible size field (big-endian): %1").arg(possibleSize));
+
+                uint16_t possibleSizeLE = (static_cast<uint8_t>(data[3]) << 8) | static_cast<uint8_t>(data[2]);
+                LOG_DEBUG(QString("Possible size field (little-endian): %1").arg(possibleSizeLE));
+            }
+        }
+
+        // 检查是否是文本协议
+        bool isText = true;
+        for (int i = 0; i < qMin(50, data.size()); ++i) {
+            char c = data[i];
+            if (c < 32 || c > 126) {
+                if (c != '\r' && c != '\n' && c != '\t') {
+                    isText = false;
+                    break;
+                }
+            }
+        }
+
+        if (isText && data.size() > 0) {
+            QString textPreview = QString::fromLatin1(data.left(qMin(100, data.size())));
+            LOG_DEBUG(QString("Text content preview: %1").arg(textPreview));
+        }
+    } else {
+        LOG_DEBUG("Packet too small for detailed analysis");
     }
 }
 
