@@ -180,6 +180,7 @@ QPair<QHostAddress, quint16> War3Bot::parseTargetFromPacket(const QByteArray &da
     LOG_DEBUG(QString("Packet size: %1 bytes, Direction: %2")
                   .arg(data.size())
                   .arg(isFromClient ? "C->S" : "S->C"));
+    LOG_DEBUG(QString("Packet hex: %1").arg(QString(data.toHex())));
 
     if (data.size() < 4) {
         LOG_WARNING(QString("Packet too small for header parsing: %1 bytes").arg(data.size()));
@@ -187,33 +188,34 @@ QPair<QHostAddress, quint16> War3Bot::parseTargetFromPacket(const QByteArray &da
     }
 
     try {
-        // War3 协议头部使用大端序
+        // 重要：War3协议头部使用小端序！
         QDataStream stream(data);
-        stream.setByteOrder(QDataStream::BigEndian);
+        stream.setByteOrder(QDataStream::LittleEndian);  // 改为小端序
 
         // 解析 W3GS 头部
         uint8_t protocol;
-        uint16_t packetSize;
-        uint16_t packetType;
+        uint8_t packetType;      // 改为 uint8_t
+        uint16_t packetSize;     // 大小字段是16位
 
         stream >> protocol;
-        stream >> packetSize;
-        stream >> packetType;
+        stream >> packetType;    // 第二个字节是包类型
+        stream >> packetSize;    // 第三、四个字节是包大小
 
         LOG_DEBUG(QString("Header parsed - Protocol: 0x%1, Type: 0x%2, Size: %3")
                       .arg(protocol, 2, 16, QLatin1Char('0'))
-                      .arg(packetType, 4, 16, QLatin1Char('0'))
+                      .arg(packetType, 2, 16, QLatin1Char('0'))
                       .arg(packetSize));
 
         // 验证包大小
         if (packetSize != static_cast<uint16_t>(data.size())) {
             LOG_WARNING(QString("Packet size mismatch: header says %1, actual is %2")
                             .arg(packetSize).arg(data.size()));
+            // 继续尝试解析，不立即返回
         }
 
         // 根据文档和方向检查包类型
         LOG_DEBUG(QString("Packet type identification: 0x%1, Direction: %2")
-                      .arg(packetType, 4, 16, QLatin1Char('0'))
+                      .arg(packetType, 2, 16, QLatin1Char('0'))
                       .arg(isFromClient ? "C->S" : "S->C"));
 
         // 处理所有包类型，考虑方向
@@ -383,7 +385,7 @@ QPair<QHostAddress, quint16> War3Bot::parseTargetFromPacket(const QByteArray &da
         case 0x37: LOG_DEBUG("W3GS_CLIENTINFO - Client info request"); break;
 
         default:
-            LOG_DEBUG(QString("Unknown packet type: 0x%1").arg(packetType, 4, 16, QLatin1Char('0')));
+            LOG_DEBUG(QString("Unknown packet type: 0x%1").arg(packetType, 2, 16, QLatin1Char('0')));
             break;
         }
 
