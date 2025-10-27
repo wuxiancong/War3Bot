@@ -1,0 +1,14 @@
+[Unit]
+Description=War3Bot Warcraft III Proxy
+After=network.target
+
+[Service]
+Type=simple
+User=war3bot
+WorkingDirectory=/opt/war3bot
+ExecStart=/opt/war3bot/war3bot -p 6113
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

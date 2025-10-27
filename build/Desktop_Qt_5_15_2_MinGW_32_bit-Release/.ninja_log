@@ -1,0 +1,18 @@
+# ninja log v6
+20	963	7832879482643990	build.ninja	b8640bc889907eec
+1540	11356	7832863164997410	CMakeFiles/war3bot.dir/src/main.cpp.obj	4cdd341258cae3f6
+10	571	7832878230134623	D:/Qt_/War3Bot/build/Desktop_Qt_5_15_2_MinGW_32_bit-Release/war3bot_autogen/mocs_compilation.cpp	7ea7c9480212af1b
+587	2241	7832873125554174	CMakeFiles/war3bot.dir/src/logger.cpp.obj	d718d966748ba85a
+10	571	7832878230134623	war3bot_autogen/timestamp	7ea7c9480212af1b
+1461	11383	7832863164198876	CMakeFiles/war3bot.dir/war3bot_autogen/mocs_compilation.cpp.obj	aeb51c682fd26a00
+1554	11445	7832863165126366	CMakeFiles/war3bot.dir/src/war3bot.cpp.obj	b9f1d3bfcdf304e9
+572	3369	7832878235754315	CMakeFiles/war3bot.dir/src/w3gs_protocol.cpp.obj	3a6fcf39358556d1
+677	3487	7832873281507140	CMakeFiles/war3bot.dir/src/gamesession.cpp.obj	49c19ffbddf4fe8d
+10	571	7832878230134623	war3bot_autogen/mocs_compilation.cpp	7ea7c9480212af1b
+10	571	7832878230134623	D:/Qt_/War3Bot/build/Desktop_Qt_5_15_2_MinGW_32_bit-Release/war3bot_autogen/timestamp	7ea7c9480212af1b
+3376	3691	7832828818601763	war3bot.exe	2bd7e9b42cb7f4eb
+8	651	7832879488744814	war3bot_autogen/timestamp	7ea7c9480212af1b
+8	651	7832879488744814	war3bot_autogen/mocs_compilation.cpp	7ea7c9480212af1b
+8	651	7832879488744814	D:/Qt_/War3Bot/build/Desktop_Qt_5_15_2_MinGW_32_bit-Release/war3bot_autogen/timestamp	7ea7c9480212af1b
+8	651	7832879488744814	D:/Qt_/War3Bot/build/Desktop_Qt_5_15_2_MinGW_32_bit-Release/war3bot_autogen/mocs_compilation.cpp	7ea7c9480212af1b
+652	1101	7832879495192843	war3bot.exe	2883b031cb9493ad
