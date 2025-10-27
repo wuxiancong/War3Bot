@@ -38,7 +38,7 @@ set(HEADERS
     include/logger.h
 )
 
-set(CMAKE_EXE_LINKER_FLAGS "-static -static-libgcc -static-libstdc++")
+# set(CMAKE_EXE_LINKER_FLAGS "-static -static-libgcc -static-libstdc++")
 
 # 创建可执行文件
 add_executable(war3bot ${SOURCES} ${HEADERS})
