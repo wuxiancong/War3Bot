@@ -1,8 +1,15 @@
 # War3Bot
 
 War3Bot 是一个专为《魔兽争霸 III》设计的游戏会话代理服务器，基于 C++ 和 Qt 框架开发。
+```bash
+玩家A (192.168.1.100) → War3Bot服务器 (1.2.3.4:6113) ← 玩家B (192.168.1.200)
+                            ↓
+                    P2P连接建立成功
+                            ↓
+玩家A (192.168.1.100) ←→ 玩家B (192.168.1.200)
+```
 
-## 功能特性
+# 功能特性
 
 - 完整的 W3GS 协议支持
 - 双向数据转发 (C->S 和 S->C)
@@ -10,9 +17,9 @@ War3Bot 是一个专为《魔兽争霸 III》设计的游戏会话代理服务�
 - 玩家状态跟踪
 - 高性能异步网络处理
 
-## 快速安装
+# 快速安装
 
-### Ubuntu 系统
+## Ubuntu 系统
 
 ```bash
 # 1. 安装依赖
@@ -40,17 +47,17 @@ cd War3Bot
 rm -rf *
 
 ```
-## 系统服务配置
-# 创建系统用户
+# 系统服务配置
+## 创建系统用户
 ```bash
 sudo useradd -r -s /bin/false -d /opt/war3bot war3bot
 ```
-# 创建目录
+## 创建目录
 ```bash
 sudo mkdir -p /var/log/war3bot /etc/war3bot
 sudo chown -R war3bot:war3bot /var/log/war3bot
 ```
-# 配置服务
+## 配置服务
 war3bot.service:
 ```bash
 [Unit]
@@ -77,7 +84,7 @@ sudo systemctl enable war3bot
 sudo systemctl start war3bot
 sudo systemctl stop war3bot
 ```
-## 配置文件
+# 配置文件
 /etc/war3bot/war3bot.ini:
 ```bash
 [server]
@@ -94,7 +101,7 @@ level=info
 file=/var/log/war3bot/war3bot.log
 ```
 
-## 使用方法
+# 使用方法
 ```bash
 #命令行运行
 # 停止服务
@@ -111,7 +118,7 @@ sudo systemctl status war3bot
 sudo journalctl -u war3bot -f
 ```
 
-## 测试验证
+# 测试验证
 # 基本测试
 ```bash
 # 检查端口
@@ -125,7 +132,7 @@ echo "test" | nc -u localhost 6113
 # 监控流量
 sudo tcpdump -i lo -n udp port 6112 or port 6113
 ```
-# Python 测试客户端
+## Python 测试客户端
 ```bash
 #!/usr/bin/env python3
 import socket
@@ -144,7 +151,7 @@ if __name__ == "__main__":
     test_war3bot()
 
 ```
-## 项目结构
+# 项目结构
 ```bash
 War3Bot/
 ├── CMakeLists.txt
@@ -164,7 +171,7 @@ War3Bot/
     └── war3bot.service
 ```
 
-## 故障排查
+# 故障排查
 ```bash
 # 检查服务状态
 sudo systemctl status war3bot
@@ -180,8 +187,8 @@ sudo ufw allow 6113/udp
 ./war3bot -l debug -p 6113
 ```
 
-## 协议支持
-# C->S 数据包
+# 协议支持
+## C->S 数据包
 - 0x01 - PING_FROM_HOST
 
 - 0x04 - SLOT_INFOJOIN
@@ -192,7 +199,7 @@ sudo ufw allow 6113/udp
 
 - 0x0A - INCOMING_ACTION
 
-# S->C 数据包
+## S->C 数据包
 - 0x02 - PONG_TO_HOST
 
 - 0x03 - REJECT
@@ -202,3 +209,29 @@ sudo ufw allow 6113/udp
 - 0x18 - PLAYER_LEFT
 
 - 0x0E - CHAT_FROM_HOST
+
+
+# 完整的 P2P 建立流程
+
+## 阶段1: 连接建立
+```bash
+游戏客户端 --(SEARCHGAME)--> Hook --(建立TCP连接)--> War3Bot
+                                     ↓
+                               创建 P2PSession
+                                     ↓  
+                                STUN 发现公网地址
+```
+
+## 阶段2: 地址交换
+```bash
+War3Bot 获取到公网地址后，等待另一个客户端连接
+当两个客户端都连接后，War3Bot 交换它们的公网地址
+```
+
+## 阶段3: 打洞和通信
+
+```bash
+客户端A <--(UDP打洞)--> 客户端B
+     ↓                   ↓
+  直接P2P通信         直接P2P通信
+```
