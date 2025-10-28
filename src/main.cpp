@@ -21,15 +21,15 @@ int main(int argc, char *argv[]) {
     Logger::instance()->setLogFile("/var/log/war3bot/war3bot.log");
 
     QCommandLineParser parser;
-    parser.setApplicationDescription("Warcraft III Game Session Proxy");
+    parser.setApplicationDescription("Warcraft III P2P Connection Bot");
     parser.addHelpOption();
     parser.addVersionOption();
 
     QCommandLineOption portOption(
         {"p", "port"},
-        "Listen port (default: 6113)",  // 修改默认端口说明
+        "Listen port (default: 6113)",
         "port",
-        "6113"  // 修改默认端口为 6113
+        "6113"
         );
     parser.addOption(portOption);
 
@@ -59,6 +59,13 @@ int main(int argc, char *argv[]) {
     else if (logLevel == "critical") Logger::instance()->setLogLevel(Logger::CRITICAL);
 
     quint16 port = parser.value(portOption).toUShort();
+    QString configFile = parser.value(configOption);
+
+    LOG_INFO("=== War3Bot P2P Server Starting ===");
+    LOG_INFO(QString("Version: %1").arg(app.applicationVersion()));
+    LOG_INFO(QString("Port: %1").arg(port));
+    LOG_INFO(QString("Config: %1").arg(configFile));
+    LOG_INFO(QString("Log Level: %1").arg(logLevel));
 
     War3Bot bot;
     if (!bot.startServer(port)) {
@@ -66,7 +73,13 @@ int main(int argc, char *argv[]) {
         return -1;
     }
 
-    LOG_INFO(QString("War3Bot is running on port %1... Press Ctrl+C to exit.").arg(port));
+    LOG_INFO("War3Bot server is running. Press Ctrl+C to stop.");
+
+    // 设置退出信号处理
+    QObject::connect(&app, &QCoreApplication::aboutToQuit, [&bot]() {
+        LOG_INFO("Shutting down War3Bot server...");
+        bot.stopServer();
+    });
 
     int result = app.exec();
 

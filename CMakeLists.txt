@@ -25,7 +25,7 @@ set(CMAKE_AUTOUIC ON)
 set(SOURCES
     src/main.cpp
     src/war3bot.cpp
-    src/gamesession.cpp
+    src/p2psession.cpp
     src/w3gs_protocol.cpp
     src/logger.cpp
 )
@@ -33,7 +33,7 @@ set(SOURCES
 # 头文件
 set(HEADERS
     include/war3bot.h
-    include/gamesession.h
+    include/p2psession.h
     include/w3gs_protocol.h
     include/logger.h
 )
@@ -41,7 +41,9 @@ set(HEADERS
 # set(CMAKE_EXE_LINKER_FLAGS "-static -static-libgcc -static-libstdc++")
 
 # 创建可执行文件
-add_executable(war3bot ${SOURCES} ${HEADERS})
+add_executable(war3bot ${SOURCES} ${HEADERS}
+    include/stunclient.h
+    src/stunclient.cpp)
 
 # 链接 Qt 库和网络库
 target_link_libraries(war3bot Qt5::Core Qt5::Network)
