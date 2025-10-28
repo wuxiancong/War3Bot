@@ -3,8 +3,8 @@
 
 #include <QObject>
 #include <QUdpSocket>
-#include <QHostAddress>
 #include <QTimer>
+#include <QHostAddress>
 
 class STUNClient : public QObject
 {
@@ -15,9 +15,7 @@ public:
     ~STUNClient();
 
     void discoverPublicAddress();
-    QHostAddress getPublicAddress() const { return m_publicAddress; }
-    quint16 getPublicPort() const { return m_publicPort; }
-    bool isDiscoveryComplete() const { return m_discoveryComplete; }
+    void cancelDiscovery();
 
 signals:
     void publicAddressDiscovered(const QHostAddress &address, quint16 port);
@@ -28,15 +26,16 @@ private slots:
     void onDiscoveryTimeout();
 
 private:
+    void sendBindingRequest(const QHostAddress &stunServer, quint16 port);
+    bool parseBindingResponse(const QByteArray &data, QHostAddress &mappedAddress, quint16 &mappedPort);
+
     QUdpSocket *m_udpSocket;
     QHostAddress m_publicAddress;
     quint16 m_publicPort;
     bool m_discoveryComplete;
     QTimer *m_discoveryTimer;
-    QList<QHostAddress> m_stunServers;
-
-    void sendBindingRequest(const QHostAddress &stunServer, quint16 port);
-    bool parseBindingResponse(const QByteArray &data, QHostAddress &mappedAddress, quint16 &mappedPort);
+    QVector<QHostAddress> m_stunServers;
+    bool m_discoveryCancelled;
 };
 
 #endif // STUNCLIENT_H

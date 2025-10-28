@@ -6,9 +6,22 @@
 War3Bot::War3Bot(QObject *parent)
     : QObject(parent)
     , m_tcpServer(nullptr)
+    , m_settings(nullptr)
+    , m_resourceMonitor(nullptr)
+    , m_cleanupTimer(nullptr)
 {
     m_tcpServer = new QTcpServer(this);
     connect(m_tcpServer, &QTcpServer::newConnection, this, &War3Bot::onNewConnection);
+
+    // 资源监控定时器
+    m_resourceMonitor = new QTimer(this);
+    connect(m_resourceMonitor, &QTimer::timeout, this, &War3Bot::monitorResources);
+    m_resourceMonitor->start(30000); // 每30秒检查一次
+
+    // 清理定时器
+    m_cleanupTimer = new QTimer(this);
+    connect(m_cleanupTimer, &QTimer::timeout, this, &War3Bot::cleanupInactiveSessions);
+    m_cleanupTimer->start(60000); // 每60秒清理一次
 }
 
 War3Bot::~War3Bot()
@@ -72,7 +85,7 @@ bool War3Bot::startServer(quint16 port)
     LOG_INFO(QString("War3Bot P2P server started on port %1").arg(port));
 
     // 记录服务器配置
-    int maxSessions = m_settings->value("server/max_sessions", 100).toInt();
+    int maxSessions = m_settings->value("server/max_sessions", 50).toInt();
     int pingInterval = m_settings->value("server/ping_interval", 30000).toInt();
 
     LOG_INFO(QString("Server settings - Max sessions: %1, Ping interval: %2ms")
@@ -86,6 +99,14 @@ void War3Bot::stopServer()
     if (m_tcpServer) {
         m_tcpServer->close();
         LOG_INFO("TCP server stopped");
+    }
+
+    if (m_resourceMonitor) {
+        m_resourceMonitor->stop();
+    }
+
+    if (m_cleanupTimer) {
+        m_cleanupTimer->stop();
     }
 
     // 清理所有客户端连接
@@ -111,7 +132,7 @@ void War3Bot::createDefaultConfig(const QString &configPath)
         QTextStream out(&configFile);
         out << "[server]\n";
         out << "port=6113\n";
-        out << "max_sessions=100\n";
+        out << "max_sessions=50\n";
         out << "ping_interval=30000\n\n";
 
         out << "[game]\n";
@@ -131,8 +152,30 @@ void War3Bot::createDefaultConfig(const QString &configPath)
 
 void War3Bot::onNewConnection()
 {
+    // 检查连接数限制
+    int maxSessions = m_settings ? m_settings->value("server/max_sessions", 50).toInt() : 50;
+    if (m_clientSessions.size() >= maxSessions) {
+        QTcpSocket *clientSocket = m_tcpServer->nextPendingConnection();
+        LOG_WARNING(QString("Rejecting new connection from %1: maximum sessions (%2) reached")
+                        .arg(clientSocket->peerAddress().toString()).arg(maxSessions));
+        clientSocket->close();
+        clientSocket->deleteLater();
+        return;
+    }
+
     while (m_tcpServer->hasPendingConnections()) {
         QTcpSocket *clientSocket = m_tcpServer->nextPendingConnection();
+        QString clientIp = clientSocket->peerAddress().toString();
+
+        // 检查同一IP的连接数
+        if (getConnectionsFromIP(clientIp) >= 3) { // 限制同一IP的最大连接数
+            LOG_WARNING(QString("Rejecting connection from %1: too many connections from same IP")
+                            .arg(clientIp));
+            clientSocket->close();
+            clientSocket->deleteLater();
+            continue;
+        }
+
         QString sessionId = generateSessionId();
 
         LOG_INFO(QString("New client connection from %1:%2, session: %3")
@@ -163,6 +206,17 @@ void War3Bot::onNewConnection()
             clientSocket->disconnectFromHost();
         }
     }
+}
+
+int War3Bot::getConnectionsFromIP(const QString &ip)
+{
+    int count = 0;
+    for (QTcpSocket *socket : m_clientSessions.keys()) {
+        if (socket->peerAddress().toString() == ip) {
+            count++;
+        }
+    }
+    return count;
 }
 
 void War3Bot::onClientDataReady()
@@ -342,6 +396,53 @@ void War3Bot::exchangePeerAddresses(const QString &sessionId1, const QString &se
     session2->setPeerAddress(session1->getPublicAddress(), session1->getPublicPort());
 
     LOG_INFO(QString("Exchanged peer addresses between %1 and %2").arg(sessionId1).arg(sessionId2));
+}
+
+void War3Bot::monitorResources()
+{
+    int socketCount = m_clientSessions.size() + m_sessions.size();
+    LOG_INFO(QString("Resource monitor - Active sessions: %1, TCP clients: %2, P2P sessions: %3")
+                 .arg(m_sessions.size()).arg(m_clientSessions.size()).arg(socketCount));
+
+    // 记录系统资源状态
+    if (socketCount > 40) {
+        LOG_WARNING(QString("High resource usage: %1 total sockets").arg(socketCount));
+    }
+}
+
+void War3Bot::cleanupInactiveSessions()
+{
+    QStringList sessionsToRemove;
+
+    for (auto it = m_sessions.begin(); it != m_sessions.end(); ++it) {
+        P2PSession *session = it.value();
+        // 如果会话长时间处于失败状态，清理它
+        if (session->getState() == P2PSession::StateFailed) {
+            sessionsToRemove.append(it.key());
+        }
+    }
+
+    for (const QString &sessionId : sessionsToRemove) {
+        LOG_INFO(QString("Cleaning up inactive session: %1").arg(sessionId));
+        P2PSession *session = m_sessions.take(sessionId);
+        if (session) {
+            session->deleteLater();
+        }
+
+        // 同时清理对应的TCP连接
+        QTcpSocket *clientToRemove = nullptr;
+        for (auto it = m_clientSessions.begin(); it != m_clientSessions.end(); ++it) {
+            if (it.value() == sessionId) {
+                clientToRemove = it.key();
+                break;
+            }
+        }
+        if (clientToRemove) {
+            m_clientSessions.remove(clientToRemove);
+            clientToRemove->disconnectFromHost();
+            clientToRemove->deleteLater();
+        }
+    }
 }
 
 QString War3Bot::generateSessionId()

@@ -21,7 +21,7 @@ bool W3GSProtocol::parsePacket(const QByteArray &data, W3GSHeader &header)
         return false;
     }
 
-    const unsigned char* rawData = reinterpret_cast<const unsigned char*>(data.constData());
+    const unsigned char *rawData = reinterpret_cast<const unsigned char*>(data.constData());
     header.protocol = rawData[0];
     header.size = static_cast<uint16_t>(rawData[1]) | (static_cast<uint16_t>(rawData[2]) << 8);
     header.type = static_cast<uint16_t>(rawData[3]) | (static_cast<uint16_t>(rawData[4]) << 8);

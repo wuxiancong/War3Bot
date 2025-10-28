@@ -1,11 +1,13 @@
-#include "p2psession.h"
 #include "logger.h"
+#include "p2psession.h"
+#include "stunclientmanager.h"
+#include <QThread>
+#include <QNetworkDatagram>
 
 P2PSession::P2PSession(const QString &sessionId, QObject *parent)
     : QObject(parent)
     , m_sessionId(sessionId)
     , m_udpSocket(nullptr)
-    , m_stunClient(nullptr)
     , m_w3gsProtocol(nullptr)
     , m_state(StateInit)
     , m_publicPort(0)
@@ -15,27 +17,49 @@ P2PSession::P2PSession(const QString &sessionId, QObject *parent)
     , m_holePunchAttempts(0)
 {
     m_udpSocket = new QUdpSocket(this);
-    m_stunClient = new STUNClient(this);
     m_w3gsProtocol = new W3GSProtocol(this);
     m_holePunchTimer = new QTimer(this);
     m_keepAliveTimer = new QTimer(this);
 
     connect(m_udpSocket, &QUdpSocket::readyRead, this, &P2PSession::onSocketReadyRead);
-    connect(m_stunClient, &STUNClient::publicAddressDiscovered,
-            this, &P2PSession::onPublicAddressDiscovered);
-    connect(m_stunClient, &STUNClient::discoveryFailed,
-            this, &P2PSession::onDiscoveryFailed);
     connect(m_holePunchTimer, &QTimer::timeout, this, &P2PSession::onHolePunchTimeout);
     connect(m_keepAliveTimer, &QTimer::timeout, this, &P2PSession::onKeepAliveTimeout);
 
     m_holePunchTimer->setSingleShot(true);
     m_keepAliveTimer->setInterval(30000); // 30秒保活
+
+    // 连接共享的 STUN 客户端管理器
+    connect(STUNClientManager::instance(), &STUNClientManager::publicAddressDiscovered,
+            this, &P2PSession::onPublicAddressDiscovered);
+    connect(STUNClientManager::instance(), &STUNClientManager::discoveryFailed,
+            this, &P2PSession::onDiscoveryFailed);
+
+    LOG_DEBUG(QString("Session %1: Created").arg(m_sessionId));
 }
 
 P2PSession::~P2PSession()
 {
-    if (m_holePunchTimer) m_holePunchTimer->stop();
-    if (m_keepAliveTimer) m_keepAliveTimer->stop();
+    stopSession();
+    LOG_DEBUG(QString("Session %1: Destroyed").arg(m_sessionId));
+}
+
+void P2PSession::stopSession()
+{
+    if (m_holePunchTimer) {
+        m_holePunchTimer->stop();
+    }
+    if (m_keepAliveTimer) {
+        m_keepAliveTimer->stop();
+    }
+
+    if (m_udpSocket && m_udpSocket->state() != QAbstractSocket::UnconnectedState) {
+        m_udpSocket->close();
+    }
+
+    // 取消 STUN 发现
+    STUNClientManager::instance()->cancelDiscovery(m_sessionId);
+
+    changeState(StateFailed);
 }
 
 bool P2PSession::startSession()
@@ -46,22 +70,50 @@ bool P2PSession::startSession()
         return false;
     }
 
-    LOG_INFO(QString("Session %1: Starting P2P session").arg(m_sessionId));
-
-    // 绑定UDP socket - 使用最简单的绑定方式
-    if (!m_udpSocket->bind()) {
-        LOG_ERROR(QString("Session %1: Failed to bind UDP socket: %2")
-                      .arg(m_sessionId).arg(m_udpSocket->errorString()));
+    // 检查系统资源
+    if (!checkSocketResources()) {
+        LOG_ERROR(QString("Session %1: System socket resources unavailable").arg(m_sessionId));
         changeState(StateFailed);
         return false;
     }
 
-    LOG_INFO(QString("Session %1: UDP socket bound to port %2")
-                 .arg(m_sessionId).arg(m_udpSocket->localPort()));
+    LOG_INFO(QString("Session %1: Starting P2P session").arg(m_sessionId));
 
-    // 开始发现公网地址
-    changeState(StateDiscovering);
-    m_stunClient->discoverPublicAddress();
+    // 绑定UDP socket
+    for (int attempt = 0; attempt < 3; ++attempt) {
+        if (m_udpSocket->bind(QHostAddress::Any, 0, QUdpSocket::ShareAddress | QUdpSocket::ReuseAddressHint)) {
+            LOG_INFO(QString("Session %1: UDP socket bound to port %2")
+                         .arg(m_sessionId).arg(m_udpSocket->localPort()));
+
+            // 开始发现公网地址
+            changeState(StateDiscovering);
+            STUNClientManager::instance()->discoverPublicAddress(m_sessionId);
+            return true;
+        }
+
+        LOG_WARNING(QString("Session %1: Bind attempt %2 failed: %3")
+                        .arg(m_sessionId).arg(attempt + 1).arg(m_udpSocket->errorString()));
+        QThread::msleep(100);
+    }
+
+    LOG_ERROR(QString("Session %1: Failed to bind UDP socket after 3 attempts: %2")
+                  .arg(m_sessionId).arg(m_udpSocket->errorString()));
+    changeState(StateFailed);
+    return false;
+}
+
+bool P2PSession::checkSocketResources()
+{
+    // 简单的资源检查
+    int socketCount = 0;
+
+    // 这里可以添加更复杂的系统资源检查
+    // 例如检查 /proc/sys/net/ipv4/ip_local_port_range 等
+
+    if (socketCount > 1000) { // 假设的系统限制
+        LOG_WARNING(QString("Session %1: System socket resources low").arg(m_sessionId));
+        return false;
+    }
 
     return true;
 }
@@ -114,8 +166,10 @@ void P2PSession::sendW3GSData(const QByteArray &data)
     }
 }
 
-void P2PSession::onPublicAddressDiscovered(const QHostAddress &address, quint16 port)
+void P2PSession::onPublicAddressDiscovered(const QString &sessionId, const QHostAddress &address, quint16 port)
 {
+    if (sessionId != m_sessionId) return;
+
     m_publicAddress = address;
     m_publicPort = port;
 
@@ -132,8 +186,10 @@ void P2PSession::onPublicAddressDiscovered(const QHostAddress &address, quint16 
     }
 }
 
-void P2PSession::onDiscoveryFailed(const QString &error)
+void P2PSession::onDiscoveryFailed(const QString &sessionId, const QString &error)
 {
+    if (sessionId != m_sessionId) return;
+
     LOG_ERROR(QString("Session %1: STUN discovery failed: %2").arg(m_sessionId).arg(error));
     changeState(StateFailed);
     emit sessionFailed(m_sessionId, "STUN discovery failed: " + error);
@@ -212,8 +268,17 @@ void P2PSession::extractPlayerInfoFromPacket(const QByteArray &data)
 
     // 如果是REQJOIN包，提取玩家信息
     if (header.type == W3GSProtocol::S_TO_C_REQ_JOIN) {
-        PlayerInfo player;
-        if (m_w3gsProtocol->parseSlotInfoJoin(data.mid(6), player)) { // 跳过头部
+        PlayerInfo w3gsPlayer;  // 明确使用协议层的类型
+        if (m_w3gsProtocol->parseSlotInfoJoin(data.mid(6), w3gsPlayer)) {
+            // 转换为P2PSession的PlayerInfo
+            PlayerInfo player;
+            player.playerId = w3gsPlayer.playerId;
+            player.name = w3gsPlayer.name;
+            player.address = w3gsPlayer.address;
+            player.port = w3gsPlayer.port;
+            player.externalIP = w3gsPlayer.externalIP;
+            player.externalPort = w3gsPlayer.externalPort;
+
             m_playerInfo = player;
             LOG_INFO(QString("Session %1: Extracted player info - ID: %2, Name: %3, Addr: %4:%5")
                          .arg(m_sessionId)
@@ -305,24 +370,4 @@ void P2PSession::sendKeepAlive()
     m_udpSocket->writeDatagram(keepAlivePacket, m_peerPublicAddress, m_peerPublicPort);
 
     LOG_DEBUG(QString("Session %1: Sent keep-alive packet").arg(m_sessionId));
-}
-
-bool P2PSession::isPrivateAddress(const QHostAddress &address)
-{
-    if (address.protocol() != QAbstractSocket::IPv4Protocol) {
-        return false;
-    }
-
-    quint32 ipv4 = address.toIPv4Address();
-
-    // 10.0.0.0/8
-    if ((ipv4 & 0xFF000000) == 0x0A000000) return true;
-    // 172.16.0.0/12
-    if ((ipv4 & 0xFFF00000) == 0xAC100000) return true;
-    // 192.168.0.0/16
-    if ((ipv4 & 0xFFFF0000) == 0xC0A80000) return true;
-    // 169.254.0.0/16 (link-local)
-    if ((ipv4 & 0xFFFF0000) == 0xA9FE0000) return true;
-
-    return false;
 }

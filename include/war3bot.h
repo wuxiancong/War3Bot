@@ -5,7 +5,7 @@
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QSettings>
-#include <QMap>
+#include <QTimer>
 #include "p2psession.h"
 
 class War3Bot : public QObject
@@ -18,7 +18,6 @@ public:
 
     bool startServer(quint16 port = 6113);
     void stopServer();
-    bool loadConfig(const QString &configPath = "war3bot.ini");
 
 private slots:
     void onNewConnection();
@@ -29,17 +28,22 @@ private slots:
     void onP2PDataReceived(const QByteArray &data);
     void onPublicAddressReady(const QHostAddress &address, quint16 port);
     void onPlayerInfoUpdated(const QString &sessionId, const PlayerInfo &info);
+    void monitorResources();
+    void cleanupInactiveSessions();
 
 private:
-    QTcpServer *m_tcpServer;
-    QSettings *m_settings;
-    QMap<QString, P2PSession*> m_sessions;
-    QMap<QTcpSocket*, QString> m_clientSessions;
-    QMap<QString, QPair<QHostAddress, quint16>> m_peerAddresses;
-
+    bool loadConfig(const QString &configPath = "war3bot.ini");
+    void createDefaultConfig(const QString &configPath);
     QString generateSessionId();
     void exchangePeerAddresses(const QString &sessionId1, const QString &sessionId2);
-    void createDefaultConfig(const QString &configPath);
+    int getConnectionsFromIP(const QString &ip);
+
+    QTcpServer *m_tcpServer;
+    QSettings *m_settings;
+    QHash<QTcpSocket*, QString> m_clientSessions;
+    QHash<QString, P2PSession*> m_sessions;
+    QTimer *m_resourceMonitor;
+    QTimer *m_cleanupTimer;
 };
 
 #endif // WAR3BOT_H

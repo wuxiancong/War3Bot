@@ -6,7 +6,6 @@
 // 平台无关的字节序转换函数
 namespace {
 quint32 networkToHost32(quint32 value) {
-    // 手动字节序转换，避免依赖特定平台函数
     return ((value & 0x000000FF) << 24) |
            ((value & 0x0000FF00) << 8) |
            ((value & 0x00FF0000) >> 8) |
@@ -25,6 +24,7 @@ STUNClient::STUNClient(QObject *parent)
     , m_publicPort(0)
     , m_discoveryComplete(false)
     , m_discoveryTimer(nullptr)
+    , m_discoveryCancelled(false)
 {
     m_udpSocket = new QUdpSocket(this);
     m_discoveryTimer = new QTimer(this);
@@ -44,19 +44,31 @@ STUNClient::STUNClient(QObject *parent)
 
 STUNClient::~STUNClient()
 {
+    cancelDiscovery();
     if (m_discoveryTimer) {
         m_discoveryTimer->stop();
+        m_discoveryTimer->deleteLater();
+    }
+    if (m_udpSocket) {
+        m_udpSocket->close();
+        m_udpSocket->deleteLater();
     }
 }
 
 void STUNClient::discoverPublicAddress()
 {
     m_discoveryComplete = false;
+    m_discoveryCancelled = false;
     m_publicAddress = QHostAddress();
     m_publicPort = 0;
 
-    // 使用最简单的绑定方式，避免歧义
-    if (!m_udpSocket->bind()) {
+    // 确保socket处于未连接状态
+    if (m_udpSocket->state() != QAbstractSocket::UnconnectedState) {
+        m_udpSocket->close();
+    }
+
+    // 使用最简单的绑定方式
+    if (!m_udpSocket->bind(QHostAddress::Any, 0, QUdpSocket::ShareAddress)) {
         LOG_ERROR("STUNClient: Failed to bind UDP socket");
         emit discoveryFailed("Bind failed: " + m_udpSocket->errorString());
         return;
@@ -64,16 +76,30 @@ void STUNClient::discoverPublicAddress()
 
     LOG_INFO(QString("STUNClient: Bound to local port %1").arg(m_udpSocket->localPort()));
 
-    // 向所有STUN服务器发送请求
-    for (const QHostAddress &server : m_stunServers) {
-        sendBindingRequest(server, 19302); // STUN标准端口
+    // 只尝试前两个STUN服务器，减少网络负载
+    int maxServers = qMin(2, m_stunServers.size());
+    for (int i = 0; i < maxServers; ++i) {
+        sendBindingRequest(m_stunServers[i], 19302); // STUN标准端口
     }
 
-    m_discoveryTimer->start(10000); // 10秒超时
+    m_discoveryTimer->start(5000); // 5秒超时
+}
+
+void STUNClient::cancelDiscovery()
+{
+    m_discoveryCancelled = true;
+    if (m_discoveryTimer) {
+        m_discoveryTimer->stop();
+    }
+    if (m_udpSocket) {
+        m_udpSocket->close();
+    }
 }
 
 void STUNClient::sendBindingRequest(const QHostAddress &stunServer, quint16 port)
 {
+    if (m_discoveryCancelled) return;
+
     // STUN绑定请求消息
     QByteArray request;
 
@@ -110,6 +136,8 @@ void STUNClient::sendBindingRequest(const QHostAddress &stunServer, quint16 port
 
 void STUNClient::onSocketReadyRead()
 {
+    if (m_discoveryCancelled) return;
+
     while (m_udpSocket->hasPendingDatagrams()) {
         QNetworkDatagram datagram = m_udpSocket->receiveDatagram();
         QByteArray data = datagram.data();
@@ -233,7 +261,7 @@ bool STUNClient::parseBindingResponse(const QByteArray &data, QHostAddress &mapp
 
 void STUNClient::onDiscoveryTimeout()
 {
-    if (!m_discoveryComplete) {
+    if (!m_discoveryComplete && !m_discoveryCancelled) {
         LOG_ERROR("STUNClient: Discovery timeout");
         emit discoveryFailed("Discovery timeout - no STUN servers responded");
     }

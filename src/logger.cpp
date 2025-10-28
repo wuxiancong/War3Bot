@@ -3,9 +3,9 @@
 #include <QDebug>
 #include <iostream>
 
-Logger* Logger::m_instance = nullptr;
+Logger *Logger::m_instance = nullptr;
 
-Logger* Logger::instance()
+Logger *Logger::instance()
 {
     static QMutex mutex;
     if (!m_instance) {

@@ -20,7 +20,7 @@ public:
         CRITICAL = 4
     };
 
-    static Logger* instance();
+    static Logger *instance();
     static void destroy();
 
     void setLogLevel(LogLevel level);
