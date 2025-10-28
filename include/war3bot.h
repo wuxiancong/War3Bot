@@ -18,7 +18,7 @@ public:
     explicit War3Bot(QObject *parent = nullptr);
     ~War3Bot();
 
-    bool startServer(quint16 port = 6113);
+    bool startServer(quint16 port, const QString &configFile);
     void stopServer();
 
 private slots:
@@ -55,6 +55,7 @@ private:
     QTimer *m_cleanupTimer;
     QTimer *m_connectionLimitTimer;
     QReadWriteLock m_sessionLock;
+    QHash<QTcpSocket*, QByteArray> m_clientBuffers;
 };
 
 #endif // WAR3BOT_H

@@ -67,7 +67,7 @@ bool War3Bot::loadConfig(const QString &configPath)
     return true;
 }
 
-bool War3Bot::startServer(quint16 port)
+bool War3Bot::startServer(quint16 port, const QString &configFile)
 {
     if (m_tcpServer->isListening()) {
         LOG_WARNING("Server is already running");
@@ -75,7 +75,7 @@ bool War3Bot::startServer(quint16 port)
     }
 
     // 加载配置文件
-    if (!loadConfig()) {
+    if (!loadConfig(configFile)) {
         LOG_ERROR("Failed to load configuration");
         return false;
     }
@@ -132,6 +132,8 @@ void War3Bot::stopServer()
         client->deleteLater();
     }
     m_clientSessions.clear();
+
+    m_clientBuffers.clear();
 
     // 清理所有P2P会话
     for (P2PSession *session : m_sessions) {
@@ -241,6 +243,9 @@ void War3Bot::onNewConnection()
         m_ipConnectionTime[clientIp] = QDateTime::currentDateTime();
         m_ipConnectionAttempts[clientIp] = m_ipConnectionAttempts.value(clientIp, 0) + 1;
 
+        // Fixed: Initialize buffer for client
+        m_clientBuffers.insert(clientSocket, QByteArray());
+
         // 连接信号
         connect(clientSocket, &QTcpSocket::readyRead, this, &War3Bot::onClientDataReady);
         connect(clientSocket, &QTcpSocket::disconnected, this, &War3Bot::onClientDisconnected);
@@ -330,22 +335,39 @@ void War3Bot::onClientDataReady()
     if (!session) return;
 
     QByteArray data = clientSocket->readAll();
+    m_clientBuffers[clientSocket] += data;
 
-    // 验证W3GS数据包
-    W3GSHeader header;
     W3GSProtocol w3gs;
-    if (!w3gs.parsePacket(data, header)) {
-        LOG_WARNING(QString("Session %1: Invalid W3GS packet from client").arg(sessionId));
-        return;
+
+    while (!m_clientBuffers[clientSocket].isEmpty()) {
+        QByteArray &buffer = m_clientBuffers[clientSocket];
+        if (buffer.size() < 6) {
+            break;
+        }
+
+        uint16_t size = static_cast<uint8_t>(buffer[1]) | (static_cast<uint8_t>(buffer[2]) << 8);
+        if (buffer.size() < size) {
+            break;
+        }
+
+        QByteArray packet = buffer.left(size);
+        buffer.remove(0, size);
+
+        // 验证W3GS数据包
+        W3GSHeader header;
+        if (!w3gs.parsePacket(packet, header)) {
+            LOG_WARNING(QString("Session %1: Invalid W3GS packet from client").arg(sessionId));
+            continue;
+        }
+
+        LOG_DEBUG(QString("Session %1: Received W3GS packet from client - type: 0x%2, size: %3")
+                      .arg(sessionId)
+                      .arg(header.type, 4, 16, QLatin1Char('0'))
+                      .arg(packet.size()));
+
+        // 通过P2P会话发送W3GS数据
+        session->sendW3GSData(packet);
     }
-
-    LOG_DEBUG(QString("Session %1: Received W3GS packet from client - type: 0x%2, size: %3")
-                  .arg(sessionId)
-                  .arg(header.type, 4, 16, QLatin1Char('0'))
-                  .arg(data.size()));
-
-    // 通过P2P会话发送W3GS数据
-    session->sendW3GSData(data);
 }
 
 void War3Bot::onClientDisconnected()
@@ -361,6 +383,7 @@ void War3Bot::onClientDisconnected()
                  .arg(sessionId));
 
     m_clientSessions.remove(clientSocket);
+    m_clientBuffers.remove(clientSocket);
     clientSocket->deleteLater();
 
     // 清理P2P会话
@@ -497,7 +520,7 @@ void War3Bot::onPlayerInfoUpdated(const QString &sessionId, const PlayerInfo &in
 {
     QReadLocker locker(&m_sessionLock);
 
-    LOG_INFO(QString("Session %1: Player info updated - %2 (%3:%4)")
+    LOG_INFO(QString("Session %1: Player info updated - %2 (%3:%4")
                  .arg(sessionId)
                  .arg(info.name)
                  .arg(info.address.toString())

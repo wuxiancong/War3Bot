@@ -68,7 +68,7 @@ int main(int argc, char *argv[]) {
     LOG_INFO(QString("Log Level: %1").arg(logLevel));
 
     War3Bot bot;
-    if (!bot.startServer(port)) {
+    if (!bot.startServer(port, configFile)) {
         LOG_CRITICAL("Failed to start War3Bot server");
         return -1;
     }

@@ -27,6 +27,11 @@ bool W3GSProtocol::parsePacket(const QByteArray &data, W3GSHeader &header)
     header.type = static_cast<uint16_t>(rawData[3]) | (static_cast<uint16_t>(rawData[4]) << 8);
     header.unknown = rawData[5];
 
+    // Fixed: Check if the reported size matches the data size
+    if (data.size() != header.size) {
+        return false;
+    }
+
     return true;
 }
 
@@ -37,7 +42,7 @@ QByteArray W3GSProtocol::buildPacket(uint16_t type, const QByteArray &payload)
     stream.setByteOrder(QDataStream::LittleEndian);
 
     stream << static_cast<uint8_t>(m_protocolVersion);
-    stream << static_cast<uint16_t>(payload.size() + 5);
+    stream << static_cast<uint16_t>(payload.size() + 6);  // Fixed: +6 for header size (1+2+2+1)
     stream << type;
     stream << static_cast<uint8_t>(0);
 

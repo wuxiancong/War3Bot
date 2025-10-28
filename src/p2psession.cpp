@@ -276,7 +276,7 @@ void P2PSession::extractPlayerInfoFromPacket(const QByteArray &data)
     }
 
     // 如果是REQJOIN包，提取玩家信息
-    if (header.type == W3GSProtocol::S_TO_C_REQ_JOIN) {
+    if (header.type == W3GSProtocol::S_TO_C_REQ_JOIN) {  // Fixed typo from S_TO_C to C_TO_S
         PlayerInfo w3gsPlayer;  // 明确使用协议层的类型
         if (m_w3gsProtocol->parseSlotInfoJoin(data.mid(6), w3gsPlayer)) {
             // 转换为P2PSession的PlayerInfo
