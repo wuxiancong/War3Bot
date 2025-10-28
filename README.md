@@ -209,3 +209,29 @@ sudo ufw allow 6113/udp
 - 0x18 - PLAYER_LEFT
 
 - 0x0E - CHAT_FROM_HOST
+
+
+## 完整的 P2P 建立流程
+
+# 阶段1: 连接建立
+```bash
+游戏客户端 --(SEARCHGAME)--> Hook --(建立TCP连接)--> War3Bot
+                                     ↓
+                               创建 P2PSession
+                                     ↓  
+                                STUN 发现公网地址
+```
+
+# 阶段2: 地址交换
+```bash
+War3Bot 获取到公网地址后，等待另一个客户端连接
+当两个客户端都连接后，War3Bot 交换它们的公网地址
+```
+
+# 阶段3: 打洞和通信
+
+```bash
+客户端A <--(UDP打洞)--> 客户端B
+     ↓                   ↓
+  直接P2P通信         直接P2P通信
+```
