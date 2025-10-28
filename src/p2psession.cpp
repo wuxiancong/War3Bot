@@ -47,19 +47,28 @@ void P2PSession::stopSession()
 {
     if (m_holePunchTimer) {
         m_holePunchTimer->stop();
+        m_holePunchTimer->deleteLater();
+        m_holePunchTimer = nullptr;
     }
+
     if (m_keepAliveTimer) {
         m_keepAliveTimer->stop();
+        m_keepAliveTimer->deleteLater();
+        m_keepAliveTimer = nullptr;
     }
 
     if (m_udpSocket && m_udpSocket->state() != QAbstractSocket::UnconnectedState) {
         m_udpSocket->close();
+        m_udpSocket->deleteLater();
+        m_udpSocket = nullptr;
     }
 
     // 取消 STUN 发现
     STUNClientManager::instance()->cancelDiscovery(m_sessionId);
 
     changeState(StateFailed);
+
+    LOG_INFO(QString("Session %1: Stopped and resources released").arg(m_sessionId));
 }
 
 bool P2PSession::startSession()
