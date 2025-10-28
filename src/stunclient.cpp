@@ -2,6 +2,8 @@
 #include "logger.h"
 #include <QNetworkDatagram>
 #include <QRandomGenerator>
+#include <QThread>
+#include <QDataStream>
 
 // 平台无关的字节序转换函数
 namespace {
@@ -32,27 +34,19 @@ STUNClient::STUNClient(QObject *parent)
     connect(m_discoveryTimer, &QTimer::timeout, this, &STUNClient::onDiscoveryTimeout);
     connect(m_udpSocket, &QUdpSocket::readyRead, this, &STUNClient::onSocketReadyRead);
 
-    // 公共STUN服务器列表
+    // 更可靠的 STUN 服务器列表
     m_stunServers = {
         QHostAddress("stun.l.google.com"),
         QHostAddress("stun1.l.google.com"),
         QHostAddress("stun2.l.google.com"),
-        QHostAddress("stun3.l.google.com"),
-        QHostAddress("stun4.l.google.com")
+        QHostAddress("stun.qq.com"),
+        QHostAddress("stun.voip.blackberry.com")
     };
 }
 
 STUNClient::~STUNClient()
 {
     cancelDiscovery();
-    if (m_discoveryTimer) {
-        m_discoveryTimer->stop();
-        m_discoveryTimer->deleteLater();
-    }
-    if (m_udpSocket) {
-        m_udpSocket->close();
-        m_udpSocket->deleteLater();
-    }
 }
 
 void STUNClient::discoverPublicAddress()
@@ -65,81 +59,103 @@ void STUNClient::discoverPublicAddress()
     // 确保socket处于未连接状态
     if (m_udpSocket->state() != QAbstractSocket::UnconnectedState) {
         m_udpSocket->close();
+        QThread::msleep(100); // 给socket关闭一点时间
     }
 
-    // 使用最简单的绑定方式
-    if (!m_udpSocket->bind(QHostAddress::Any, 0, QUdpSocket::ShareAddress)) {
-        LOG_ERROR("STUNClient: Failed to bind UDP socket");
-        emit discoveryFailed("Bind failed: " + m_udpSocket->errorString());
+    LOG_INFO("STUNClient: Starting public address discovery");
+
+    // 尝试绑定到所有可用接口
+    for (int attempt = 0; attempt < 3; attempt++) {
+        if (m_udpSocket->bind(QHostAddress::Any, 0, QUdpSocket::ShareAddress | QUdpSocket::ReuseAddressHint)) {
+            LOG_INFO(QString("STUNClient: Bound to local port %1").arg(m_udpSocket->localPort()));
+
+            // 设置socket选项以提高可靠性
+            m_udpSocket->setSocketOption(QAbstractSocket::SendBufferSizeSocketOption, 8192);
+            m_udpSocket->setSocketOption(QAbstractSocket::ReceiveBufferSizeSocketOption, 8192);
+
+            // 发送STUN请求
+            sendSTUNRequests();
+            return;
+        }
+
+        LOG_WARNING(QString("STUNClient: Bind attempt %1 failed: %2")
+                        .arg(attempt + 1).arg(m_udpSocket->errorString()));
+        QThread::msleep(200);
+    }
+
+    LOG_ERROR("STUNClient: Failed to bind UDP socket after 3 attempts");
+    emit discoveryFailed("Bind failed: " + m_udpSocket->errorString());
+}
+
+void STUNClient::sendSTUNRequests()
+{
+    // 只尝试前3个STUN服务器，减少网络负载
+    int maxServers = qMin(3, m_stunServers.size());
+    int requestsSent = 0;
+
+    for (int i = 0; i < maxServers; ++i) {
+        if (sendBindingRequest(m_stunServers[i], 19302)) {
+            requestsSent++;
+        }
+    }
+
+    if (requestsSent == 0) {
+        LOG_ERROR("STUNClient: Failed to send any STUN requests");
+        emit discoveryFailed("No STUN requests could be sent");
         return;
     }
 
-    LOG_INFO(QString("STUNClient: Bound to local port %1").arg(m_udpSocket->localPort()));
-
-    // 只尝试前两个STUN服务器，减少网络负载
-    int maxServers = qMin(2, m_stunServers.size());
-    for (int i = 0; i < maxServers; ++i) {
-        sendBindingRequest(m_stunServers[i], 19302); // STUN标准端口
-    }
-
-    m_discoveryTimer->start(5000); // 5秒超时
+    LOG_INFO(QString("STUNClient: Sent %1 STUN requests").arg(requestsSent));
+    m_discoveryTimer->start(10000); // 10秒超时
 }
 
-void STUNClient::cancelDiscovery()
+bool STUNClient::sendBindingRequest(const QHostAddress &stunServer, quint16 port)
 {
-    m_discoveryCancelled = true;
-    if (m_discoveryTimer) {
-        m_discoveryTimer->stop();
-    }
-    if (m_udpSocket) {
-        m_udpSocket->close();
-    }
-}
+    if (m_discoveryCancelled) return false;
 
-void STUNClient::sendBindingRequest(const QHostAddress &stunServer, quint16 port)
-{
-    if (m_discoveryCancelled) return;
-
-    // STUN绑定请求消息
+    // 创建STUN绑定请求
     QByteArray request;
+    QDataStream stream(&request, QIODevice::WriteOnly);
+    stream.setByteOrder(QDataStream::BigEndian);
 
     // STUN头部 (20字节)
     // 方法: Binding (0x0001)
-    request.append(char(0x00));
-    request.append(char(0x01));
+    stream << quint16(0x0001); // Message Type: Binding Request
 
     // 消息长度: 0
-    request.append(char(0x00));
-    request.append(char(0x00));
+    stream << quint16(0x0000);
 
     // Magic Cookie (0x2112A442)
-    request.append(char(0x21));
-    request.append(char(0x12));
-    request.append(char(0xA4));
-    request.append(char(0x42));
+    stream << quint32(0x2112A442);
 
     // Transaction ID (12字节随机数)
     QRandomGenerator *generator = QRandomGenerator::global();
     for (int i = 0; i < 12; ++i) {
-        request.append(char(generator->bounded(256)));
+        stream << quint8(generator->bounded(256));
     }
 
     qint64 sent = m_udpSocket->writeDatagram(request, stunServer, port);
     if (sent == -1) {
-        LOG_WARNING(QString("STUNClient: Failed to send request to %1: %2")
-                        .arg(stunServer.toString()).arg(m_udpSocket->errorString()));
+        LOG_WARNING(QString("STUNClient: Failed to send request to %1:%2: %3")
+                        .arg(stunServer.toString()).arg(port).arg(m_udpSocket->errorString()));
+        return false;
     } else {
         LOG_DEBUG(QString("STUNClient: Sent STUN request to %1:%2, size: %3")
                       .arg(stunServer.toString()).arg(port).arg(sent));
+        return true;
     }
 }
 
 void STUNClient::onSocketReadyRead()
 {
-    if (m_discoveryCancelled) return;
+    if (m_discoveryCancelled || m_discoveryComplete) return;
 
     while (m_udpSocket->hasPendingDatagrams()) {
         QNetworkDatagram datagram = m_udpSocket->receiveDatagram();
+        if (!datagram.isValid()) {
+            continue;
+        }
+
         QByteArray data = datagram.data();
         QHostAddress senderAddr = datagram.senderAddress();
         quint16 senderPort = datagram.senderPort();
@@ -159,6 +175,9 @@ void STUNClient::onSocketReadyRead()
             LOG_INFO(QString("STUNClient: Public address discovered: %1:%2")
                          .arg(m_publicAddress.toString()).arg(m_publicPort));
 
+            // 立即关闭socket释放资源
+            m_udpSocket->close();
+
             emit publicAddressDiscovered(m_publicAddress, m_publicPort);
             return;
         } else {
@@ -174,32 +193,44 @@ bool STUNClient::parseBindingResponse(const QByteArray &data, QHostAddress &mapp
         return false;
     }
 
-    const unsigned char* bytes = reinterpret_cast<const unsigned char*>(data.constData());
+    QDataStream stream(data);
+    stream.setByteOrder(QDataStream::BigEndian);
 
-    // 检查STUN消息头
-    uint16_t messageType = (bytes[0] << 8) | bytes[1];
+    // 读取消息头
+    quint16 messageType;
+    quint16 messageLength;
+    quint32 magicCookie;
+
+    stream >> messageType >> messageLength >> magicCookie;
+
+    // 验证消息类型和Magic Cookie
     if (messageType != 0x0101) { // Binding Response
         LOG_DEBUG(QString("STUNClient: Not a binding response: 0x%1").arg(messageType, 4, 16, QLatin1Char('0')));
         return false;
     }
 
-    // 验证Magic Cookie
-    uint32_t magicCookie = (bytes[4] << 24) | (bytes[5] << 16) | (bytes[6] << 8) | bytes[7];
     if (magicCookie != 0x2112A442) {
         LOG_DEBUG(QString("STUNClient: Invalid magic cookie: 0x%1").arg(magicCookie, 8, 16, QLatin1Char('0')));
         return false;
     }
 
-    // 解析属性
-    int pos = 20; // 跳过头部
-    while (pos + 4 <= data.size()) {
-        uint16_t attrType = (bytes[pos] << 8) | bytes[pos + 1];
-        uint16_t attrLength = (bytes[pos + 2] << 8) | bytes[pos + 3];
-        pos += 4;
+    // 跳过Transaction ID (12字节)
+    stream.skipRawData(12);
 
-        if (pos + attrLength > data.size()) {
-            LOG_DEBUG("STUNClient: Attribute length exceeds data size");
-            break;
+    // 解析属性
+    int remainingBytes = messageLength;
+    while (remainingBytes >= 4) {
+        quint16 attrType, attrLength;
+        stream >> attrType >> attrLength;
+
+        // 计算填充后的长度
+        int paddedLength = attrLength;
+        if (paddedLength % 4 != 0) {
+            paddedLength += 4 - (paddedLength % 4);
+        }
+
+        if (remainingBytes < 4 + paddedLength) {
+            break; // 属性长度超出数据范围
         }
 
         LOG_DEBUG(QString("STUNClient: Processing attribute type 0x%1, length %2")
@@ -207,52 +238,47 @@ bool STUNClient::parseBindingResponse(const QByteArray &data, QHostAddress &mapp
 
         // XOR-MAPPED-ADDRESS 属性 (0x0020)
         if (attrType == 0x0020 && attrLength >= 8) {
-            uint8_t family = bytes[pos + 1];
+            quint8 reserved, family;
+            quint16 xPort;
+            quint32 xAddress;
+
+            stream >> reserved >> family >> xPort >> xAddress;
+
             if (family == 0x01) { // IPv4
-                // 端口号 (XOR with magic cookie的高16位)
-                uint16_t xorPort = (bytes[pos + 2] << 8) | bytes[pos + 3];
-                uint16_t magicHigh = 0x2112;
-                mappedPort = xorPort ^ magicHigh;
+                // 解码XOR映射的地址
+                mappedPort = xPort ^ 0x2112; // magic cookie的高16位
+                quint32 address = xAddress ^ 0x2112A442;
 
-                // IP地址 (XOR with magic cookie)
-                uint32_t xorIP = (bytes[pos + 4] << 24) | (bytes[pos + 5] << 16) |
-                                 (bytes[pos + 6] << 8) | bytes[pos + 7];
-                uint32_t magic = 0x2112A442;
-                uint32_t ip = xorIP ^ magic;
+                mappedAddress = QHostAddress(networkToHost32(address));
+                mappedPort = networkToHost16(mappedPort);
 
-                // 使用自定义的字节序转换函数替代 ntohl
-                mappedAddress = QHostAddress(networkToHost32(ip));
-
-                LOG_DEBUG(QString("STUNClient: Found XOR-MAPPED-ADDRESS - IP: %1, Port: %2")
-                              .arg(mappedAddress.toString()).arg(mappedPort));
+                LOG_INFO(QString("STUNClient: Found XOR-MAPPED-ADDRESS - IP: %1, Port: %2")
+                             .arg(mappedAddress.toString()).arg(mappedPort));
                 return true;
-            } else {
-                LOG_DEBUG(QString("STUNClient: Unsupported address family: %1").arg(family));
             }
         }
         // MAPPED-ADDRESS 属性 (0x0001) - 备用
         else if (attrType == 0x0001 && attrLength >= 8) {
-            uint8_t family = bytes[pos + 1];
+            quint8 reserved, family;
+            quint16 port;
+            quint32 address;
+
+            stream >> reserved >> family >> port >> address;
+
             if (family == 0x01) { // IPv4
-                mappedPort = (bytes[pos + 2] << 8) | bytes[pos + 3];
-                uint32_t ip = (bytes[pos + 4] << 24) | (bytes[pos + 5] << 16) |
-                              (bytes[pos + 6] << 8) | bytes[pos + 7];
+                mappedPort = networkToHost16(port);
+                mappedAddress = QHostAddress(networkToHost32(address));
 
-                // 使用自定义的字节序转换函数替代 ntohl
-                mappedPort = networkToHost16(mappedPort);
-                mappedAddress = QHostAddress(networkToHost32(ip));
-
-                LOG_DEBUG(QString("STUNClient: Found MAPPED-ADDRESS - IP: %1, Port: %2")
-                              .arg(mappedAddress.toString()).arg(mappedPort));
+                LOG_INFO(QString("STUNClient: Found MAPPED-ADDRESS - IP: %1, Port: %2")
+                             .arg(mappedAddress.toString()).arg(mappedPort));
                 return true;
             }
+        } else {
+            // 跳过未知属性
+            stream.skipRawData(paddedLength);
         }
 
-        // 移动到下一个属性
-        pos += attrLength;
-        if (attrLength % 4 != 0) {
-            pos += 4 - (attrLength % 4); // 填充对齐
-        }
+        remainingBytes -= 4 + paddedLength;
     }
 
     LOG_DEBUG("STUNClient: No valid mapped address attribute found");
@@ -262,7 +288,24 @@ bool STUNClient::parseBindingResponse(const QByteArray &data, QHostAddress &mapp
 void STUNClient::onDiscoveryTimeout()
 {
     if (!m_discoveryComplete && !m_discoveryCancelled) {
-        LOG_ERROR("STUNClient: Discovery timeout");
+        LOG_ERROR("STUNClient: Discovery timeout - no STUN servers responded");
+
+        // 关闭socket释放资源
+        if (m_udpSocket) {
+            m_udpSocket->close();
+        }
+
         emit discoveryFailed("Discovery timeout - no STUN servers responded");
+    }
+}
+
+void STUNClient::cancelDiscovery()
+{
+    m_discoveryCancelled = true;
+    if (m_discoveryTimer) {
+        m_discoveryTimer->stop();
+    }
+    if (m_udpSocket && m_udpSocket->state() != QAbstractSocket::UnconnectedState) {
+        m_udpSocket->close();
     }
 }

@@ -5,6 +5,7 @@
 #include <QUdpSocket>
 #include <QTimer>
 #include <QHostAddress>
+#include <QVector>
 
 class STUNClient : public QObject
 {
@@ -26,7 +27,8 @@ private slots:
     void onDiscoveryTimeout();
 
 private:
-    void sendBindingRequest(const QHostAddress &stunServer, quint16 port);
+    void sendSTUNRequests();
+    bool sendBindingRequest(const QHostAddress &stunServer, quint16 port);
     bool parseBindingResponse(const QByteArray &data, QHostAddress &mappedAddress, quint16 &mappedPort);
 
     QUdpSocket *m_udpSocket;

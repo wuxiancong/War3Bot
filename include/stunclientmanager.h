@@ -5,6 +5,7 @@
 #include <QHostAddress>
 #include <QHash>
 #include <QSet>
+#include <QDateTime>
 
 class STUNClient;
 
@@ -17,6 +18,7 @@ public:
     void discoverPublicAddress(const QString &sessionId);
     bool isDiscoveryInProgress(const QString &sessionId) const;
     void cancelDiscovery(const QString &sessionId);
+    void processNextDiscovery();
 
 signals:
     void publicAddressDiscovered(const QString &sessionId, const QHostAddress &address, quint16 port);
@@ -30,9 +32,10 @@ private:
     STUNClientManager(QObject *parent = nullptr);
     ~STUNClientManager();
 
-    static STUNClientManager *m_instance;
+    static STUNClientManager *m_instance;  // 声明静态成员
+
     STUNClient *m_stunClient;
-    QHash<QString, QPair<QHostAddress, quint16>> m_cachedAddresses;
+    QHash<QString, QPair<QPair<QHostAddress, quint16>, QDateTime>> m_cachedAddresses;
     QSet<QString> m_pendingSessions;
     QString m_currentSessionId;
 };

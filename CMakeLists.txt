@@ -45,7 +45,9 @@ set(SOURCES
 # set(CMAKE_EXE_LINKER_FLAGS "-static -static-libgcc -static-libstdc++")
 
 # 创建可执行文件
-add_executable(war3bot ${SOURCES} ${HEADERS})
+add_executable(war3bot ${SOURCES} ${HEADERS}
+    include/networkdiagnostic.h
+    src/networkdiagnostic.cpp)
 
 # 链接 Qt 库和网络库
 target_link_libraries(war3bot Qt5::Core Qt5::Network)
