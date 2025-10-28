@@ -6,6 +6,7 @@
 #include <QNetworkDatagram>
 #include <QDataStream>
 #include <QDateTime>
+#include <QProcess>
 #include <QDir>
 
 // 跨平台字节序支持
@@ -68,7 +69,7 @@ void War3Bot::createDefaultConfig()
         if (configFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
             QTextStream out(&configFile);
             out << "[server]\n";
-            out << "port=6113\n";
+            out << "port=80\n";
             out << "max_sessions=100\n";
             out << "ping_interval=30000\n\n";
             out << "[game]\n";
@@ -76,6 +77,7 @@ void War3Bot::createDefaultConfig()
             out << "port=6112\n";
             out << "dynamic_target=true\n";
             out << "fallback_to_config=true\n\n";
+            out << "reachability_test=true\n\n";
             out << "[logging]\n";
             out << "level=DEBUG\n";
             out << "file=/var/log/war3bot/war3bot.log\n";
@@ -220,19 +222,12 @@ void War3Bot::processClientPacket(QTcpSocket *clientSocket, const QByteArray &da
     LOG_INFO(QString("Session %1: Processing %2 bytes from client")
                  .arg(sessionKey).arg(data.size()));
 
-    // 分析数据包
-    analyzeUnknownPacket(data, sessionKey);
-
     // 解析包装的数据
     QPair<QHostAddress, quint16> targetInfo = parseWrappedPacket(data);
 
-    // 每次都重新读取配置，确保获取最新值
-    m_settings->sync(); // 强制重新读取配置文件
     bool dynamicTarget = m_settings->value("game/dynamic_target", false).toBool();
     bool fallbackToConfig = m_settings->value("game/fallback_to_config", true).toBool();
-
-    LOG_INFO(QString("Session %1: Current config - dynamic_target=%2, fallback_to_config=%3")
-                 .arg(sessionKey).arg(dynamicTarget).arg(fallbackToConfig));
+    bool reachabilityTest = m_settings->value("game/reachability_test", true).toBool();
 
     QHostAddress finalTarget;
     quint16 finalPort = 0;
@@ -243,18 +238,25 @@ void War3Bot::processClientPacket(QTcpSocket *clientSocket, const QByteArray &da
                      .arg(sessionKey).arg(targetInfo.first.toString()).arg(targetInfo.second));
 
         if (dynamicTarget) {
-            // 使用动态解析的目标
-            finalTarget = targetInfo.first;
-            finalPort = targetInfo.second;
-            LOG_INFO(QString("Session %1: Using dynamic target %2:%3")
-                         .arg(sessionKey).arg(finalTarget.toString()).arg(finalPort));
-        } else {
-            LOG_WARNING(QString("Session %1: Dynamic target disabled in config, ignoring parsed target %2:%3")
-                            .arg(sessionKey).arg(targetInfo.first.toString()).arg(targetInfo.second));
+            // 测试目标是否可达
+            bool isReachable = true;
+            if (reachabilityTest) {
+                isReachable = isTargetReachable(targetInfo.first, targetInfo.second);
+            }
+
+            if (isReachable) {
+                finalTarget = targetInfo.first;
+                finalPort = targetInfo.second;
+                LOG_INFO(QString("Session %1: Using dynamic target %2:%3")
+                             .arg(sessionKey).arg(finalTarget.toString()).arg(finalPort));
+            } else {
+                LOG_WARNING(QString("Session %1: Dynamic target %2:%3 is not reachable, will use fallback")
+                                .arg(sessionKey).arg(targetInfo.first.toString()).arg(targetInfo.second));
+            }
         }
     }
 
-    // 如果没有动态目标或动态目标解析失败，使用配置目标
+    // 如果没有动态目标或动态目标不可达，使用配置目标
     if (finalTarget.isNull() || finalPort == 0) {
         if (fallbackToConfig) {
             // 使用配置的静态目标
@@ -277,25 +279,6 @@ void War3Bot::processClientPacket(QTcpSocket *clientSocket, const QByteArray &da
         return;
     }
 
-    // 验证原始数据是否是有效的W3GS包
-    if (!isValidW3GSPacket(originalData)) {
-        LOG_ERROR(QString("Session %1: Extracted data is not a valid W3GS packet")
-                      .arg(sessionKey));
-        LOG_DEBUG(QString("Session %1: Invalid packet content: %2")
-                      .arg(sessionKey)
-                      .arg(QString(originalData.left(16).toHex())));
-        return;
-    }
-
-    // 记录原始数据的详细信息
-    uint8_t protocol = static_cast<uint8_t>(originalData[0]);
-    uint8_t packetType = static_cast<uint8_t>(originalData[1]);
-    LOG_INFO(QString("Session %1: Forwarding W3GS packet - protocol: 0x%2, type: 0x%3, size: %4")
-                 .arg(sessionKey)
-                 .arg(protocol, 2, 16, QLatin1Char('0'))
-                 .arg(packetType, 2, 16, QLatin1Char('0'))
-                 .arg(originalData.size()));
-
     // 更新目标并转发
     session->updateTarget(finalTarget, finalPort);
 
@@ -307,15 +290,74 @@ void War3Bot::processClientPacket(QTcpSocket *clientSocket, const QByteArray &da
         LOG_ERROR(QString("Session %1: Failed to forward data to game host %2:%3")
                       .arg(sessionKey).arg(finalTarget.toString()).arg(finalPort));
 
-        // 检查连接状态
-        if (session->isRunning()) {
-            LOG_INFO(QString("Session %1: Session is still running but forward failed")
-                         .arg(sessionKey));
+        // 提供具体的错误处理建议
+        provideConnectionAdvice(sessionKey, finalTarget, finalPort);
+    }
+}
+
+bool War3Bot::isTargetReachable(const QHostAddress &address, quint16 port)
+{
+    LOG_INFO(QString("Testing reachability of %1:%2").arg(address.toString()).arg(port));
+
+    // 首先测试ICMP连通性
+    QProcess pingProcess;
+    pingProcess.start("ping", QStringList() << "-c" << "1" << "-W" << "2" << address.toString());
+
+    if (!pingProcess.waitForFinished(3000)) {
+        LOG_WARNING(QString("ICMP test timeout for %1").arg(address.toString()));
+        return false;
+    }
+
+    if (pingProcess.exitCode() != 0) {
+        LOG_WARNING(QString("ICMP test failed for %1").arg(address.toString()));
+        return false;
+    }
+
+    LOG_DEBUG(QString("ICMP test passed for %1").arg(address.toString()));
+
+    // 然后测试TCP端口连通性
+    QTcpSocket testSocket;
+    testSocket.connectToHost(address, port);
+
+    // 快速测试，3秒超时
+    if (testSocket.waitForConnected(3000)) {
+        testSocket.disconnectFromHost();
+        LOG_INFO(QString("TCP port %1 test passed for %2").arg(port).arg(address.toString()));
+        return true;
+    } else {
+        LOG_WARNING(QString("TCP port %1 test failed for %2: %3")
+                        .arg(port).arg(address.toString()).arg(testSocket.errorString()));
+        return false;
+    }
+}
+
+void War3Bot::provideConnectionAdvice(const QString &sessionKey, const QHostAddress &target, quint16 port)
+{
+    LOG_ERROR(QString("Session %1: ===== CONNECTION FAILURE ANALYSIS =====").arg(sessionKey));
+    LOG_ERROR(QString("Session %1: Target: %2:%3").arg(sessionKey).arg(target.toString()).arg(port));
+
+    if (target.protocol() == QAbstractSocket::IPv4Protocol) {
+        quint32 ipv4 = target.toIPv4Address();
+        bool isPrivate = ((ipv4 >> 24) == 10) ||
+                         ((ipv4 >> 20) == 0xAC1) ||
+                         ((ipv4 >> 16) == 0xC0A8);
+
+        if (!isPrivate) {
+            LOG_ERROR(QString("Session %1: 🔴 PUBLIC IP DETECTED").arg(sessionKey));
+            LOG_ERROR(QString("Session %1: Most public War3 hosts block direct TCP connections").arg(sessionKey));
+            LOG_ERROR(QString("Session %1: This is normal for P2P gaming over the internet").arg(sessionKey));
         } else {
-            LOG_INFO(QString("Session %1: Session is not running after forward attempt")
-                         .arg(sessionKey));
+            LOG_ERROR(QString("Session %1: 🟡 PRIVATE IP DETECTED").arg(sessionKey));
+            LOG_ERROR(QString("Session %1: Check if the target host is on the same network").arg(sessionKey));
         }
     }
+
+    LOG_ERROR(QString("Session %1: ===== SUGGESTED SOLUTIONS =====").arg(sessionKey));
+    LOG_ERROR(QString("Session %1: 1. Use a dedicated game server with port forwarding").arg(sessionKey));
+    LOG_ERROR(QString("Session %1: 2. Use VPN to create a virtual private network").arg(sessionKey));
+    LOG_ERROR(QString("Session %1: 3. Use game matching services (like Battle.net)").arg(sessionKey));
+    LOG_ERROR(QString("Session %1: 4. Test with local host first to verify functionality").arg(sessionKey));
+    LOG_ERROR(QString("Session %1: ===============================").arg(sessionKey));
 }
 
 QPair<QHostAddress, quint16> War3Bot::parseWrappedPacket(const QByteArray &data)

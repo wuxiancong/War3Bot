@@ -45,7 +45,7 @@ bool GameSession::reconnectToTarget(const QHostAddress &target, quint16 port)
         m_targetPort = port;
     }
 
-    LOG_INFO(QString("Session %1: Connecting to game server %2:%3")
+    LOG_INFO(QString("Session %1: Connecting to game host %2:%3")
                  .arg(m_sessionId).arg(m_targetAddress.toString()).arg(m_targetPort));
 
     // 清理现有连接
@@ -280,7 +280,7 @@ void GameSession::onGameError(QAbstractSocket::SocketError error)
 
 void GameSession::onReconnectTimeout()
 {
-    LOG_INFO(QString("Session %1: Reconnecting to game server...").arg(m_sessionId));
+    LOG_INFO(QString("Session %1: Reconnecting to game host...").arg(m_sessionId));
     reconnectToTarget(m_targetAddress, m_targetPort);
 }
 

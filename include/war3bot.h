@@ -36,10 +36,12 @@ private:
     QMap<QTcpSocket*, QString> m_clientSessions;
 
     bool isValidW3GSPacket(const QByteArray &data);
+    bool isTargetReachable(const QHostAddress &address, quint16 port);
     QPair<QHostAddress, quint16> parseWrappedPacket(const QByteArray &data);
     QByteArray extractOriginalData(const QByteArray &wrappedData);
     QPair<QHostAddress, quint16> parseTargetFromPacket(const QByteArray &data, bool isFromClient = true);
     QPair<QHostAddress, quint16> parseReqJoinPacket(QDataStream &stream, int remainingSize);
+    void provideConnectionAdvice(const QString &sessionKey, const QHostAddress &target, quint16 port);
     void analyzeUnknownPacket(const QByteArray &data, const QString &sessionKey);
     void processClientPacket(QTcpSocket *clientSocket, const QByteArray &data);
     QString generateSessionId();
