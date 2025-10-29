@@ -25,10 +25,6 @@ set(CMAKE_AUTOUIC ON)
 set(HEADERS
     include/logger.h
     include/war3bot.h
-    include/p2psession.h
-    include/stunclient.h
-    include/w3gs_protocol.h
-    include/stunclientmanager.h
 )
 
 # 源文件
@@ -36,18 +32,16 @@ set(SOURCES
     src/main.cpp
     src/logger.cpp
     src/war3bot.cpp
-    src/p2psession.cpp
-    src/stunclient.cpp
-    src/w3gs_protocol.cpp
-    src/stunclientmanager.cpp
 )
 
 # set(CMAKE_EXE_LINKER_FLAGS "-static -static-libgcc -static-libstdc++")
 
 # 创建可执行文件
 add_executable(war3bot ${SOURCES} ${HEADERS}
-    include/networkdiagnostic.h
-    src/networkdiagnostic.cpp)
+    include/p2pserver.h
+    src/p2pserver.cpp
+
+)
 
 # 链接 Qt 库和网络库
 target_link_libraries(war3bot Qt5::Core Qt5::Network)

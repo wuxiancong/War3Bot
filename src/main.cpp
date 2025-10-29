@@ -27,9 +27,9 @@ int main(int argc, char *argv[]) {
 
     QCommandLineOption portOption(
         {"p", "port"},
-        "Listen port (default: 6113)",
+        "Listen port (default: 6112)",
         "port",
-        "6113"
+        "6112"
         );
     parser.addOption(portOption);
 
@@ -75,8 +75,8 @@ int main(int argc, char *argv[]) {
 
     LOG_INFO("War3Bot server is running. Press Ctrl+C to stop.");
 
-    // 设置退出信号处理
-    QObject::connect(&app, &QCoreApplication::aboutToQuit, [&bot]() {
+    // 设置退出信号处理 - 修复：添加上下文对象
+    QObject::connect(&app, &QCoreApplication::aboutToQuit, &bot, [&bot]() {
         LOG_INFO("Shutting down War3Bot server...");
         bot.stopServer();
     });

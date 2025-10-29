@@ -70,7 +70,7 @@ void Logger::setLogFile(const QString &filename)
     }
 
     m_logFileName = filename;
-    
+
     // 确保目录存在
     QFileInfo fileInfo(filename);
     QDir dir = fileInfo.dir();
@@ -120,11 +120,70 @@ void Logger::critical(const QString &message)
     log(CRITICAL, message);
 }
 
+bool Logger::checkAndClearLogFile()
+{
+    if (m_logFileName.isEmpty()) {
+        return false;
+    }
+
+    QFile file(m_logFileName);
+    if (!file.exists()) {
+        return false;
+    }
+
+    // 检查文件大小是否超过2MB (2 * 1024 * 1024 = 2097152 bytes)
+    if (file.size() > 2 * 1024 * 1024) {
+        // 关闭当前的文件流
+        if (m_stream) {
+            m_stream->flush();
+            delete m_stream;
+            m_stream = nullptr;
+        }
+        if (m_logFile) {
+            m_logFile->close();
+            delete m_logFile;
+            m_logFile = nullptr;
+        }
+
+        // 删除原文件并重新创建
+        if (file.remove()) {
+            // 重新打开文件
+            m_logFile = new QFile(m_logFileName);
+            if (m_logFile->open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text)) {
+                m_stream = new QTextStream(m_logFile);
+                m_stream->setCodec("UTF-8");
+
+                // 写入清除日志的提示信息
+                QString timestamp = QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss.zzz");
+                QString clearMessage = QString("[%1] [INFO] Log file exceeded 2MB, cleared and started new log file")
+                                           .arg(timestamp);
+                *m_stream << clearMessage << "\n";
+                m_stream->flush();
+
+                return true;
+            } else {
+                std::cerr << "Failed to reopen log file after clearing: " << m_logFileName.toStdString() << std::endl;
+                delete m_logFile;
+                m_logFile = nullptr;
+                return false;
+            }
+        } else {
+            std::cerr << "Failed to remove log file: " << m_logFileName.toStdString() << std::endl;
+            return false;
+        }
+    }
+
+    return false;
+}
+
 void Logger::log(LogLevel level, const QString &message)
 {
     if (level < m_logLevel) return;
 
     QMutexLocker locker(&m_mutex);
+
+    // 检查并清除日志文件（如果超过2MB）
+    checkAndClearLogFile();
 
     QString levelStr;
     switch (level) {

@@ -38,6 +38,7 @@ private:
     ~Logger();
 
     void log(LogLevel level, const QString &message);
+    bool checkAndClearLogFile(); // 新增：检查并清除日志文件
 
     static Logger *m_instance;
     QFile *m_logFile;
