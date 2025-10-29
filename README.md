@@ -114,6 +114,15 @@ sudo systemctl start war3bot
 ```bash
 # 查看状态
 sudo systemctl status war3bot
+
+# 查看所有 war3bot 进程
+ps aux | grep war3bot
+
+# 查看详细的进程信息
+ps -ef | grep war3bot
+
+# 查看进程树结构
+pstree | grep war3bot
 ```
 ```bash
 # 查看日志
