@@ -103,7 +103,9 @@ file=/var/log/war3bot/war3bot.log
 
 # 使用方法
 ```bash
-#命令行运行
+# 命令行运行
+# 杀死所有包含 war3bot 的进程
+pkill -f war3bot
 # 停止服务
 sudo systemctl stop war3bot
 # 启动服务
