@@ -124,16 +124,16 @@ ps -ef | grep war3bot
 # 查看进程树结构
 pstree | grep war3bot
 
-# 查看6112端口是否被监听
+# 查看6113端口是否被监听
 netstat -tulpn | grep 6113
 
 # 或者使用ss命令（更推荐）
 ss -tulpn | grep 6113
 
-# 查看所有与6112相关的连接
+# 查看所有与6113相关的连接
 netstat -an | grep 6113
 
-# 查看TCP和UDP的6112端口
+# 查看TCP和UDP的6113端口
 ss -tulpn | grep :6113
 
 ```
