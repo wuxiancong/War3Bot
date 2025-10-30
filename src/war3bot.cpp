@@ -14,7 +14,7 @@ War3Bot::~War3Bot()
 
 bool War3Bot::startServer(quint16 port, const QString &configFile)
 {
-    if (m_p2pServer && m_p2pServer->isRunning()) {
+    if (m_p2pServer && m_p2pServer->m_isRunning) {
         LOG_WARNING("Server is already running");
         return true;
     }
@@ -51,7 +51,7 @@ void War3Bot::stopServer()
 
 bool War3Bot::isRunning() const
 {
-    return m_p2pServer && m_p2pServer->isRunning();
+    return m_p2pServer && m_p2pServer->m_isRunning;
 }
 
 void War3Bot::onPeerRegistered(const QString &peerId, const QString &gameId)
