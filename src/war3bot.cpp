@@ -15,7 +15,7 @@ War3Bot::~War3Bot()
 bool War3Bot::startServer(quint16 port, const QString &configFile)
 {
     if (m_p2pServer && m_p2pServer->m_isRunning) {
-        LOG_WARNING("Server is already running");
+        LOG_WARNING("服务器已在运行中");
         return true;
     }
 
@@ -39,9 +39,9 @@ bool War3Bot::startServer(quint16 port, const QString &configFile)
 
     bool success = m_p2pServer->startServer(port, configFile);
     if (success) {
-        LOG_INFO("War3Bot server started successfully");
+        LOG_INFO("War3Bot 服务器启动成功");
     } else {
-        LOG_ERROR("Failed to start War3Bot server");
+        LOG_ERROR("启动 War3Bot 服务器失败");
     }
 
     return success;
@@ -51,7 +51,7 @@ void War3Bot::stopServer()
 {
     if (m_p2pServer) {
         m_p2pServer->stopServer();
-        LOG_INFO("War3Bot server stopped");
+        LOG_INFO("War3Bot 服务器已停止");
     }
 }
 
@@ -62,15 +62,15 @@ bool War3Bot::isRunning() const
 
 void War3Bot::onPeerRegistered(const QString &peerId, const QString &gameId)
 {
-    LOG_INFO(QString("New peer connected - ID: %1, Game: %2").arg(peerId, gameId));
+    LOG_INFO(QString("新对等节点已连接 - 标识: %1, 游戏: %2").arg(peerId, gameId));
 }
 
 void War3Bot::onPeerRemoved(const QString &peerId)
 {
-    LOG_INFO(QString("Peer disconnected - ID: %1").arg(peerId));
+    LOG_INFO(QString("对等节点已断开连接 - 标识: %1").arg(peerId));
 }
 
 void War3Bot::onPunchRequested(const QString &sourcePeerId, const QString &targetPeerId)
 {
-    LOG_INFO(QString("Punch request processed - %1 -> %2").arg(sourcePeerId, targetPeerId));
+    LOG_INFO(QString("打洞请求已处理 - %1 -> %2").arg(sourcePeerId, targetPeerId));
 }

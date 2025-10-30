@@ -18,9 +18,9 @@ P2PServer::P2PServer(QObject *parent)
     , m_cleanupInterval(60000)
     , m_settings(nullptr)
     , m_cleanupTimer(nullptr)
-    , m_enableBroadcast(false) // 5分钟
-    , m_broadcastInterval(30000) // 1分钟
-    , m_broadcastPort(6112) // 30秒
+    , m_enableBroadcast(false)
+    , m_broadcastInterval(30000)
+    , m_broadcastPort(6112)
     , m_udpSocket(nullptr)
     , m_broadcastTimer(nullptr)
 {
@@ -56,15 +56,15 @@ bool P2PServer::startServer(quint16 port, const QString &configFile)
 
 #ifdef Q_OS_WIN
         if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (char*)&reuse, sizeof(reuse)) < 0) {
-            LOG_WARNING("Failed to set SO_REUSEADDR on Windows");
+            LOG_WARNING("在Windows上设置SO_REUSEADDR失败");
         }
 #else
         if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)) < 0) {
-            LOG_WARNING("Failed to set SO_REUSEADDR on Linux");
+            LOG_WARNING("在Linux上设置SO_REUSEADDR失败");
         }
 #ifdef SO_REUSEPORT
         if (setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &reuse, sizeof(reuse)) < 0) {
-            LOG_WARNING("Failed to set SO_REUSEPORT on Linux");
+            LOG_WARNING("在Linux上设置SO_REUSEPORT失败");
         }
 #endif
 #endif
@@ -72,7 +72,7 @@ bool P2PServer::startServer(quint16 port, const QString &configFile)
 
     // 使用 ShareAddress 选项允许端口重用
     if (!m_udpSocket->bind(QHostAddress::Any, port, QUdpSocket::ShareAddress)) {
-        LOG_ERROR(QString("Failed to bind UDP socket to port %1: %2")
+        LOG_ERROR(QString("绑定UDP socket到端口 %1 失败: %2")
                       .arg(port).arg(m_udpSocket->errorString()));
         return false;
     }
@@ -94,10 +94,10 @@ bool P2PServer::startServer(quint16 port, const QString &configFile)
         m_broadcastTimer->start(m_broadcastInterval);
     }
 
-    LOG_INFO(QString("P2P server started on port %1").arg(port));
-    LOG_INFO(QString("Peer timeout: %1 ms").arg(m_peerTimeout));
-    LOG_INFO(QString("Cleanup interval: %1 ms").arg(m_cleanupInterval));
-    LOG_INFO(QString("Broadcast enabled: %1").arg(m_enableBroadcast ? "true" : "false"));
+    LOG_INFO(QString("✅ P2P服务器已在端口 %1 启动").arg(port));
+    LOG_INFO(QString("对等端超时时间: %1 毫秒").arg(m_peerTimeout));
+    LOG_INFO(QString("清理间隔: %1 毫秒").arg(m_cleanupInterval));
+    LOG_INFO(QString("广播功能: %1").arg(m_enableBroadcast ? "启用" : "禁用"));
 
     emit serverStarted(port);
 
@@ -136,7 +136,7 @@ void P2PServer::stopServer()
     }
 
     m_peers.clear();
-    LOG_INFO("P2P server stopped");
+    LOG_INFO("🛑 P2P服务器已停止");
     emit serverStopped();
 }
 
@@ -152,7 +152,7 @@ void P2PServer::onReadyRead()
         QString senderAddress = datagram.senderAddress().toString();
         quint16 senderPort = datagram.senderPort();
 
-        LOG_DEBUG(QString("Received %1 bytes from %2:%3: %4")
+        LOG_DEBUG(QString("📨 收到 %1 字节来自 %2:%3: %4")
                       .arg(data.size()).arg(senderAddress).arg(senderPort)
                       .arg(QString(data)));
 
@@ -166,7 +166,7 @@ void P2PServer::onReadyRead()
         } else if (data.startsWith("PEER_INFO_ACK")) {
             processPeerInfoAck(datagram);
         } else {
-            LOG_WARNING(QString("Unknown message type from %1:%2: %3")
+            LOG_WARNING(QString("❓ 未知消息类型来自 %1:%2: %3")
                             .arg(senderAddress).arg(senderPort).arg(QString(data)));
         }
     }
@@ -186,7 +186,7 @@ void P2PServer::processHandshake(const QNetworkDatagram &datagram)
     QStringList parts = data.split('|');
 
     if (parts.size() < 7) {
-        LOG_WARNING(QString("Invalid handshake format from %1:%2: %3")
+        LOG_WARNING(QString("❌ 无效的握手格式来自 %1:%2: %3")
                         .arg(datagram.senderAddress().toString())
                         .arg(datagram.senderPort())
                         .arg(data));
@@ -217,13 +217,13 @@ void P2PServer::processHandshake(const QNetworkDatagram &datagram)
     // 存储对等端信息
     m_peers[peerId] = peerInfo;
 
-    LOG_INFO(QString("Peer registered: %1 (%2) game: %3")
+    LOG_INFO(QString("✅ 对等端已注册: %1 (%2) 游戏: %3")
                  .arg(peerId, peerInfo.publicIp, gameId));
-    LOG_INFO(QString("Handshake details - Local: %1:%2 localPublicPort: %3, Target: %4:%5")
+    LOG_INFO(QString("握手详情 - 本地: %1:%2 本地公网端口: %3, 目标: %4:%5")
                  .arg(localIp, localPort, localPublicPort, targetIp, targetPort));
 
-    // 发送确认前也记录日志
-    LOG_INFO(QString("发送握手确认到: %1:%2, PeerID: %3")
+    // 发送握手确认
+    LOG_INFO(QString("📤 发送握手确认到: %1:%2, PeerID: %3")
                  .arg(datagram.senderAddress().toString())
                  .arg(datagram.senderPort())
                  .arg(peerId));
@@ -233,8 +233,8 @@ void P2PServer::processHandshake(const QNetworkDatagram &datagram)
 
     LOG_INFO(QString("确认消息发送结果: %1 字节").arg(bytesSent));
 
-    // === 修改：直接发送PEER_INFO给目标地址 ===
-    LOG_INFO(QString("🎯 检测到客户端想要连接目标 %1:%2，尝试直接发送PEER_INFO").arg(targetIp).arg(targetPort));
+    // 直接发送PEER_INFO给目标地址
+    LOG_INFO(QString("🎯 检测到客户端想要连接目标 %1:%2，尝试直接发送PEER_INFO").arg(targetIp, targetPort));
     sendPeerInfoToTarget(peerId, targetIp, targetPort.toUShort());
 
     // 查找匹配的对等端并转发信息
@@ -433,9 +433,16 @@ void P2PServer::sendPeerInfoToTarget(const QString &sourcePeerId, const QString 
     LOG_INFO(QString("  源对等端: %1:%2").arg(sourcePeerInfo.publicIp).arg(sourcePeerInfo.publicPort));
     LOG_INFO(QString("  目标地址: %1:%2").arg(targetIp).arg(targetPort));
 
-    // 构造PEER_INFO消息
+    // 处理IPv6映射的IPv4地址
+    QString cleanPublicIp = sourcePeerInfo.publicIp;
+    if (cleanPublicIp.startsWith("::ffff:")) {
+        cleanPublicIp = cleanPublicIp.mid(7);
+        LOG_INFO(QString("  清理IPv6地址: %1 -> %2").arg(sourcePeerInfo.publicIp, cleanPublicIp));
+    }
+
+    // 构造PEER_INFO消息（使用纯IPv4地址）
     QString message = QString("PEER_INFO|%1|%2|%3|%4")
-                          .arg(sourcePeerInfo.publicIp)
+                          .arg(cleanPublicIp)
                           .arg(sourcePeerInfo.publicPort)
                           .arg(sourcePeerInfo.localIp)
                           .arg(sourcePeerInfo.localPort);
@@ -460,7 +467,7 @@ void P2PServer::processPunchRequest(const QNetworkDatagram &datagram)
     // 格式: PUNCH|TARGET_PEER_ID
     QStringList parts = QString(datagram.data()).split('|');
     if (parts.size() < 2) {
-        LOG_WARNING("Invalid punch request format");
+        LOG_WARNING("❌ 无效的打洞请求格式");
         return;
     }
 
@@ -468,12 +475,12 @@ void P2PServer::processPunchRequest(const QNetworkDatagram &datagram)
     QString targetPeerId = parts[1];
 
     if (!m_peers.contains(sourcePeerId)) {
-        LOG_WARNING(QString("Unknown source peer: %1").arg(sourcePeerId));
+        LOG_WARNING(QString("❓ 未知的源对等端: %1").arg(sourcePeerId));
         return;
     }
 
     if (!m_peers.contains(targetPeerId)) {
-        LOG_WARNING(QString("Unknown target peer: %1").arg(targetPeerId));
+        LOG_WARNING(QString("❓ 未知的目标对等端: %1").arg(targetPeerId));
         return;
     }
 
@@ -494,7 +501,7 @@ void P2PServer::processPunchRequest(const QNetworkDatagram &datagram)
 
     sendToPeer(targetPeerId, punchNotify.toUtf8());
 
-    LOG_INFO(QString("Punch request: %1 -> %2").arg(sourcePeerId, targetPeerId));
+    LOG_INFO(QString("🔄 打洞请求: %1 -> %2").arg(sourcePeerId, targetPeerId));
     emit punchRequested(sourcePeerId, targetPeerId);
 }
 
@@ -504,9 +511,9 @@ void P2PServer::processKeepAlive(const QNetworkDatagram &datagram)
 
     if (m_peers.contains(peerId)) {
         m_peers[peerId].lastSeen = QDateTime::currentMSecsSinceEpoch();
-        LOG_DEBUG(QString("Keepalive from peer: %1").arg(peerId));
+        LOG_DEBUG(QString("💓 来自对等端的心跳: %1").arg(peerId));
     } else {
-        LOG_WARNING(QString("Keepalive from unknown peer: %1").arg(peerId));
+        LOG_WARNING(QString("❓ 来自未知对等端的心跳: %1").arg(peerId));
     }
 }
 
@@ -516,7 +523,7 @@ void P2PServer::processPeerInfoAck(const QNetworkDatagram &datagram)
 
     if (m_peers.contains(peerId)) {
         m_peers[peerId].lastSeen = QDateTime::currentMSecsSinceEpoch();
-        LOG_INFO(QString("Peer %1 acknowledged peer info").arg(peerId));
+        LOG_INFO(QString("✅ 对等端 %1 确认收到对等端信息").arg(peerId));
     }
 }
 
@@ -541,7 +548,7 @@ void P2PServer::broadcastServerInfo()
     // 广播到局域网
     m_udpSocket->writeDatagram(broadcastMsg, QHostAddress::Broadcast, m_broadcastPort);
 
-    LOG_DEBUG("Broadcast server info to LAN");
+    LOG_DEBUG("📢 广播服务器信息到局域网");
 }
 
 void P2PServer::cleanupExpiredPeers()
@@ -556,13 +563,13 @@ void P2PServer::cleanupExpiredPeers()
     }
 
     for (const QString &peerId : expiredPeers) {
-        LOG_INFO(QString("Removing expired peer: %1").arg(peerId));
+        LOG_INFO(QString("🗑️ 移除过期对等端: %1").arg(peerId));
         m_peers.remove(peerId);
         emit peerRemoved(peerId);
     }
 
     if (!expiredPeers.isEmpty()) {
-        LOG_INFO(QString("Cleaned up %1 expired peers").arg(expiredPeers.size()));
+        LOG_INFO(QString("🧹 已清理 %1 个过期对等端").arg(expiredPeers.size()));
     }
 }
 
@@ -571,12 +578,11 @@ QString P2PServer::generatePeerId(const QHostAddress &address, quint16 port)
     return QString("%1:%2").arg(address.toString()).arg(port);
 }
 
-// 添加头文件中需要的新方法声明
 void P2PServer::removePeer(const QString &peerId)
 {
     if (m_peers.contains(peerId)) {
         m_peers.remove(peerId);
-        LOG_INFO(QString("Removed peer: %1").arg(peerId));
+        LOG_INFO(QString("🗑️ 已移除对等端: %1").arg(peerId));
         emit peerRemoved(peerId);
     }
 }

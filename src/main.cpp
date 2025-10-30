@@ -2,12 +2,12 @@
 #include "logger.h"
 #include <QCommandLineParser>
 #include <QCoreApplication>
+#include <QUdpSocket>
+#include <QSettings>
 #include <QProcess>
 #include <QThread>
 #include <QTimer>
 #include <QDir>
-#include <QSettings>  // 添加这个头文件
-#include <QUdpSocket> // 添加这个头文件
 
 #ifdef Q_OS_WIN
 #include <windows.h>
@@ -31,7 +31,7 @@ bool isPortInUse(quint16 port) {
 
 // 改进的进程杀死函数
 bool killProcessOnPort(quint16 port) {
-    LOG_INFO(QString("Attempting to free port %1").arg(port));
+    LOG_INFO(QString("正在尝试释放端口 %1").arg(port));
 
 #ifdef Q_OS_WIN
     // Windows 方法
@@ -51,7 +51,7 @@ bool killProcessOnPort(quint16 port) {
     QStringList lines = output.split('\n', Qt::SkipEmptyParts);
 #endif
 
-    for (const QString &line : lines) {
+    for (const QString &line : qAsConst(lines)) {
         if (line.contains(QString(":%1").arg(port)) && line.contains("UDP")) {
 // 提取 PID
 #if QT_VERSION < QT_VERSION_CHECK(5, 15, 0)
@@ -64,7 +64,7 @@ bool killProcessOnPort(quint16 port) {
                 bool ok;
                 int pid = pidStr.toInt(&ok);
                 if (ok && pid > 0) {
-                    LOG_WARNING(QString("Killing process %1 occupying port %2").arg(pid).arg(port));
+                    LOG_WARNING(QString("正在终止占用端口 %2 的进程 %1").arg(pid).arg(port));
 
                     HANDLE hProcess = OpenProcess(PROCESS_TERMINATE, FALSE, pid);
                     if (hProcess != NULL) {
@@ -94,7 +94,7 @@ bool killProcessOnPort(quint16 port) {
             bool ok;
             int pid = pidStr.toInt(&ok);
             if (ok && pid > 0) {
-                LOG_WARNING(QString("Killing process %1 occupying port %2").arg(pid).arg(port));
+                LOG_WARNING(QString("正在终止占用端口 %2 的进程 %1").arg(pid).arg(port));
                 QProcess::execute("kill", QStringList() << "-9" << QString::number(pid));
             }
         }
@@ -108,7 +108,7 @@ bool killProcessOnPort(quint16 port) {
 
 // 强制释放端口的函数
 bool forceFreePort(quint16 port) {
-    LOG_INFO(QString("Force freeing port %1").arg(port));
+    LOG_INFO(QString("正在强制释放端口 %1").arg(port));
 
     // 方法1: 尝试杀死占用进程
     if (killProcessOnPort(port)) {
@@ -126,13 +126,13 @@ int main(int argc, char *argv[]) {
     QCoreApplication::setApplicationVersion("2.0");
 
     QCommandLineParser parser;
-    parser.setApplicationDescription("Warcraft III P2P Connection Bot");
+    parser.setApplicationDescription("魔兽争霸 III P2P 连接机器人");
     parser.addHelpOption();
     parser.addVersionOption();
 
     QCommandLineOption portOption(
         {"p", "port"},
-        "Listen port (default: 6112)",
+        "监听端口 (默认: 6112)",
         "port",
         "6112"
         );
@@ -140,7 +140,7 @@ int main(int argc, char *argv[]) {
 
     QCommandLineOption logLevelOption(
         {"l", "log-level"},
-        "Log level (debug, info, warning, error, critical)",
+        "日志级别 (debug, info, warning, error, critical)",
         "level",
         "info"
         );
@@ -148,7 +148,7 @@ int main(int argc, char *argv[]) {
 
     QCommandLineOption configOption(
         {"c", "config"},
-        "Config file path",
+        "配置文件路径",
         "config",
         "war3bot.ini"
         );
@@ -156,13 +156,13 @@ int main(int argc, char *argv[]) {
 
     QCommandLineOption killOption(
         {"k", "kill-existing"},
-        "Kill existing processes using the port"
+        "终止占用端口的现有进程"
         );
     parser.addOption(killOption);
 
     QCommandLineOption forceOption(
         {"f", "force"},
-        "Force port reuse"
+        "强制端口重用"
         );
     parser.addOption(forceOption);
 
@@ -237,26 +237,26 @@ int main(int argc, char *argv[]) {
     bool killExisting = parser.isSet(killOption);
     bool forceReuse = parser.isSet(forceOption);
 
-    LOG_INFO("=== War3Bot P2P Server Starting ===");
-    LOG_INFO(QString("Version: %1").arg(app.applicationVersion()));
-    LOG_INFO(QString("Port: %1").arg(port));
-    LOG_INFO(QString("Config: %1").arg(configFile));
-    LOG_INFO(QString("Log Level: %1").arg(Logger::instance()->logLevelToString()));
-    LOG_INFO(QString("Log File: %1").arg(logFilePath));
-    LOG_INFO(QString("Console Output: %1").arg(enableConsole ? "enabled" : "disabled"));
-    LOG_INFO(QString("Max Log Size: %1 MB").arg(maxLogSize / (1024 * 1024)));
-    LOG_INFO(QString("Backup Count: %1").arg(backupCount));
+    LOG_INFO("=== War3Bot P2P 服务器正在启动 ===");
+    LOG_INFO(QString("版本: %1").arg(app.applicationVersion()));
+    LOG_INFO(QString("端口: %1").arg(port));
+    LOG_INFO(QString("配置文件: %1").arg(configFile));
+    LOG_INFO(QString("日志级别: %1").arg(Logger::instance()->logLevelToString()));
+    LOG_INFO(QString("日志文件: %1").arg(logFilePath));
+    LOG_INFO(QString("控制台输出: %1").arg(enableConsole ? "启用" : "禁用"));
+    LOG_INFO(QString("最大日志大小: %1 MB").arg(maxLogSize / (1024 * 1024)));
+    LOG_INFO(QString("备份数量: %1").arg(backupCount));
 
     // 检查端口是否被占用
     bool portInUse = isPortInUse(port);
 
     if (portInUse) {
-        LOG_WARNING(QString("Port %1 is already in use").arg(port));
+        LOG_WARNING(QString("端口 %1 已被占用").arg(port));
 
         if (killExisting) {
-            LOG_INFO("Attempting to kill existing process on port...");
+            LOG_INFO("正在尝试终止占用端口的现有进程...");
             if (forceFreePort(port)) {
-                LOG_INFO("Port should be free now, retrying...");
+                LOG_INFO("端口现在应该已释放，正在重试...");
                 // 重新检查端口
                 portInUse = isPortInUse(port);
             }
@@ -264,18 +264,18 @@ int main(int argc, char *argv[]) {
 
         if (portInUse && !forceReuse) {
             // 尝试使用其他端口
-            LOG_INFO("Trying alternative ports...");
+            LOG_INFO("正在尝试其他端口...");
             bool foundPort = false;
             for (quint16 altPort = port + 1; altPort <= port + 20; altPort++) {
                 if (!isPortInUse(altPort)) {
                     port = altPort;
                     foundPort = true;
-                    LOG_INFO(QString("Using alternative port: %1").arg(port));
+                    LOG_INFO(QString("使用备用端口: %1").arg(port));
                     break;
                 }
             }
             if (!foundPort) {
-                LOG_CRITICAL("No available ports found");
+                LOG_CRITICAL("未找到可用端口");
                 return -1;
             }
         }
@@ -289,15 +289,15 @@ int main(int argc, char *argv[]) {
     }
 
     if (!bot.startServer(port, configFile)) {
-        LOG_CRITICAL("Failed to start War3Bot server");
+        LOG_CRITICAL("启动 War3Bot 服务器失败");
         return -1;
     }
 
-    LOG_INFO("War3Bot server is running. Press Ctrl+C to stop.");
+    LOG_INFO("War3Bot 服务器正在运行。按 Ctrl+C 停止。");
 
     // 设置退出信号处理
     QObject::connect(&app, &QCoreApplication::aboutToQuit, &bot, [&bot]() {
-        LOG_INFO("Shutting down War3Bot server...");
+        LOG_INFO("正在关闭 War3Bot 服务器...");
         bot.stopServer();
     });
 
