@@ -202,6 +202,20 @@ ping 8.135.235.206
 tracert 8.135.235.206
 ```
 
+# Windows 查看6112端口
+```dash
+# 查看所有使用 6112 端口的连接
+netstat -ano | findstr 6112
+
+# 更详细的查看
+netstat -anob | findstr 6112
+
+# 查看监听状态的端口
+netstat -ano | findstr LISTENING | findstr 6112
+
+# 查看UDP端口
+netstat -ano -p UDP | findstr 6112
+```
 ## Python 测试客户端
 ```bash
 #!/usr/bin/env python3
