@@ -257,6 +257,9 @@ War3Bot/
 
 # 故障排查
 ```bash
+# 调试模式运行
+/root/War3Bot/build/war3bot -l debug
+
 # 检查服务状态
 sudo systemctl status war3bot
 
