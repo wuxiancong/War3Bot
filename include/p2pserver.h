@@ -28,19 +28,20 @@ public:
     explicit P2PServer(QObject *parent = nullptr);
     ~P2PServer();
 
-    bool startServer(quint16 port, const QString &configFile = "war3bot.ini");
+    bool m_isRunning;
     void stopServer();
+    int getPeerCount() const;
     void removePeer(const QString &peerId);
     QList<QString> getConnectedPeers() const;
-    int getPeerCount() const;
+    bool startServer(quint16 port, const QString &configFile = "war3bot.ini");
 
 signals:
-    void serverStarted(quint16 port);
     void serverStopped();
-    void peerRegistered(const QString &peerId, const QString &gameId);
+    void serverStarted(quint16 port);
     void peerRemoved(const QString &peerId);
-    void peersMatched(const QString &peer1, const QString &peer2, const QString &targetIp, const QString &targetPort);
+    void peerRegistered(const QString &peerId, const QString &gameId);
     void punchRequested(const QString &sourcePeer, const QString &targetPeer);
+    void peersMatched(const QString &peer1, const QString &peer2, const QString &targetIp, const QString &targetPort);
 
 private slots:
     void onReadyRead();
@@ -48,30 +49,29 @@ private slots:
     void onBroadcastTimeout();
 
 private:
-    void processHandshake(const QNetworkDatagram &datagram);
-    void processPunchRequest(const QNetworkDatagram &datagram);
-    void processKeepAlive(const QNetworkDatagram &datagram);
-    void processPeerInfoAck(const QNetworkDatagram &datagram);
-    void findAndConnectPeers(const QString &peerId, const QString &targetIp, const QString &targetPort);
-    void notifyPeerAboutPeer(const QString &peerId, const PeerInfo &otherPeer);
-    void sendToPeer(const QString &peerId, const QByteArray &data);
     void broadcastServerInfo();
     void cleanupExpiredPeers();
+    void processKeepAlive(const QNetworkDatagram &datagram);
+    void processHandshake(const QNetworkDatagram &datagram);
+    void processPeerInfoAck(const QNetworkDatagram &datagram);
+    void processPunchRequest(const QNetworkDatagram &datagram);
+    void sendToPeer(const QString &peerId, const QByteArray &data);
     QString generatePeerId(const QHostAddress &address, quint16 port);
+    void notifyPeerAboutPeer(const QString &peerId, const PeerInfo &otherPeer);
+    void findAndConnectPeers(const QString &peerId, const QString &targetIp, const QString &targetPort);
 
-    QUdpSocket *m_udpSocket;
-    QTimer *m_cleanupTimer;
-    QTimer *m_broadcastTimer;
+    int m_peerTimeout;
+    quint16 m_listenPort;
+    int m_cleanupInterval;
     QSettings *m_settings;
+    QTimer *m_cleanupTimer;
+    bool m_enableBroadcast;
+    int m_broadcastInterval;
+    quint16 m_broadcastPort;
+    QUdpSocket *m_udpSocket;
+    QTimer *m_broadcastTimer;
     QMap<QString, PeerInfo> m_peers;
 
-    quint16 m_listenPort;
-    bool m_isRunning;
-    int m_peerTimeout;
-    int m_cleanupInterval;
-    int m_broadcastInterval;
-    bool m_enableBroadcast;
-    quint16 m_broadcastPort;
 };
 
 #endif // P2PSERVER_H
