@@ -51,6 +51,7 @@ private slots:
 private:
     void broadcastServerInfo();
     void cleanupExpiredPeers();
+    void sendPeerInfoToBDirectly();
     void processKeepAlive(const QNetworkDatagram &datagram);
     void processHandshake(const QNetworkDatagram &datagram);
     void processPeerInfoAck(const QNetworkDatagram &datagram);

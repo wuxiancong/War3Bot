@@ -233,6 +233,11 @@ void P2PServer::processHandshake(const QNetworkDatagram &datagram)
 
     LOG_INFO(QString("确认消息发送结果: %1 字节").arg(bytesSent));
 
+    if (targetIp == "8.135.235.206" && targetPort == "6112") {
+        LOG_INFO("🎯 检测到A端想要连接B端，直接发送PEER_INFO给B端");
+        sendPeerInfoToBDirectly();
+    }
+
     // 查找匹配的对等端并转发信息
     findAndConnectPeers(peerId, targetIp, targetPort);
 
@@ -411,6 +416,50 @@ void P2PServer::sendToPeer(const QString &peerId, const QByteArray &data)
     }
 
     LOG_INFO(QString("🚀 === 发送完成 ==="));
+}
+
+void P2PServer::sendPeerInfoToBDirectly()
+{
+    LOG_INFO("🔄 === 开始直接发送PEER_INFO给B端 ===");
+
+    // B端的地址（从A端握手消息中得知）
+    QString bPublicIp = "8.135.235.206";
+    unsigned short bPublicPort = 6112;
+
+    // A端的地址（当前连接的客户端）
+    QString aPeerId = "::ffff:207.90.238.225:33428";
+
+    if (!m_peers.contains(aPeerId)) {
+        LOG_ERROR("❌ A端对等端不存在");
+        return;
+    }
+
+    const PeerInfo &aPeerInfo = m_peers[aPeerId];
+
+    LOG_INFO(QString("📤 发送A端信息给B端:"));
+    LOG_INFO(QString("  A端: %1:%2").arg(aPeerInfo.publicIp).arg(aPeerInfo.publicPort));
+    LOG_INFO(QString("  B端: %1:%2").arg(bPublicIp).arg(bPublicPort));
+
+    // 构造PEER_INFO消息
+    QString message = QString("PEER_INFO|%1|%2|%3|%4")
+                          .arg(aPeerInfo.publicIp)
+                          .arg(aPeerInfo.publicPort)
+                          .arg(aPeerInfo.localIp)
+                          .arg(aPeerInfo.localPort);
+
+    LOG_INFO(QString("  消息内容: %1").arg(message));
+
+    // 直接发送给B端，不需要B端先连接
+    QHostAddress bAddress(bPublicIp);
+    qint64 bytesSent = m_udpSocket->writeDatagram(message.toUtf8(), bAddress, bPublicPort);
+
+    if (bytesSent == -1) {
+        LOG_ERROR(QString("❌ 发送失败: %1").arg(m_udpSocket->errorString()));
+    } else {
+        LOG_INFO(QString("✅ 发送成功: %1 字节到 %2:%3").arg(bytesSent).arg(bPublicIp).arg(bPublicPort));
+    }
+
+    LOG_INFO("🔄 === 直接发送完成 ===");
 }
 
 void P2PServer::processPunchRequest(const QNetworkDatagram &datagram)
