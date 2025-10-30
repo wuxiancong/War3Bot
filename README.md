@@ -143,7 +143,23 @@ ss -tulpn | grep :6112
 sudo journalctl -u war3bot -f
 ```
 
-# 测试验证
+# 防火墙
+```bash
+# 检查防火墙
+sudo ufw status
+sudo ufw allow 6112/tcp
+sudo ufw allow 6112/udp
+
+# 查看 firewalld 状态
+firewall-cmd --list-all
+
+# 查看具体端口
+firewall-cmd --list-ports
+
+# 检查 6112 端口是否开放
+firewall-cmd --query-port=6112/tcp
+firewall-cmd --query-port=6112/udp
+```
 # 基本测试
 ```bash
 # 检查端口
@@ -203,10 +219,6 @@ sudo systemctl status war3bot
 
 # 查看详细日志
 sudo journalctl -u war3bot --no-pager -n 50
-
-# 检查防火墙
-sudo ufw status
-sudo ufw allow 6112/udp
 
 # 调试模式运行
 ./war3bot -l debug -p 6112
