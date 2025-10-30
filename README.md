@@ -2,7 +2,7 @@
 
 War3Bot 是一个专为《魔兽争霸 III》设计的游戏会话代理服务器，基于 C++ 和 Qt 框架开发。
 ```bash
-玩家A (192.168.1.100) → War3Bot服务器 (1.2.3.4:6113) ← 玩家B (192.168.1.200)
+玩家A (192.168.1.100) → War3Bot服务器 (1.2.3.4:6112) ← 玩家B (192.168.1.200)
                             ↓
                     P2P连接建立成功
                             ↓
@@ -68,7 +68,7 @@ After=network.target
 Type=simple
 User=root
 WorkingDirectory=/root/War3Bot/build
-ExecStart=/root/War3Bot/build/war3bot -p 6113
+ExecStart=/root/War3Bot/build/war3bot -p 6112
 Restart=always
 RestartSec=5
 StandardOutput=journal
@@ -88,7 +88,7 @@ sudo systemctl stop war3bot
 /etc/war3bot/war3bot.ini:
 ```bash
 [server]
-port=6113
+port=6112
 max_sessions=100
 ping_interval=30000
 
@@ -103,7 +103,9 @@ file=/var/log/war3bot/war3bot.log
 
 # 使用方法
 ```bash
-#命令行运行
+# 命令行运行
+# 杀死所有包含 war3bot 的进程
+pkill -f war3bot
 # 停止服务
 sudo systemctl stop war3bot
 # 启动服务
@@ -112,6 +114,28 @@ sudo systemctl start war3bot
 ```bash
 # 查看状态
 sudo systemctl status war3bot
+
+# 查看所有 war3bot 进程
+ps aux | grep war3bot
+
+# 查看详细的进程信息
+ps -ef | grep war3bot
+
+# 查看进程树结构
+pstree | grep war3bot
+
+# 查看6112端口是否被监听
+netstat -tulpn | grep 6112
+
+# 或者使用ss命令（更推荐）
+ss -tulpn | grep 6112
+
+# 查看所有与6112相关的连接
+netstat -an | grep 6112
+
+# 查看TCP和UDP的6112端口
+ss -tulpn | grep :6112
+
 ```
 ```bash
 # 查看日志
@@ -122,15 +146,15 @@ sudo journalctl -u war3bot -f
 # 基本测试
 ```bash
 # 检查端口
-sudo netstat -tulpn | grep 6113
+sudo netstat -tulpn | grep 6112
 ```
 ```bash
 # 发送测试数据
-echo "test" | nc -u localhost 6113
+echo "test" | nc -u localhost 6112
 ```
 ```bash
 # 监控流量
-sudo tcpdump -i lo -n udp port 6112 or port 6113
+sudo tcpdump -i lo -n udp port 6112 or port 6112
 ```
 ## Python 测试客户端
 ```bash
@@ -140,7 +164,7 @@ import struct
 
 def test_war3bot():
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    war3bot_addr = ('localhost', 6113)
+    war3bot_addr = ('localhost', 6112)
     
     # 创建 W3GS PING 数据包
     header = struct.pack('<BHHB', 0xF7, 8, 0x01, 0)
@@ -181,10 +205,10 @@ sudo journalctl -u war3bot --no-pager -n 50
 
 # 检查防火墙
 sudo ufw status
-sudo ufw allow 6113/udp
+sudo ufw allow 6112/udp
 
 # 调试模式运行
-./war3bot -l debug -p 6113
+./war3bot -l debug -p 6112
 ```
 
 # 协议支持
@@ -234,4 +258,13 @@ War3Bot 获取到公网地址后，等待另一个客户端连接
 客户端A <--(UDP打洞)--> 客户端B
      ↓                   ↓
   直接P2P通信         直接P2P通信
+```
+# 卸载
+```bash
+## 要移除你安装的这些包，可以使用以下命令：
+sudo apt remove qtbase5-dev qt5-qmake libqt5core5a libqt5network5
+## 如果你还想彻底清除这些包及其配置文件，可以使用：
+sudo apt purge qtbase5-dev qt5-qmake libqt5core5a libqt5network5
+## 如果你想清理掉不再需要的依赖项，可以运行：
+sudo apt autoremove
 ```
