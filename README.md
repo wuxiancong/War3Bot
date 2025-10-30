@@ -180,6 +180,28 @@ echo "test" | nc -u localhost 6112
 # 监控流量
 sudo tcpdump -i lo -n udp port 6112 or port 6112
 ```
+
+# 使用 CMD 验证P2P连接
+```bash
+# 测试到对等端的 6112 端口
+telnet 8.135.235.206 6112
+
+# 或者使用 PowerShell
+Test-NetConnection 8.135.235.206 -Port 6112
+
+# 查看所有网络连接
+netstat -an | findstr 6112
+
+# 查看 ESTABLISHED 状态的连接
+netstat -an | findstr ESTABLISHED | findstr 6112
+
+# 测试网络可达性
+ping 8.135.235.206
+
+# 跟踪路由
+tracert 8.135.235.206
+```
+
 ## Python 测试客户端
 ```bash
 #!/usr/bin/env python3
