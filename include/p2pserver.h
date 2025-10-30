@@ -5,21 +5,19 @@
 #include <QUdpSocket>
 #include <QTimer>
 #include <QSettings>
-#include <QHostAddress>
-#include <QNetworkDatagram>
 #include <QMap>
+#include <QHostAddress>
 
 struct PeerInfo {
-    QHostAddress publicAddress;  // 公网地址 (A 或 B 的地址)
-    quint16 publicPort;          // 公网端口 (A 或 B 的端口)
-    QHostAddress localAddress;   // 本地地址 (A 或 B 的本地地址)
-    quint16 localPort;           // 本地端口 (A 或 B 的本地端口)
-    qint64 lastSeen;             // 上次活动时间
-    QString gameId;              // 游戏 ID
-    QHostAddress aPublicIp;      // A 端公网 IP 地址
-    quint16 aPublicPort;         // A 端公网端口
-    QHostAddress bPublicIp;      // B 端公网 IP 地址
-    quint16 bPublicPort;         // B 端公网端口
+    QString id;
+    QString gameId;
+    QString localIp;
+    quint16 localPort;
+    QString publicIp;
+    quint16 publicPort;
+    QString targetIp;
+    quint16 targetPort;
+    qint64 lastSeen;
 };
 
 class P2PServer : public QObject
@@ -30,17 +28,19 @@ public:
     explicit P2PServer(QObject *parent = nullptr);
     ~P2PServer();
 
-    bool startServer(quint16 port, const QString &configFile);
+    bool startServer(quint16 port, const QString &configFile = "war3bot.ini");
     void stopServer();
-    bool isRunning() const { return m_isRunning; }
-    quint16 getListenPort() const { return m_listenPort; }
+    void removePeer(const QString &peerId);
+    QList<QString> getConnectedPeers() const;
+    int getPeerCount() const;
 
 signals:
     void serverStarted(quint16 port);
     void serverStopped();
     void peerRegistered(const QString &peerId, const QString &gameId);
     void peerRemoved(const QString &peerId);
-    void punchRequested(const QString &sourcePeerId, const QString &targetPeerId);
+    void peersMatched(const QString &peer1, const QString &peer2, const QString &targetIp, const QString &targetPort);
+    void punchRequested(const QString &sourcePeer, const QString &targetPeer);
 
 private slots:
     void onReadyRead();
@@ -51,7 +51,10 @@ private:
     void processHandshake(const QNetworkDatagram &datagram);
     void processPunchRequest(const QNetworkDatagram &datagram);
     void processKeepAlive(const QNetworkDatagram &datagram);
-    void sendPunchInfo(const QString &peerId, const PeerInfo &peer);
+    void processPeerInfoAck(const QNetworkDatagram &datagram);
+    void findAndConnectPeers(const QString &peerId, const QString &targetIp, const QString &targetPort);
+    void notifyPeerAboutPeer(const QString &peerId, const PeerInfo &otherPeer);
+    void sendToPeer(const QString &peerId, const QByteArray &data);
     void broadcastServerInfo();
     void cleanupExpiredPeers();
     QString generatePeerId(const QHostAddress &address, quint16 port);
@@ -60,12 +63,10 @@ private:
     QTimer *m_cleanupTimer;
     QTimer *m_broadcastTimer;
     QSettings *m_settings;
-
     QMap<QString, PeerInfo> m_peers;
+
     quint16 m_listenPort;
     bool m_isRunning;
-
-    // 配置参数
     int m_peerTimeout;
     int m_cleanupInterval;
     int m_broadcastInterval;
