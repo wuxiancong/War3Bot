@@ -41,7 +41,7 @@ bool P2PServer::startServer(quint16 port, const QString &configFile)
 
     // 创建UDP socket
     m_udpSocket = new QUdpSocket(this);
-    if (!m_udpSocket->bind(QHostAddress::Any, port)) {
+    if (!m_udpSocket->bind(QHostAddress::AnyIPv4, port)) {
         LOG_ERROR(QString("Failed to bind UDP socket to port %1: %2")
                       .arg(port).arg(m_udpSocket->errorString()));
         return false;
