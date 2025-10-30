@@ -241,72 +241,176 @@ void P2PServer::processHandshake(const QNetworkDatagram &datagram)
 
 void P2PServer::findAndConnectPeers(const QString &peerId, const QString &targetIp, const QString &targetPort)
 {
-    // 查找所有想要连接到相同目标的对等端
-    QList<PeerInfo> matchingPeers;
+    LOG_INFO(QString("🎯 === 开始查找匹配对等端 ==="));
+    LOG_INFO(QString("📡 当前对等端: %1").arg(peerId));
+    LOG_INFO(QString("🎯 目标地址: %1:%2").arg(targetIp, targetPort));
+    LOG_INFO(QString("👥 当前已连接对等端总数: %1").arg(m_peers.size()));
 
+    // 显示所有对等端的详细信息
+    LOG_INFO(QString("📋 === 所有对等端列表 ==="));
+    int counter = 0;
+    for (auto it = m_peers.begin(); it != m_peers.end(); ++it) {
+        const PeerInfo &peer = it.value();
+        counter++;
+        LOG_INFO(QString("  对等端 #%1: ID=%2").arg(counter).arg(peer.id));
+        LOG_INFO(QString("    公网: %1:%2").arg(peer.publicIp).arg(peer.publicPort));
+        LOG_INFO(QString("    内网: %1:%2").arg(peer.localIp).arg(peer.localPort));
+        LOG_INFO(QString("    目标: %1:%2").arg(peer.targetIp).arg(peer.targetPort));
+        LOG_INFO(QString("    游戏: %1").arg(peer.gameId));
+    }
+    LOG_INFO(QString("📋 === 列表结束 ==="));
+
+    // 查找匹配的对等端
+    QList<PeerInfo> matchingPeers;
+    int matchCounter = 0;
+
+    LOG_INFO(QString("🔍 === 开始匹配检查 ==="));
     for (auto it = m_peers.begin(); it != m_peers.end(); ++it) {
         const PeerInfo &otherPeer = it.value();
-        if (otherPeer.id != peerId &&
-            otherPeer.targetIp == targetIp &&
-            otherPeer.targetPort == targetPort.toUShort()) {
+        matchCounter++;
+
+        LOG_INFO(QString("  检查对等端 #%1: %2").arg(matchCounter).arg(otherPeer.id));
+
+        bool isNotSelf = (otherPeer.id != peerId);
+        bool targetIpMatch = (otherPeer.targetIp == targetIp);
+        bool targetPortMatch = (otherPeer.targetPort == targetPort.toUShort());
+
+        LOG_INFO(QString("    检查条件:"));
+        LOG_INFO(QString("      ID不同: %1").arg(isNotSelf ? "✅" : "❌"));
+        LOG_INFO(QString("      目标IP相同: %1 (%2 vs %3)").arg(targetIpMatch ? "✅" : "❌", otherPeer.targetIp, targetIp));
+        LOG_INFO(QString("      目标端口相同: %1 (%2 vs %3)").arg(targetPortMatch ? "✅" : "❌").arg(otherPeer.targetPort).arg(targetPort));
+
+        if (isNotSelf && targetIpMatch && targetPortMatch) {
             matchingPeers.append(otherPeer);
+            LOG_INFO(QString("    🎉 找到匹配对等端!"));
+        } else {
+            LOG_INFO(QString("    ❌ 不匹配"));
         }
     }
 
+    LOG_INFO(QString("🔍 === 匹配检查完成 ==="));
+    LOG_INFO(QString("📊 匹配结果: 找到 %1 个匹配对等端").arg(matchingPeers.size()));
+
     if (!matchingPeers.isEmpty()) {
-        // 找到匹配的对等端，互相通知
+        LOG_INFO(QString("🔄 === 开始双向通知 ==="));
+
         for (const PeerInfo &otherPeer : matchingPeers) {
+            LOG_INFO(QString("  🤝 匹配对: %1 <-> %2").arg(peerId, otherPeer.id));
+
             // 通知当前对等端关于另一个对等端的信息
+            LOG_INFO(QString("  1. 通知 %1 关于 %2").arg(peerId, otherPeer.id));
             notifyPeerAboutPeer(peerId, otherPeer);
+
             // 通知另一个对等端关于当前对等端的信息
+            LOG_INFO(QString("  2. 通知 %1 关于 %2").arg(otherPeer.id, peerId));
             notifyPeerAboutPeer(otherPeer.id, m_peers[peerId]);
 
-            LOG_INFO(QString("Matched peers: %1 <-> %2 for target %3:%4")
-                         .arg(peerId, otherPeer.id, targetIp, targetPort));
+            LOG_INFO(QString("  ✅ 双向通知完成"));
 
             emit peersMatched(peerId, otherPeer.id, targetIp, targetPort);
         }
+
+        LOG_INFO(QString("🔄 === 双向通知完成 ==="));
     } else {
-        LOG_INFO(QString("No matching peers found for %1, waiting for other peers...").arg(peerId));
+        LOG_INFO(QString("⏳ 没有找到匹配的对等端，继续等待..."));
+        LOG_INFO(QString("💡 提示: 需要另一个客户端连接到相同目标 %1:%2").arg(targetIp, targetPort));
     }
+
+    LOG_INFO(QString("🎯 === 匹配查找完成 ==="));
 }
 
 void P2PServer::notifyPeerAboutPeer(const QString &peerId, const PeerInfo &otherPeer)
 {
-    // 构造通知消息：PEER_INFO|PEER_PUBLIC_IP|PEER_PUBLIC_PORT|PEER_LOCAL_IP|PEER_LOCAL_PORT
+    LOG_INFO(QString("📤 === 开始通知对等端 ==="));
+    LOG_INFO(QString("  接收方: %1").arg(peerId));
+    LOG_INFO(QString("  通知内容 - 对方信息:"));
+    LOG_INFO(QString("    公网地址: %1:%2").arg(otherPeer.publicIp).arg(otherPeer.publicPort));
+    LOG_INFO(QString("    内网地址: %1:%2").arg(otherPeer.localIp).arg(otherPeer.localPort));
+    LOG_INFO(QString("    目标地址: %1:%2").arg(otherPeer.targetIp).arg(otherPeer.targetPort));
+
+    // 构造通知消息
     QString message = QString("PEER_INFO|%1|%2|%3|%4")
                           .arg(otherPeer.publicIp)
                           .arg(otherPeer.publicPort)
                           .arg(otherPeer.localIp)
                           .arg(otherPeer.localPort);
 
-    // 发送给对等端
-    QHostAddress peerAddress(otherPeer.publicIp);
-    sendToPeer(peerId, message.toUtf8());
+    LOG_INFO(QString("  构造的消息: %1").arg(message));
+    LOG_INFO(QString("  消息长度: %1 字节").arg(message.toUtf8().size()));
 
-    LOG_INFO(QString("Sent peer info to %1: %2 peerAddress: %3").arg(peerId, message, peerAddress.toString()));
+    // 检查接收方是否存在
+    if (!m_peers.contains(peerId)) {
+        LOG_ERROR(QString("  ❌ 错误: 对等端 %1 不存在!").arg(peerId));
+        return;
+    }
+
+    const PeerInfo &targetPeer = m_peers[peerId];
+
+    // 处理IPv6格式地址
+    QString cleanIp = targetPeer.publicIp;
+    if (cleanIp.startsWith("::ffff:")) {
+        cleanIp = cleanIp.mid(7);
+        LOG_INFO(QString("  清理IPv6地址: %1 -> %2").arg(targetPeer.publicIp, cleanIp));
+    }
+
+    QHostAddress peerAddress(cleanIp);
+    if (peerAddress.isNull()) {
+        LOG_ERROR(QString("  ❌ 错误: 无效的对等端地址: %1").arg(cleanIp));
+        return;
+    }
+
+    LOG_INFO(QString("  发送到: %1:%2").arg(cleanIp).arg(targetPeer.publicPort));
+
+    // 发送消息
+    qint64 bytesSent = m_udpSocket->writeDatagram(message.toUtf8(), peerAddress, targetPeer.publicPort);
+
+    if (bytesSent == -1) {
+        LOG_ERROR(QString("  ❌ 发送失败: %1").arg(m_udpSocket->errorString()));
+    } else {
+        LOG_INFO(QString("  ✅ 发送成功: %1 字节").arg(bytesSent));
+    }
+
+    LOG_INFO(QString("📤 === 通知完成 ==="));
 }
 
 void P2PServer::sendToPeer(const QString &peerId, const QByteArray &data)
 {
+    LOG_INFO(QString("🚀 === 直接发送消息 ==="));
+    LOG_INFO(QString("  接收方: %1").arg(peerId));
+    LOG_INFO(QString("  消息内容: %1").arg(QString(data)));
+    LOG_INFO(QString("  消息长度: %1 字节").arg(data.size()));
+
     if (!m_peers.contains(peerId)) {
-        LOG_WARNING(QString("Cannot send to unknown peer: %1").arg(peerId));
+        LOG_ERROR(QString("  ❌ 错误: 对等端 %1 不存在").arg(peerId));
         return;
     }
 
     const PeerInfo &peer = m_peers[peerId];
-    QHostAddress address(peer.publicIp);
+
+    // 处理IPv6格式地址
+    QString cleanIp = peer.publicIp;
+    if (cleanIp.startsWith("::ffff:")) {
+        cleanIp = cleanIp.mid(7);
+        LOG_INFO(QString("  清理IPv6地址: %1 -> %2").arg(peer.publicIp, cleanIp));
+    }
+
+    QHostAddress address(cleanIp);
+    if (address.isNull()) {
+        LOG_ERROR(QString("  ❌ 错误: 无效地址: %1").arg(cleanIp));
+        return;
+    }
+
+    LOG_INFO(QString("  目标地址: %1:%2").arg(cleanIp).arg(peer.publicPort));
 
     qint64 bytesSent = m_udpSocket->writeDatagram(data, address, peer.publicPort);
 
     if (bytesSent == -1) {
-        LOG_ERROR(QString("发送消息到 %1:%2 失败: %3")
-                      .arg(peer.publicIp).arg(peer.publicPort)
-                      .arg(m_udpSocket->errorString()));
+        LOG_ERROR(QString("  ❌ 发送失败: %1").arg(m_udpSocket->errorString()));
     } else {
-        LOG_DEBUG(QString("成功发送 %1 字节到 %2:%3")
-                      .arg(bytesSent).arg(peer.publicIp).arg(peer.publicPort));
+        LOG_INFO(QString("  ✅ 发送成功: %1 字节").arg(bytesSent));
     }
+
+    LOG_INFO(QString("🚀 === 发送完成 ==="));
 }
 
 void P2PServer::processPunchRequest(const QNetworkDatagram &datagram)
