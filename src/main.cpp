@@ -123,7 +123,7 @@ bool forceFreePort(quint16 port) {
 int main(int argc, char *argv[]) {
     QCoreApplication app(argc, argv);
     QCoreApplication::setApplicationName("War3Bot");
-    QCoreApplication::setApplicationVersion("1.0");
+    QCoreApplication::setApplicationVersion("2.0");
 
     QCommandLineParser parser;
     parser.setApplicationDescription("Warcraft III P2P Connection Bot");
@@ -177,7 +177,7 @@ int main(int argc, char *argv[]) {
         // 尝试在可执行文件目录查找
         QString exeDir = QCoreApplication::applicationDirPath();
         QString alternativeConfig = exeDir + "/" + configFile;
-        if (QFileInfo(alternativeConfig).exists()) {
+        if (QFileInfo::exists(alternativeConfig)) {
             configFile = alternativeConfig;
         } else {
             // 如果都不存在，创建默认配置文件
