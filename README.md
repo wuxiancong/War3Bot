@@ -259,3 +259,12 @@ War3Bot 获取到公网地址后，等待另一个客户端连接
      ↓                   ↓
   直接P2P通信         直接P2P通信
 ```
+# 卸载
+```bash
+## 要移除你安装的这些包，可以使用以下命令：
+sudo apt remove qtbase5-dev qt5-qmake libqt5core5a libqt5network5
+## 如果你还想彻底清除这些包及其配置文件，可以使用：
+sudo apt purge qtbase5-dev qt5-qmake libqt5core5a libqt5network5
+## 如果你想清理掉不再需要的依赖项，可以运行：
+sudo apt autoremove
+```
