@@ -111,11 +111,12 @@ pkill -f war3bot
 sudo systemctl stop war3bot
 # 启动服务
 sudo systemctl start war3bot
-```
-```bash
 # 查看状态
 sudo systemctl status war3bot
-
+# 查看日志
+sudo journalctl -u war3bot -f
+```
+```bash
 # 查看所有 war3bot 进程
 ps aux | grep war3bot
 
@@ -137,10 +138,6 @@ netstat -an | grep 6112
 # 查看TCP和UDP的6112端口
 ss -tulpn | grep :6112
 
-```
-```bash
-# 查看日志
-sudo journalctl -u war3bot -f
 ```
 
 # 防火墙
