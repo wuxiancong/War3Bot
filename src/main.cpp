@@ -6,6 +6,8 @@
 #include <QThread>
 #include <QTimer>
 #include <QDir>
+#include <QSettings>  // 添加这个头文件
+#include <QUdpSocket> // 添加这个头文件
 
 #ifdef Q_OS_WIN
 #include <windows.h>
@@ -41,12 +43,22 @@ bool killProcessOnPort(quint16 port) {
     }
 
     QString output = process.readAllStandardOutput();
+
+// 修复 Qt 版本兼容性问题
+#if QT_VERSION < QT_VERSION_CHECK(5, 15, 0)
+    QStringList lines = output.split('\n', QString::SkipEmptyParts);
+#else
     QStringList lines = output.split('\n', Qt::SkipEmptyParts);
+#endif
 
     for (const QString &line : lines) {
         if (line.contains(QString(":%1").arg(port)) && line.contains("UDP")) {
-            // 提取 PID
+// 提取 PID
+#if QT_VERSION < QT_VERSION_CHECK(5, 15, 0)
+            QStringList parts = line.split(' ', QString::SkipEmptyParts);
+#else
             QStringList parts = line.split(' ', Qt::SkipEmptyParts);
+#endif
             if (parts.size() >= 5) {
                 QString pidStr = parts.last();
                 bool ok;
@@ -113,17 +125,6 @@ int main(int argc, char *argv[]) {
     QCoreApplication::setApplicationName("War3Bot");
     QCoreApplication::setApplicationVersion("1.0");
 
-    // 初始化日志系统
-    Logger::instance()->setLogLevel(Logger::LOG_INFO);
-    Logger::instance()->enableConsoleOutput(true);
-
-    // 确保日志目录存在
-    QDir logDir("logs");
-    if (!logDir.exists()) {
-        logDir.mkpath(".");
-    }
-    Logger::instance()->setLogFile("logs/war3bot.log");
-
     QCommandLineParser parser;
     parser.setApplicationDescription("Warcraft III P2P Connection Bot");
     parser.addHelpOption();
@@ -167,16 +168,72 @@ int main(int argc, char *argv[]) {
 
     parser.process(app);
 
-    // 设置日志级别
+    // === 先加载配置文件来设置日志 ===
+    QString configFile = parser.value(configOption);
+
+    // 检查配置文件是否存在，如果不存在则使用默认值
+    QFileInfo configFileInfo(configFile);
+    if (!configFileInfo.exists()) {
+        // 尝试在可执行文件目录查找
+        QString exeDir = QCoreApplication::applicationDirPath();
+        QString alternativeConfig = exeDir + "/" + configFile;
+        if (QFileInfo(alternativeConfig).exists()) {
+            configFile = alternativeConfig;
+        } else {
+            // 如果都不存在，创建默认配置文件
+            QString defaultConfigPath = exeDir + "/war3bot.ini";
+            QFile defaultConfig(defaultConfigPath);
+            if (defaultConfig.open(QIODevice::WriteOnly | QIODevice::Text)) {
+                QTextStream out(&defaultConfig);
+                out << "[server]\n";
+                out << "broadcast_port=6112\n";
+                out << "enable_broadcast=false\n";
+                out << "peer_timeout=300000\n";
+                out << "cleanup_interval=60000\n";
+                out << "broadcast_interval=30000\n";
+                out << "\n[log]\n";
+                out << "level=info\n";
+                out << "enable_console=true\n";
+                out << "log_file=logs/war3bot.log\n";
+                out << "max_size=10485760\n";
+                out << "backup_count=5\n";
+                defaultConfig.close();
+                configFile = defaultConfigPath;
+            }
+        }
+    }
+
+    QSettings configSettings(configFile, QSettings::IniFormat);
+
+    // 从配置文件获取日志设置
+    QString configLogLevel = configSettings.value("log/level", "info").toString().toLower();
+    bool enableConsole = configSettings.value("log/enable_console", true).toBool();
+    QString logFilePath = configSettings.value("log/log_file", "logs/war3bot.log").toString();
+    qint64 maxLogSize = configSettings.value("log/max_size", 10 * 1024 * 1024).toLongLong();
+    int backupCount = configSettings.value("log/backup_count", 5).toInt();
+
+    // 确保日志目录存在
+    QFileInfo logFileInfo(logFilePath);
+    QDir logDir = logFileInfo.dir();
+    if (!logDir.exists()) {
+        logDir.mkpath(".");
+    }
+
+    // 初始化日志系统（先使用配置文件的设置）
+    Logger::instance()->setLogLevel(Logger::logLevelFromString(configLogLevel));
+    Logger::instance()->enableConsoleOutput(enableConsole);
+    Logger::instance()->setLogFile(logFilePath);
+    Logger::instance()->setMaxFileSize(maxLogSize);
+    Logger::instance()->setBackupCount(backupCount);
+
+    // 命令行参数覆盖配置文件设置
     QString logLevel = parser.value(logLevelOption).toLower();
-    if (logLevel == "debug") Logger::instance()->setLogLevel(Logger::LOG_DEBUG);
-    else if (logLevel == "info") Logger::instance()->setLogLevel(Logger::LOG_INFO);
-    else if (logLevel == "warning") Logger::instance()->setLogLevel(Logger::LOG_WARNING);
-    else if (logLevel == "error") Logger::instance()->setLogLevel(Logger::LOG_ERROR);
-    else if (logLevel == "critical") Logger::instance()->setLogLevel(Logger::LOG_CRITICAL);
+    if (parser.isSet(logLevelOption)) {
+        // 如果命令行指定了日志级别，则覆盖配置文件
+        Logger::instance()->setLogLevel(Logger::logLevelFromString(logLevel));
+    }
 
     quint16 port = parser.value(portOption).toUShort();
-    QString configFile = parser.value(configOption);
     bool killExisting = parser.isSet(killOption);
     bool forceReuse = parser.isSet(forceOption);
 
@@ -184,7 +241,11 @@ int main(int argc, char *argv[]) {
     LOG_INFO(QString("Version: %1").arg(app.applicationVersion()));
     LOG_INFO(QString("Port: %1").arg(port));
     LOG_INFO(QString("Config: %1").arg(configFile));
-    LOG_INFO(QString("Log Level: %1").arg(logLevel));
+    LOG_INFO(QString("Log Level: %1").arg(Logger::instance()->logLevelToString()));
+    LOG_INFO(QString("Log File: %1").arg(logFilePath));
+    LOG_INFO(QString("Console Output: %1").arg(enableConsole ? "enabled" : "disabled"));
+    LOG_INFO(QString("Max Log Size: %1 MB").arg(maxLogSize / (1024 * 1024)));
+    LOG_INFO(QString("Backup Count: %1").arg(backupCount));
 
     // 检查端口是否被占用
     bool portInUse = isPortInUse(port);
@@ -243,7 +304,7 @@ int main(int argc, char *argv[]) {
     int result = app.exec();
 
     // 清理日志系统
-    Logger::destroy();
+    Logger::destroyInstance();
 
     return result;
 }

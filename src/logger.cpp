@@ -17,7 +17,7 @@ Logger *Logger::instance()
     return m_instance;
 }
 
-void Logger::destroy()
+void Logger::destroyInstance()
 {
     if (m_instance) {
         delete m_instance;
@@ -31,6 +31,8 @@ Logger::Logger(QObject *parent)
     , m_stream(nullptr)
     , m_logLevel(LOG_INFO)
     , m_consoleOutput(true)
+    , m_maxFileSize(10 * 1024 * 1024) // 默认10MB
+    , m_backupCount(5) // 默认5个备份
 {
 }
 
@@ -46,6 +48,18 @@ Logger::~Logger()
         delete m_logFile;
         m_logFile = nullptr;
     }
+}
+
+void Logger::setMaxFileSize(qint64 maxSize)
+{
+    QMutexLocker locker(&m_mutex);
+    m_maxFileSize = maxSize;
+}
+
+void Logger::setBackupCount(int count)
+{
+    QMutexLocker locker(&m_mutex);
+    m_backupCount = count;
 }
 
 void Logger::setLogLevel(LogLevel level)
@@ -71,8 +85,12 @@ void Logger::setLogFile(const QString &filename)
 
     m_logFileName = filename;
 
-    // 确保目录存在
+    // 解析日志文件基础信息
     QFileInfo fileInfo(filename);
+    m_logFileBaseName = fileInfo.completeBaseName(); // 不包含扩展名的文件名
+    m_logFileDir = fileInfo.absolutePath();
+
+    // 确保目录存在
     QDir dir = fileInfo.dir();
     if (!dir.exists()) {
         dir.mkpath(".");
@@ -93,6 +111,84 @@ void Logger::enableConsoleOutput(bool enable)
 {
     QMutexLocker locker(&m_mutex);
     m_consoleOutput = enable;
+}
+
+bool Logger::rotateLogFileIfNeeded()
+{
+    if (m_logFileName.isEmpty() || !m_logFile) {
+        return false;
+    }
+
+    // 检查当前文件大小
+    if (m_logFile->size() < m_maxFileSize) {
+        return false;
+    }
+
+    // 关闭当前的文件流
+    if (m_stream) {
+        m_stream->flush();
+        delete m_stream;
+        m_stream = nullptr;
+    }
+    if (m_logFile) {
+        m_logFile->close();
+        delete m_logFile;
+        m_logFile = nullptr;
+    }
+
+    // 执行日志轮转
+    return performLogRotation();
+}
+
+bool Logger::performLogRotation()
+{
+    QDir logDir(m_logFileDir);
+    if (!logDir.exists()) {
+        return false;
+    }
+
+    QString logExtension = ".log";
+
+    // 删除最旧的备份文件
+    QString oldestBackup = m_logFileBaseName + "_" + QString::number(m_backupCount) + logExtension;
+    QFile::remove(logDir.filePath(oldestBackup));
+
+    // 重命名现有的备份文件
+    for (int i = m_backupCount - 1; i >= 1; i--) {
+        QString oldName = m_logFileBaseName + "_" + QString::number(i) + logExtension;
+        QString newName = m_logFileBaseName + "_" + QString::number(i + 1) + logExtension;
+
+        QFile::rename(logDir.filePath(oldName), logDir.filePath(newName));
+    }
+
+    // 将当前日志文件重命名为第一个备份
+    QString firstBackup = m_logFileBaseName + "_1" + logExtension;
+    if (QFile::exists(m_logFileName)) {
+        QFile::rename(m_logFileName, logDir.filePath(firstBackup));
+    }
+
+    // 重新打开日志文件
+    m_logFile = new QFile(m_logFileName);
+    if (m_logFile->open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text)) {
+        m_stream = new QTextStream(m_logFile);
+        m_stream->setCodec("UTF-8");
+
+        // 写入轮转提示信息
+        QString timestamp = QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss.zzz");
+        QString rotateMessage = QString("[%1] [INFO] Log file rotated, new file started")
+                                    .arg(timestamp);
+        *m_stream << rotateMessage << "\n";
+        m_stream->flush();
+
+        // 注意：这里不能使用 LOG_INFO，因为可能造成递归调用
+        std::cout << "Log file rotation completed successfully" << std::endl;
+        return true;
+    } else {
+        std::cerr << "Failed to reopen log file after rotation: " << m_logFileName.toStdString() << std::endl;
+        delete m_logFile;
+        m_logFile = nullptr;
+        return false;
+    }
 }
 
 void Logger::debug(const QString &message)
@@ -117,63 +213,7 @@ void Logger::error(const QString &message)
 
 void Logger::critical(const QString &message)
 {
-    log(LOG_CRITICAL    , message);
-}
-
-bool Logger::checkAndClearLogFile()
-{
-    if (m_logFileName.isEmpty()) {
-        return false;
-    }
-
-    QFile file(m_logFileName);
-    if (!file.exists()) {
-        return false;
-    }
-
-    // 检查文件大小是否超过2MB (2 * 1024 * 1024 = 2097152 bytes)
-    if (file.size() > 2 * 1024 * 1024) {
-        // 关闭当前的文件流
-        if (m_stream) {
-            m_stream->flush();
-            delete m_stream;
-            m_stream = nullptr;
-        }
-        if (m_logFile) {
-            m_logFile->close();
-            delete m_logFile;
-            m_logFile = nullptr;
-        }
-
-        // 删除原文件并重新创建
-        if (file.remove()) {
-            // 重新打开文件
-            m_logFile = new QFile(m_logFileName);
-            if (m_logFile->open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text)) {
-                m_stream = new QTextStream(m_logFile);
-                m_stream->setCodec("UTF-8");
-
-                // 写入清除日志的提示信息
-                QString timestamp = QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss.zzz");
-                QString clearMessage = QString("[%1] [INFO] Log file exceeded 2MB, cleared and started new log file")
-                                           .arg(timestamp);
-                *m_stream << clearMessage << "\n";
-                m_stream->flush();
-
-                return true;
-            } else {
-                std::cerr << "Failed to reopen log file after clearing: " << m_logFileName.toStdString() << std::endl;
-                delete m_logFile;
-                m_logFile = nullptr;
-                return false;
-            }
-        } else {
-            std::cerr << "Failed to remove log file: " << m_logFileName.toStdString() << std::endl;
-            return false;
-        }
-    }
-
-    return false;
+    log(LOG_CRITICAL, message);
 }
 
 void Logger::log(LogLevel level, const QString &message)
@@ -182,8 +222,8 @@ void Logger::log(LogLevel level, const QString &message)
 
     QMutexLocker locker(&m_mutex);
 
-    // 检查并清除日志文件（如果超过2MB）
-    checkAndClearLogFile();
+    // 检查并执行日志轮转
+    rotateLogFileIfNeeded();
 
     QString levelStr;
     switch (level) {
@@ -191,12 +231,12 @@ void Logger::log(LogLevel level, const QString &message)
     case LOG_INFO: levelStr = "INFO"; break;
     case LOG_WARNING: levelStr = "WARNING"; break;
     case LOG_ERROR: levelStr = "ERROR"; break;
-    case LOG_CRITICAL    : levelStr = "CRITICAL"; break;
+    case LOG_CRITICAL: levelStr = "CRITICAL"; break;
     }
 
     QString timestamp = QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss.zzz");
     QString logMessage = QString("[%1] [%2] %3")
-                             .arg(timestamp,levelStr,message);
+                             .arg(timestamp, levelStr, message);
 
     // 输出到控制台
     if (m_consoleOutput) {
