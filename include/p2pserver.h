@@ -51,7 +51,6 @@ private slots:
 private:
     void broadcastServerInfo();
     void cleanupExpiredPeers();
-    void sendPeerInfoToBDirectly();
     void processKeepAlive(const QNetworkDatagram &datagram);
     void processHandshake(const QNetworkDatagram &datagram);
     void processPeerInfoAck(const QNetworkDatagram &datagram);
@@ -60,6 +59,7 @@ private:
     QString generatePeerId(const QHostAddress &address, quint16 port);
     void notifyPeerAboutPeer(const QString &peerId, const PeerInfo &otherPeer);
     void findAndConnectPeers(const QString &peerId, const QString &targetIp, const QString &targetPort);
+    void sendPeerInfoToTarget(const QString &sourcePeerId, const QString &targetIp, unsigned short targetPort);
 
     int m_peerTimeout;
     quint16 m_listenPort;
