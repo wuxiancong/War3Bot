@@ -29,7 +29,7 @@ Logger::Logger(QObject *parent)
     : QObject(parent)
     , m_logFile(nullptr)
     , m_stream(nullptr)
-    , m_logLevel(INFO)
+    , m_logLevel(LOG_INFO)
     , m_consoleOutput(true)
 {
 }
@@ -97,27 +97,27 @@ void Logger::enableConsoleOutput(bool enable)
 
 void Logger::debug(const QString &message)
 {
-    log(DEBUG, message);
+    log(LOG_DEBUG, message);
 }
 
 void Logger::info(const QString &message)
 {
-    log(INFO, message);
+    log(LOG_INFO, message);
 }
 
 void Logger::warning(const QString &message)
 {
-    log(WARNING, message);
+    log(LOG_WARNING, message);
 }
 
 void Logger::error(const QString &message)
 {
-    log(ERROR, message);
+    log(LOG_ERROR, message);
 }
 
 void Logger::critical(const QString &message)
 {
-    log(CRITICAL, message);
+    log(LOG_CRITICAL    , message);
 }
 
 bool Logger::checkAndClearLogFile()
@@ -187,11 +187,11 @@ void Logger::log(LogLevel level, const QString &message)
 
     QString levelStr;
     switch (level) {
-    case DEBUG: levelStr = "DEBUG"; break;
-    case INFO: levelStr = "INFO"; break;
-    case WARNING: levelStr = "WARNING"; break;
-    case ERROR: levelStr = "ERROR"; break;
-    case CRITICAL: levelStr = "CRITICAL"; break;
+    case LOG_DEBUG: levelStr = "DEBUG"; break;
+    case LOG_INFO: levelStr = "INFO"; break;
+    case LOG_WARNING: levelStr = "WARNING"; break;
+    case LOG_ERROR: levelStr = "ERROR"; break;
+    case LOG_CRITICAL    : levelStr = "CRITICAL"; break;
     }
 
     QString timestamp = QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss.zzz");
@@ -200,7 +200,7 @@ void Logger::log(LogLevel level, const QString &message)
 
     // 输出到控制台
     if (m_consoleOutput) {
-        if (level >= ERROR) {
+        if (level >= LOG_ERROR) {
             std::cerr << logMessage.toStdString() << std::endl;
         } else {
             std::cout << logMessage.toStdString() << std::endl;

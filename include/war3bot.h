@@ -15,6 +15,7 @@ public:
     void stopServer();
     bool isRunning() const;
     bool startServer(quint16 port, const QString &configFile);
+    void setForcePortReuse(bool force) { m_forcePortReuse = force; }
 
 private slots:
     void onPeerRemoved(const QString &peerId);
@@ -23,6 +24,7 @@ private slots:
 
 private:
     P2PServer *m_p2pServer;
+    bool m_forcePortReuse = false;
 };
 
 #endif // WAR3BOT_H

@@ -3,6 +3,12 @@
 #include <QNetworkInterface>
 #include <QNetworkDatagram>
 #include <QDateTime>
+#ifdef Q_OS_WIN
+#include <winsock2.h>
+#else
+#include <sys/socket.h>
+#include <netinet/in.h>
+#endif
 
 P2PServer::P2PServer(QObject *parent)
     : QObject(parent)
@@ -42,7 +48,30 @@ bool P2PServer::startServer(quint16 port, const QString &configFile)
 
     // 创建UDP socket
     m_udpSocket = new QUdpSocket(this);
-    if (!m_udpSocket->bind(QHostAddress::AnyIPv4, port)) {
+
+    // 跨平台端口重用设置
+    int fd = m_udpSocket->socketDescriptor();
+    if (fd != -1) {
+        int reuse = 1;
+
+#ifdef Q_OS_WIN
+        if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (char*)&reuse, sizeof(reuse)) < 0) {
+            LOG_WARNING("Failed to set SO_REUSEADDR on Windows");
+        }
+#else
+        if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)) < 0) {
+            LOG_WARNING("Failed to set SO_REUSEADDR on Linux");
+        }
+#ifdef SO_REUSEPORT
+        if (setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &reuse, sizeof(reuse)) < 0) {
+            LOG_WARNING("Failed to set SO_REUSEPORT on Linux");
+        }
+#endif
+#endif
+    }
+
+    // 使用 ShareAddress 选项允许端口重用
+    if (!m_udpSocket->bind(QHostAddress::Any, port, QUdpSocket::ShareAddress)) {
         LOG_ERROR(QString("Failed to bind UDP socket to port %1: %2")
                       .arg(port).arg(m_udpSocket->errorString()));
         return false;
@@ -147,6 +176,13 @@ void P2PServer::processHandshake(const QNetworkDatagram &datagram)
 {
     // 格式: HANDSHAKE|GAME_ID|LOCAL_PORT|LOCAL_IP|LOCAL_PORT|TARGET_IP|TARGET_PORT
     QString data = QString(datagram.data());
+    QString senderAddress = datagram.senderAddress().toString();
+    quint16 senderPort = datagram.senderPort();
+
+    LOG_INFO(QString("=== 收到握手请求 ==="));
+    LOG_INFO(QString("来自: %1:%2").arg(senderAddress).arg(senderPort));
+    LOG_INFO(QString("内容: %1").arg(data));
+
     QStringList parts = data.split('|');
 
     if (parts.size() < 7) {
@@ -186,9 +222,16 @@ void P2PServer::processHandshake(const QNetworkDatagram &datagram)
     LOG_INFO(QString("Handshake details - Local: %1:%2 localPublicPort: %3, Target: %4:%5")
                  .arg(localIp, localPort, localPublicPort, targetIp, targetPort));
 
-    // 发送握手确认
+    // 发送确认前也记录日志
+    LOG_INFO(QString("发送握手确认到: %1:%2, PeerID: %3")
+                 .arg(datagram.senderAddress().toString())
+                 .arg(datagram.senderPort())
+                 .arg(peerId));
+
     QByteArray response = QString("HANDSHAKE_OK|%1").arg(peerId).toUtf8();
-    m_udpSocket->writeDatagram(response, datagram.senderAddress(), datagram.senderPort());
+    qint64 bytesSent = m_udpSocket->writeDatagram(response, datagram.senderAddress(), datagram.senderPort());
+
+    LOG_INFO(QString("确认消息发送结果: %1 字节").arg(bytesSent));
 
     // 查找匹配的对等端并转发信息
     findAndConnectPeers(peerId, targetIp, targetPort);
@@ -253,7 +296,17 @@ void P2PServer::sendToPeer(const QString &peerId, const QByteArray &data)
 
     const PeerInfo &peer = m_peers[peerId];
     QHostAddress address(peer.publicIp);
-    m_udpSocket->writeDatagram(data, address, peer.publicPort);
+
+    qint64 bytesSent = m_udpSocket->writeDatagram(data, address, peer.publicPort);
+
+    if (bytesSent == -1) {
+        LOG_ERROR(QString("发送消息到 %1:%2 失败: %3")
+                      .arg(peer.publicIp).arg(peer.publicPort)
+                      .arg(m_udpSocket->errorString()));
+    } else {
+        LOG_DEBUG(QString("成功发送 %1 字节到 %2:%3")
+                      .arg(bytesSent).arg(peer.publicIp).arg(peer.publicPort));
+    }
 }
 
 void P2PServer::processPunchRequest(const QNetworkDatagram &datagram)

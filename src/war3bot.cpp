@@ -22,6 +22,12 @@ bool War3Bot::startServer(quint16 port, const QString &configFile)
     if (!m_p2pServer) {
         m_p2pServer = new P2PServer(this);
 
+        // 设置强制端口重用
+        if (m_forcePortReuse) {
+            // 这里可以传递强制重用标志给 P2PServer
+            // 或者 P2PServer 会自动处理
+        }
+
         // 连接信号
         connect(m_p2pServer, &P2PServer::peerRegistered,
                 this, &War3Bot::onPeerRegistered);

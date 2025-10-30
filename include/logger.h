@@ -13,11 +13,11 @@ class Logger : public QObject
 
 public:
     enum LogLevel {
-        DEBUG = 0,
-        INFO = 1,
-        WARNING = 2,
-        ERROR = 3,
-        CRITICAL = 4
+        LOG_DEBUG = 0,
+        LOG_INFO = 1,
+        LOG_WARNING = 2,
+        LOG_ERROR = 3,
+        LOG_CRITICAL = 4
     };
 
     static Logger *instance();
@@ -38,7 +38,7 @@ private:
     ~Logger();
 
     void log(LogLevel level, const QString &message);
-    bool checkAndClearLogFile(); // 新增：检查并清除日志文件
+    bool checkAndClearLogFile();
 
     static Logger *m_instance;
     QFile *m_logFile;
