@@ -142,23 +142,31 @@ void P2PServer::onReadyRead()
 
 void P2PServer::processHandshake(const QNetworkDatagram &datagram)
 {
-    // 格式: HANDSHAKE|GAME_ID|LOCAL_PORT
+    // 格式: HANDSHAKE|GAME_ID|A_LOCAL_PORT|A_PUBLIC_IP|A_PUBLIC_PORT|B_PUBLIC_IP|B_PUBLIC_PORT
     QStringList parts = QString(datagram.data()).split('|');
-    if (parts.size() < 3) {
+    if (parts.size() < 7) {  // 确保有足够的字段
         LOG_WARNING("Invalid handshake format");
         return;
     }
 
     QString gameId = parts[1];
-    quint16 localPort = parts[2].toUShort();
+    quint16 aLocalPort = parts[2].toUShort();
+    QString aPublicIp = parts[3];
+    quint16 aPublicPort = parts[4].toUShort();
+    QString bPublicIp = parts[5];
+    quint16 bPublicPort = parts[6].toUShort();
 
     QString peerId = generatePeerId(datagram.senderAddress(), datagram.senderPort());
 
     PeerInfo peer;
     peer.publicAddress = datagram.senderAddress();
     peer.publicPort = datagram.senderPort();
-    peer.localAddress = datagram.destinationAddress(); // 本地地址
-    peer.localPort = localPort;
+    peer.localAddress = datagram.destinationAddress();  // 本地地址
+    peer.localPort = aLocalPort;                         // A 的本地端口
+    peer.aPublicIp = QHostAddress(aPublicIp);            // A 的公网 IP
+    peer.aPublicPort = aPublicPort;                      // A 的公网端口
+    peer.bPublicIp = QHostAddress(bPublicIp);            // B 的公网 IP
+    peer.bPublicPort = bPublicPort;                      // B 的公网端口
     peer.lastSeen = QDateTime::currentMSecsSinceEpoch();
     peer.gameId = gameId;
 
@@ -199,10 +207,7 @@ void P2PServer::processPunchRequest(const QNetworkDatagram &datagram)
     PeerInfo &sourcePeer = m_peers[sourcePeerId];
     PeerInfo &targetPeer = m_peers[targetPeerId];
 
-    // 更新最后活动时间
-    sourcePeer.lastSeen = QDateTime::currentMSecsSinceEpoch();
-
-    // 向双方发送对方的连接信息
+    // 向双方发送对方的公网信息
     sendPunchInfo(sourcePeerId, targetPeer);
     sendPunchInfo(targetPeerId, sourcePeer);
 
@@ -230,27 +235,25 @@ void P2PServer::sendPunchInfo(const QString &peerId, const PeerInfo &peer)
 
     PeerInfo &targetPeer = m_peers[peerId];
 
-    // 发送公网地址信息
-    QString publicInfo = QString("PUNCH_INFO|PUBLIC|%1|%2|%3")
-                             .arg(peer.publicAddress.toString())
-                             .arg(peer.publicPort)
-                             .arg(peer.gameId);
+    // 发送 A 端的公网地址信息
+    QString aPublicInfo = QString("PUNCH_INFO|A_PUBLIC|%1|%2|%3")
+                              .arg(peer.aPublicIp.toString())
+                              .arg(peer.aPublicPort)
+                              .arg(peer.gameId);
 
-    m_udpSocket->writeDatagram(publicInfo.toUtf8(),
+    m_udpSocket->writeDatagram(aPublicInfo.toUtf8(),
                                targetPeer.publicAddress,
                                targetPeer.publicPort);
 
-    // 发送内网地址信息（如果不同）
-    if (peer.localAddress != peer.publicAddress || peer.localPort != peer.publicPort) {
-        QString localInfo = QString("PUNCH_INFO|LOCAL|%1|%2|%3")
-        .arg(peer.localAddress.toString())
-            .arg(peer.localPort)
-            .arg(peer.gameId);
+    // 发送 B 端的公网地址信息
+    QString bPublicInfo = QString("PUNCH_INFO|B_PUBLIC|%1|%2|%3")
+                              .arg(peer.bPublicIp.toString())
+                              .arg(peer.bPublicPort)
+                              .arg(peer.gameId);
 
-        m_udpSocket->writeDatagram(localInfo.toUtf8(),
-                                   targetPeer.publicAddress,
-                                   targetPeer.publicPort);
-    }
+    m_udpSocket->writeDatagram(bPublicInfo.toUtf8(),
+                               targetPeer.publicAddress,
+                               targetPeer.publicPort);
 
     LOG_DEBUG(QString("Sent punch info for %1 to %2").arg(peerId, targetPeer.publicAddress.toString()));
 }

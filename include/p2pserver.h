@@ -10,12 +10,16 @@
 #include <QMap>
 
 struct PeerInfo {
-    QHostAddress publicAddress;
-    quint16 publicPort;
-    QHostAddress localAddress;
-    quint16 localPort;
-    qint64 lastSeen;
-    QString gameId;
+    QHostAddress publicAddress;  // 公网地址 (A 或 B 的地址)
+    quint16 publicPort;          // 公网端口 (A 或 B 的端口)
+    QHostAddress localAddress;   // 本地地址 (A 或 B 的本地地址)
+    quint16 localPort;           // 本地端口 (A 或 B 的本地端口)
+    qint64 lastSeen;             // 上次活动时间
+    QString gameId;              // 游戏 ID
+    QHostAddress aPublicIp;      // A 端公网 IP 地址
+    quint16 aPublicPort;         // A 端公网端口
+    QHostAddress bPublicIp;      // B 端公网 IP 地址
+    quint16 bPublicPort;         // B 端公网端口
 };
 
 class P2PServer : public QObject

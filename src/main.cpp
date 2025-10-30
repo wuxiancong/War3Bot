@@ -27,9 +27,9 @@ int main(int argc, char *argv[]) {
 
     QCommandLineOption portOption(
         {"p", "port"},
-        "Listen port (default: 6113)",
+        "Listen port (default: 6112)",
         "port",
-        "6113"
+        "6112"
         );
     parser.addOption(portOption);
 
