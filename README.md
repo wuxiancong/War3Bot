@@ -59,6 +59,7 @@ sudo chown -R war3bot:war3bot /var/log/war3bot
 ```
 ## 配置服务
 war3bot.service:
+sudo nano /etc/systemd/system/war3bot.service
 ```bash
 [Unit]
 Description=War3Bot Warcraft III Proxy
