@@ -159,6 +159,16 @@ firewall-cmd --list-ports
 # 检查 6112 端口是否开放
 firewall-cmd --query-port=6112/tcp
 firewall-cmd --query-port=6112/udp
+
+# 永久开放 6112 UDP 端口
+firewall-cmd --add-port=6112/tcp --permanent
+firewall-cmd --add-port=6112/udp --permanent
+firewall-cmd --reload
+
+# 验证配置
+firewall-cmd --query-port=6112/tcp
+firewall-cmd --query-port=6112/udp
+
 ```
 # 基本测试
 ```bash
