@@ -6,17 +6,17 @@
 
 P2PServer::P2PServer(QObject *parent)
     : QObject(parent)
-    , m_udpSocket(nullptr)
-    , m_cleanupTimer(nullptr)
-    , m_broadcastTimer(nullptr)
-    , m_settings(nullptr)
-    , m_listenPort(0)
     , m_isRunning(false)
-    , m_peerTimeout(300000) // 5分钟
-    , m_cleanupInterval(60000) // 1分钟
-    , m_broadcastInterval(30000) // 30秒
-    , m_enableBroadcast(false)
-    , m_broadcastPort(6112)
+    , m_peerTimeout(300000)
+    , m_listenPort(0)
+    , m_cleanupInterval(60000)
+    , m_settings(nullptr)
+    , m_cleanupTimer(nullptr)
+    , m_enableBroadcast(false) // 5分钟
+    , m_broadcastInterval(30000) // 1分钟
+    , m_broadcastPort(6112) // 30秒
+    , m_udpSocket(nullptr)
+    , m_broadcastTimer(nullptr)
 {
 }
 
