@@ -1,13 +1,13 @@
-#include "war3bot.h"
 #include "logger.h"
-#include <QCommandLineParser>
-#include <QCoreApplication>
-#include <QUdpSocket>
-#include <QSettings>
-#include <QProcess>
-#include <QThread>
-#include <QTimer>
+#include "war3bot.h"
 #include <QDir>
+#include <QTimer>
+#include <QThread>
+#include <QProcess>
+#include <QSettings>
+#include <QUdpSocket>
+#include <QCoreApplication>
+#include <QCommandLineParser>
 
 #ifdef Q_OS_WIN
 #include <windows.h>

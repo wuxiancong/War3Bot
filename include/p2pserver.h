@@ -1,11 +1,11 @@
 #ifndef P2PSERVER_H
 #define P2PSERVER_H
 
-#include <QObject>
-#include <QUdpSocket>
-#include <QTimer>
-#include <QSettings>
 #include <QMap>
+#include <QTimer>
+#include <QObject>
+#include <QSettings>
+#include <QUdpSocket>
 #include <QHostAddress>
 #include <QNetworkDatagram>
 
@@ -42,17 +42,13 @@ public:
     void removePeer(const QString &peerId);
     QList<QString> getConnectedPeers() const;
 
-    // 公共成员变量
-    bool m_isRunning;
-
 signals:
-    void serverStarted(quint16 port);
     void serverStopped();
-    void peerRegistered(const QString &peerId, const QString &gameId);
+    void serverStarted(quint16 port);
     void peerRemoved(const QString &peerId);
+    void peerRegistered(const QString &peerId, const QString &gameId);
     void punchRequested(const QString &sourcePeer, const QString &targetPeer);
-    void peersMatched(const QString &peer1, const QString &peer2,
-                      const QString &targetIp, const QString &targetPort);
+    void peersMatched(const QString &peer1, const QString &peer2, const QString &targetIp, const QString &targetPort);
 
 private slots:
     void onReadyRead();
@@ -65,9 +61,9 @@ private:
     void logServerConfiguration();
 
     // Socket 管理
+    void cleanupResources();
     bool setupSocketOptions();
     bool bindSocket(quint16 port);
-    void cleanupResources();
 
     // 消息处理
     void processDatagram(const QNetworkDatagram &datagram);
@@ -87,10 +83,10 @@ private:
     qint64 sendToAddress(const QHostAddress &address, quint16 port, const QByteArray &data);
 
     // 工具函数
-    QString generatePeerId(const QHostAddress &address, quint16 port);
     void setupTimers();
     void cleanupExpiredPeers();
     void broadcastServerInfo();
+    QString generatePeerId(const QHostAddress &address, quint16 port);
 
     // 配置参数
     int m_peerTimeout;
@@ -99,6 +95,7 @@ private:
     bool m_enableBroadcast;
     int m_broadcastInterval;
     quint16 m_broadcastPort;
+    bool m_isRunning = false;
 
     // 组件
     QSettings *m_settings;

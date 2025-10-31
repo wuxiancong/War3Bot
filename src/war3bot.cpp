@@ -1,9 +1,10 @@
-#include "war3bot.h"
 #include "logger.h"
+#include "war3bot.h"
 
 War3Bot::War3Bot(QObject *parent)
     : QObject(parent)
     , m_p2pServer(nullptr)
+    , m_forcePortReuse(false)
 {
 }
 
@@ -14,7 +15,7 @@ War3Bot::~War3Bot()
 
 bool War3Bot::startServer(quint16 port, const QString &configFile)
 {
-    if (m_p2pServer && m_p2pServer->m_isRunning) {
+    if (m_p2pServer && m_p2pServer->isRunning()) {
         LOG_WARNING("服务器已在运行中");
         return true;
     }
@@ -57,7 +58,7 @@ void War3Bot::stopServer()
 
 bool War3Bot::isRunning() const
 {
-    return m_p2pServer && m_p2pServer->m_isRunning;
+    return m_p2pServer && m_p2pServer->isRunning();
 }
 
 void War3Bot::onPeerRegistered(const QString &peerId, const QString &gameId)

@@ -1,9 +1,9 @@
 #include "p2pserver.h"
 #include "logger.h"
-#include <QNetworkInterface>
-#include <QNetworkDatagram>
-#include <QDateTime>
 #include <QTimer>
+#include <QDateTime>
+#include <QNetworkDatagram>
+#include <QNetworkInterface>
 
 #ifdef Q_OS_WIN
 #include <winsock2.h>
@@ -14,13 +14,13 @@
 
 P2PServer::P2PServer(QObject *parent)
     : QObject(parent)
-    , m_isRunning(false)
     , m_peerTimeout(300000)
     , m_listenPort(0)
     , m_cleanupInterval(60000)
     , m_enableBroadcast(false)
     , m_broadcastInterval(30000)
     , m_broadcastPort(6112)
+    , m_isRunning(false)
     , m_settings(nullptr)
     , m_udpSocket(nullptr)
     , m_cleanupTimer(nullptr)

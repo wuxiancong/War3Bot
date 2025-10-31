@@ -1,7 +1,6 @@
 #ifndef WAR3BOT_H
 #define WAR3BOT_H
 
-#include <QObject>
 #include "p2pserver.h"
 
 class War3Bot : public QObject
