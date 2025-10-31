@@ -296,13 +296,6 @@ int main(int argc, char *argv[]) {
     LOG_INFO("War3Bot 服务器正在运行。按 Ctrl+C 停止。");
     // 在启动服务器后添加网络测试
     LOG_INFO("=== 服务器启动完成，开始监听 ===");
-
-    // 测试日志系统
-    for (int i = 0; i < 3; i++) {
-        LOG_INFO(QString("测试消息 %1 - 服务器正在运行...").arg(i+1));
-        QThread::msleep(1000);
-    }
-
     // 添加定时状态报告
     QTimer *statusTimer = new QTimer(&app);
     QObject::connect(statusTimer, &QTimer::timeout, &app, [&bot]() {

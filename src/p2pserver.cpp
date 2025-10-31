@@ -205,24 +205,34 @@ void P2PServer::processDatagram(const QNetworkDatagram &datagram)
     quint16 senderPort = datagram.senderPort();
 
     LOG_INFO(QString("📨 收到 %1 字节来自 %2:%3")
-                  .arg(data.size()).arg(senderAddress).arg(senderPort));
+                 .arg(data.size()).arg(senderAddress).arg(senderPort));
 
     // 解析消息类型
     if (data.startsWith("HANDSHAKE|")) {
-        LOG_INFO("处理 HANDSHAKE 消息");
+        LOG_INFO("🔗 处理 HANDSHAKE 消息");
         processHandshake(datagram);
     } else if (data.startsWith("REGISTER|")) {
-        LOG_INFO("处理 REGISTER 消息");
+        LOG_INFO("📝 处理 REGISTER 消息");
         processRegister(datagram);
     } else if (data.startsWith("PUNCH")) {
-        LOG_INFO("处理 PUNCH 消息");
+        LOG_INFO("🔄 处理 PUNCH 消息");
         processPunchRequest(datagram);
-    } else if (data.startsWith("KEEPALIVE")) {        
-        LOG_DEBUG("处理 KEEPALIVE 消息");
+    } else if (data.startsWith("KEEPALIVE")) {
+        LOG_DEBUG("💓 处理 KEEPALIVE 消息");
         processKeepAlive(datagram);
     } else if (data.startsWith("PEER_INFO_ACK")) {
-        LOG_INFO("处理 PEER_INFO_ACK 消息");
+        LOG_INFO("✅ 处理 PEER_INFO_ACK 消息");
         processPeerInfoAck(datagram);
+    } else if (data.startsWith("PING|")) {
+        LOG_INFO("🏓 收到PING请求，发送PONG回复");
+        QByteArray pongResponse = "PONG|War3BotServer";
+        sendToAddress(datagram.senderAddress(), datagram.senderPort(), pongResponse);
+        LOG_INFO("✅ PONG回复已发送");
+    } else if (data.startsWith("TEST|")) {  // 新增：处理测试消息
+        LOG_INFO("🧪 处理测试消息");
+        QByteArray testResponse = "TEST_RESPONSE|Hello from War3Bot Server";
+        sendToAddress(datagram.senderAddress(), datagram.senderPort(), testResponse);
+        LOG_INFO("✅ 测试回复已发送");
     } else {
         LOG_WARNING(QString("❓ 未知消息类型来自 %1:%2: %3")
                         .arg(senderAddress).arg(senderPort).arg(QString(data)));
