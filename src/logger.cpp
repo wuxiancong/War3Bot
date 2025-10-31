@@ -222,9 +222,6 @@ void Logger::log(LogLevel level, const QString &message)
 
     QMutexLocker locker(&m_mutex);
 
-    // 检查并执行日志轮转
-    rotateLogFileIfNeeded();
-
     QString levelStr;
     switch (level) {
     case LOG_DEBUG: levelStr = "DEBUG"; break;
@@ -238,30 +235,35 @@ void Logger::log(LogLevel level, const QString &message)
     QString logMessage = QString("[%1] [%2] %3")
                              .arg(timestamp, levelStr, message);
 
-    // 输出到控制台
-    if (m_consoleOutput) {
-        if (level >= LOG_ERROR) {
-            std::cerr << logMessage.toStdString() << std::endl;
-        } else {
-            std::cout << logMessage.toStdString() << std::endl;
-        }
-    }
+    // 总是输出到控制台（用于调试）
+    std::cout << logMessage.toStdString() << std::endl;
+    std::cout.flush(); // 强制刷新
 
     // 输出到文件
-    if (m_stream) {
-        *m_stream << logMessage << "\n";
-        m_stream->flush();
-    } else if (!m_logFileName.isEmpty()) {
-        // 如果文件打开失败，尝试重新打开
+    if (!m_stream && !m_logFileName.isEmpty()) {
+        // 尝试重新打开文件
         m_logFile = new QFile(m_logFileName);
         if (m_logFile->open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text)) {
             m_stream = new QTextStream(m_logFile);
             m_stream->setCodec("UTF-8");
-            *m_stream << logMessage << "\n";
-            m_stream->flush();
+            std::cout << "重新打开日志文件成功: " << m_logFileName.toStdString() << std::endl;
         } else {
+            std::cerr << "无法打开日志文件: " << m_logFileName.toStdString()
+                << " 错误: " << m_logFile->errorString().toStdString() << std::endl;
             delete m_logFile;
             m_logFile = nullptr;
+            return;
         }
+    }
+
+    if (m_stream) {
+        *m_stream << logMessage << "\n";
+        m_stream->flush(); // 强制刷新到磁盘
+        m_logFile->flush(); // 双重保险
+    }
+
+    // 如果文件流仍然不可用，输出错误
+    if (!m_stream) {
+        std::cerr << "日志文件流不可用，消息丢失: " << logMessage.toStdString() << std::endl;
     }
 }

@@ -193,7 +193,7 @@ void P2PServer::onReadyRead()
         if (!datagram.isValid()) {
             continue;
         }
-
+        LOG_INFO(QString("📨 收到数据报，大小: %1 字节").arg(datagram.data().size()));
         processDatagram(datagram);
     }
 }
@@ -204,19 +204,24 @@ void P2PServer::processDatagram(const QNetworkDatagram &datagram)
     QString senderAddress = datagram.senderAddress().toString();
     quint16 senderPort = datagram.senderPort();
 
-    LOG_DEBUG(QString("📨 收到 %1 字节来自 %2:%3")
+    LOG_INFO(QString("📨 收到 %1 字节来自 %2:%3")
                   .arg(data.size()).arg(senderAddress).arg(senderPort));
 
     // 解析消息类型
     if (data.startsWith("HANDSHAKE|")) {
+        LOG_INFO("处理 HANDSHAKE 消息");
         processHandshake(datagram);
     } else if (data.startsWith("REGISTER|")) {
+        LOG_INFO("处理 REGISTER 消息");
         processRegister(datagram);
     } else if (data.startsWith("PUNCH")) {
+        LOG_INFO("处理 PUNCH 消息");
         processPunchRequest(datagram);
-    } else if (data.startsWith("KEEPALIVE")) {
+    } else if (data.startsWith("KEEPALIVE")) {        
+        LOG_DEBUG("处理 KEEPALIVE 消息");
         processKeepAlive(datagram);
     } else if (data.startsWith("PEER_INFO_ACK")) {
+        LOG_INFO("处理 PEER_INFO_ACK 消息");
         processPeerInfoAck(datagram);
     } else {
         LOG_WARNING(QString("❓ 未知消息类型来自 %1:%2: %3")
