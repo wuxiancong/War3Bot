@@ -1,11 +1,11 @@
 #ifndef LOGGER_H
 #define LOGGER_H
 
-#include <QObject>
 #include <QFile>
-#include <QTextStream>
 #include <QMutex>
+#include <QObject>
 #include <QDateTime>
+#include <QTextStream>
 
 class Logger : public QObject
 {

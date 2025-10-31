@@ -208,7 +208,7 @@ int main(int argc, char *argv[]) {
     // 从配置文件获取日志设置
     QString configLogLevel = configSettings.value("log/level", "info").toString().toLower();
     bool enableConsole = configSettings.value("log/enable_console", true).toBool();
-    QString logFilePath = configSettings.value("log/log_file", "logs/war3bot.log").toString();
+    QString logFilePath = configSettings.value("log/log_file", "/var/log/war3bot/war3bot.log").toString();
     qint64 maxLogSize = configSettings.value("log/max_size", 10 * 1024 * 1024).toLongLong();
     int backupCount = configSettings.value("log/backup_count", 5).toInt();
 

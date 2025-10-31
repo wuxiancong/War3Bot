@@ -109,7 +109,7 @@ bool P2PServer::setupSocketOptions()
 
 bool P2PServer::bindSocket(quint16 port)
 {
-    if (!m_udpSocket->bind(QHostAddress::Any, port, QUdpSocket::ShareAddress)) {
+    if (!m_udpSocket->bind(QHostAddress::AnyIPv4, port, QUdpSocket::ShareAddress)) {
         LOG_ERROR(QString("绑定UDP socket到端口 %1 失败: %2")
                       .arg(port).arg(m_udpSocket->errorString()));
         return false;
