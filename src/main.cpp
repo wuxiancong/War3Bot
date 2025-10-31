@@ -19,7 +19,7 @@ bool isPortInUse(quint16 port) {
     QUdpSocket testSocket;
 
     // 尝试绑定到端口
-    bool bound = testSocket.bind(QHostAddress::Any, port, QUdpSocket::ShareAddress);
+    bool bound = testSocket.bind(QHostAddress::AnyIPv4, port, QUdpSocket::ShareAddress);
 
     if (bound) {
         testSocket.close();
@@ -123,7 +123,7 @@ bool forceFreePort(quint16 port) {
 int main(int argc, char *argv[]) {
     QCoreApplication app(argc, argv);
     QCoreApplication::setApplicationName("War3Bot");
-    QCoreApplication::setApplicationVersion("2.0");
+    QCoreApplication::setApplicationVersion("3.0");
 
     QCommandLineParser parser;
     parser.setApplicationDescription("魔兽争霸 III P2P 连接机器人");
@@ -194,7 +194,7 @@ int main(int argc, char *argv[]) {
                 out << "\n[log]\n";
                 out << "level=info\n";
                 out << "enable_console=true\n";
-                out << "log_file=logs/war3bot.log\n";
+                out << "log_file=/var/log/war3bot/war3bot.log\n";
                 out << "max_size=10485760\n";
                 out << "backup_count=5\n";
                 defaultConfig.close();
