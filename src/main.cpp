@@ -298,11 +298,26 @@ int main(int argc, char *argv[]) {
     LOG_INFO("=== 服务器启动完成，开始监听 ===");
     // 添加定时状态报告
     QTimer *statusTimer = new QTimer(&app);
-    QObject::connect(statusTimer, &QTimer::timeout, &app, [&bot]() {
-        static int counter = 0;
-        LOG_INFO(QString("服务器运行状态报告 #%1 - 运行中: %2")
-                     .arg(++counter)
-                     .arg(bot.isRunning() ? "是" : "否"));
+    QObject::connect(statusTimer, &QTimer::timeout, &app, [&bot, startTime = QDateTime::currentDateTime()]() {
+        qint64 uptimeSeconds = startTime.secsTo(QDateTime::currentDateTime());
+        qint64 days = uptimeSeconds / (24 * 3600);
+        qint64 hours = (uptimeSeconds % (24 * 3600)) / 3600;
+        qint64 minutes = (uptimeSeconds % 3600) / 60;
+        qint64 seconds = uptimeSeconds % 60;
+
+        QString uptimeStr;
+        if (days > 0) {
+            uptimeStr = QString("运行 %1天%2小时%3分钟").arg(days).arg(hours).arg(minutes);
+        } else if (hours > 0) {
+            uptimeStr = QString("运行 %1小时%2分钟").arg(hours).arg(minutes);
+        } else if (minutes > 0) {
+            uptimeStr = QString("运行 %1分钟%2秒").arg(minutes).arg(seconds);
+        } else {
+            uptimeStr = QString("运行 %1秒").arg(seconds);
+        }
+
+        LOG_INFO(QString("🔄 服务器状态 - %1 - 运行中: %2")
+                     .arg(uptimeStr, bot.isRunning() ? "是" : "否"));
     });
     statusTimer->start(30000); // 每30秒报告一次
 
