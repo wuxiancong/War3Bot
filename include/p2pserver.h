@@ -49,6 +49,8 @@ signals:
     void peerRegistered(const QString &peerId, const QString &gameId);
     void punchRequested(const QString &sourcePeer, const QString &targetPeer);
     void peersMatched(const QString &peer1, const QString &peer2, const QString &targetIp, const QString &targetPort);
+    void peerHandshaked(const QString &peerId, const QString &gameId, const QString &targetIp, const QString &targetPort);
+    void peerHandshaking(const QString &peerId, const QString &gameId, const QString &targetIp, const QString &targetPort);
 
 private slots:
     void onReadyRead();
@@ -74,8 +76,8 @@ private:
     void processPeerInfoAck(const QNetworkDatagram &datagram);
 
     // 对等端匹配和通知
-    void findAndConnectPeers(const QString &peerId, const QString &targetIp, const QString &targetPort);
     void notifyPeerAboutPeer(const QString &peerId, const PeerInfo &otherPeer);
+    bool findAndConnectPeers(const QString &peerId, const QString &targetIp, const QString &targetPort);
 
     // 消息发送
     void sendHandshakeAck(const QNetworkDatagram &datagram, const QString &peerId);
