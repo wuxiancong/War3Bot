@@ -228,7 +228,7 @@ void P2PServer::processDatagram(const QNetworkDatagram &datagram)
         QByteArray pongResponse = "PONG|War3BotServer";
         sendToAddress(datagram.senderAddress(), datagram.senderPort(), pongResponse);
         LOG_INFO("✅ PONG回复已发送");
-    } else if (data.startsWith("TEST|")) {  // 新增：处理测试消息
+    } else if (data.startsWith("TEST|")) {
         LOG_INFO("🧪 处理测试消息");
         QByteArray testResponse = "TEST_RESPONSE|Hello from War3Bot Server";
         sendToAddress(datagram.senderAddress(), datagram.senderPort(), testResponse);
@@ -343,7 +343,7 @@ void P2PServer::processRegister(const QNetworkDatagram &datagram)
 
 void P2PServer::sendHandshakeAck(const QNetworkDatagram &datagram, const QString &peerId)
 {
-    QByteArray response = QString("HANDSHAKE_OK|%1").arg(peerId).toUtf8();
+    QByteArray response = QString("HANDSHAKE_ACK|%1").arg(peerId).toUtf8();
     qint64 bytesSent = sendToAddress(datagram.senderAddress(), datagram.senderPort(), response);
 
     if (bytesSent > 0) {
