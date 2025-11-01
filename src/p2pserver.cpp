@@ -245,16 +245,20 @@ void P2PServer::processHandshake(const QNetworkDatagram &datagram)
     QStringList parts = data.split('|');
 
     if (parts.size() < 7) {
-        LOG_WARNING(QString("❌ 无效的握手格式: %1").arg(data));
+        LOG_WARNING(QString("❌ 无效的注册格式: %1").arg(data));
+        LOG_WARNING(QString("期望 7 个部分，实际收到: %1 个部分").arg(parts.size()));
+        for (int i = 0; i < parts.size(); ++i) {
+            LOG_WARNING(QString("  部分[%1]: %2").arg(i).arg(parts[i]));
+        }
         return;
     }
 
     QString gameId = parts[1];
-    QString localPort = parts[2];
-    QString localIp = parts[3];
-    //QString localPublicPort = parts[4];
-    QString targetIp = parts[5];
-    QString targetPort = parts[6];
+    QString localIp = parts[2];
+    QString localPort = parts[3];
+    QString targetIp = parts[4];
+    QString targetPort = parts[5];
+    QString status = parts[6];
 
     QString peerId = generatePeerId(datagram.senderAddress(), datagram.senderPort());
 
@@ -269,6 +273,7 @@ void P2PServer::processHandshake(const QNetworkDatagram &datagram)
     peerInfo.targetIp = targetIp;
     peerInfo.targetPort = targetPort.toUShort();
     peerInfo.lastSeen = QDateTime::currentMSecsSinceEpoch();
+    peerInfo.status = status;
 
     // 存储对等端信息
     m_peers[peerId] = peerInfo;
@@ -299,9 +304,9 @@ void P2PServer::processRegister(const QNetworkDatagram &datagram)
     QStringList parts = data.split('|');
 
     // 格式: REGISTER|GAME_ID|LOCAL_PORT|LOCAL_IP|STATUS
-    if (parts.size() < 4) {
+    if (parts.size() < 5) {
         LOG_WARNING(QString("❌ 无效的注册格式: %1").arg(data));
-        LOG_WARNING(QString("期望4个部分，实际收到: %1 个部分").arg(parts.size()));
+        LOG_WARNING(QString("期望 5个部分，实际收到: %1 个部分").arg(parts.size()));
         for (int i = 0; i < parts.size(); ++i) {
             LOG_WARNING(QString("  部分[%1]: %2").arg(i).arg(parts[i]));
         }
@@ -309,8 +314,8 @@ void P2PServer::processRegister(const QNetworkDatagram &datagram)
     }
 
     QString gameId = parts[1];
-    QString localPort = parts[2];
-    QString localIp = parts[3];  // 客户端的内网IP
+    QString localIp = parts[2];
+    QString localPort = parts[3];
     QString status = parts.size() > 4 ? parts[4] : "WAITING";
 
     QString peerId = generatePeerId(datagram.senderAddress(), datagram.senderPort());
@@ -319,15 +324,20 @@ void P2PServer::processRegister(const QNetworkDatagram &datagram)
     PeerInfo peerInfo;
     peerInfo.id = peerId;
     peerInfo.gameId = gameId;
-    peerInfo.localIp = localIp;                                 // 内网IP（从客户端获取）
-    peerInfo.localPort = localPort.toUShort();                  // 内网端口（从客户端获取）
-    peerInfo.publicIp = datagram.senderAddress().toString();    // 公网IP（从datagram获取）
-    peerInfo.publicPort = datagram.senderPort();                // 公网端口（从datagram获取）
+    peerInfo.localIp = localIp;                                 // 内网IP
+    peerInfo.localPort = localPort.toUShort();                  // 内网端口
+    peerInfo.publicIp = datagram.senderAddress().toString();    // 公网IP
+    peerInfo.publicPort = datagram.senderPort();                // 公网端口
     peerInfo.targetIp = "0.0.0.0";
     peerInfo.targetPort = 0;
     peerInfo.lastSeen = QDateTime::currentMSecsSinceEpoch();
+    peerInfo.status = status;
 
-    m_peers[peerId] = peerInfo;
+    // 存储对等端信息
+    {
+        QWriteLocker locker(&m_peersLock);
+        m_peers[peerId] = peerInfo;
+    }
 
     LOG_INFO(QString("📝 对等端注册: %1").arg(peerId));
     LOG_INFO(QString("  公网地址: %1:%2").arg(peerInfo.publicIp, peerInfo.publicPort));
@@ -356,6 +366,7 @@ void P2PServer::sendHandshakeAck(const QNetworkDatagram &datagram, const QString
 
 bool P2PServer::findAndConnectPeers(const QString &peerId, const QString &targetIp, const QString &targetPort)
 {
+    QWriteLocker locker(&m_peersLock);
     LOG_INFO(QString("🎯 开始查找匹配对等端: %1 -> %2:%3")
                  .arg(peerId, targetIp, targetPort));
 
@@ -404,7 +415,6 @@ bool P2PServer::findAndConnectPeers(const QString &peerId, const QString &target
             LOG_INFO(QString("❌ 不匹配"));
         }
     }
-
     if (foundMatch) {
         LOG_INFO(QString("🤝 建立匹配对: %1 <-> %2").arg(peerId, matchedPeer.id));
 
@@ -429,6 +439,7 @@ bool P2PServer::findAndConnectPeers(const QString &peerId, const QString &target
 
 void P2PServer::notifyPeerAboutPeer(const QString &peerId, const PeerInfo &otherPeer)
 {
+    QWriteLocker locker(&m_peersLock);
     if (!m_peers.contains(peerId)) {
         LOG_ERROR(QString("❌ 对等端不存在: %1").arg(peerId));
         return;
@@ -479,6 +490,7 @@ qint64 P2PServer::sendToAddress(const QHostAddress &address, quint16 port, const
 
 void P2PServer::processPunchRequest(const QNetworkDatagram &datagram)
 {
+    QWriteLocker locker(&m_peersLock);
     QStringList parts = QString(datagram.data()).split('|');
     if (parts.size() < 2) {
         LOG_WARNING("❌ 无效的打洞请求格式");
@@ -518,6 +530,7 @@ void P2PServer::processPunchRequest(const QNetworkDatagram &datagram)
 
 void P2PServer::processKeepAlive(const QNetworkDatagram &datagram)
 {
+    QWriteLocker locker(&m_peersLock);
     QString peerId = generatePeerId(datagram.senderAddress(), datagram.senderPort());
 
     if (m_peers.contains(peerId)) {
@@ -528,6 +541,7 @@ void P2PServer::processKeepAlive(const QNetworkDatagram &datagram)
 
 void P2PServer::processPeerInfoAck(const QNetworkDatagram &datagram)
 {
+    QWriteLocker locker(&m_peersLock);
     QString peerId = generatePeerId(datagram.senderAddress(), datagram.senderPort());
 
     if (m_peers.contains(peerId)) {
@@ -538,6 +552,7 @@ void P2PServer::processPeerInfoAck(const QNetworkDatagram &datagram)
 
 void P2PServer::sendToPeer(const QString &peerId, const QByteArray &data)
 {
+    QWriteLocker locker(&m_peersLock);
     if (!m_peers.contains(peerId)) {
         LOG_ERROR(QString("❌ 对等端不存在: %1").arg(peerId));
         return;
@@ -590,6 +605,7 @@ void P2PServer::broadcastServerInfo()
 
 void P2PServer::cleanupExpiredPeers()
 {
+    QWriteLocker locker(&m_peersLock);
     qint64 currentTime = QDateTime::currentMSecsSinceEpoch();
     QList<QString> expiredPeers;
 
@@ -617,6 +633,7 @@ QString P2PServer::generatePeerId(const QHostAddress &address, quint16 port)
 
 void P2PServer::removePeer(const QString &peerId)
 {
+    QWriteLocker locker(&m_peersLock);
     if (m_peers.contains(peerId)) {
         m_peers.remove(peerId);
         LOG_INFO(QString("🗑️ 已移除对等端: %1").arg(peerId));

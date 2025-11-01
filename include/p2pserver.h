@@ -7,6 +7,7 @@
 #include <QSettings>
 #include <QUdpSocket>
 #include <QHostAddress>
+#include <QReadWriteLock>
 #include <QNetworkDatagram>
 
 struct PeerInfo {
@@ -19,6 +20,7 @@ struct PeerInfo {
     QString targetIp;
     quint16 targetPort;
     qint64 lastSeen;
+    QString status;
 };
 
 class P2PServer : public QObject
@@ -106,6 +108,7 @@ private:
     QTimer *m_broadcastTimer;
 
     // 数据存储
+    QReadWriteLock m_peersLock;
     QMap<QString, PeerInfo> m_peers;
 };
 
