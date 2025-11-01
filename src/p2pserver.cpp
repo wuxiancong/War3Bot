@@ -303,7 +303,7 @@ void P2PServer::processRegister(const QNetworkDatagram &datagram)
     QString data = QString(datagram.data());
     QStringList parts = data.split('|');
 
-    // 格式: REGISTER|GAME_ID|LOCAL_PORT|LOCAL_IP|STATUS
+    // 格式: REGISTER|GAME_ID|LOCAL_IP|LOCAL_PORT|STATUS
     if (parts.size() < 5) {
         LOG_WARNING(QString("❌ 无效的注册格式: %1").arg(data));
         LOG_WARNING(QString("期望 5个部分，实际收到: %1 个部分").arg(parts.size()));
@@ -340,8 +340,16 @@ void P2PServer::processRegister(const QNetworkDatagram &datagram)
     }
 
     LOG_INFO(QString("📝 对等端注册: %1").arg(peerId));
-    LOG_INFO(QString("  公网地址: %1:%2").arg(peerInfo.publicIp, peerInfo.publicPort));
-    LOG_INFO(QString("  内网地址: %1:%2").arg(localIp, localPort));
+
+    // 修复：正确的字符串格式化方式
+    LOG_INFO(QString("  公网地址: %1:%2")
+                 .arg(peerInfo.publicIp)
+                 .arg(peerInfo.publicPort));
+
+    LOG_INFO(QString("  内网地址: %1:%2")
+                 .arg(localIp)
+                 .arg(localPort));
+
     LOG_INFO(QString("  状态: %1").arg(status));
 
     // 发送注册确认
