@@ -233,6 +233,9 @@ void P2PServer::processDatagram(const QNetworkDatagram &datagram)
         QByteArray testResponse = "TEST_RESPONSE|Hello from War3Bot Server";
         sendToAddress(datagram.senderAddress(), datagram.senderPort(), testResponse);
         LOG_INFO("✅ 测试回复已发送");
+    } else if (data.startsWith("NAT_TEST")) {
+        LOG_INFO("🔍 处理NAT测试消息");
+        processNATTest(datagram);
     } else {
         LOG_WARNING(QString("❓ 未知消息类型来自 %1:%2: %3")
                         .arg(senderAddress).arg(senderPort).arg(QString(data)));
@@ -579,6 +582,34 @@ void P2PServer::processPeerInfoAck(const QNetworkDatagram &datagram)
     if (m_peers.contains(peerId)) {
         m_peers[peerId].lastSeen = QDateTime::currentMSecsSinceEpoch();
         LOG_INFO(QString("✅ 对等端确认: %1").arg(peerId));
+    }
+}
+
+void P2PServer::processNATTest(const QNetworkDatagram &datagram)
+{
+    QString data = QString(datagram.data());
+    QStringList parts = data.split('|');
+
+    QString senderAddress = datagram.senderAddress().toString();
+    quint16 senderPort = datagram.senderPort();
+
+    LOG_INFO(QString("🔍 NAT测试来自 %1:%2").arg(senderAddress).arg(senderPort));
+
+    // 总是发送响应，包含测试ID（如果有的话）
+    QByteArray response;
+    if (parts.size() > 2 && parts[1] == "PORT_DETECTION") {
+        // 响应端口检测测试，包含测试ID
+        QString testId = parts[2];
+        response = QString("NAT_TEST_RESPONSE|%1|%2|%3").arg(testId, senderAddress, QString::number(senderPort)).toUtf8();
+    } else {
+        // 普通响应
+        response = QString("NAT_TEST_RESPONSE|%1|%2").arg(senderAddress, QString::number(senderPort)).toUtf8();
+    }
+
+    qint64 bytesSent = sendToAddress(datagram.senderAddress(), datagram.senderPort(), response);
+
+    if (bytesSent > 0) {
+        LOG_DEBUG(QString("✅ NAT测试响应已发送: %1 字节").arg(bytesSent));
     }
 }
 

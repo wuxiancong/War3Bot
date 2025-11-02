@@ -76,6 +76,7 @@ private:
     void processPunchRequest(const QNetworkDatagram &datagram);
     void processKeepAlive(const QNetworkDatagram &datagram);
     void processPeerInfoAck(const QNetworkDatagram &datagram);
+    void processNATTest(const QNetworkDatagram &datagram);
 
     // 对等端匹配和通知
     void notifyPeerAboutPeer(const QString &peerId, const PeerInfo &otherPeer);
@@ -110,6 +111,8 @@ private:
     // 数据存储
     QReadWriteLock m_peersLock;
     QMap<QString, PeerInfo> m_peers;
+    // NAT测试记录
+    QMap<QString, QList<quint16>> m_natTestRecords;
 };
 
 #endif // P2PSERVER_H
