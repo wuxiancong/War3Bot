@@ -347,8 +347,7 @@ void P2PServer::processRegister(const QNetworkDatagram &datagram)
                  .arg(peerInfo.publicPort));
 
     LOG_INFO(QString("  内网地址: %1:%2")
-                 .arg(localIp)
-                 .arg(localPort));
+                 .arg(localIp, localPort));
 
     LOG_INFO(QString("  状态: %1").arg(status));
 
@@ -378,25 +377,36 @@ bool P2PServer::findAndConnectPeers(const QString &peerId, const QString &target
     LOG_INFO(QString("🎯 开始查找匹配对等端: %1 -> %2:%3")
                  .arg(peerId, targetIp, targetPort));
 
-    quint16 targetPortNum = targetPort.toUShort();
-    PeerInfo matchedPeer;
-    bool foundMatch = false;
+    // 获取当前对等端信息
+    if (!m_peers.contains(peerId)) {
+        LOG_ERROR(QString("❌ 当前对等端不存在: %1").arg(peerId));
+        return false;
+    }
 
-    // 详细日志：显示当前所有对等端
+    PeerInfo &currentPeer = m_peers[peerId];
+    QString currentGameId = currentPeer.gameId;
+
+    LOG_INFO(QString("🔍 查找游戏 '%1' 的匹配对等端").arg(currentGameId));
+
+    // 显示当前所有对等端
     LOG_INFO("=== 当前服务器上的所有对等端 ===");
     if (m_peers.isEmpty()) {
         LOG_WARNING("📭 对等端列表为空！");
     } else {
         for (auto it = m_peers.begin(); it != m_peers.end(); ++it) {
             const PeerInfo &peer = it.value();
-            LOG_INFO(QString("对等端: %1").arg(peer.id));
-            LOG_INFO(QString("  公网地址: %2:%3").arg(peer.publicIp).arg(peer.publicPort));
-            LOG_INFO(QString("  目标地址: %2:%3").arg(peer.targetIp).arg(peer.targetPort));
+            LOG_INFO(QString("对等端: %1, 游戏: %2, 状态: %3")
+                         .arg(peer.id, peer.gameId, peer.status));
+            LOG_INFO(QString("  公网地址: %1:%2").arg(peer.publicIp).arg(peer.publicPort));
+            LOG_INFO(QString("  内网地址: %1:%2").arg(peer.localIp).arg(peer.localPort));
         }
     }
     LOG_INFO("=== 结束对等端列表 ===");
 
-    // 详细匹配过程
+    PeerInfo matchedPeer;
+    bool foundMatch = false;
+
+    // 新的匹配逻辑：基于游戏标识符和状态
     for (auto it = m_peers.begin(); it != m_peers.end(); ++it) {
         const PeerInfo &otherPeer = it.value();
 
@@ -406,15 +416,18 @@ bool P2PServer::findAndConnectPeers(const QString &peerId, const QString &target
             continue;
         }
 
-        // 检查目标匹配
-        bool ipMatch = (otherPeer.publicIp == targetIp);
-        bool portMatch = (otherPeer.publicPort == targetPortNum);
+        // 匹配条件：
+        // 1. 相同的游戏ID
+        // 2. 对方状态为WAITING（等待连接）
+        // 3. 不检查公网端口（因为对称NAT会导致端口不同）
+        bool gameMatch = (otherPeer.gameId == currentGameId);
+        bool statusMatch = (otherPeer.status == "WAITING");
 
         LOG_INFO(QString("🔍 检查对等端 %1:").arg(otherPeer.id));
-        LOG_INFO(QString("  公网IP匹配: %1 == %2 -> %3").arg(otherPeer.publicIp, targetIp).arg(ipMatch));
-        LOG_INFO(QString("  公网端口匹配: %1 == %2 -> %3").arg(otherPeer.publicPort).arg(targetPortNum).arg(portMatch));
+        LOG_INFO(QString("  游戏匹配: %1 == %2 -> %3").arg(otherPeer.gameId, currentGameId).arg(gameMatch));
+        LOG_INFO(QString("  状态匹配: %1 == WAITING -> %2").arg(otherPeer.status).arg(statusMatch));
 
-        if (ipMatch && portMatch) {
+        if (gameMatch && statusMatch) {
             LOG_INFO(QString("✅ 找到匹配对等端: %1").arg(otherPeer.id));
             matchedPeer = otherPeer;
             foundMatch = true;
@@ -423,24 +436,35 @@ bool P2PServer::findAndConnectPeers(const QString &peerId, const QString &target
             LOG_INFO(QString("❌ 不匹配"));
         }
     }
+
     if (foundMatch) {
         LOG_INFO(QString("🤝 建立匹配对: %1 <-> %2").arg(peerId, matchedPeer.id));
 
-        // 双向通知
-        notifyPeerAboutPeer(peerId, matchedPeer);
-        notifyPeerAboutPeer(matchedPeer.id, m_peers[peerId]);
+        // 更新双方状态
+        currentPeer.status = "CONNECTING";
+        m_peers[matchedPeer.id].status = "CONNECTING";
 
-        emit peersMatched(peerId, matchedPeer.id, targetIp, targetPort);
+        // 双向通知 - 交换完整的地址信息
+        notifyPeerAboutPeer(peerId, matchedPeer);
+        notifyPeerAboutPeer(matchedPeer.id, currentPeer);
+
+        emit peersMatched(peerId, matchedPeer.id, matchedPeer.publicIp, QString::number(matchedPeer.publicPort));
         return true;
     } else {
-        LOG_WARNING(QString("⏳ 没有找到匹配的对等端"));
+        LOG_WARNING(QString("⏳ 没有找到匹配的对等端，当前对等端保持等待状态"));
+
+        // 更新当前对等端状态为等待
+        currentPeer.status = "WAITING";
 
         // 提供诊断建议
-        if (m_peers.size() == 1) {
-            LOG_WARNING("💡 诊断: 服务器上只有一个对等端，需要等待另一个对等端注册到服务器");
-        } else {
-            LOG_WARNING("💡 诊断: 目标对等端可能使用了不同的地址或端口");
+        int waitingPeers = 0;
+        for (auto it = m_peers.begin(); it != m_peers.end(); ++it) {
+            if (it.value().gameId == currentGameId && it.value().status == "WAITING") {
+                waitingPeers++;
+            }
         }
+
+        LOG_INFO(QString("💡 诊断: 游戏 '%1' 当前有 %2 个等待连接的对等端").arg(currentGameId).arg(waitingPeers));
         return false;
     }
 }
