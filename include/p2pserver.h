@@ -70,13 +70,14 @@ private:
     bool bindSocket(quint16 port);
 
     // 消息处理
+    void processNATTest(const QNetworkDatagram &datagram);
     void processDatagram(const QNetworkDatagram &datagram);
-    void processHandshake(const QNetworkDatagram &datagram);
     void processRegister(const QNetworkDatagram &datagram);
-    void processPunchRequest(const QNetworkDatagram &datagram);
+    void processHandshake(const QNetworkDatagram &datagram);
     void processKeepAlive(const QNetworkDatagram &datagram);
     void processPeerInfoAck(const QNetworkDatagram &datagram);
-    void processNATTest(const QNetworkDatagram &datagram);
+    void processPingRequest(const QNetworkDatagram &datagram);
+    void processPunchRequest(const QNetworkDatagram &datagram);
 
     // 对等端匹配和通知
     void notifyPeerAboutPeer(const QString &peerId, const PeerInfo &otherPeer);

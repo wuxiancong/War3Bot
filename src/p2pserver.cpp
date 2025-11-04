@@ -224,10 +224,8 @@ void P2PServer::processDatagram(const QNetworkDatagram &datagram)
         LOG_INFO("✅ 处理 PEER_INFO_ACK 消息");
         processPeerInfoAck(datagram);
     } else if (data.startsWith("PING|")) {
-        LOG_INFO("🏓 收到PING请求，发送PONG回复");
-        QByteArray pongResponse = "PONG|War3BotServer";
-        sendToAddress(datagram.senderAddress(), datagram.senderPort(), pongResponse);
-        LOG_INFO("✅ PONG回复已发送");
+        LOG_INFO("🏓 处理PING请求，验证客户端注册状态");
+        processPingRequest(datagram);
     } else if (data.startsWith("TEST|")) {
         LOG_INFO("🧪 处理测试消息");
         QByteArray testResponse = "TEST_RESPONSE|Hello from War3Bot Server";
@@ -469,6 +467,54 @@ bool P2PServer::findAndConnectPeers(const QString &peerId, const QString &target
 
         LOG_INFO(QString("💡 诊断: 游戏 '%1' 当前有 %2 个等待连接的对等端").arg(currentGameId).arg(waitingPeers));
         return false;
+    }
+}
+
+void P2PServer::processPingRequest(const QNetworkDatagram &datagram)
+{
+    QString data = QString(datagram.data());
+    QStringList parts = data.split('|');
+
+    QString peerId = generatePeerId(datagram.senderAddress(), datagram.senderPort());
+
+    if (parts.size() >= 3) {
+        // 格式: PING|PUBLIC_IP|PUBLIC_PORT
+        QString publicIp = parts[1];
+        QString publicPort = parts[2];
+
+        LOG_INFO(QString("🏓 PING来自 %1, 公网信息: %2:%3")
+                     .arg(peerId, publicIp, publicPort));
+
+        // 验证客户端是否已注册
+        bool isRegistered = false;
+        {
+            QReadLocker locker(&m_peersLock);
+            isRegistered = m_peers.contains(peerId);
+        }
+
+        QString status = isRegistered ? "REGISTERED" : "UNREGISTERED";
+        QByteArray pongResponse = QString("PONG|%1|%2|%3")
+                                      .arg(publicIp, publicPort, status)
+                                      .toUtf8();
+
+        qint64 bytesSent = sendToAddress(datagram.senderAddress(), datagram.senderPort(), pongResponse);
+
+        if (bytesSent > 0) {
+            LOG_INFO(QString("✅ PONG回复已发送 (状态: %1, %2 字节)").arg(status).arg(bytesSent));
+
+            // 如果客户端未注册但提供了公网信息，可以尝试自动注册
+            if (!isRegistered && publicIp != "0.0.0.0" && publicPort != "0") {
+                LOG_INFO(QString("💡 检测到未注册客户端，建议客户端重新注册"));
+            }
+        } else {
+            LOG_ERROR("❌ PONG回复发送失败");
+        }
+    } else {
+        // 传统PING格式
+        LOG_INFO("🏓 收到传统PING请求，发送PONG回复");
+        QByteArray pongResponse = "PONG|War3Bot";
+        sendToAddress(datagram.senderAddress(), datagram.senderPort(), pongResponse);
+        LOG_INFO("✅ PONG回复已发送");
     }
 }
 
