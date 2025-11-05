@@ -307,9 +307,9 @@ int main(int argc, char *argv[]) {
 
         QString uptimeStr;
         if (days > 0) {
-            uptimeStr = QString("运行 %1天%2小时%3分钟").arg(days).arg(hours).arg(minutes);
+            uptimeStr = QString("运行 %1天%2小时%3分钟%4").arg(days).arg(hours).arg(minutes).arg(seconds);
         } else if (hours > 0) {
-            uptimeStr = QString("运行 %1小时%2分钟").arg(hours).arg(minutes);
+            uptimeStr = QString("运行 %1小时%2分钟").arg(hours).arg(minutes).arg(seconds);
         } else if (minutes > 0) {
             uptimeStr = QString("运行 %1分钟%2秒").arg(minutes).arg(seconds);
         } else {
