@@ -77,6 +77,7 @@ private:
     void processKeepAlive(const QNetworkDatagram &datagram);
     void processPeerInfoAck(const QNetworkDatagram &datagram);
     void processPingRequest(const QNetworkDatagram &datagram);
+    void processTestMessage(const QNetworkDatagram &datagram);
     void processPunchRequest(const QNetworkDatagram &datagram);
 
     // 对等端匹配和通知
@@ -84,6 +85,7 @@ private:
     bool findAndConnectPeers(const QString &peerId, const QString &targetIp, const QString &targetPort);
 
     // 消息发送
+    void sendDefaultResponse(const QNetworkDatagram &datagram);
     void sendHandshakeAck(const QNetworkDatagram &datagram, const QString &peerId);
     void sendToPeer(const QString &peerId, const QByteArray &data);
     qint64 sendToAddress(const QHostAddress &address, quint16 port, const QByteArray &data);
@@ -93,6 +95,7 @@ private:
     void cleanupExpiredPeers();
     void broadcastServerInfo();
     QString generatePeerId(const QHostAddress &address, quint16 port);
+    QByteArray buildSTUNTestResponse(const QNetworkDatagram &datagram);
 
     // 配置参数
     int m_peerTimeout;

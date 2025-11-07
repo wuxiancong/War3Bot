@@ -2,6 +2,8 @@
 #include "logger.h"
 #include <QTimer>
 #include <QDateTime>
+#include <QDataStream>
+#include <QRandomGenerator>
 #include <QNetworkDatagram>
 #include <QNetworkInterface>
 
@@ -228,15 +230,16 @@ void P2PServer::processDatagram(const QNetworkDatagram &datagram)
         processPingRequest(datagram);
     } else if (data.startsWith("TEST|")) {
         LOG_INFO("🧪 处理测试消息");
-        QByteArray testResponse = "TEST_RESPONSE|Hello from War3Bot Server";
-        sendToAddress(datagram.senderAddress(), datagram.senderPort(), testResponse);
-        LOG_INFO("✅ 测试回复已发送");
+        // 修复：添加具体的测试消息处理
+        processTestMessage(datagram);
     } else if (data.startsWith("NAT_TEST")) {
         LOG_INFO("🔍 处理NAT测试消息");
         processNATTest(datagram);
     } else {
         LOG_WARNING(QString("❓ 未知消息类型来自 %1:%2: %3")
                         .arg(senderAddress).arg(senderPort).arg(QString(data)));
+        // 添加默认响应，便于调试
+        sendDefaultResponse(datagram);
     }
 }
 
@@ -516,6 +519,83 @@ void P2PServer::processPingRequest(const QNetworkDatagram &datagram)
         sendToAddress(datagram.senderAddress(), datagram.senderPort(), pongResponse);
         LOG_INFO("✅ PONG回复已发送");
     }
+}
+
+void P2PServer::processTestMessage(const QNetworkDatagram &datagram)
+{
+    QByteArray data = datagram.data();
+    QString senderAddress = datagram.senderAddress().toString();
+    quint16 senderPort = datagram.senderPort();
+
+    LOG_INFO(QString("🧪 处理测试消息: %1").arg(QString(data)));
+
+    // 根据不同的测试类型发送响应
+    if (data == "TEST|CONNECTIVITY") {
+        QByteArray response = "TEST_RESPONSE|CONNECTIVITY_OK|Server is alive and responding";
+        sendToAddress(datagram.senderAddress(), datagram.senderPort(), response);
+        LOG_INFO(QString("✅ 发送连接测试响应到 %1:%2").arg(senderAddress).arg(senderPort));
+    }
+    else if (data.startsWith("TEST|PING")) {
+        QByteArray response = "TEST_RESPONSE|PONG|" + QByteArray::number(QDateTime::currentMSecsSinceEpoch());
+        sendToAddress(datagram.senderAddress(), datagram.senderPort(), response);
+        LOG_INFO("🏓 发送PONG响应");
+    }
+    else if (data.startsWith("TEST|STUN")) {
+        // STUN协议格式的测试响应
+        QByteArray stunResponse = buildSTUNTestResponse(datagram);
+        sendToAddress(datagram.senderAddress(), datagram.senderPort(), stunResponse);
+        LOG_INFO("🎯 发送STUN测试响应");
+    }
+    else {
+        // 通用测试响应
+        QByteArray response = "TEST_RESPONSE|UNKNOWN|Received: " + data;
+        sendToAddress(datagram.senderAddress(), datagram.senderPort(), response);
+        LOG_INFO("📤 发送通用测试响应");
+    }
+}
+
+void P2PServer::sendDefaultResponse(const QNetworkDatagram &datagram)
+{
+    QByteArray response = "DEFAULT_RESPONSE|Message received at " +
+                          QDateTime::currentDateTime().toString("hh:mm:ss.zzz").toUtf8();
+    sendToAddress(datagram.senderAddress(), datagram.senderPort(), response);
+    LOG_DEBUG(QString("📤 发送默认响应到 %1:%2").arg(datagram.senderAddress().toString()).arg(datagram.senderPort()));
+}
+
+QByteArray P2PServer::buildSTUNTestResponse(const QNetworkDatagram &datagram)
+{
+    QByteArray response;
+    QDataStream stream(&response, QIODevice::WriteOnly);
+    stream.setByteOrder(QDataStream::BigEndian);
+
+    // STUN Binding Response头部
+    stream << quint16(0x0101);  // Binding Response
+    stream << quint16(12);      // 消息长度
+    stream << quint32(0x2112A442); // Magic Cookie
+
+    // 生成事务ID（使用固定值便于测试）
+    QByteArray transactionId(12, 0);
+    QRandomGenerator::global()->fillRange(reinterpret_cast<quint32*>(transactionId.data()), 3);
+    stream.writeRawData(transactionId.constData(), 12);
+
+    // XOR-MAPPED-ADDRESS属性
+    stream << quint16(0x0020);  // XOR-MAPPED-ADDRESS
+    stream << quint16(8);       // 属性长度
+
+    quint16 xoredPort = datagram.senderPort() ^ (0x2112A442 >> 16);
+    quint32 ipv4 = datagram.senderAddress().toIPv4Address();
+    quint32 xoredIP = ipv4 ^ 0x2112A442;
+
+    stream << quint8(0);        // 保留
+    stream << quint8(0x01);     // IPv4家族
+    stream << xoredPort;        // XORed端口
+    stream << xoredIP;          // XORed IP地址
+
+    LOG_DEBUG(QString("🔧 STUN测试响应 - 客户端: %1:%2 -> 映射: %3:%4")
+                  .arg(datagram.senderAddress().toString()).arg(datagram.senderPort())
+                  .arg(datagram.senderAddress().toString()).arg(datagram.senderPort()));
+
+    return response;
 }
 
 void P2PServer::notifyPeerAboutPeer(const QString &peerId, const PeerInfo &otherPeer)
