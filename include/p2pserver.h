@@ -113,6 +113,8 @@ private:
     QTimer *m_broadcastTimer;
 
     // 数据存储
+    int m_totalRequests;
+    int m_totalResponses;
     QReadWriteLock m_peersLock;
     QMap<QString, PeerInfo> m_peers;
     // NAT测试记录

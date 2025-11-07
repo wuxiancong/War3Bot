@@ -27,6 +27,8 @@ P2PServer::P2PServer(QObject *parent)
     , m_udpSocket(nullptr)
     , m_cleanupTimer(nullptr)
     , m_broadcastTimer(nullptr)
+    , m_totalRequests(0)
+    , m_totalResponses(0)
 {
 }
 
@@ -230,7 +232,6 @@ void P2PServer::processDatagram(const QNetworkDatagram &datagram)
         processPingRequest(datagram);
     } else if (data.startsWith("TEST|")) {
         LOG_INFO("🧪 处理测试消息");
-        // 修复：添加具体的测试消息处理
         processTestMessage(datagram);
     } else if (data.startsWith("NAT_TEST")) {
         LOG_INFO("🔍 处理NAT测试消息");
@@ -524,34 +525,41 @@ void P2PServer::processPingRequest(const QNetworkDatagram &datagram)
 void P2PServer::processTestMessage(const QNetworkDatagram &datagram)
 {
     QByteArray data = datagram.data();
+    QString message = QString(data).trimmed();
     QString senderAddress = datagram.senderAddress().toString();
     quint16 senderPort = datagram.senderPort();
 
-    LOG_INFO(QString("🧪 处理测试消息: %1").arg(QString(data)));
+    LOG_INFO(QString("🧪 处理测试消息: %1 来自 %2:%3")
+                 .arg(message, senderAddress).arg(senderPort));
 
-    // 根据不同的测试类型发送响应
-    if (data == "TEST|CONNECTIVITY") {
-        QByteArray response = "TEST_RESPONSE|CONNECTIVITY_OK|Server is alive and responding";
-        sendToAddress(datagram.senderAddress(), datagram.senderPort(), response);
-        LOG_INFO(QString("✅ 发送连接测试响应到 %1:%2").arg(senderAddress).arg(senderPort));
+    bool isTestMessage = false;
+    QString responseMessage;
+
+    // 检查是否是测试消息并生成相应响应
+    if (message.contains("TEST|CONNECTIVITY", Qt::CaseInsensitive)) {
+        isTestMessage = true;
+        responseMessage = "TEST|CONNECTIVITY|OK|War3Nat_Server_v3.0";
     }
-    else if (data.startsWith("TEST|PING")) {
-        QByteArray response = "TEST_RESPONSE|PONG|" + QByteArray::number(QDateTime::currentMSecsSinceEpoch());
-        sendToAddress(datagram.senderAddress(), datagram.senderPort(), response);
-        LOG_INFO("🏓 发送PONG响应");
+
+    // 如果是测试消息，发送响应
+    if (isTestMessage) {
+        QByteArray response = responseMessage.toUtf8();
+        qint64 bytesSent = sendToAddress(datagram.senderAddress(), datagram.senderPort(), response);
+
+        if (bytesSent > 0) {
+            LOG_INFO(QString("✅ 测试响应发送成功: %1 -> %2")
+                         .arg(responseMessage, QString::number(bytesSent) + "字节"));
+            m_totalResponses++;
+        } else {
+            LOG_ERROR(QString("❌ 测试响应发送失败: %1").arg(m_udpSocket ? m_udpSocket->errorString() : "Socket未初始化"));
+        }
+
+        return;
     }
-    else if (data.startsWith("TEST|STUN")) {
-        // STUN协议格式的测试响应
-        QByteArray stunResponse = buildSTUNTestResponse(datagram);
-        sendToAddress(datagram.senderAddress(), datagram.senderPort(), stunResponse);
-        LOG_INFO("🎯 发送STUN测试响应");
-    }
-    else {
-        // 通用测试响应
-        QByteArray response = "TEST_RESPONSE|UNKNOWN|Received: " + data;
-        sendToAddress(datagram.senderAddress(), datagram.senderPort(), response);
-        LOG_INFO("📤 发送通用测试响应");
-    }
+
+    // 如果没有匹配的测试模式，发送默认响应
+    LOG_WARNING(QString("❓ 未知测试消息格式: %1").arg(message));
+    sendDefaultResponse(datagram);
 }
 
 void P2PServer::sendDefaultResponse(const QNetworkDatagram &datagram)
