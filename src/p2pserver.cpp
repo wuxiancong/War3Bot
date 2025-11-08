@@ -236,6 +236,10 @@ void P2PServer::processDatagram(const QNetworkDatagram &datagram)
     } else if (data.startsWith("NAT_TEST")) {
         LOG_INFO("🔍 处理NAT测试消息");
         processNATTest(datagram);
+    } else if (data.startsWith("FORWARDED|")) {
+        LOG_INFO("🔄 处理转发消息");
+        processForwardedMessage(datagram);
+        return;
     } else {
         LOG_WARNING(QString("❓ 未知消息类型来自 %1:%2: %3")
                         .arg(senderAddress).arg(senderPort).arg(QString(data)));
@@ -532,32 +536,51 @@ void P2PServer::processTestMessage(const QNetworkDatagram &datagram)
     LOG_INFO(QString("🧪 处理测试消息: %1 来自 %2:%3")
                  .arg(message, senderAddress).arg(senderPort));
 
-    bool isTestMessage = false;
-    QString responseMessage;
-
-    // 检查是否是测试消息并生成相应响应
-    if (message.contains("TEST|CONNECTIVITY", Qt::CaseInsensitive)) {
-        isTestMessage = true;
-        responseMessage = "TEST|CONNECTIVITY|OK|War3Nat_Server_v3.0";
-    }
-
-    // 如果是测试消息，发送响应
-    if (isTestMessage) {
-        QByteArray response = responseMessage.toUtf8();
-        qint64 bytesSent = sendToAddress(datagram.senderAddress(), datagram.senderPort(), response);
-
-        if (bytesSent > 0) {
-            LOG_INFO(QString("✅ 测试响应发送成功: %1 -> %2")
-                         .arg(responseMessage, QString::number(bytesSent) + "字节"));
-            m_totalResponses++;
-        } else {
-            LOG_ERROR(QString("❌ 测试响应发送失败: %1").arg(m_udpSocket ? m_udpSocket->errorString() : "Socket未初始化"));
-        }
-
+    // 添加详细的socket状态日志
+    if (!m_udpSocket) {
+        LOG_ERROR("❌ UDP Socket 未初始化！");
         return;
     }
 
-    // 如果没有匹配的测试模式，发送默认响应
+    if (m_udpSocket->state() != QAbstractSocket::BoundState) {
+        LOG_ERROR(QString("❌ UDP Socket 未绑定状态: %1").arg(m_udpSocket->state()));
+        return;
+    }
+
+    LOG_INFO(QString("📡 服务器监听在: %1:%2")
+                 .arg(m_udpSocket->localAddress().toString())
+                 .arg(m_udpSocket->localPort()));
+
+    bool isTestMessage = false;
+    QString responseMessage;
+
+    if (message.contains("TEST|CONNECTIVITY", Qt::CaseInsensitive)) {
+        isTestMessage = true;
+        responseMessage = "TEST|CONNECTIVITY|OK|War3Nat_Server_v3.0";
+        LOG_INFO("✅ 识别为连接测试消息，准备响应");
+    }
+
+    if (isTestMessage) {
+        QByteArray response = responseMessage.toUtf8();
+
+        // 记录发送详情
+        LOG_INFO(QString("📤 准备发送响应到: %1:%2 - 内容: %3")
+                     .arg(senderAddress).arg(senderPort).arg(responseMessage));
+
+        qint64 bytesSent = sendToAddress(datagram.senderAddress(), datagram.senderPort(), response);
+
+        if (bytesSent > 0) {
+            LOG_INFO(QString("✅ 测试响应发送成功: %1 字节").arg(bytesSent));
+            m_totalResponses++;
+        } else {
+            QString errorStr = m_udpSocket ? m_udpSocket->errorString() : "Socket未初始化";
+            LOG_ERROR(QString("❌ 测试响应发送失败: %1").arg(errorStr));
+            LOG_ERROR(QString("🔧 Socket错误: %1, 状态: %2")
+                          .arg(errorStr, m_udpSocket ? QString::number(m_udpSocket->state()) : "N/A"));
+        }
+        return;
+    }
+
     LOG_WARNING(QString("❓ 未知测试消息格式: %1").arg(message));
     sendDefaultResponse(datagram);
 }
@@ -745,6 +768,116 @@ void P2PServer::processNATTest(const QNetworkDatagram &datagram)
     if (bytesSent > 0) {
         LOG_DEBUG(QString("✅ NAT测试响应已发送: %1 字节").arg(bytesSent));
     }
+}
+
+void P2PServer::processForwardedMessage(const QNetworkDatagram &datagram)
+{
+    QString data = QString(datagram.data());
+    QStringList parts = data.split('|');
+
+    if (parts.size() < 5) {
+        LOG_WARNING("❌ 无效的转发消息格式");
+        return;
+    }
+
+    // 解析转发信息
+    QString originalClientIp = parts[1];
+    QString originalClientPort = parts[2];
+    QString timestamp = parts[3];
+    QString originalMessage = parts.mid(4).join("|");
+
+    LOG_INFO(QString("📨 转发消息 - 原始客户端: %1:%2, 时间: %3")
+                 .arg(originalClientIp, originalClientPort, timestamp));
+    LOG_INFO(QString("   原始消息: %1").arg(originalMessage));
+
+    // 创建虚拟数据报，模拟原始客户端发送
+    QHostAddress originalAddr(originalClientIp);
+    quint16 originalPort = originalClientPort.toUShort();
+
+    QByteArray originalData = originalMessage.toUtf8();
+
+    // 使用虚拟数据报处理原始消息
+    processOriginalMessage(originalData, originalAddr, originalPort);
+}
+
+void P2PServer::processOriginalMessage(const QByteArray &data, const QHostAddress &originalAddr, quint16 originalPort)
+{
+    QString message = QString(data).trimmed();
+
+    LOG_INFO(QString("🔍 处理原始消息来自 %1:%2: %3")
+                 .arg(originalAddr.toString()).arg(originalPort).arg(message));
+
+    // 根据消息类型调用相应的处理函数
+    if (message.startsWith("REGISTER_RELAY|")) {
+        LOG_INFO("📝 处理转发的 REGISTER_RELAY 消息");
+        processRegisterRelayFromForward(data, originalAddr, originalPort);
+    } else {
+        LOG_WARNING(QString("❓ 未知的转发消息类型: %1").arg(message));
+    }
+}
+
+void P2PServer::processRegisterRelayFromForward(const QByteArray &data, const QHostAddress &originalAddr, quint16 originalPort)
+{
+    // 复用原有的 processRegisterRelay 逻辑，但使用原始地址
+    QString message = QString(data);
+    QStringList parts = message.split('|');
+
+    if (parts.size() < 6) {
+        LOG_WARNING(QString("❌ 无效的中继注册格式: %1").arg(message));
+        return;
+    }
+
+    QString gameId = parts[1];
+    QString relayIp = parts[2];
+    QString relayPort = parts[3];
+    QString natType = parts[4];
+    QString status = parts.size() > 5 ? parts[5] : "RELAY_WAITING";
+
+    QString peerId = generatePeerId(originalAddr, originalPort);
+
+    // 创建对等端信息（中继模式）
+    PeerInfo peerInfo;
+    peerInfo.id = peerId;
+    peerInfo.gameId = gameId;
+    peerInfo.localIp = relayIp;                               // 中继IP
+    peerInfo.localPort = relayPort.toUShort();                // 中继端口
+    peerInfo.publicIp = originalAddr.toString();              // 客户端真实公网IP
+    peerInfo.publicPort = originalPort;                       // 客户端真实公网端口
+    peerInfo.relayIp = relayIp;                               // 中继服务器IP
+    peerInfo.relayPort = relayPort.toUShort();                // 中继服务器端口
+    peerInfo.natType = natType;                               // NAT类型
+    peerInfo.targetIp = "0.0.0.0";
+    peerInfo.targetPort = 0;
+    peerInfo.lastSeen = QDateTime::currentMSecsSinceEpoch();
+    peerInfo.status = status;
+    peerInfo.isRelayMode = true;                              // 标记为中继模式
+
+    // 存储对等端信息
+    {
+        QWriteLocker locker(&m_peersLock);
+        m_peers[peerId] = peerInfo;
+    }
+
+    LOG_INFO(QString("🔄 转发中继模式对等端注册: %1").arg(peerId));
+    LOG_INFO(QString("  真实公网地址: %1:%2").arg(peerInfo.publicIp).arg(peerInfo.publicPort));
+    LOG_INFO(QString("  中继地址: %1:%2").arg(relayIp, relayPort));
+    LOG_INFO(QString("  NAT类型: %1").arg(natType));
+    LOG_INFO(QString("  状态: %1").arg(status));
+
+    // 发送中继注册确认（发送到原始客户端地址）
+    QByteArray response = QString("REGISTER_RELAY_ACK|%1|%2|%3|%4")
+                              .arg(peerId, relayIp, relayPort, status)
+                              .toUtf8();
+
+    qint64 bytesSent = sendToAddress(originalAddr, originalPort, response);
+
+    if (bytesSent > 0) {
+        LOG_INFO(QString("✅ 中继注册确认发送成功: %1 字节").arg(bytesSent));
+    } else {
+        LOG_ERROR(QString("❌ 中继注册确认发送失败"));
+    }
+
+    emit peerRegistered(peerId, gameId);
 }
 
 void P2PServer::sendToPeer(const QString &peerId, const QByteArray &data)

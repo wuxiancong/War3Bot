@@ -37,25 +37,25 @@ set(SOURCES
 # set(CMAKE_EXE_LINKER_FLAGS "-static -static-libgcc -static-libstdc++")
 
 # 创建可执行文件
-add_executable(war3bot ${SOURCES} ${HEADERS}
+add_executable(War3Bot ${SOURCES} ${HEADERS}
     include/p2pserver.h
     src/p2pserver.cpp
 
 )
 
 # 链接 Qt 库和网络库
-target_link_libraries(war3bot Qt5::Core Qt5::Network)
+target_link_libraries(War3Bot Qt5::Core Qt5::Network)
 
 # 在 Windows 上链接 ws2_32 库
 if(WIN32)
-    target_link_libraries(war3bot ws2_32)
+    target_link_libraries(War3Bot ws2_32)
 endif()
 
 # 设置包含目录
-target_include_directories(war3bot PRIVATE include)
+target_include_directories(War3Bot PRIVATE include)
 
 # 安装目标
-install(TARGETS war3bot DESTINATION bin)
+install(TARGETS War3Bot DESTINATION bin)
 
 # 安装配置文件
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/config/war3bot.ini")

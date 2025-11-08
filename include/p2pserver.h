@@ -17,10 +17,14 @@ struct PeerInfo {
     quint16 localPort;
     QString publicIp;
     quint16 publicPort;
+    QString relayIp;
+    quint16 relayPort;
     QString targetIp;
     quint16 targetPort;
+    QString natType;
     qint64 lastSeen;
     QString status;
+    bool isRelayMode = false;
 };
 
 class P2PServer : public QObject
@@ -79,6 +83,9 @@ private:
     void processPingRequest(const QNetworkDatagram &datagram);
     void processTestMessage(const QNetworkDatagram &datagram);
     void processPunchRequest(const QNetworkDatagram &datagram);
+    void processForwardedMessage(const QNetworkDatagram &datagram);
+    void processOriginalMessage(const QByteArray &data, const QHostAddress &originalAddr, quint16 originalPort);
+    void processRegisterRelayFromForward(const QByteArray &data, const QHostAddress &originalAddr, quint16 originalPort);
 
     // 对等端匹配和通知
     void notifyPeerAboutPeer(const QString &peerId, const PeerInfo &otherPeer);
