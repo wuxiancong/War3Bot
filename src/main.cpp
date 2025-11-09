@@ -6,6 +6,7 @@
 #include <QProcess>
 #include <QSettings>
 #include <QUdpSocket>
+#include <QTextCodec>
 #include <QCoreApplication>
 #include <QCommandLineParser>
 
@@ -121,7 +122,12 @@ bool forceFreePort(quint16 port) {
 }
 
 int main(int argc, char *argv[]) {
+    // 设置编码为 UTF-8
+    QTextCodec *codec = QTextCodec::codecForName("UTF-8");
+    QTextCodec::setCodecForLocale(codec);
+
     QCoreApplication app(argc, argv);
+
     QCoreApplication::setApplicationName("War3Bot");
     QCoreApplication::setApplicationVersion("3.0");
 
