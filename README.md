@@ -81,9 +81,9 @@ WantedBy=multi-user.target
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable War3Bot
-sudo systemctl start War3Bot
-sudo systemctl stop War3Bot
+sudo systemctl enable war3bot
+sudo systemctl start war3bot
+sudo systemctl stop war3bot
 ```
 # 配置文件
 /etc/War3Bot/War3Bot.ini:
@@ -108,13 +108,13 @@ file=/var/log/War3Bot/War3Bot.log
 # 杀死所有包含 War3Bot 的进程
 pkill -f War3Bot
 # 停止服务
-sudo systemctl stop War3Bot
+sudo systemctl stop war3bot
 # 启动服务
-sudo systemctl start War3Bot
+sudo systemctl start war3bot
 # 查看状态
-sudo systemctl status War3Bot
+sudo systemctl status war3bot
 # 查看日志
-sudo journalctl -u War3Bot -f
+sudo journalctl -u war3bot -f
 ```
 ```bash
 # 查看所有 War3Bot 进程
