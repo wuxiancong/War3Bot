@@ -37,7 +37,7 @@ cmake ..
 make -j$(nproc)
 
 # 4. 测试运行
-./war3bot --help
+./War3Bot --help
 
 # 5. 重新编译
 cd /root/War3Bot/build
@@ -50,16 +50,16 @@ rm -rf *
 # 系统服务配置
 ## 创建系统用户
 ```bash
-sudo useradd -r -s /bin/false -d /opt/war3bot war3bot
+sudo useradd -r -s /bin/false -d /opt/War3Bot War3Bot
 ```
 ## 创建目录
 ```bash
-sudo mkdir -p /var/log/war3bot /etc/war3bot
-sudo chown -R war3bot:war3bot /var/log/war3bot
+sudo mkdir -p /var/log/War3Bot /etc/War3Bot
+sudo chown -R War3Bot:War3Bot /var/log/War3Bot
 ```
 ## 配置服务
-### war3bot.service:
-sudo nano /etc/systemd/system/war3bot.service
+### War3Bot.service:
+sudo nano /etc/systemd/system/War3Bot.service
 ```bash
 [Unit]
 Description=War3Bot Warcraft III Proxy
@@ -69,7 +69,7 @@ After=network.target
 Type=simple
 User=root
 WorkingDirectory=/root/War3Bot/build
-ExecStart=/root/War3Bot/build/war3bot -p 6112
+ExecStart=/root/War3Bot/build/War3Bot -p 6112
 Restart=always
 RestartSec=5
 StandardOutput=journal
@@ -81,12 +81,12 @@ WantedBy=multi-user.target
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable war3bot
-sudo systemctl start war3bot
-sudo systemctl stop war3bot
+sudo systemctl enable War3Bot
+sudo systemctl start War3Bot
+sudo systemctl stop War3Bot
 ```
 # 配置文件
-/etc/war3bot/war3bot.ini:
+/etc/War3Bot/War3Bot.ini:
 ```bash
 [server]
 port=6112
@@ -99,32 +99,32 @@ port=6112
 
 [logging]
 level=info
-file=/var/log/war3bot/war3bot.log
+file=/var/log/War3Bot/War3Bot.log
 ```
 
 # 使用方法
 ```bash
 # 命令行运行
-# 杀死所有包含 war3bot 的进程
-pkill -f war3bot
+# 杀死所有包含 War3Bot 的进程
+pkill -f War3Bot
 # 停止服务
-sudo systemctl stop war3bot
+sudo systemctl stop War3Bot
 # 启动服务
-sudo systemctl start war3bot
+sudo systemctl start War3Bot
 # 查看状态
-sudo systemctl status war3bot
+sudo systemctl status War3Bot
 # 查看日志
-sudo journalctl -u war3bot -f
+sudo journalctl -u War3Bot -f
 ```
 ```bash
-# 查看所有 war3bot 进程
-ps aux | grep war3bot
+# 查看所有 War3Bot 进程
+ps aux | grep War3Bot
 
 # 查看详细的进程信息
-ps -ef | grep war3bot
+ps -ef | grep War3Bot
 
 # 查看进程树结构
-pstree | grep war3bot
+pstree | grep War3Bot
 
 # 查看6112端口是否被监听
 netstat -tulpn | grep 6112
@@ -222,17 +222,17 @@ netstat -ano -p UDP | findstr 6112
 import socket
 import struct
 
-def test_war3bot():
+def test_War3Bot():
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    war3bot_addr = ('localhost', 6112)
+    War3Bot_addr = ('localhost', 6112)
     
     # 创建 W3GS PING 数据包
     header = struct.pack('<BHHB', 0xF7, 8, 0x01, 0)
-    sock.sendto(header, war3bot_addr)
+    sock.sendto(header, War3Bot_addr)
     print("测试数据包已发送")
 
 if __name__ == "__main__":
-    test_war3bot()
+    test_War3Bot()
 
 ```
 # 项目结构
@@ -240,34 +240,34 @@ if __name__ == "__main__":
 War3Bot/
 ├── CMakeLists.txt
 ├── include/
-│   ├── war3bot.h
+│   ├── War3Bot.h
 │   ├── gamesession.h
 │   ├── w3gs_protocol.h
 │   └── logger.h
 ├── src/
 │   ├── main.cpp
-│   ├── war3bot.cpp
+│   ├── War3Bot.cpp
 │   ├── gamesession.cpp
 │   ├── w3gs_protocol.cpp
 │   └── logger.cpp
 └── config/
-    ├── war3bot.ini
-    └── war3bot.service
+    ├── War3Bot.ini
+    └── War3Bot.service
 ```
 
 # 故障排查
 ```bash
 # 调试模式运行
-/root/War3Bot/build/war3bot -l debug
+/root/War3Bot/build/War3Bot -l debug
 
 # 检查服务状态
-sudo systemctl status war3bot
+sudo systemctl status War3Bot
 
 # 查看详细日志
-sudo journalctl -u war3bot --no-pager -n 50
+sudo journalctl -u War3Bot --no-pager -n 50
 
 # 调试模式运行
-./war3bot -l debug -p 6112
+./War3Bot -l debug -p 6112
 ```
 
 # 协议支持
