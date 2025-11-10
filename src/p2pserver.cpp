@@ -211,42 +211,46 @@ void P2PServer::processDatagram(const QNetworkDatagram &datagram)
     LOG_INFO(QString("📨 收到 %1 字节来自 %2:%3")
                  .arg(data.size()).arg(senderAddress).arg(senderPort));
 
-    // 解析消息类型
-    if (data.startsWith("HANDSHAKE|")) {
+    // ====================== 关键修改 ======================
+    // 在函数开头就进行一次字符串转换，并用这个QString进行所有判断
+    QString message = QString::fromUtf8(data).trimmed();
+    // ====================================================
+
+    // 解析消息类型 (现在使用 message 而不是 data)
+    if (message.startsWith("HANDSHAKE|")) {
         LOG_INFO("🔗 处理 HANDSHAKE 消息");
         processHandshake(datagram);
-    } else if (data.startsWith("REGISTER|")) {
+    } else if (message.startsWith("REGISTER|")) {
         LOG_INFO("📝 处理 REGISTER 消息");
         processRegister(datagram);
-    }else if (data.startsWith("GET_PEERS")) {
+    } else if (message.startsWith("GET_PEERS")) {
         LOG_INFO("📋 处理 GET_PEERS 请求");
         processGetPeers(datagram);
-    } else if (data.startsWith("PUNCH")) {
+    } else if (message.startsWith("PUNCH")) {
         LOG_INFO("🔄 处理 PUNCH 消息");
         processPunchRequest(datagram);
-    } else if (data.startsWith("KEEPALIVE")) {
+    } else if (message.startsWith("KEEPALIVE")) {
         LOG_DEBUG("💓 处理 KEEPALIVE 消息");
         processKeepAlive(datagram);
-    } else if (data.startsWith("PEER_INFO_ACK")) {
+    } else if (message.startsWith("PEER_INFO_ACK")) {
         LOG_INFO("✅ 处理 PEER_INFO_ACK 消息");
         processPeerInfoAck(datagram);
-    } else if (data.startsWith("PING|")) {
+    } else if (message.startsWith("PING|")) {
         LOG_INFO("🏓 处理PING请求，验证客户端注册状态");
         processPingRequest(datagram);
-    } else if (data.startsWith("TEST|")) {
+    } else if (message.startsWith("TEST|")) {
         LOG_INFO("🧪 处理测试消息");
         processTestMessage(datagram);
-    } else if (data.startsWith("NAT_TEST")) {
+    } else if (message.startsWith("NAT_TEST")) {
         LOG_INFO("🔍 处理NAT测试消息");
         processNATTest(datagram);
-    } else if (data.startsWith("FORWARDED|")) {
+    } else if (message.startsWith("FORWARDED|")) {
         LOG_INFO("🔄 处理转发消息");
         processForwardedMessage(datagram);
         return;
     } else {
         LOG_WARNING(QString("❓ 未知消息类型来自 %1:%2: %3")
-                        .arg(senderAddress).arg(senderPort).arg(QString(data)));
-        // 添加默认响应，便于调试
+                        .arg(senderAddress).arg(senderPort).arg(message));
         sendDefaultResponse(datagram);
     }
 }
