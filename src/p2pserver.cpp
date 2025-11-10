@@ -1001,8 +1001,8 @@ QByteArray P2PServer::getPeers(int maxCount, const QString &excludePeerId)
 
     QList<PeerInfo> peerList = m_peers.values();
 
-    // 如果请求的数量小于0，表示获取全部
-    int count = (maxCount < 0) ? peerList.size() : qMin(maxCount, peerList.size());
+    // 如果请求的数量小于0或大于总数，则获取全部
+    int count = (maxCount < 0 || maxCount > peerList.size()) ? peerList.size() : maxCount;
 
     LOG_INFO(QString("🔍 正在准备对等端列表... 请求数量: %1, 排除ID: %2, 总对等端数: %3")
                  .arg(maxCount).arg(excludePeerId).arg(peerList.size()));
@@ -1021,14 +1021,22 @@ QByteArray P2PServer::getPeers(int maxCount, const QString &excludePeerId)
             continue;
         }
 
-        // 格式: PEER_LIST|PEER_ID|PUBLIC_IP|PUBLIC_PORT|STATUS
-        QString peerData = QString("%1;%2;%3;%4")
-                               .arg(peer.id, peer.publicIp)
+        // 使用键值对格式序列化所有字段，分号分隔
+        QString peerData = QString("id=%1;gid=%2;lip=%3;lport=%4;pip=%5;pport=%6;rip=%7;rport=%8;tip=%9;tport=%10;nat=%11;seen=%12;stat=%13;relay=%14")
+                               .arg(peer.id, peer.gameId, peer.localIp)
+                               .arg(peer.localPort)
+                               .arg(peer.publicIp)
                                .arg(peer.publicPort)
-                               .arg(peer.status);
+                               .arg(peer.relayIp)
+                               .arg(peer.relayPort)
+                               .arg(peer.targetIp)
+                               .arg(peer.targetPort)
+                               .arg(peer.natType)
+                               .arg(peer.lastSeen)
+                               .arg(peer.status, peer.isRelayMode ? "1" : "0");
 
         response.append(peerData.toUtf8());
-        response.append("|");
+        response.append("|"); // 使用'|'作为不同peer之间的分隔符
         peersAdded++;
     }
 
