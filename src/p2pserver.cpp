@@ -226,11 +226,8 @@ void P2PServer::processDatagram(const QNetworkDatagram &datagram)
     } else if (message.startsWith("GET_PEERS")) {
         LOG_INFO("📋 处理 GET_PEERS 请求");
         processGetPeers(datagram);
-    } else if (message.startsWith("INITIATE_PUNCH|")) {
-        LOG_INFO("🚀 处理 INITIATE_PUNCH (P2P连接发起) 请求");
-        processInitiatePunch(datagram);
-    } else if (message.startsWith("PUNCH")) {
-        LOG_INFO("🔄 处理 PUNCH 消息");
+    } else if (message.startsWith("PUNCH|")) {
+        LOG_INFO("🚀 处理 PUNCH (P2P连接发起) 请求");
         processPunchRequest(datagram);
     } else if (message.startsWith("KEEPALIVE")) {
         LOG_DEBUG("💓 处理 KEEPALIVE 消息");
@@ -711,79 +708,42 @@ qint64 P2PServer::sendToAddress(const QHostAddress &address, quint16 port, const
     return m_udpSocket->writeDatagram(data, address, port);
 }
 
-void P2PServer::processInitiatePunch(const QNetworkDatagram &datagram)
+void P2PServer::processPunchRequest(const QNetworkDatagram &datagram)
 {
     QString data = QString::fromUtf8(datagram.data());
     QStringList parts = data.split('|');
     if (parts.size() < 2) {
-        LOG_WARNING("❌ 无效的 INITIATE_PUNCH 格式");
-        return;
-    }
-
-    QString initiatorId = generatePeerId(datagram.senderAddress(), datagram.senderPort());
-    QString targetId = parts[1];
-
-    LOG_INFO(QString("🔄 协调打洞: 发起方 %1 -> 目标 %2").arg(initiatorId, targetId));
-
-    QReadLocker locker(&m_peersLock);
-
-    if (!m_peers.contains(initiatorId)) {
-        LOG_WARNING(QString("❓ 未知的打洞发起方: %1").arg(initiatorId));
-        return;
-    }
-    if (!m_peers.contains(targetId)) {
-        LOG_WARNING(QString("❓ 未知的打洞目标: %1").arg(targetId));
-        // 可以选择给发起方回一个错误消息
-        // sendToAddress(datagram.senderAddress(), datagram.senderPort(), "PUNCH_FAILED|TARGET_NOT_FOUND");
-        return;
-    }
-
-    const PeerInfo &initiatorPeer = m_peers[initiatorId];
-    const PeerInfo &targetPeer = m_peers[targetId];
-
-    // 双向通知对方的地址信息，触发双方的 handlePeerInfo
-    LOG_INFO(QString("🤝 正在通知 %1 关于 %2 的信息...").arg(initiatorId, targetId));
-    notifyPeerAboutPeer(initiatorId, targetPeer);
-
-    LOG_INFO(QString("🤝 正在通知 %1 关于 %2 的信息...").arg(targetId, initiatorId));
-    notifyPeerAboutPeer(targetId, initiatorPeer);
-}
-
-void P2PServer::processPunchRequest(const QNetworkDatagram &datagram)
-{
-    QWriteLocker locker(&m_peersLock);
-    QStringList parts = QString(datagram.data()).split('|');
-    if (parts.size() < 2) {
-        LOG_WARNING("❌ 无效的打洞请求格式");
+        LOG_WARNING("❌ 无效的 PUNCH 格式");
         return;
     }
 
     QString sourcePeerId = generatePeerId(datagram.senderAddress(), datagram.senderPort());
     QString targetPeerId = parts[1];
 
+    LOG_INFO(QString("🔄 协调打洞: 发起方 %1 -> 目标 %2").arg(sourcePeerId, targetPeerId));
+
+    QReadLocker locker(&m_peersLock);
+
     if (!m_peers.contains(sourcePeerId)) {
-        LOG_WARNING(QString("❓ 未知的源对等端: %1").arg(sourcePeerId));
+        LOG_WARNING(QString("❓ 未知的打洞发起方: %1").arg(sourcePeerId));
         return;
     }
-
     if (!m_peers.contains(targetPeerId)) {
-        LOG_WARNING(QString("❓ 未知的目标对等端: %1").arg(targetPeerId));
+        LOG_WARNING(QString("❓ 未知的打洞目标: %1").arg(targetPeerId));
+        // 可以选择给发起方回一个错误消息
+        // sendToAddress(datagram.senderAddress(), datagram.senderPort(), "PUNCH_FAILED|TARGET_NOT_FOUND");
         return;
     }
 
-    PeerInfo &sourcePeer = m_peers[sourcePeerId];
-    //PeerInfo &targetPeer = m_peers[targetPeerId];
+    const PeerInfo &sourcePeer = m_peers[sourcePeerId];
+    const PeerInfo &targetPeer = m_peers[targetPeerId];
 
-    // 更新最后活跃时间
-    sourcePeer.lastSeen = QDateTime::currentMSecsSinceEpoch();
+    // 双向通知对方的地址信息，触发双方的 handlePeerInfo
+    LOG_INFO(QString("🤝 正在通知 %1 关于 %2 的信息...").arg(sourcePeerId, targetPeerId));
+    notifyPeerAboutPeer(sourcePeerId, targetPeer);
 
-    // 向目标对等端发送打洞请求通知
-    QString punchNotify = QString("PUNCH_REQUEST|%1|%2|%3")
-                              .arg(sourcePeer.publicIp,
-                                   QString::number(sourcePeer.publicPort),
-                                   sourcePeer.localIp);
-
-    sendToPeer(targetPeerId, punchNotify.toUtf8());
+    LOG_INFO(QString("🤝 正在通知 %1 关于 %2 的信息...").arg(targetPeerId, sourcePeerId));
+    notifyPeerAboutPeer(targetPeerId, sourcePeer);
 
     LOG_INFO(QString("🔄 打洞请求: %1 -> %2").arg(sourcePeerId, targetPeerId));
     emit punchRequested(sourcePeerId, targetPeerId);
