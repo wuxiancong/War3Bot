@@ -391,7 +391,7 @@ void P2PServer::processGetPeers(const QNetworkDatagram &datagram)
     }
 
     QString requesterId = generatePeerId(datagram.senderAddress(), datagram.senderPort());
-    QByteArray peerListResponse = getPeers(count, requesterId);
+    QByteArray peerListResponse = getPeers(count);
     sendToAddress(datagram.senderAddress(), datagram.senderPort(), peerListResponse);
 }
 
@@ -999,7 +999,7 @@ void P2PServer::removePeer(const QString &peerId)
     }
 }
 
-QByteArray P2PServer::getPeers(int maxCount, const QString &excludePeerId)
+QByteArray P2PServer::getPeers(int maxCount)
 {
     QReadLocker locker(&m_peersLock);
 
@@ -1008,8 +1008,8 @@ QByteArray P2PServer::getPeers(int maxCount, const QString &excludePeerId)
     // 如果请求的数量小于0或大于总数，则获取全部
     int count = (maxCount < 0 || maxCount > peerList.size()) ? peerList.size() : maxCount;
 
-    LOG_INFO(QString("🔍 正在准备对等端列表... 请求数量: %1, 排除ID: %2, 总对等端数: %3")
-                 .arg(maxCount).arg(excludePeerId).arg(peerList.size()));
+    LOG_INFO(QString("🔍 正在准备对等端列表... 请求数量: %1, 总对等端数: %2")
+                 .arg(maxCount).arg(peerList.size()));
 
     QByteArray response = "PEER_LIST|";
     int peersAdded = 0;
