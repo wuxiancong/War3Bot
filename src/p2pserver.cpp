@@ -659,13 +659,12 @@ QByteArray P2PServer::buildSTUNTestResponse(const QNetworkDatagram &datagram)
 
 void P2PServer::notifyPeerAboutPeer(const QString &peerId, const PeerInfo &otherPeer)
 {
-    QWriteLocker locker(&m_peersLock);
     if (!m_peers.contains(peerId)) {
         LOG_ERROR(QString("❌ 对等端不存在: %1").arg(peerId));
         return;
     }
 
-    const PeerInfo &targetPeer = m_peers[peerId];
+    const PeerInfo &targetPeer = m_peers.value(peerId);
 
     // 构造通知消息 - 包含完整的地址信息
     QString message = QString("PEER_INFO|%1|%2|%3|%4")
