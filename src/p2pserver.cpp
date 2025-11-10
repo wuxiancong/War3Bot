@@ -1020,11 +1020,6 @@ QByteArray P2PServer::getPeers(int maxCount, const QString &excludePeerId)
             break;
         }
 
-        // 跳过请求者自身
-        if (peer.id == excludePeerId) {
-            continue;
-        }
-
         // 使用键值对格式序列化所有字段，分号分隔
         QString peerData = QString("id=%1;gid=%2;lip=%3;lport=%4;pip=%5;pport=%6;rip=%7;rport=%8;tip=%9;tport=%10;nat=%11;seen=%12;stat=%13;relay=%14")
                                .arg(peer.id, peer.gameId, peer.localIp)
