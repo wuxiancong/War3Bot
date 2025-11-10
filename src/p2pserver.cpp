@@ -226,6 +226,9 @@ void P2PServer::processDatagram(const QNetworkDatagram &datagram)
     } else if (message.startsWith("GET_PEERS")) {
         LOG_INFO("📋 处理 GET_PEERS 请求");
         processGetPeers(datagram);
+    } else if (message.startsWith("INITIATE_PUNCH|")) {
+        LOG_INFO("🚀 处理 INITIATE_PUNCH (P2P连接发起) 请求");
+        processInitiatePunch(datagram);
     } else if (message.startsWith("PUNCH")) {
         LOG_INFO("🔄 处理 PUNCH 消息");
         processPunchRequest(datagram);
@@ -391,7 +394,7 @@ void P2PServer::processGetPeers(const QNetworkDatagram &datagram)
     }
 
     QString requesterId = generatePeerId(datagram.senderAddress(), datagram.senderPort());
-    QByteArray peerListResponse = getPeers(count);
+    QByteArray peerListResponse = getPeers(count, requesterId);
     sendToAddress(datagram.senderAddress(), datagram.senderPort(), peerListResponse);
 }
 
@@ -708,6 +711,44 @@ qint64 P2PServer::sendToAddress(const QHostAddress &address, quint16 port, const
     return m_udpSocket->writeDatagram(data, address, port);
 }
 
+void P2PServer::processInitiatePunch(const QNetworkDatagram &datagram)
+{
+    QString data = QString::fromUtf8(datagram.data());
+    QStringList parts = data.split('|');
+    if (parts.size() < 2) {
+        LOG_WARNING("❌ 无效的 INITIATE_PUNCH 格式");
+        return;
+    }
+
+    QString initiatorId = generatePeerId(datagram.senderAddress(), datagram.senderPort());
+    QString targetId = parts[1];
+
+    LOG_INFO(QString("🔄 协调打洞: 发起方 %1 -> 目标 %2").arg(initiatorId, targetId));
+
+    QReadLocker locker(&m_peersLock);
+
+    if (!m_peers.contains(initiatorId)) {
+        LOG_WARNING(QString("❓ 未知的打洞发起方: %1").arg(initiatorId));
+        return;
+    }
+    if (!m_peers.contains(targetId)) {
+        LOG_WARNING(QString("❓ 未知的打洞目标: %1").arg(targetId));
+        // 可以选择给发起方回一个错误消息
+        // sendToAddress(datagram.senderAddress(), datagram.senderPort(), "PUNCH_FAILED|TARGET_NOT_FOUND");
+        return;
+    }
+
+    const PeerInfo &initiatorPeer = m_peers[initiatorId];
+    const PeerInfo &targetPeer = m_peers[targetId];
+
+    // 双向通知对方的地址信息，触发双方的 handlePeerInfo
+    LOG_INFO(QString("🤝 正在通知 %1 关于 %2 的信息...").arg(initiatorId, targetId));
+    notifyPeerAboutPeer(initiatorId, targetPeer);
+
+    LOG_INFO(QString("🤝 正在通知 %1 关于 %2 的信息...").arg(targetId, initiatorId));
+    notifyPeerAboutPeer(targetId, initiatorPeer);
+}
+
 void P2PServer::processPunchRequest(const QNetworkDatagram &datagram)
 {
     QWriteLocker locker(&m_peersLock);
@@ -999,7 +1040,7 @@ void P2PServer::removePeer(const QString &peerId)
     }
 }
 
-QByteArray P2PServer::getPeers(int maxCount)
+QByteArray P2PServer::getPeers(int maxCount, const QString &excludePeerId)
 {
     QReadLocker locker(&m_peersLock);
 
@@ -1008,8 +1049,8 @@ QByteArray P2PServer::getPeers(int maxCount)
     // 如果请求的数量小于0或大于总数，则获取全部
     int count = (maxCount < 0 || maxCount > peerList.size()) ? peerList.size() : maxCount;
 
-    LOG_INFO(QString("🔍 正在准备对等端列表... 请求数量: %1, 总对等端数: %2")
-                 .arg(maxCount).arg(peerList.size()));
+    LOG_INFO(QString("🔍 正在准备对等端列表... 请求数量: %1, 排除ID: %2, 总对等端数: %3")
+                 .arg(maxCount).arg(excludePeerId).arg(peerList.size()));
 
     QByteArray response = "PEER_LIST|";
     int peersAdded = 0;
@@ -1018,6 +1059,11 @@ QByteArray P2PServer::getPeers(int maxCount)
         // 如果已达到请求数量，则停止
         if (peersAdded >= count) {
             break;
+        }
+
+        // 跳过请求者自身
+        if (peer.id == excludePeerId) {
+            continue;
         }
 
         // 使用键值对格式序列化所有字段，分号分隔

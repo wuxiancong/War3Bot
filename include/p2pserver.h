@@ -44,7 +44,7 @@ public:
 
     // 对等端管理
     void removePeer(const QString &peerId);
-    QByteArray getPeers(int maxCount = -1);
+    QByteArray getPeers(int maxCount = -1, const QString& excludePeerId = "");
 
 signals:
     void serverStopped();
@@ -82,6 +82,7 @@ private:
     void processPingRequest(const QNetworkDatagram &datagram);
     void processTestMessage(const QNetworkDatagram &datagram);
     void processPunchRequest(const QNetworkDatagram &datagram);
+    void processInitiatePunch(const QNetworkDatagram &datagram);
     void processForwardedMessage(const QNetworkDatagram &datagram);
     void processOriginalMessage(const QByteArray &data, const QHostAddress &originalAddr, quint16 originalPort);
     void processRegisterRelayFromForward(const QByteArray &data, const QHostAddress &originalAddr, quint16 originalPort);
