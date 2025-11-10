@@ -218,6 +218,9 @@ void P2PServer::processDatagram(const QNetworkDatagram &datagram)
     } else if (data.startsWith("REGISTER|")) {
         LOG_INFO("📝 处理 REGISTER 消息");
         processRegister(datagram);
+    }else if (data.startsWith("GET_PEERS")) {
+        LOG_INFO("📋 处理 GET_PEERS 请求");
+        processGetPeers(datagram);
     } else if (data.startsWith("PUNCH")) {
         LOG_INFO("🔄 处理 PUNCH 消息");
         processPunchRequest(datagram);
@@ -365,6 +368,27 @@ void P2PServer::processRegister(const QNetworkDatagram &datagram)
     sendToAddress(datagram.senderAddress(), datagram.senderPort(), response);
 
     emit peerRegistered(peerId, gameId);
+}
+
+void P2PServer::processGetPeers(const QNetworkDatagram &datagram)
+{
+
+    QString dataStr = QString(datagram.data());
+    QStringList parts = dataStr.split('|');
+
+    // 格式: GET_PEERS 或 GET_PEERS|COUNT
+    int count = -1; // 默认获取全部
+    if (parts.size() > 1) {
+        bool ok;
+        int requestedCount = parts[1].toInt(&ok);
+        if (ok) {
+            count = requestedCount;
+        }
+    }
+
+    QString requesterId = generatePeerId(datagram.senderAddress(), datagram.senderPort());
+    QByteArray peerListResponse = getPeers(count, requesterId);
+    sendToAddress(datagram.senderAddress(), datagram.senderPort(), peerListResponse);
 }
 
 void P2PServer::sendHandshakeAck(const QNetworkDatagram &datagram, const QString &peerId)
@@ -971,22 +995,53 @@ void P2PServer::removePeer(const QString &peerId)
     }
 }
 
-QList<QString> P2PServer::getConnectedPeers() const
+QByteArray P2PServer::getPeers(int maxCount, const QString &excludePeerId)
 {
-    return m_peers.keys();
-}
+    QReadLocker locker(&m_peersLock);
 
-int P2PServer::getPeerCount() const
-{
-    return m_peers.size();
+    QList<PeerInfo> peerList = m_peers.values();
+
+    // 如果请求的数量小于0，表示获取全部
+    int count = (maxCount < 0) ? peerList.size() : qMin(maxCount, peerList.size());
+
+    LOG_INFO(QString("🔍 正在准备对等端列表... 请求数量: %1, 排除ID: %2, 总对等端数: %3")
+                 .arg(maxCount).arg(excludePeerId).arg(peerList.size()));
+
+    QByteArray response = "PEER_LIST|";
+    int peersAdded = 0;
+
+    for (const PeerInfo &peer : qAsConst(peerList)) {
+        // 如果已达到请求数量，则停止
+        if (peersAdded >= count) {
+            break;
+        }
+
+        // 跳过请求者自身
+        if (peer.id == excludePeerId) {
+            continue;
+        }
+
+        // 格式: PEER_LIST|PEER_ID|PUBLIC_IP|PUBLIC_PORT|STATUS
+        QString peerData = QString("%1;%2;%3;%4")
+                               .arg(peer.id, peer.publicIp)
+                               .arg(peer.publicPort)
+                               .arg(peer.status);
+
+        response.append(peerData.toUtf8());
+        response.append("|");
+        peersAdded++;
+    }
+
+    // 移除末尾多余的'|'
+    if (response.endsWith('|')) {
+        response.chop(1);
+    }
+
+    LOG_INFO(QString("✅ 对等端列表准备完成，包含 %1 个对等端。").arg(peersAdded));
+    return response;
 }
 
 bool P2PServer::isRunning() const
 {
     return m_isRunning;
-}
-
-quint16 P2PServer::getListenPort() const
-{
-    return m_listenPort;
 }

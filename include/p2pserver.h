@@ -41,12 +41,10 @@ public:
 
     // 状态查询
     bool isRunning() const;
-    int getPeerCount() const;
-    quint16 getListenPort() const;
 
     // 对等端管理
     void removePeer(const QString &peerId);
-    QList<QString> getConnectedPeers() const;
+    QByteArray getPeers(int maxCount = -1, const QString& excludePeerId = "");
 
 signals:
     void serverStopped();
@@ -77,6 +75,7 @@ private:
     void processNATTest(const QNetworkDatagram &datagram);
     void processDatagram(const QNetworkDatagram &datagram);
     void processRegister(const QNetworkDatagram &datagram);
+    void processGetPeers(const QNetworkDatagram &datagram);
     void processHandshake(const QNetworkDatagram &datagram);
     void processKeepAlive(const QNetworkDatagram &datagram);
     void processPeerInfoAck(const QNetworkDatagram &datagram);
