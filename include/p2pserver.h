@@ -12,7 +12,7 @@
 
 struct PeerInfo {
     QString id;
-    QString gameId;
+    QString clientUuid;
     QString localIp;
     quint16 localPort;
     QString publicIp;
@@ -50,11 +50,11 @@ signals:
     void serverStopped();
     void serverStarted(quint16 port);
     void peerRemoved(const QString &peerId);
-    void peerRegistered(const QString &peerId, const QString &gameId);
+    void peerRegistered(const QString &peerId, const QString &clientUuid);
     void punchRequested(const QString &sourcePeer, const QString &targetPeer);
     void peersMatched(const QString &peer1, const QString &peer2, const QString &targetIp, const QString &targetPort);
-    void peerHandshaked(const QString &peerId, const QString &gameId, const QString &targetIp, const QString &targetPort);
-    void peerHandshaking(const QString &peerId, const QString &gameId, const QString &targetIp, const QString &targetPort);
+    void peerHandshaked(const QString &peerId, const QString &clientUuid, const QString &targetIp, const QString &targetPort);
+    void peerHandshaking(const QString &peerId, const QString &clientUuid, const QString &targetIp, const QString &targetPort);
 
 private slots:
     void onReadyRead();
@@ -90,7 +90,7 @@ private:
 
     // 对等端匹配和通知
     void notifyPeerAboutPeer(const QString &peerId, const PeerInfo &otherPeer);
-    bool findAndConnectPeers(const QString &peerId, const QString &targetIp, const QString &targetPort);
+    bool findAndConnectPeers(const QString &peerId, const QString &clientUuid, const QString &targetIp, const QString &targetPort);
 
     // 消息发送
     void sendDefaultResponse(const QNetworkDatagram &datagram);

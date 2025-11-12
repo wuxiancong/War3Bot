@@ -61,14 +61,14 @@ bool War3Bot::isRunning() const
     return m_p2pServer && m_p2pServer->isRunning();
 }
 
-void War3Bot::onPeerRegistered(const QString &peerId, const QString &gameId)
+void War3Bot::onPeerRegistered(const QString &peerId, const QString &clientUuid)
 {
-    LOG_INFO(QString("新对等节点已连接 - 标识: %1, 游戏: %2").arg(peerId, gameId));
+    LOG_INFO(QString("新对等节点已连接 - 对等端ID: %1, 客户端ID: %2").arg(peerId, clientUuid));
 }
 
 void War3Bot::onPeerRemoved(const QString &peerId)
 {
-    LOG_INFO(QString("对等节点已断开连接 - 标识: %1").arg(peerId));
+    LOG_INFO(QString("对等节点已断开连接 - 对等端ID: %1").arg(peerId));
 }
 
 void War3Bot::onPunchRequested(const QString &sourcePeerId, const QString &targetPeerId)
