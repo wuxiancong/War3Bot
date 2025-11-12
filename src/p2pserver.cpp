@@ -217,10 +217,10 @@ void P2PServer::processDatagram(const QNetworkDatagram &datagram)
     // ====================================================
 
     // 解析消息类型 (现在使用 message 而不是 data)
-    if (message.startsWith("HANDSHAKE|")) {
+    if (message.startsWith("HANDSHAKE")) {
         LOG_INFO("🔗 处理 HANDSHAKE 消息");
         processHandshake(datagram);
-    } else if (message.startsWith("REGISTER|")) {
+    } else if (message.startsWith("REGISTER")) {
         LOG_INFO("📝 处理 REGISTER 消息");
         processRegister(datagram);
     } else if (message.startsWith("UNREGISTER")) {
@@ -229,7 +229,7 @@ void P2PServer::processDatagram(const QNetworkDatagram &datagram)
     } else if (message.startsWith("GET_PEERS")) {
         LOG_INFO("📋 处理 GET_PEERS 请求");
         processGetPeers(datagram);
-    } else if (message.startsWith("PUNCH|")) {
+    } else if (message.startsWith("PUNCH")) {
         LOG_INFO("🚀 处理 PUNCH (P2P连接发起) 请求");
         processPunchRequest(datagram);
     } else if (message.startsWith("KEEPALIVE")) {
@@ -238,16 +238,16 @@ void P2PServer::processDatagram(const QNetworkDatagram &datagram)
     } else if (message.startsWith("PEER_INFO_ACK")) {
         LOG_INFO("✅ 处理 PEER_INFO_ACK 消息");
         processPeerInfoAck(datagram);
-    } else if (message.startsWith("PING|")) {
+    } else if (message.startsWith("PING")) {
         LOG_INFO("🏓 处理PING请求，验证客户端注册状态");
         processPingRequest(datagram);
-    } else if (message.startsWith("TEST|")) {
+    } else if (message.startsWith("TEST")) {
         LOG_INFO("🧪 处理测试消息");
         processTestMessage(datagram);
     } else if (message.startsWith("NAT_TEST")) {
         LOG_INFO("🔍 处理NAT测试消息");
         processNATTest(datagram);
-    } else if (message.startsWith("FORWARDED|")) {
+    } else if (message.startsWith("FORWARDED")) {
         LOG_INFO("🔄 处理转发消息");
         processForwardedMessage(datagram);
         return;
@@ -414,18 +414,19 @@ void P2PServer::processGetPeers(const QNetworkDatagram &datagram)
     QString dataStr = QString(datagram.data());
     QStringList parts = dataStr.split('|');
 
-    // 格式: GET_PEERS 或 GET_PEERS|COUNT
+    // 格式: GET_PEERS 或 GET_PEERS|CLIENT_ID|COUNT
+    QString clientUuid = parts[1];
+
     int count = -1; // 默认获取全部
     if (parts.size() > 1) {
         bool ok;
-        int requestedCount = parts[1].toInt(&ok);
+        int requestedCount = parts[2].toInt(&ok);
         if (ok) {
             count = requestedCount;
         }
     }
 
-    QString requesterId = generatePeerId(datagram.senderAddress(), datagram.senderPort());
-    QByteArray peerListResponse = getPeers(count, requesterId);
+    QByteArray peerListResponse = getPeers(count, clientUuid);
     sendToAddress(datagram.senderAddress(), datagram.senderPort(), peerListResponse);
 }
 
@@ -1040,7 +1041,7 @@ void P2PServer::removePeer(const QString &peerId)
     }
 }
 
-QByteArray P2PServer::getPeers(int maxCount, const QString &excludePeerId)
+QByteArray P2PServer::getPeers(int maxCount, const QString &clientUuid)
 {
     QReadLocker locker(&m_peersLock);
 
@@ -1050,7 +1051,7 @@ QByteArray P2PServer::getPeers(int maxCount, const QString &excludePeerId)
     int count = (maxCount < 0 || maxCount > peerList.size()) ? peerList.size() : maxCount;
 
     LOG_INFO(QString("🔍 正在准备对等端列表... 请求数量: %1, 排除ID: %2, 总对等端数: %3")
-                 .arg(maxCount).arg(excludePeerId).arg(peerList.size()));
+                 .arg(maxCount).arg(clientUuid).arg(peerList.size()));
 
     QByteArray response = "PEER_LIST|";
     int peersAdded = 0;
@@ -1062,7 +1063,7 @@ QByteArray P2PServer::getPeers(int maxCount, const QString &excludePeerId)
         }
 
         // 跳过请求者自身
-        if (peer.id == excludePeerId) {
+        if (peer.clientUuid == clientUuid) {
             continue;
         }
 
