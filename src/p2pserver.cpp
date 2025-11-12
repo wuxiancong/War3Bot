@@ -826,10 +826,10 @@ void P2PServer::processNATTest(const QNetworkDatagram &datagram)
     if (parts.size() > 2 && parts[1] == "PORT_DETECTION") {
         // 响应端口检测测试，包含测试ID
         QString testId = parts[2];
-        response = QString("NAT_TEST_RESPONSE|%1|%2|%3").arg(testId, senderAddress, QString::number(senderPort)).toUtf8();
+        response = QString("NAT_TEST|%1|%2|%3").arg(testId, senderAddress, QString::number(senderPort)).toUtf8();
     } else {
         // 普通响应
-        response = QString("NAT_TEST_RESPONSE|%1|%2").arg(senderAddress, QString::number(senderPort)).toUtf8();
+        response = QString("NAT_TEST|%1|%2").arg(senderAddress, QString::number(senderPort)).toUtf8();
     }
 
     qint64 bytesSent = sendToAddress(datagram.senderAddress(), datagram.senderPort(), response);
