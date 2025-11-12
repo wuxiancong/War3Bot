@@ -78,6 +78,7 @@ private:
     void processGetPeers(const QNetworkDatagram &datagram);
     void processHandshake(const QNetworkDatagram &datagram);
     void processKeepAlive(const QNetworkDatagram &datagram);
+    void processUnregister(const QNetworkDatagram &datagram);
     void processPeerInfoAck(const QNetworkDatagram &datagram);
     void processPingRequest(const QNetworkDatagram &datagram);
     void processTestMessage(const QNetworkDatagram &datagram);

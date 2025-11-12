@@ -223,6 +223,9 @@ void P2PServer::processDatagram(const QNetworkDatagram &datagram)
     } else if (message.startsWith("REGISTER|")) {
         LOG_INFO("📝 处理 REGISTER 消息");
         processRegister(datagram);
+    } else if (message.startsWith("UNREGISTER")) {
+        LOG_INFO("👋 处理 UNREGISTER (注销) 请求");
+        processUnregister(datagram);
     } else if (message.startsWith("GET_PEERS")) {
         LOG_INFO("📋 处理 GET_PEERS 请求");
         processGetPeers(datagram);
@@ -372,6 +375,37 @@ void P2PServer::processRegister(const QNetworkDatagram &datagram)
     sendToAddress(datagram.senderAddress(), datagram.senderPort(), response);
 
     emit peerRegistered(peerId, gameId);
+}
+
+void P2PServer::processUnregister(const QNetworkDatagram &datagram)
+{
+    QString peerId = generatePeerId(datagram.senderAddress(), datagram.senderPort());
+
+    bool removed = false;
+    {
+        QWriteLocker locker(&m_peersLock);
+        if (m_peers.contains(peerId)) {
+            m_peers.remove(peerId);
+            removed = true;
+        }
+    }
+
+    if (removed) {
+        LOG_INFO(QString("🗑️ 对等端主动注销并已移除: %1").arg(peerId));
+        emit peerRemoved(peerId);
+
+        // ====================== 新增的确认回复 ======================
+        QByteArray response = QString("UNREGISTER_ACK|%1|SUCCESS").arg(peerId).toUtf8();
+        sendToAddress(datagram.senderAddress(), datagram.senderPort(), response);
+        LOG_INFO(QString("✅ 已向 %1 发送注销确认").arg(peerId));
+        // =========================================================
+
+    } else {
+        LOG_WARNING(QString("❓ 收到一个来自未注册对等端的注销请求: %1").arg(peerId));
+        // 即使对方未注册，也回复一个消息，便于客户端调试
+        QByteArray response = QString("UNREGISTER_ACK|%1|NOT_FOUND").arg(peerId).toUtf8();
+        sendToAddress(datagram.senderAddress(), datagram.senderPort(), response);
+    }
 }
 
 void P2PServer::processGetPeers(const QNetworkDatagram &datagram)
@@ -659,41 +693,41 @@ QByteArray P2PServer::buildSTUNTestResponse(const QNetworkDatagram &datagram)
 
 void P2PServer::notifyPeerAboutPeer(const QString &peerId, const PeerInfo &otherPeer)
 {
-    if (!m_peers.contains(peerId)) {
-        LOG_ERROR(QString("❌ 对等端不存在: %1").arg(peerId));
-        return;
+    QHostAddress targetAddress;
+    quint16 targetPort = 0;
+    bool targetFound = false;
+
+    {
+        QReadLocker locker(&m_peersLock);
+        if (m_peers.contains(peerId)) {
+            const PeerInfo &targetPeer = m_peers.value(peerId);
+            QString cleanIp = targetPeer.publicIp;
+            if (cleanIp.startsWith("::ffff:")) {
+                cleanIp = cleanIp.mid(7);
+            }
+            targetAddress = QHostAddress(cleanIp);
+            targetPort = targetPeer.publicPort;
+            targetFound = !targetAddress.isNull();
+        } else {
+            LOG_ERROR(QString("❌ 对等端不存在: %1").arg(peerId));
+        }
     }
 
-    const PeerInfo &targetPeer = m_peers.value(peerId);
+    if (targetFound) {
+        QString message = QString("PEER_INFO|%1|%2|%3|%4")
+        .arg(otherPeer.publicIp)
+            .arg(otherPeer.publicPort)
+            .arg(otherPeer.localIp)
+            .arg(otherPeer.localPort);
 
-    // 构造通知消息 - 包含完整的地址信息
-    QString message = QString("PEER_INFO|%1|%2|%3|%4")
-                          .arg(otherPeer.publicIp)      // 对等端公网IP
-                          .arg(otherPeer.publicPort)    // 对等端公网端口
-                          .arg(otherPeer.localIp)       // 对等端内网IP
-                          .arg(otherPeer.localPort);    // 对等端内网端口
+        qint64 bytesSent = sendToAddress(targetAddress, targetPort, message.toUtf8());
 
-    // 处理IPv6格式地址
-    QString cleanIp = targetPeer.publicIp;
-    if (cleanIp.startsWith("::ffff:")) {
-        cleanIp = cleanIp.mid(7);
-    }
-
-    QHostAddress peerAddress(cleanIp);
-    if (peerAddress.isNull()) {
-        LOG_ERROR(QString("❌ 无效的对等端地址: %1").arg(cleanIp));
-        return;
-    }
-
-    qint64 bytesSent = sendToAddress(peerAddress, targetPeer.publicPort, message.toUtf8());
-
-    if (bytesSent > 0) {
-        LOG_INFO(QString("✅ 对等端信息发送成功: %1 -> %2 (%3 字节)")
-                     .arg(otherPeer.id, peerId).arg(bytesSent));
-        LOG_INFO(QString("  公网地址: %1:%2").arg(otherPeer.publicIp).arg(otherPeer.publicPort));
-        LOG_INFO(QString("  内网地址: %1:%3").arg(otherPeer.localIp).arg(otherPeer.localPort));
-    } else {
-        LOG_ERROR(QString("❌ 对等端信息发送失败: %1 -> %2").arg(otherPeer.id, peerId));
+        if (bytesSent > 0) {
+            LOG_INFO(QString("✅ 对等端信息发送成功: %1 -> %2 (%3 字节)")
+                         .arg(otherPeer.id, peerId).arg(bytesSent));
+        } else {
+            LOG_ERROR(QString("❌ 对等端信息发送失败: %1 -> %2").arg(otherPeer.id, peerId));
+        }
     }
 }
 
@@ -716,36 +750,38 @@ void P2PServer::processPunchRequest(const QNetworkDatagram &datagram)
         return;
     }
 
-    QString sourcePeerId = generatePeerId(datagram.senderAddress(), datagram.senderPort());
-    QString targetPeerId = parts[1];
+    QString initiatorId = generatePeerId(datagram.senderAddress(), datagram.senderPort());
+    QString targetId = parts[1];
 
-    LOG_INFO(QString("🔄 协调打洞: 发起方 %1 -> 目标 %2").arg(sourcePeerId, targetPeerId));
+    LOG_INFO(QString("🔄 协调打洞: 发起方 %1 -> 目标 %2").arg(initiatorId, targetId));
 
-    QReadLocker locker(&m_peersLock);
+    PeerInfo initiatorPeer;
+    PeerInfo targetPeer;
+    bool found = false;
 
-    if (!m_peers.contains(sourcePeerId)) {
-        LOG_WARNING(QString("❓ 未知的打洞发起方: %1").arg(sourcePeerId));
-        return;
+    // 使用一个独立的读锁来安全地拷贝数据
+    {
+        QReadLocker locker(&m_peersLock);
+        if (m_peers.contains(initiatorId) && m_peers.contains(targetId)) {
+            initiatorPeer = m_peers.value(initiatorId);
+            targetPeer = m_peers.value(targetId);
+            found = true;
+        } else {
+            if (!m_peers.contains(initiatorId)) LOG_WARNING(QString("❓ 未知的打洞发起方: %1").arg(initiatorId));
+            if (!m_peers.contains(targetId)) LOG_WARNING(QString("❓ 未知的打洞目标: %1").arg(targetId));
+        }
+    } // 读锁在这里释放
+
+    if (found) {
+        // 在无锁状态下执行网络发送，避免死锁
+        LOG_INFO(QString("🤝 正在通知 %1 (发起方) 关于 %2 (目标) 的信息...").arg(initiatorId, targetId));
+        notifyPeerAboutPeer(initiatorId, targetPeer);
+
+        LOG_INFO(QString("🤝 正在通知 %1 (目标) 关于 %2 (发起方) 的信息...").arg(targetId, initiatorId));
+        notifyPeerAboutPeer(targetId, initiatorPeer);
+
+        emit punchRequested(initiatorId, targetId);
     }
-    if (!m_peers.contains(targetPeerId)) {
-        LOG_WARNING(QString("❓ 未知的打洞目标: %1").arg(targetPeerId));
-        // 可以选择给发起方回一个错误消息
-        // sendToAddress(datagram.senderAddress(), datagram.senderPort(), "PUNCH_FAILED|TARGET_NOT_FOUND");
-        return;
-    }
-
-    const PeerInfo &sourcePeer = m_peers[sourcePeerId];
-    const PeerInfo &targetPeer = m_peers[targetPeerId];
-
-    // 双向通知对方的地址信息，触发双方的 handlePeerInfo
-    LOG_INFO(QString("🤝 正在通知 %1 关于 %2 的信息...").arg(sourcePeerId, targetPeerId));
-    notifyPeerAboutPeer(sourcePeerId, targetPeer);
-
-    LOG_INFO(QString("🤝 正在通知 %1 关于 %2 的信息...").arg(targetPeerId, sourcePeerId));
-    notifyPeerAboutPeer(targetPeerId, sourcePeer);
-
-    LOG_INFO(QString("🔄 打洞请求: %1 -> %2").arg(sourcePeerId, targetPeerId));
-    emit punchRequested(sourcePeerId, targetPeerId);
 }
 
 void P2PServer::processKeepAlive(const QNetworkDatagram &datagram)
