@@ -6,6 +6,7 @@
 #include <QRandomGenerator>
 #include <QNetworkDatagram>
 #include <QNetworkInterface>
+#include <QCryptographicHash>
 
 #ifdef Q_OS_WIN
 #include <winsock2.h>
@@ -211,12 +212,8 @@ void P2PServer::processDatagram(const QNetworkDatagram &datagram)
     LOG_INFO(QString("📨 收到 %1 字节来自 %2:%3")
                  .arg(data.size()).arg(senderAddress).arg(senderPort));
 
-    // ====================== 关键修改 ======================
-    // 在函数开头就进行一次字符串转换，并用这个QString进行所有判断
     QString message = QString::fromUtf8(data).trimmed();
-    // ====================================================
 
-    // 解析消息类型 (现在使用 message 而不是 data)
     if (message.startsWith("HANDSHAKE")) {
         LOG_INFO("🔗 处理 HANDSHAKE 消息");
         processHandshake(datagram);
@@ -281,7 +278,6 @@ void P2PServer::processHandshake(const QNetworkDatagram &datagram)
 
     QString peerId = generatePeerId(datagram.senderAddress(), datagram.senderPort());
 
-    // 创建对等端信息
     PeerInfo peerInfo;
     peerInfo.id = peerId;
     peerInfo.clientUuid = clientUuid;
@@ -294,24 +290,19 @@ void P2PServer::processHandshake(const QNetworkDatagram &datagram)
     peerInfo.lastSeen = QDateTime::currentMSecsSinceEpoch();
     peerInfo.status = status;
 
-    // 存储对等端信息
     m_peers[peerId] = peerInfo;
 
     LOG_INFO(QString("✅ 对等端已注册: %1 (%2) 客户端ID: %3")
                  .arg(peerId, peerInfo.publicIp, clientUuid));
 
-    // 发送握手确认
     sendHandshakeAck(datagram, peerId);
 
-    // 查找匹配的对等端，并根据结果发送不同信号
     bool matched = findAndConnectPeers(peerId, clientUuid, targetIp, targetPort);
 
     if (matched) {
-        // 匹配成功，发送握手完成信号
         emit peerHandshaked(peerId, clientUuid, targetIp, targetPort);
         LOG_INFO(QString("🎉 握手完成: %1 成功匹配到目标").arg(peerId));
     } else {
-        // 匹配中，发送握手进行中信号
         emit peerHandshaking(peerId, clientUuid, targetIp, targetPort);
         LOG_INFO(QString("⏳ 握手进行中: %1 等待目标对等端连接").arg(peerId));
     }
@@ -322,10 +313,9 @@ void P2PServer::processRegister(const QNetworkDatagram &datagram)
     QString data = QString(datagram.data());
     QStringList parts = data.split('|');
 
-    // 格式: REGISTER|CLIENT_ID|LOCAL_IP|LOCAL_PORT|STATUS
-    if (parts.size() < 5) {
+    if (parts.size() < 6) {
         LOG_WARNING(QString("❌ 无效的注册格式: %1").arg(data));
-        LOG_WARNING(QString("期望 5个部分，实际收到: %1 个部分").arg(parts.size()));
+        LOG_WARNING(QString("期望 6个部分，实际收到: %1 个部分").arg(parts.size()));
         for (int i = 0; i < parts.size(); ++i) {
             LOG_WARNING(QString("  部分[%1]: %2").arg(i).arg(parts[i]));
         }
@@ -336,41 +326,34 @@ void P2PServer::processRegister(const QNetworkDatagram &datagram)
     QString localIp = parts[2];
     QString localPort = parts[3];
     QString status = parts.size() > 4 ? parts[4] : "WAITING";
+    QString natType = parts[5];
 
     QString peerId = generatePeerId(datagram.senderAddress(), datagram.senderPort());
 
-    // 创建对等端信息
     PeerInfo peerInfo;
     peerInfo.id = peerId;
     peerInfo.clientUuid = clientUuid;
-    peerInfo.localIp = localIp;                                 // 内网IP
-    peerInfo.localPort = localPort.toUShort();                  // 内网端口
-    peerInfo.publicIp = datagram.senderAddress().toString();    // 公网IP
-    peerInfo.publicPort = datagram.senderPort();                // 公网端口
+    peerInfo.localIp = localIp;
+    peerInfo.localPort = localPort.toUShort();
+    peerInfo.publicIp = datagram.senderAddress().toString();
+    peerInfo.publicPort = datagram.senderPort();
     peerInfo.targetIp = "0.0.0.0";
     peerInfo.targetPort = 0;
     peerInfo.lastSeen = QDateTime::currentMSecsSinceEpoch();
     peerInfo.status = status;
+    peerInfo.natType = natType;
 
-    // 存储对等端信息
     {
         QWriteLocker locker(&m_peersLock);
         m_peers[peerId] = peerInfo;
     }
 
     LOG_INFO(QString("📝 对等端注册: %1").arg(peerId));
-
-    // 修复：正确的字符串格式化方式
-    LOG_INFO(QString("  公网地址: %1:%2")
-                 .arg(peerInfo.publicIp)
-                 .arg(peerInfo.publicPort));
-
-    LOG_INFO(QString("  内网地址: %1:%2")
-                 .arg(localIp, localPort));
-
+    LOG_INFO(QString("  公网地址: %1:%2").arg(peerInfo.publicIp).arg(peerInfo.publicPort));
+    LOG_INFO(QString("  内网地址: %1:%2").arg(localIp, localPort));
     LOG_INFO(QString("  状态: %1").arg(status));
+    LOG_INFO(QString("  NAT类型: %1").arg(natType));
 
-    // 发送注册确认
     QByteArray response = QString("REGISTER_ACK|%1|%2").arg(peerId, status).toUtf8();
     sendToAddress(datagram.senderAddress(), datagram.senderPort(), response);
 
@@ -394,15 +377,11 @@ void P2PServer::processUnregister(const QNetworkDatagram &datagram)
         LOG_INFO(QString("🗑️ 对等端主动注销并已移除: %1").arg(peerId));
         emit peerRemoved(peerId);
 
-        // ====================== 新增的确认回复 ======================
         QByteArray response = QString("UNREGISTER_ACK|%1|SUCCESS").arg(peerId).toUtf8();
         sendToAddress(datagram.senderAddress(), datagram.senderPort(), response);
         LOG_INFO(QString("✅ 已向 %1 发送注销确认").arg(peerId));
-        // =========================================================
-
     } else {
         LOG_WARNING(QString("❓ 收到一个来自未注册对等端的注销请求: %1").arg(peerId));
-        // 即使对方未注册，也回复一个消息，便于客户端调试
         QByteArray response = QString("UNREGISTER_ACK|%1|NOT_FOUND").arg(peerId).toUtf8();
         sendToAddress(datagram.senderAddress(), datagram.senderPort(), response);
     }
@@ -410,14 +389,11 @@ void P2PServer::processUnregister(const QNetworkDatagram &datagram)
 
 void P2PServer::processGetPeers(const QNetworkDatagram &datagram)
 {
-
     QString dataStr = QString(datagram.data());
     QStringList parts = dataStr.split('|');
 
-    // 格式: GET_PEERS 或 GET_PEERS|CLIENT_ID|COUNT
     QString clientUuid = parts[1];
-
-    int count = -1; // 默认获取全部
+    int count = -1;
     if (parts.size() > 1) {
         bool ok;
         int requestedCount = parts[2].toInt(&ok);
@@ -436,35 +412,24 @@ void P2PServer::sendHandshakeAck(const QNetworkDatagram &datagram, const QString
     qint64 bytesSent = sendToAddress(datagram.senderAddress(), datagram.senderPort(), response);
 
     if (bytesSent > 0) {
-        LOG_INFO(QString("✅ 握手确认发送成功: %1 字节到 %2")
-                     .arg(bytesSent).arg(peerId));
+        LOG_INFO(QString("✅ 握手确认发送成功: %1 字节到 %2").arg(bytesSent).arg(peerId));
     } else {
         LOG_ERROR(QString("❌ 握手确认发送失败到: %1").arg(peerId));
     }
 }
 
-/**
- * @brief 根据指定的客户端客户端ID、IP和端口，查找并连接两个对等端。
- * @param peerId 发起连接请求的对等端的ID (例如 "1.2.3.4:5678")。
- * @param targetClientUuid 目标对等端的客户端唯一标识符 (客户端ID)。
- * @param targetIp 目标对等端的公网IP地址。
- * @param targetPort 目标对等端的公网端口。
- * @return 如果成功找到并开始连接，则返回 true；否则返回 false。
- */
 bool P2PServer::findAndConnectPeers(const QString &peerId, const QString &targetClientUuid, const QString &targetIp, const QString &targetPort)
 {
     QWriteLocker locker(&m_peersLock);
     LOG_INFO(QString("🎯 开始查找特定匹配对等端: %1 正在寻找 客户端ID %2 (%3:%4)")
                  .arg(peerId, targetClientUuid, targetIp, targetPort));
 
-    // 1. 验证发起方是否存在
     if (!m_peers.contains(peerId)) {
         LOG_ERROR(QString("❌ 发起方对等端不存在: %1").arg(peerId));
         return false;
     }
-    PeerInfo &currentPeer = m_peers[peerId]; // 获取发起方的引用，以便后续修改状态
+    PeerInfo &currentPeer = m_peers[peerId];
 
-    // 2. 调试日志：打印所有当前对等端的状态
     LOG_INFO("=== 当前服务器上的所有对等端 ===");
     if (m_peers.isEmpty()) {
         LOG_WARNING("📭 对等端列表为空！");
@@ -480,7 +445,6 @@ bool P2PServer::findAndConnectPeers(const QString &peerId, const QString &target
     PeerInfo matchedPeer;
     bool foundMatch = false;
 
-    // 3. 转换目标端口为数字格式
     bool ok;
     quint16 targetPortNum = targetPort.toUShort(&ok);
     if (!ok) {
@@ -488,46 +452,34 @@ bool P2PServer::findAndConnectPeers(const QString &peerId, const QString &target
         return false;
     }
 
-    // 4. 核心修改：遍历并查找完全匹配的对等端
     for (auto it = m_peers.begin(); it != m_peers.end(); ++it) {
         const PeerInfo &otherPeer = it.value();
+        if (otherPeer.id == peerId) continue;
 
-        // 跳过发起方自己
-        if (otherPeer.id == peerId) {
-            continue;
-        }
-
-        // 定义三个精确匹配条件
         bool uuidMatch = (otherPeer.clientUuid == targetClientUuid);
         bool ipMatch = (otherPeer.publicIp == targetIp);
         bool portMatch = (otherPeer.publicPort == targetPortNum);
 
-        // 如果三个关键信息都匹配，则认为找到了目标
         if (uuidMatch && ipMatch && portMatch) {
-            // 找到了目标，还需要检查其状态是否适合连接
             if (otherPeer.status != "WAITING") {
                 LOG_WARNING(QString("⚠️ 找到目标对等端 %1, 但其状态为 '%2', 而不是 'WAITING'. 无法建立连接。")
                                 .arg(otherPeer.id, otherPeer.status));
-                foundMatch = false; // 确保不会进入成功匹配的逻辑
-                break; // 停止搜索，因为目标是唯一的但状态不对
+                foundMatch = false;
+                break;
             }
 
             LOG_INFO(QString("✅ 找到完全匹配且状态为WAITING的目标对等端: %1").arg(otherPeer.id));
             matchedPeer = otherPeer;
             foundMatch = true;
-            break; // 找到唯一匹配项，立即退出循环
+            break;
         }
     }
 
-    // 5. 根据查找结果执行后续操作
     if (foundMatch) {
         LOG_INFO(QString("🤝 建立匹配对: %1 <-> %2").arg(peerId, matchedPeer.id));
-
-        // 更新双方状态为 "CONNECTING"
         currentPeer.status = "CONNECTING";
         m_peers[matchedPeer.id].status = "CONNECTING";
 
-        // 双向通知，让双方都知道对方的完整地址信息以进行P2P打洞
         notifyPeerAboutPeer(peerId, matchedPeer);
         notifyPeerAboutPeer(matchedPeer.id, currentPeer);
 
@@ -535,11 +487,7 @@ bool P2PServer::findAndConnectPeers(const QString &peerId, const QString &target
         return true;
     } else {
         LOG_WARNING(QString("⏳ 未能找到指定的目标对等端，发起方 %1 将保持/回到等待状态").arg(peerId));
-
-        // 匹配失败，将发起方状态设置为 WAITING
         currentPeer.status = "WAITING";
-
-        // 提供更精确的诊断日志
         LOG_INFO(QString("💡 诊断: 未能在服务器上找到目标 [客户端ID: %1, Addr: %2:%3] 或者该目标当前不是'WAITING'状态。")
                      .arg(targetClientUuid, targetIp, targetPort));
         return false;
@@ -551,17 +499,14 @@ void P2PServer::processPingRequest(const QNetworkDatagram &datagram)
     QString data = QString(datagram.data());
     QStringList parts = data.split('|');
 
+
     QString peerId = generatePeerId(datagram.senderAddress(), datagram.senderPort());
 
     if (parts.size() >= 3) {
-        // 格式: PING|PUBLIC_IP|PUBLIC_PORT
         QString publicIp = parts[1];
         QString publicPort = parts[2];
+        LOG_INFO(QString("🏓 PING来自 %1, 公网信息: %2:%3").arg(peerId, publicIp, publicPort));
 
-        LOG_INFO(QString("🏓 PING来自 %1, 公网信息: %2:%3")
-                     .arg(peerId, publicIp, publicPort));
-
-        // 验证客户端是否已注册
         bool isRegistered = false;
         {
             QReadLocker locker(&m_peersLock);
@@ -569,16 +514,11 @@ void P2PServer::processPingRequest(const QNetworkDatagram &datagram)
         }
 
         QString status = isRegistered ? "REGISTERED" : "UNREGISTERED";
-        QByteArray pongResponse = QString("PONG|%1|%2|%3")
-                                      .arg(publicIp, publicPort, status)
-                                      .toUtf8();
-
+        QByteArray pongResponse = QString("PONG|%1|%2|%3").arg(publicIp, publicPort, status).toUtf8();
         qint64 bytesSent = sendToAddress(datagram.senderAddress(), datagram.senderPort(), pongResponse);
 
         if (bytesSent > 0) {
             LOG_INFO(QString("✅ PONG回复已发送 (状态: %1, %2 字节)").arg(status).arg(bytesSent));
-
-            // 如果客户端未注册但提供了公网信息，可以尝试自动注册
             if (!isRegistered && publicIp != "0.0.0.0" && publicPort != "0") {
                 LOG_INFO(QString("💡 检测到未注册客户端，建议客户端重新注册"));
             }
@@ -586,7 +526,6 @@ void P2PServer::processPingRequest(const QNetworkDatagram &datagram)
             LOG_ERROR("❌ PONG回复发送失败");
         }
     } else {
-        // 传统PING格式
         LOG_INFO("🏓 收到传统PING请求，发送PONG回复");
         QByteArray pongResponse = "PONG|War3Bot";
         sendToAddress(datagram.senderAddress(), datagram.senderPort(), pongResponse);
@@ -601,23 +540,16 @@ void P2PServer::processTestMessage(const QNetworkDatagram &datagram)
     QString senderAddress = datagram.senderAddress().toString();
     quint16 senderPort = datagram.senderPort();
 
-    LOG_INFO(QString("🧪 处理测试消息: %1 来自 %2:%3")
-                 .arg(message, senderAddress).arg(senderPort));
-
-    // 添加详细的socket状态日志
+    LOG_INFO(QString("🧪 处理测试消息: %1 来自 %2:%3").arg(message, senderAddress).arg(senderPort));
     if (!m_udpSocket) {
         LOG_ERROR("❌ UDP Socket 未初始化！");
         return;
     }
-
     if (m_udpSocket->state() != QAbstractSocket::BoundState) {
         LOG_ERROR(QString("❌ UDP Socket 未绑定状态: %1").arg(m_udpSocket->state()));
         return;
     }
-
-    LOG_INFO(QString("📡 服务器监听在: %1:%2")
-                 .arg(m_udpSocket->localAddress().toString())
-                 .arg(m_udpSocket->localPort()));
+    LOG_INFO(QString("📡 服务器监听在: %1:%2").arg(m_udpSocket->localAddress().toString()).arg(m_udpSocket->localPort()));
 
     bool isTestMessage = false;
     QString responseMessage;
@@ -630,11 +562,7 @@ void P2PServer::processTestMessage(const QNetworkDatagram &datagram)
 
     if (isTestMessage) {
         QByteArray response = responseMessage.toUtf8();
-
-        // 记录发送详情
-        LOG_INFO(QString("📤 准备发送响应到: %1:%2 - 内容: %3")
-                     .arg(senderAddress).arg(senderPort).arg(responseMessage));
-
+        LOG_INFO(QString("📤 准备发送响应到: %1:%2 - 内容: %3").arg(senderAddress).arg(senderPort).arg(responseMessage));
         qint64 bytesSent = sendToAddress(datagram.senderAddress(), datagram.senderPort(), response);
 
         if (bytesSent > 0) {
@@ -643,8 +571,7 @@ void P2PServer::processTestMessage(const QNetworkDatagram &datagram)
         } else {
             QString errorStr = m_udpSocket ? m_udpSocket->errorString() : "Socket未初始化";
             LOG_ERROR(QString("❌ 测试响应发送失败: %1").arg(errorStr));
-            LOG_ERROR(QString("🔧 Socket错误: %1, 状态: %2")
-                          .arg(errorStr, m_udpSocket ? QString::number(m_udpSocket->state()) : "N/A"));
+            LOG_ERROR(QString("🔧 Socket错误: %1, 状态: %2").arg(errorStr, m_udpSocket ? QString::number(m_udpSocket->state()) : "N/A"));
         }
         return;
     }
@@ -667,28 +594,25 @@ QByteArray P2PServer::buildSTUNTestResponse(const QNetworkDatagram &datagram)
     QDataStream stream(&response, QIODevice::WriteOnly);
     stream.setByteOrder(QDataStream::BigEndian);
 
-    // STUN Binding Response头部
-    stream << quint16(0x0101);  // Binding Response
-    stream << quint16(12);      // 消息长度
-    stream << quint32(0x2112A442); // Magic Cookie
+    stream << quint16(0x0101);
+    stream << quint16(12);
+    stream << quint32(0x2112A442);
 
-    // 生成事务ID（使用固定值便于测试）
     QByteArray transactionId(12, 0);
     QRandomGenerator::global()->fillRange(reinterpret_cast<quint32*>(transactionId.data()), 3);
     stream.writeRawData(transactionId.constData(), 12);
 
-    // XOR-MAPPED-ADDRESS属性
-    stream << quint16(0x0020);  // XOR-MAPPED-ADDRESS
-    stream << quint16(8);       // 属性长度
+    stream << quint16(0x0020);
+    stream << quint16(8);
 
     quint16 xoredPort = datagram.senderPort() ^ (0x2112A442 >> 16);
     quint32 ipv4 = datagram.senderAddress().toIPv4Address();
     quint32 xoredIP = ipv4 ^ 0x2112A442;
 
-    stream << quint8(0);        // 保留
-    stream << quint8(0x01);     // IPv4家族
-    stream << xoredPort;        // XORed端口
-    stream << xoredIP;          // XORed IP地址
+    stream << quint8(0);
+    stream << quint8(0x01);
+    stream << xoredPort;
+    stream << xoredIP;
 
     LOG_DEBUG(QString("🔧 STUN测试响应 - 客户端: %1:%2 -> 映射: %3:%4")
                   .arg(datagram.senderAddress().toString()).arg(datagram.senderPort())
@@ -743,7 +667,6 @@ qint64 P2PServer::sendToAddress(const QHostAddress &address, quint16 port, const
         LOG_ERROR("❌ UDP Socket 未初始化");
         return -1;
     }
-
     return m_udpSocket->writeDatagram(data, address, port);
 }
 
@@ -756,6 +679,7 @@ void P2PServer::processPunchRequest(const QNetworkDatagram &datagram)
         return;
     }
 
+    // *** 修复 ***：使用正确的函数生成 initiatorId
     QString initiatorId = generatePeerId(datagram.senderAddress(), datagram.senderPort());
     QString targetId = parts[1];
 
@@ -765,7 +689,6 @@ void P2PServer::processPunchRequest(const QNetworkDatagram &datagram)
     PeerInfo targetPeer;
     bool found = false;
 
-    // 使用一个独立的读锁来安全地拷贝数据
     {
         QReadLocker locker(&m_peersLock);
         if (m_peers.contains(initiatorId) && m_peers.contains(targetId)) {
@@ -776,10 +699,9 @@ void P2PServer::processPunchRequest(const QNetworkDatagram &datagram)
             if (!m_peers.contains(initiatorId)) LOG_WARNING(QString("❓ 未知的打洞发起方: %1").arg(initiatorId));
             if (!m_peers.contains(targetId)) LOG_WARNING(QString("❓ 未知的打洞目标: %1").arg(targetId));
         }
-    } // 读锁在这里释放
+    }
 
     if (found) {
-        // 在无锁状态下执行网络发送，避免死锁
         LOG_INFO(QString("🤝 正在通知 %1 (发起方) 关于 %2 (目标) 的信息...").arg(initiatorId, targetId));
         notifyPeerAboutPeer(initiatorId, targetPeer);
 
@@ -793,6 +715,7 @@ void P2PServer::processPunchRequest(const QNetworkDatagram &datagram)
 void P2PServer::processKeepAlive(const QNetworkDatagram &datagram)
 {
     QWriteLocker locker(&m_peersLock);
+
     QString peerId = generatePeerId(datagram.senderAddress(), datagram.senderPort());
 
     if (m_peers.contains(peerId)) {
@@ -804,6 +727,7 @@ void P2PServer::processKeepAlive(const QNetworkDatagram &datagram)
 void P2PServer::processPeerInfoAck(const QNetworkDatagram &datagram)
 {
     QWriteLocker locker(&m_peersLock);
+
     QString peerId = generatePeerId(datagram.senderAddress(), datagram.senderPort());
 
     if (m_peers.contains(peerId)) {
@@ -816,25 +740,19 @@ void P2PServer::processNATTest(const QNetworkDatagram &datagram)
 {
     QString data = QString(datagram.data());
     QStringList parts = data.split('|');
-
     QString senderAddress = datagram.senderAddress().toString();
     quint16 senderPort = datagram.senderPort();
-
     LOG_INFO(QString("🔍 NAT测试来自 %1:%2").arg(senderAddress).arg(senderPort));
 
-    // 总是发送响应，包含测试ID（如果有的话）
     QByteArray response;
     if (parts.size() > 2 && parts[1] == "PORT_DETECTION") {
-        // 响应端口检测测试，包含测试ID
         QString testId = parts[2];
         response = QString("NAT_TEST|%1|%2|%3").arg(testId, senderAddress, QString::number(senderPort)).toUtf8();
     } else {
-        // 普通响应
         response = QString("NAT_TEST|%1|%2").arg(senderAddress, QString::number(senderPort)).toUtf8();
     }
 
     qint64 bytesSent = sendToAddress(datagram.senderAddress(), datagram.senderPort(), response);
-
     if (bytesSent > 0) {
         LOG_DEBUG(QString("✅ NAT测试响应已发送: %1 字节").arg(bytesSent));
     }
@@ -844,40 +762,30 @@ void P2PServer::processForwardedMessage(const QNetworkDatagram &datagram)
 {
     QString data = QString(datagram.data());
     QStringList parts = data.split('|');
-
     if (parts.size() < 5) {
         LOG_WARNING("❌ 无效的转发消息格式");
         return;
     }
 
-    // 解析转发信息
     QString originalClientIp = parts[1];
     QString originalClientPort = parts[2];
     QString timestamp = parts[3];
     QString originalMessage = parts.mid(4).join("|");
 
-    LOG_INFO(QString("📨 转发消息 - 原始客户端: %1:%2, 时间: %3")
-                 .arg(originalClientIp, originalClientPort, timestamp));
+    LOG_INFO(QString("📨 转发消息 - 原始客户端: %1:%2, 时间: %3").arg(originalClientIp, originalClientPort, timestamp));
     LOG_INFO(QString("   原始消息: %1").arg(originalMessage));
 
-    // 创建虚拟数据报，模拟原始客户端发送
     QHostAddress originalAddr(originalClientIp);
     quint16 originalPort = originalClientPort.toUShort();
-
     QByteArray originalData = originalMessage.toUtf8();
-
-    // 使用虚拟数据报处理原始消息
     processOriginalMessage(originalData, originalAddr, originalPort);
 }
 
 void P2PServer::processOriginalMessage(const QByteArray &data, const QHostAddress &originalAddr, quint16 originalPort)
 {
     QString message = QString(data).trimmed();
+    LOG_INFO(QString("🔍 处理原始消息来自 %1:%2: %3").arg(originalAddr.toString()).arg(originalPort).arg(message));
 
-    LOG_INFO(QString("🔍 处理原始消息来自 %1:%2: %3")
-                 .arg(originalAddr.toString()).arg(originalPort).arg(message));
-
-    // 根据消息类型调用相应的处理函数
     if (message.startsWith("REGISTER_RELAY|")) {
         LOG_INFO("📝 处理转发的 REGISTER_RELAY 消息");
         processRegisterRelayFromForward(data, originalAddr, originalPort);
@@ -888,10 +796,8 @@ void P2PServer::processOriginalMessage(const QByteArray &data, const QHostAddres
 
 void P2PServer::processRegisterRelayFromForward(const QByteArray &data, const QHostAddress &originalAddr, quint16 originalPort)
 {
-    // 复用原有的 processRegisterRelay 逻辑，但使用原始地址
     QString message = QString(data);
     QStringList parts = message.split('|');
-
     if (parts.size() < 6) {
         LOG_WARNING(QString("❌ 无效的中继注册格式: %1").arg(message));
         return;
@@ -903,26 +809,25 @@ void P2PServer::processRegisterRelayFromForward(const QByteArray &data, const QH
     QString natType = parts[4];
     QString status = parts.size() > 5 ? parts[5] : "RELAY_WAITING";
 
+
     QString peerId = generatePeerId(originalAddr, originalPort);
 
-    // 创建对等端信息（中继模式）
     PeerInfo peerInfo;
     peerInfo.id = peerId;
     peerInfo.clientUuid = clientUuid;
-    peerInfo.localIp = relayIp;                               // 中继IP
-    peerInfo.localPort = relayPort.toUShort();                // 中继端口
-    peerInfo.publicIp = originalAddr.toString();              // 客户端真实公网IP
-    peerInfo.publicPort = originalPort;                       // 客户端真实公网端口
-    peerInfo.relayIp = relayIp;                               // 中继服务器IP
-    peerInfo.relayPort = relayPort.toUShort();                // 中继服务器端口
-    peerInfo.natType = natType;                               // NAT类型
+    peerInfo.localIp = relayIp;
+    peerInfo.localPort = relayPort.toUShort();
+    peerInfo.publicIp = originalAddr.toString();
+    peerInfo.publicPort = originalPort;
+    peerInfo.relayIp = relayIp;
+    peerInfo.relayPort = relayPort.toUShort();
+    peerInfo.natType = natType;
     peerInfo.targetIp = "0.0.0.0";
     peerInfo.targetPort = 0;
     peerInfo.lastSeen = QDateTime::currentMSecsSinceEpoch();
     peerInfo.status = status;
-    peerInfo.isRelayMode = true;                              // 标记为中继模式
+    peerInfo.isRelayMode = true;
 
-    // 存储对等端信息
     {
         QWriteLocker locker(&m_peersLock);
         m_peers[peerId] = peerInfo;
@@ -934,11 +839,7 @@ void P2PServer::processRegisterRelayFromForward(const QByteArray &data, const QH
     LOG_INFO(QString("  NAT类型: %1").arg(natType));
     LOG_INFO(QString("  状态: %1").arg(status));
 
-    // 发送中继注册确认（发送到原始客户端地址）
-    QByteArray response = QString("REGISTER_RELAY_ACK|%1|%2|%3|%4")
-                              .arg(peerId, relayIp, relayPort, status)
-                              .toUtf8();
-
+    QByteArray response = QString("REGISTER_RELAY_ACK|%1|%2|%3|%4").arg(peerId, relayIp, relayPort, status).toUtf8();
     qint64 bytesSent = sendToAddress(originalAddr, originalPort, response);
 
     if (bytesSent > 0) {
@@ -946,7 +847,6 @@ void P2PServer::processRegisterRelayFromForward(const QByteArray &data, const QH
     } else {
         LOG_ERROR(QString("❌ 中继注册确认发送失败"));
     }
-
     emit peerRegistered(peerId, clientUuid);
 }
 
@@ -959,13 +859,10 @@ void P2PServer::sendToPeer(const QString &peerId, const QByteArray &data)
     }
 
     const PeerInfo &peer = m_peers[peerId];
-
-    // 处理IPv6格式地址
     QString cleanIp = peer.publicIp;
     if (cleanIp.startsWith("::ffff:")) {
         cleanIp = cleanIp.mid(7);
     }
-
     QHostAddress address(cleanIp);
     if (address.isNull()) {
         LOG_ERROR(QString("❌ 无效地址: %1").arg(cleanIp));
@@ -973,7 +870,6 @@ void P2PServer::sendToPeer(const QString &peerId, const QByteArray &data)
     }
 
     qint64 bytesSent = sendToAddress(address, peer.publicPort, data);
-
     if (bytesSent > 0) {
         LOG_DEBUG(QString("📤 发送到 %1: %2 字节").arg(peerId).arg(bytesSent));
     } else {
@@ -993,13 +889,10 @@ void P2PServer::onBroadcastTimeout()
 
 void P2PServer::broadcastServerInfo()
 {
-    if (!m_enableBroadcast || !m_udpSocket) {
-        return;
-    }
+    if (!m_enableBroadcast || !m_udpSocket) return;
 
     QByteArray broadcastMsg = QString("WAR3BOT_SERVER|%1").arg(m_listenPort).toUtf8();
     m_udpSocket->writeDatagram(broadcastMsg, QHostAddress::Broadcast, m_broadcastPort);
-
     LOG_DEBUG("📢 广播服务器信息");
 }
 
@@ -1026,9 +919,14 @@ void P2PServer::cleanupExpiredPeers()
     }
 }
 
+// *** 新增/修正 ***：实现 generatePeerId 函数
 QString P2PServer::generatePeerId(const QHostAddress &address, quint16 port)
 {
-    return QString("%1:%2").arg(address.toString()).arg(port);
+    QString ipString = address.toString();
+    if (ipString.startsWith("::ffff:")) {
+        ipString = ipString.mid(7);
+    }
+    return QString("%1:%2").arg(ipString).arg(port);
 }
 
 void P2PServer::removePeer(const QString &peerId)
@@ -1044,82 +942,49 @@ void P2PServer::removePeer(const QString &peerId)
 QByteArray P2PServer::getPeers(int maxCount, const QString &excludeClientUuid)
 {
     QReadLocker locker(&m_peersLock);
-
     QList<PeerInfo> peerList = m_peers.values();
-
-    // 如果请求的数量小于0或大于总数，则获取全部
     int count = (maxCount < 0 || maxCount > peerList.size() - 1) ? peerList.size() : maxCount;
-    // 确保count不会超过实际可用的对等端数量（排除自己后）
-    if (count > peerList.size() -1) {
-        count = peerList.size() -1;
+    if (count > peerList.size() - 1) {
+        count = peerList.size() - 1;
     }
-
 
     LOG_INFO(QString("🔍 正在准备对等端列表... 请求数量: %1, 排除UUID: %2, 总对等端数: %3")
                  .arg(maxCount).arg(excludeClientUuid).arg(peerList.size()));
 
     QByteArray response = "PEER_LIST|";
     int peersAdded = 0;
-
-    // ====================== 新增: 用于日志记录的字符串列表 ======================
     QStringList peersLogList;
-    peersLogList << QString("--- 将要发送给 %1 的对等端列表 (最多 %2 个) ---")
-                        .arg(excludeClientUuid)
-                        .arg(count);
-    // ======================================================================
+    peersLogList << QString("--- 将要发送给 %1 的对等端列表 (最多 %2 个) ---").arg(excludeClientUuid).arg(count);
 
     for (const PeerInfo &peer : qAsConst(peerList)) {
-        // 如果已达到请求数量，则停止
-        if (peersAdded >= count) {
-            break;
-        }
+        if (peersAdded >= count) break;
+        if (peer.clientUuid == excludeClientUuid) continue;
 
-        // 跳过请求者自身
-        if (peer.clientUuid == excludeClientUuid) {
-            continue;
-        }
-
-        // 使用键值对格式序列化所有字段，分号分隔 (为了可读性，格式化了代码)
         QString peerData = QString("id=%1;cid=%2;lip=%3;lport=%4;pip=%5;pport=%6;rip=%7;rport=%8;tip=%9;tport=%10;nat=%11;seen=%12;stat=%13;relay=%14")
-                               .arg(peer.id, peer.clientUuid,
-                                    peer.localIp)
-                               .arg(peer.localPort)
-                               .arg(peer.publicIp)
-                               .arg(peer.publicPort)
-                               .arg(peer.relayIp)
-                               .arg(peer.relayPort)
-                               .arg(peer.targetIp)
-                               .arg(peer.targetPort)
+                               .arg(peer.id, peer.clientUuid, peer.localIp).arg(peer.localPort)
+                               .arg(peer.publicIp).arg(peer.publicPort)
+                               .arg(peer.relayIp).arg(peer.relayPort)
+                               .arg(peer.targetIp).arg(peer.targetPort)
                                .arg(peer.natType, peer.lastSeen)
                                .arg(peer.status, peer.isRelayMode ? "1" : "0");
 
         response.append(peerData.toUtf8());
-        response.append("|"); // 使用'|'作为不同peer之间的分隔符
+        response.append("|");
         peersAdded++;
 
-        // ====================== 将此对等端的信息添加到日志列表 ======================
         peersLogList << QString("  [%1/%2] ID: %3, UUID: %4, 状态: %5")
-                            .arg(peersAdded, 2, 10, QChar(' ')) // 格式化数字，例如 " 1/10"
-                            .arg(count, 2, 10, QChar(' '))
-                            .arg(peer.id, -22) // 左对齐，宽度22
-                            .arg(peer.clientUuid, peer.status);
-        // ===========================================================================
+                            .arg(peersAdded, 2, 10, QChar(' ')).arg(count, 2, 10, QChar(' '))
+                            .arg(peer.id, -22).arg(peer.clientUuid, peer.status);
     }
 
-    // 移除末尾多余的'|'
     if (response.endsWith('|')) {
         response.chop(1);
     }
-
-    // ====================== 打印详细的日志信息 ======================
     if (peersAdded > 0) {
-        // 如果至少添加了一个对等端，就打印整个列表
         LOG_INFO(peersLogList.join("\n"));
     } else {
-        // 如果一个也没添加，也给出提示
         LOG_INFO(QString("ℹ️ 没有找到符合条件的可发送对等端给 %1").arg(excludeClientUuid));
     }
-    // ===================================================================
 
     LOG_INFO(QString("✅ 对等端列表准备完成，共发送 %1 个对等端给请求者。").arg(peersAdded));
     return response;
