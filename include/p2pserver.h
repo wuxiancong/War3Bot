@@ -44,7 +44,7 @@ public:
 
     // 对等端管理
     void removePeer(const QString &peerId);
-    QByteArray getPeers(int maxCount = -1, const QString &clientUuid = "");
+    QByteArray getPeers(int maxCount = -1, const QString &excludeClientUuid = "");
 
 signals:
     void serverStopped();

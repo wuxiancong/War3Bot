@@ -1041,20 +1041,32 @@ void P2PServer::removePeer(const QString &peerId)
     }
 }
 
-QByteArray P2PServer::getPeers(int maxCount, const QString &clientUuid)
+QByteArray P2PServer::getPeers(int maxCount, const QString &excludeClientUuid)
 {
     QReadLocker locker(&m_peersLock);
 
     QList<PeerInfo> peerList = m_peers.values();
 
     // 如果请求的数量小于0或大于总数，则获取全部
-    int count = (maxCount < 0 || maxCount > peerList.size()) ? peerList.size() : maxCount;
+    int count = (maxCount < 0 || maxCount > peerList.size() - 1) ? peerList.size() : maxCount;
+    // 确保count不会超过实际可用的对等端数量（排除自己后）
+    if (count > peerList.size() -1) {
+        count = peerList.size() -1;
+    }
 
-    LOG_INFO(QString("🔍 正在准备对等端列表... 请求数量: %1, 排除ID: %2, 总对等端数: %3")
-                 .arg(maxCount).arg(clientUuid).arg(peerList.size()));
+
+    LOG_INFO(QString("🔍 正在准备对等端列表... 请求数量: %1, 排除UUID: %2, 总对等端数: %3")
+                 .arg(maxCount).arg(excludeClientUuid).arg(peerList.size()));
 
     QByteArray response = "PEER_LIST|";
     int peersAdded = 0;
+
+    // ====================== 新增: 用于日志记录的字符串列表 ======================
+    QStringList peersLogList;
+    peersLogList << QString("--- 将要发送给 %1 的对等端列表 (最多 %2 个) ---")
+                        .arg(excludeClientUuid)
+                        .arg(count);
+    // ======================================================================
 
     for (const PeerInfo &peer : qAsConst(peerList)) {
         // 如果已达到请求数量，则停止
@@ -1063,13 +1075,14 @@ QByteArray P2PServer::getPeers(int maxCount, const QString &clientUuid)
         }
 
         // 跳过请求者自身
-        if (peer.clientUuid == clientUuid) {
+        if (peer.clientUuid == excludeClientUuid) {
             continue;
         }
 
-        // 使用键值对格式序列化所有字段，分号分隔
+        // 使用键值对格式序列化所有字段，分号分隔 (为了可读性，格式化了代码)
         QString peerData = QString("id=%1;cid=%2;lip=%3;lport=%4;pip=%5;pport=%6;rip=%7;rport=%8;tip=%9;tport=%10;nat=%11;seen=%12;stat=%13;relay=%14")
-                               .arg(peer.id, peer.clientUuid, peer.localIp)
+                               .arg(peer.id, peer.clientUuid,
+                                    peer.localIp)
                                .arg(peer.localPort)
                                .arg(peer.publicIp)
                                .arg(peer.publicPort)
@@ -1077,13 +1090,20 @@ QByteArray P2PServer::getPeers(int maxCount, const QString &clientUuid)
                                .arg(peer.relayPort)
                                .arg(peer.targetIp)
                                .arg(peer.targetPort)
-                               .arg(peer.natType)
-                               .arg(peer.lastSeen)
+                               .arg(peer.natType, peer.lastSeen)
                                .arg(peer.status, peer.isRelayMode ? "1" : "0");
 
         response.append(peerData.toUtf8());
         response.append("|"); // 使用'|'作为不同peer之间的分隔符
         peersAdded++;
+
+        // ====================== 将此对等端的信息添加到日志列表 ======================
+        peersLogList << QString("  [%1/%2] ID: %3, UUID: %4, 状态: %5")
+                            .arg(peersAdded, 2, 10, QChar(' ')) // 格式化数字，例如 " 1/10"
+                            .arg(count, 2, 10, QChar(' '))
+                            .arg(peer.id, -22) // 左对齐，宽度22
+                            .arg(peer.clientUuid, peer.status);
+        // ===========================================================================
     }
 
     // 移除末尾多余的'|'
@@ -1091,7 +1111,17 @@ QByteArray P2PServer::getPeers(int maxCount, const QString &clientUuid)
         response.chop(1);
     }
 
-    LOG_INFO(QString("✅ 对等端列表准备完成，包含 %1 个对等端。").arg(peersAdded));
+    // ====================== 打印详细的日志信息 ======================
+    if (peersAdded > 0) {
+        // 如果至少添加了一个对等端，就打印整个列表
+        LOG_INFO(peersLogList.join("\n"));
+    } else {
+        // 如果一个也没添加，也给出提示
+        LOG_INFO(QString("ℹ️ 没有找到符合条件的可发送对等端给 %1").arg(excludeClientUuid));
+    }
+    // ===================================================================
+
+    LOG_INFO(QString("✅ 对等端列表准备完成，共发送 %1 个对等端给请求者。").arg(peersAdded));
     return response;
 }
 
