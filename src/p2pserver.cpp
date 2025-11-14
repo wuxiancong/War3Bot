@@ -368,7 +368,7 @@ void P2PServer::processRegister(const QNetworkDatagram &datagram)
     peerInfo.targetPort = 0;
     peerInfo.lastSeen = QDateTime::currentMSecsSinceEpoch();
     peerInfo.status = status;
-    peerInfo.natType = natType;
+    peerInfo.natType = natTypeToString(natType);
 
     {
         QWriteLocker locker(&m_peersLock);
@@ -379,7 +379,7 @@ void P2PServer::processRegister(const QNetworkDatagram &datagram)
     LOG_INFO(QString("  公网地址: %1:%2").arg(peerInfo.publicIp).arg(peerInfo.publicPort));
     LOG_INFO(QString("  内网地址: %1:%2").arg(localIp, localPort));
     LOG_INFO(QString("  状态: %1").arg(status));
-    LOG_INFO(QString("  NAT类型: %1").arg(natTypeToString(natType)));
+    LOG_INFO(QString("  NAT类型: %1").arg(peerInfo.natType));
 
     QByteArray response = QString("REGISTER_ACK|%1|%2").arg(peerId, status).toUtf8();
     sendToAddress(datagram.senderAddress(), datagram.senderPort(), response);
@@ -824,9 +824,9 @@ void P2PServer::processRegisterRelayFromForward(const QByteArray &data, const QH
     QString clientUuid = parts[1];
     QString relayIp = parts[2];
     QString relayPort = parts[3];
-    QString natType = parts[4];
+    int natTypeInt = parts[4].toInt();
     QString status = parts.size() > 5 ? parts[5] : "RELAY_WAITING";
-
+    NATType natType = static_cast<NATType>(natTypeInt);
 
     QString peerId = generatePeerId(originalAddr, originalPort);
 
@@ -839,7 +839,7 @@ void P2PServer::processRegisterRelayFromForward(const QByteArray &data, const QH
     peerInfo.publicPort = originalPort;
     peerInfo.relayIp = relayIp;
     peerInfo.relayPort = relayPort.toUShort();
-    peerInfo.natType = natType;
+    peerInfo.natType = natTypeToString(natType);
     peerInfo.targetIp = "0.0.0.0";
     peerInfo.targetPort = 0;
     peerInfo.lastSeen = QDateTime::currentMSecsSinceEpoch();
@@ -848,13 +848,13 @@ void P2PServer::processRegisterRelayFromForward(const QByteArray &data, const QH
 
     {
         QWriteLocker locker(&m_peersLock);
-        m_peers[peerId] = peerInfo;
+        m_peers[clientUuid] = peerInfo;
     }
 
-    LOG_INFO(QString("🔄 转发中继模式对等端注册: %1").arg(peerId));
+    LOG_INFO(QString("🔄 转发中继模式对等端注册: %1").arg(clientUuid));
     LOG_INFO(QString("  真实公网地址: %1:%2").arg(peerInfo.publicIp).arg(peerInfo.publicPort));
     LOG_INFO(QString("  中继地址: %1:%2").arg(relayIp, relayPort));
-    LOG_INFO(QString("  NAT类型: %1").arg(natType));
+    LOG_INFO(QString("  NAT类型: %1").arg(peerInfo.natType));
     LOG_INFO(QString("  状态: %1").arg(status));
 
     QByteArray response = QString("REGISTER_RELAY_ACK|%1|%2|%3|%4").arg(peerId, relayIp, relayPort, status).toUtf8();
