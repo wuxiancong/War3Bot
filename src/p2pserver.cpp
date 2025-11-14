@@ -943,7 +943,7 @@ void P2PServer::processRegisterRelayFromForward(const QByteArray &data, const QH
     } else {
         LOG_ERROR(QString("❌ 中继注册确认发送失败"));
     }
-    emit peerRegistered(peerId, clientUuid);
+    emit peerRegistered(peerId, clientUuid, m_peers.size());
 }
 
 void P2PServer::sendToPeer(const QString &clientUuid, const QByteArray &data)

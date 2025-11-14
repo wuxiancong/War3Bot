@@ -67,8 +67,8 @@ signals:
     void serverStopped();
     void serverStarted(quint16 port);
     void peerRemoved(const QString &peerId);
-    void peerRegistered(const QString &peerId, const QString &clientUuid);
     void punchRequested(const QString &sourcePeer, const QString &targetPeer);
+    void peerRegistered(const QString &peerId, const QString &clientUuid, int size);
     void peersMatched(const QString &peer1, const QString &peer2, const QString &targetIp, const QString &targetPort);
     void peerHandshaked(const QString &peerId, const QString &clientUuid, const QString &targetIp, const QString &targetPort);
     void peerHandshaking(const QString &peerId, const QString &clientUuid, const QString &targetIp, const QString &targetPort);
