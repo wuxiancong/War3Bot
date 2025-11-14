@@ -973,10 +973,7 @@ QByteArray P2PServer::getPeers(int maxCount, const QString &excludeClientUuid)
 {
     QReadLocker locker(&m_peersLock);
     QList<PeerInfo> peerList = m_peers.values();
-    int count = (maxCount < 0 || maxCount > peerList.size() - 1) ? peerList.size() : maxCount;
-    if (count > peerList.size() - 1) {
-        count = peerList.size() - 1;
-    }
+    int desiredCount = (maxCount < 0) ? peerList.size() : maxCount;
 
     LOG_INFO(QString("🔍 正在准备对等端列表... 请求数量: %1, 排除UUID: %2, 总对等端数: %3")
                  .arg(maxCount).arg(excludeClientUuid).arg(peerList.size()));
@@ -984,11 +981,18 @@ QByteArray P2PServer::getPeers(int maxCount, const QString &excludeClientUuid)
     QByteArray response = "PEER_LIST|";
     int peersAdded = 0;
     QStringList peersLogList;
-    peersLogList << QString("--- 将要发送给 %1 的对等端列表 (最多 %2 个) ---").arg(excludeClientUuid).arg(count);
+    peersLogList << QString("--- 将要发送给 %1 的对等端列表 (最多 %2 个) ---").arg(excludeClientUuid).arg(desiredCount);
 
     for (const PeerInfo &peer : qAsConst(peerList)) {
-        if (peersAdded >= count) break;
-        if (peer.clientUuid == excludeClientUuid) continue;
+        // 达到请求数量，停止
+        if (peersAdded >= desiredCount) {
+            break;
+        }
+
+        // 跳过请求者自身
+        if (peer.clientUuid == excludeClientUuid) {
+            continue;
+        }
 
         QString peerData = QString("id=%1;cid=%2;lip=%3;lport=%4;pip=%5;pport=%6;rip=%7;rport=%8;tip=%9;tport=%10;nat=%11;seen=%12;stat=%13;relay=%14")
                                .arg(peer.id, peer.clientUuid, peer.localIp).arg(peer.localPort)
@@ -1003,7 +1007,7 @@ QByteArray P2PServer::getPeers(int maxCount, const QString &excludeClientUuid)
         peersAdded++;
 
         peersLogList << QString("  [%1/%2] ID: %3, UUID: %4, 状态: %5")
-                            .arg(peersAdded, 2, 10, QChar(' ')).arg(count, 2, 10, QChar(' '))
+                            .arg(peersAdded, 2, 10, QChar(' ')).arg(desiredCount, 2, 10, QChar(' '))
                             .arg(peer.id, -22).arg(peer.clientUuid, peer.status);
     }
 
