@@ -939,7 +939,7 @@ void P2PServer::removePeer(const QString &peerId)
     }
 }
 
-QString natTypeToString(NATType type)
+QString P2PServer::natTypeToString(NATType type)
 {
     switch (type) {
     case NAT_UNKNOWN:
