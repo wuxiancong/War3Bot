@@ -239,13 +239,13 @@ void P2PServer::processDatagram(const QNetworkDatagram &datagram)
         LOG_INFO("🏓 处理PING请求，验证客户端注册状态");
         processPingRequest(datagram);
     } else if (message.startsWith("TEST")) {
-        LOG_INFO("🧪 处理测试消息");
+        LOG_INFO("🧪 处理普通测试消息");
         processTestMessage(datagram);
     } else if (message.startsWith("NAT_TEST")) {
-        LOG_INFO("🔍 处理NAT测试消息");
+        LOG_INFO("🧪 处理NAT测试消息");
         processNATTest(datagram);
     } else if (message.startsWith("P2P_TEST")) {
-        LOG_INFO("🔍 处理P2P测试消息");
+        LOG_INFO("🧪 处理P2P测试消息");
         processP2PTest(datagram);
     }  else if (message.startsWith("FORWARDED")) {
         LOG_INFO("🔄 处理转发消息");
@@ -273,7 +273,7 @@ void P2PServer::processHandshake(const QNetworkDatagram &datagram)
     QString localPortStr = parts[3];
     QString targetIp = parts[4];
     QString targetPortStr = parts[5];
-    QString status = parts[6]; // 客户端可以传来初始状态，如 "HOSTING" 或 "JOINING"
+    QString status = parts[6]; // 客户端可以传来初始状态，如 WAITING|HOSTING|CREATED|JOINED|STARTED
 
     // --- 安全性转换 ---
     bool localPortOk, targetPortOk;
@@ -305,8 +305,8 @@ void P2PServer::processHandshake(const QNetworkDatagram &datagram)
         m_peers[clientUuid] = peerInfo;
     }
 
-    LOG_INFO(QString("✅ 对等端已握手并注册: %1 (%2) 客户端ID: %3 状态: %4")
-                 .arg(peerId, peerInfo.publicIp, clientUuid, status));
+    LOG_INFO(QString("✅ 对等端已握手并注册: %1 (%2:%3) 客户端ID: %4 状态: %5")
+                 .arg(peerId, peerInfo.publicIp, QString::number(peerInfo.publicPort), clientUuid,  status));
 
     sendHandshakeAck(datagram, peerId);
 
@@ -315,7 +315,7 @@ void P2PServer::processHandshake(const QNetworkDatagram &datagram)
     if (!targetAddress.isNull() && targetIp != "0.0.0.0") {
         LOG_INFO(QString("ℹ️ 识别为 '加入者' (Guest)，正在为其查找主机..."));
 
-        bool matched = findAndNotifyHost(clientUuid);
+        bool matched = findAndNotifyPeer(clientUuid);
 
         if (matched) {
             emit peerHandshaked(peerId, clientUuid, targetIp, targetPortStr);
@@ -344,9 +344,9 @@ void P2PServer::processRegister(const QNetworkDatagram &datagram)
 
     if (parts.size() < 6) {
         LOG_WARNING(QString("❌ 无效的注册格式: %1").arg(data));
-        LOG_WARNING(QString("期望 6个部分，实际收到: %1 个部分").arg(parts.size()));
+        LOG_WARNING(QString("👀 期望 6个部分，实际收到: %1 个部分").arg(parts.size()));
         for (int i = 0; i < parts.size(); ++i) {
-            LOG_WARNING(QString("  部分[%1]: %2").arg(i).arg(parts[i]));
+            LOG_WARNING(QString("  [%1]: %2").arg(i).arg(parts[i]));
         }
         return;
     }
@@ -370,8 +370,8 @@ void P2PServer::processRegister(const QNetworkDatagram &datagram)
     peerInfo.targetIp = "0.0.0.0";
     peerInfo.targetPort = 0;
     peerInfo.lastSeen = QDateTime::currentMSecsSinceEpoch();
-    peerInfo.status = status;
     peerInfo.natType = natTypeToString(natType);
+    peerInfo.status = status;
 
     {
         QWriteLocker locker(&m_peersLock);
@@ -379,10 +379,11 @@ void P2PServer::processRegister(const QNetworkDatagram &datagram)
     }
 
     LOG_INFO(QString("📝 对等端注册: %1").arg(peerId));
-    LOG_INFO(QString("  公网地址: %1:%2").arg(peerInfo.publicIp).arg(peerInfo.publicPort));
-    LOG_INFO(QString("  内网地址: %1:%2").arg(localIp, localPort));
-    LOG_INFO(QString("  状态: %1").arg(status));
-    LOG_INFO(QString("  NAT类型: %1").arg(peerInfo.natType));
+    LOG_INFO(QString("      客户端ID: %1").arg(clientUuid));
+    LOG_INFO(QString("      公网地址: %1:%2").arg(peerInfo.publicIp).arg(peerInfo.publicPort));
+    LOG_INFO(QString("      内网地址: %1:%2").arg(localIp, localPort));
+    LOG_INFO(QString("      NAT类型: %1").arg(peerInfo.natType));
+    LOG_INFO(QString("      状态: %1").arg(status));
 
     QByteArray response = QString("REGISTER_ACK|%1|%2").arg(peerId, status).toUtf8();
     sendToAddress(datagram.senderAddress(), datagram.senderPort(), response);
@@ -395,8 +396,9 @@ void P2PServer::processUnregister(const QNetworkDatagram &datagram)
     QStringList parts = QString(datagram.data()).split('|');
     QString clientUuidToRemove;
 
+    // 格式: UNREGISTER|CLIENT_UUID
     if (parts.size() > 1 && !parts[1].isEmpty()) {
-        clientUuidToRemove = parts[1]; // 格式: UNREGISTER|clientUuid
+        clientUuidToRemove = parts[1];
     } else {
         // 兼容旧客户端，通过地址查找
         clientUuidToRemove = findPeerUuidByAddress(datagram.senderAddress(), datagram.senderPort());
@@ -456,13 +458,13 @@ void P2PServer::sendHandshakeAck(const QNetworkDatagram &datagram, const QString
     }
 }
 
-bool P2PServer::findAndNotifyHost(const QString &guestClientUuid)
+bool P2PServer::findAndNotifyPeer(const QString &guestClientUuid, bool findHost)
 {
     QWriteLocker locker(&m_peersLock);
 
     // 1. 获取"加入者"的信息
     if (!m_peers.contains(guestClientUuid)) {
-        LOG_ERROR(QString("❌ findAndNotifyHost: 加入者 %1 不存在").arg(guestClientUuid));
+        LOG_ERROR(QString("❌ findAndNotifyPeer: 加入者 %1 不存在").arg(guestClientUuid));
         return false;
     }
     PeerInfo &guestPeer = m_peers[guestClientUuid];
@@ -481,16 +483,15 @@ bool P2PServer::findAndNotifyHost(const QString &guestClientUuid)
         if (hostPeer.publicIp == guestPeer.targetIp && hostPeer.publicPort == guestPeer.targetPort) {
 
             // 确保主机处于可连接状态
-            if (hostPeer.status != "WAITING" && hostPeer.status != "HOSTING") {
+            if (findHost && hostPeer.status != "HOSTING") {
                 LOG_WARNING(QString("⚠️ 找到主机 %1，但其状态为 %2，无法连接。").arg(hostPeer.id, hostPeer.status));
                 continue; // 继续查找其他可能的匹配（例如IP和端口复用）
             }
 
             LOG_INFO(QString("🤝 匹配成功: 加入者 %1 -> 主机 %2").arg(guestPeer.id, hostPeer.id));
 
-            // 更新双方状态
-            guestPeer.status = "CONNECTING";
-            hostPeer.status = "CONNECTING";
+            // 更新加入者状态
+            guestPeer.status = "JOINING";
 
             // ★ 服务器的"介绍人"角色
             // a. 告诉"加入者"关于"主机"的详细信息
@@ -513,17 +514,24 @@ bool P2PServer::findAndNotifyHost(const QString &guestClientUuid)
 
 void P2PServer::processPingRequest(const QNetworkDatagram &datagram)
 {
+    // 格式：PING|CLIENT_UUID|LOCAL_IP|LOCAL_PORT|PUBLIC_IP|PUBLIC_PORT
     QString data = QString(datagram.data());
     QStringList parts = data.split('|');
-
-    QString clientUuid = findPeerUuidByAddress(datagram.senderAddress(), datagram.senderPort());
 
     bool isRegistered = false;
 
     if (parts.size() >= 3) {
-        QString publicIp = parts[1];
-        QString publicPort = parts[2];
-        LOG_INFO(QString("🏓 PING来自 %1, 公网信息: %2:%3").arg(clientUuid, publicIp, publicPort));
+        QString clientUuid = parts[1];
+        QString clientLocalIp = parts[2];
+        QString clientLocalPort = parts[3];
+        QString clientPublicIp = parts[4];
+        QString clientPublicPort = parts[5];
+        QString publicIp = datagram.senderAddress().toString();
+        QString publicPort = QString::number(datagram.senderPort());
+        LOG_INFO(QString("🏓 PING来自 %1").arg(clientUuid));
+        LOG_INFO(QString("      客户端检测本地信息-> %2:%3").arg(clientLocalIp, clientLocalPort));
+        LOG_INFO(QString("      客户端检测公网信息-> %2:%3").arg(clientPublicIp, clientPublicPort));
+        LOG_INFO(QString("      服务端检测公网信息-> %2:%3").arg(publicIp, publicPort));
 
         {
             QReadLocker locker(&m_peersLock);
@@ -602,28 +610,31 @@ void P2PServer::sendDefaultResponse(const QNetworkDatagram &datagram)
     const QByteArray originalData = datagram.data();
 
     const QString base64Data = QString::fromLatin1(originalData.toBase64());
+    const QString stringData = QString::fromUtf8(originalData);
 
-    QString stringData = QString::fromUtf8(originalData); // 尝试用UTF-8解码
-    stringData.replace('|', "[PIPE]");  // 将分隔符替换为可读的标记
-    stringData.replace('\n', "\\n");    // 将换行符转义
-    stringData.replace('\r', "\\r");    // 将回车符转义
-    stringData.replace('\0', "[NULL]"); // 明确标出空字符
+    const QString timestamp = QDateTime::currentDateTime().toString("hh:mm:ss.zzz");
+    const QString senderIp  = datagram.senderAddress().toString();
+    const QString senderPort = QString::number(datagram.senderPort());
+    const QString dataSize   = QString::number(originalData.size());
 
-    // 格式: DEFAULT_RESPONSE|DESCRIPTION|SENDER_IP|SENDER_PORT|DATA_SIZE|STRING_DATA|BASE64_DATA
-    QString responseMessage = QString("DEFAULT_RESPONSE|Message received at %1|%2|%3")
-                                  .arg(QDateTime::currentDateTime().toString("hh:mm:ss.zzz"),
-                                       datagram.senderAddress().toString(),
-                                       QString::number(datagram.senderPort()),
-                                       QString::number(originalData.size()),
-                                       stringData,
-                                       base64Data);
+    // 格式: DEFAULT_RESPONSE|DESCRIPTION|IP|PORT|SIZE|STRING_DATA|BASE64
+    QString responseMessage;
+    responseMessage.reserve(256 + stringData.size() + base64Data.size());
 
-    QByteArray response = responseMessage.toUtf8();
-    sendToAddress(datagram.senderAddress(), datagram.senderPort(), response);
+    QTextStream stream(&responseMessage);
+    stream << "DEFAULT_RESPONSE|Message received at " << timestamp
+           << "|" << senderIp
+           << "|" << senderPort
+           << "|" << dataSize
+           << "|" << stringData
+           << "|" << base64Data;
 
-    LOG_DEBUG(QString("📤 已向 %1:%2 发送默认响应，回显了 %3 字节的数据 (同时包含字符串和Base64格式)。")
-                  .arg(datagram.senderAddress().toString())
-                  .arg(datagram.senderPort())
+    sendToAddress(datagram.senderAddress(),
+                  datagram.senderPort(),
+                  responseMessage.toUtf8());
+
+    LOG_DEBUG(QString("📤 已向 %1:%2 发送默认响应，回显了 %3 字节的数据 (文本 + Base64)。")
+                  .arg(senderIp, senderPort)
                   .arg(originalData.size()));
 }
 
