@@ -694,8 +694,10 @@ void P2PServer::notifyPeerAboutPeer(const QString &targetUuid, const PeerInfo &o
     }
 
     if (targetFound) {
-        QString message = QString("PEER_INFO|%1|%2|%3|%4")
-        .arg(otherPeer.publicIp)
+        // 格式: PEER_INFO|CLIENT_UUID|PUBLIC_IP|PUBLIC_PORT|LOCAL_IP|LOCAL_PORT
+        QString message = QString("PEER_INFO|%1|%2|%3|%4|%5")
+        .arg(otherPeer.clientUuid,
+             otherPeer.publicIp)
             .arg(otherPeer.publicPort)
             .arg(otherPeer.localIp)
             .arg(otherPeer.localPort);
