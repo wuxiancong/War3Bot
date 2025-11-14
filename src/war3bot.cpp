@@ -63,12 +63,12 @@ bool War3Bot::isRunning() const
 
 void War3Bot::onPeerRegistered(const QString &peerId, const QString &clientUuid)
 {
-    LOG_INFO(QString("新对等节点已连接 - 对等端ID: %1, 客户端ID: %2").arg(peerId, clientUuid));
+    LOG_INFO(QString("新对等节点已连接 - peerID: %1, 客户端ID: %2").arg(peerId, clientUuid));
 }
 
 void War3Bot::onPeerRemoved(const QString &peerId)
 {
-    LOG_INFO(QString("对等节点已断开连接 - 对等端ID: %1").arg(peerId));
+    LOG_INFO(QString("对等节点已断开连接 - peerID: %1").arg(peerId));
 }
 
 void War3Bot::onPunchRequested(const QString &sourcePeerId, const QString &targetPeerId)

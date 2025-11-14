@@ -596,10 +596,26 @@ void P2PServer::processTestMessage(const QNetworkDatagram &datagram)
 
 void P2PServer::sendDefaultResponse(const QNetworkDatagram &datagram)
 {
-    QByteArray response = "DEFAULT_RESPONSE|Message received at " +
-                          QDateTime::currentDateTime().toString("hh:mm:ss.zzz").toUtf8();
+    const QByteArray originalData = datagram.data();
+
+    const QString safeBase64String = QString::fromLatin1(originalData.toBase64());
+
+    QString bestEffortString = QString::fromUtf8(originalData); // 尝试用UTF-8解码
+    bestEffortString.replace('|', "[PIPE]");  // 将分隔符替换为可读的标记
+    bestEffortString.replace('\n', "\\n");    // 将换行符转义
+    bestEffortString.replace('\r', "\\r");    // 将回车符转义
+    bestEffortString.replace('\0', "[NULL]"); // 明确标出空字符
+
+    QString responseMessage = QString("DEFAULT_RESPONSE|Message received at %1|%2|%3")
+                                  .arg(QDateTime::currentDateTime().toString("hh:mm:ss.zzz"), bestEffortString, safeBase64String);
+
+    QByteArray response = responseMessage.toUtf8();
     sendToAddress(datagram.senderAddress(), datagram.senderPort(), response);
-    LOG_DEBUG(QString("📤 发送默认响应到 %1:%2").arg(datagram.senderAddress().toString()).arg(datagram.senderPort()));
+
+    LOG_DEBUG(QString("📤 已向 %1:%2 发送默认响应，回显了 %3 字节的数据 (同时包含字符串和Base64格式)。")
+                  .arg(datagram.senderAddress().toString())
+                  .arg(datagram.senderPort())
+                  .arg(originalData.size()));
 }
 
 QByteArray P2PServer::buildSTUNTestResponse(const QNetworkDatagram &datagram)
