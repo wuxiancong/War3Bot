@@ -58,7 +58,9 @@ public:
     bool isRunning() const;
 
     // 对等端管理
-    void removePeer(const QString &peerId);
+    void removePeer(const QString &clientUuid);
+    QString generatePeerId(const QHostAddress &address, quint16 port);
+    QString findPeerUuidByAddress(const QHostAddress &address, quint16 port);
     QByteArray getPeers(int maxCount = -1, const QString &excludeClientUuid = "");
 
 signals:
@@ -104,13 +106,13 @@ private:
     void processRegisterRelayFromForward(const QByteArray &data, const QHostAddress &originalAddr, quint16 originalPort);
 
     // 对等端匹配和通知
-    void notifyPeerAboutPeer(const QString &peerId, const PeerInfo &otherPeer);
-    bool findAndConnectPeers(const QString &peerId, const QString &clientUuid, const QString &targetIp, const QString &targetPort);
+    bool findAndNotifyHost(const QString &guestClientUuid);
+    void notifyPeerAboutPeer(const QString &targetUuid, const PeerInfo &otherPeer);
 
     // 消息发送
     void sendDefaultResponse(const QNetworkDatagram &datagram);
     void sendHandshakeAck(const QNetworkDatagram &datagram, const QString &peerId);
-    void sendToPeer(const QString &peerId, const QByteArray &data);
+    void sendToPeer(const QString &clientUuid, const QByteArray &data);
     qint64 sendToAddress(const QHostAddress &address, quint16 port, const QByteArray &data);
 
     // 工具函数
@@ -118,7 +120,8 @@ private:
     void cleanupExpiredPeers();
     void broadcastServerInfo();
     QString natTypeToString(NATType type);
-    QString generatePeerId(const QHostAddress &address, quint16 port);
+    QString formatPeerLog(const PeerInfo &peer) const;
+    QString formatPeerData(const PeerInfo &peer) const;
     QByteArray buildSTUNTestResponse(const QNetworkDatagram &datagram);
 
     // 配置参数
