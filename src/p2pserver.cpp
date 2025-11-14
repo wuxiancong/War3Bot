@@ -326,7 +326,8 @@ void P2PServer::processRegister(const QNetworkDatagram &datagram)
     QString localIp = parts[2];
     QString localPort = parts[3];
     QString status = parts.size() > 4 ? parts[4] : "WAITING";
-    int natType = parts[5].toInt();
+    int natTypeInt = parts[5].toInt();
+    NATType natType = static_cast<NATType>(natTypeInt);
 
     QString peerId = generatePeerId(datagram.senderAddress(), datagram.senderPort());
 
@@ -352,7 +353,7 @@ void P2PServer::processRegister(const QNetworkDatagram &datagram)
     LOG_INFO(QString("  公网地址: %1:%2").arg(peerInfo.publicIp).arg(peerInfo.publicPort));
     LOG_INFO(QString("  内网地址: %1:%2").arg(localIp, localPort));
     LOG_INFO(QString("  状态: %1").arg(status));
-    LOG_INFO(QString("  NAT类型: %1").arg(natTypeToString(NATType(natType))));
+    LOG_INFO(QString("  NAT类型: %1").arg(natTypeToString(natType)));
 
     QByteArray response = QString("REGISTER_ACK|%1|%2").arg(peerId, status).toUtf8();
     sendToAddress(datagram.senderAddress(), datagram.senderPort(), response);
