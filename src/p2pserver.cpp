@@ -326,7 +326,7 @@ void P2PServer::processRegister(const QNetworkDatagram &datagram)
     QString localIp = parts[2];
     QString localPort = parts[3];
     QString status = parts.size() > 4 ? parts[4] : "WAITING";
-    QString natType = parts[5];
+    int natType = parts[5].toInt();
 
     QString peerId = generatePeerId(datagram.senderAddress(), datagram.senderPort());
 
@@ -352,7 +352,7 @@ void P2PServer::processRegister(const QNetworkDatagram &datagram)
     LOG_INFO(QString("  公网地址: %1:%2").arg(peerInfo.publicIp).arg(peerInfo.publicPort));
     LOG_INFO(QString("  内网地址: %1:%2").arg(localIp, localPort));
     LOG_INFO(QString("  状态: %1").arg(status));
-    LOG_INFO(QString("  NAT类型: %1").arg(natType));
+    LOG_INFO(QString("  NAT类型: %1").arg(natTypeToString(NATType(natType))));
 
     QByteArray response = QString("REGISTER_ACK|%1|%2").arg(peerId, status).toUtf8();
     sendToAddress(datagram.senderAddress(), datagram.senderPort(), response);
@@ -919,7 +919,6 @@ void P2PServer::cleanupExpiredPeers()
     }
 }
 
-// *** 新增/修正 ***：实现 generatePeerId 函数
 QString P2PServer::generatePeerId(const QHostAddress &address, quint16 port)
 {
     QString ipString = address.toString();
@@ -936,6 +935,36 @@ void P2PServer::removePeer(const QString &peerId)
         m_peers.remove(peerId);
         LOG_INFO(QString("🗑️ 已移除对等端: %1").arg(peerId));
         emit peerRemoved(peerId);
+    }
+}
+
+QString natTypeToString(NATType type)
+{
+    switch (type) {
+    case NAT_UNKNOWN:
+        return QStringLiteral("未知");
+    case NAT_OPEN_INTERNET:
+        return QStringLiteral("开放互联网");
+    case NAT_FULL_CONE:
+        return QStringLiteral("完全锥形NAT");
+    case NAT_RESTRICTED_CONE:
+        return QStringLiteral("限制锥形NAT");
+    case NAT_PORT_RESTRICTED_CONE:
+        return QStringLiteral("端口限制锥形NAT");
+    case NAT_SYMMETRIC:
+        return QStringLiteral("对称型NAT");
+    case NAT_SYMMETRIC_UDP_FIREWALL:
+        return QStringLiteral("对称型UDP防火墙");
+    case NAT_BLOCKED:
+        return QStringLiteral("被阻挡");
+    case NAT_DOUBLE_NAT:
+        return QStringLiteral("双重NAT");
+    case NAT_CARRIER_GRADE:
+        return QStringLiteral("运营商级NAT");
+    case NAT_IP_RESTRICTED:
+        return QStringLiteral("IP限制型NAT");
+    default:
+        return QStringLiteral("未知类型 (%1)").arg(type);
     }
 }
 
