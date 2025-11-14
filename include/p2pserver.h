@@ -89,6 +89,7 @@ private:
     bool bindSocket(quint16 port);
 
     // 消息处理
+    void processP2PTest(const QNetworkDatagram &datagram);
     void processNATTest(const QNetworkDatagram &datagram);
     void processDatagram(const QNetworkDatagram &datagram);
     void processRegister(const QNetworkDatagram &datagram);

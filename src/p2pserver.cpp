@@ -244,7 +244,10 @@ void P2PServer::processDatagram(const QNetworkDatagram &datagram)
     } else if (message.startsWith("NAT_TEST")) {
         LOG_INFO("🔍 处理NAT测试消息");
         processNATTest(datagram);
-    } else if (message.startsWith("FORWARDED")) {
+    } else if (message.startsWith("P2P_TEST")) {
+        LOG_INFO("🔍 处理P2P测试消息");
+        processP2PTest(datagram);
+    }  else if (message.startsWith("FORWARDED")) {
         LOG_INFO("🔄 处理转发消息");
         processForwardedMessage(datagram);
         return;
@@ -598,16 +601,22 @@ void P2PServer::sendDefaultResponse(const QNetworkDatagram &datagram)
 {
     const QByteArray originalData = datagram.data();
 
-    const QString safeBase64String = QString::fromLatin1(originalData.toBase64());
+    const QString base64Data = QString::fromLatin1(originalData.toBase64());
 
-    QString bestEffortString = QString::fromUtf8(originalData); // 尝试用UTF-8解码
-    bestEffortString.replace('|', "[PIPE]");  // 将分隔符替换为可读的标记
-    bestEffortString.replace('\n', "\\n");    // 将换行符转义
-    bestEffortString.replace('\r', "\\r");    // 将回车符转义
-    bestEffortString.replace('\0', "[NULL]"); // 明确标出空字符
+    QString stringData = QString::fromUtf8(originalData); // 尝试用UTF-8解码
+    stringData.replace('|', "[PIPE]");  // 将分隔符替换为可读的标记
+    stringData.replace('\n', "\\n");    // 将换行符转义
+    stringData.replace('\r', "\\r");    // 将回车符转义
+    stringData.replace('\0', "[NULL]"); // 明确标出空字符
 
+    // 格式: DEFAULT_RESPONSE|DESCRIPTION|SENDER_IP|SENDER_PORT|DATA_SIZE|STRING_DATA|BASE64_DATA
     QString responseMessage = QString("DEFAULT_RESPONSE|Message received at %1|%2|%3")
-                                  .arg(QDateTime::currentDateTime().toString("hh:mm:ss.zzz"), bestEffortString, safeBase64String);
+                                  .arg(QDateTime::currentDateTime().toString("hh:mm:ss.zzz"),
+                                       datagram.senderAddress().toString(),
+                                       QString::number(datagram.senderPort()),
+                                       QString::number(originalData.size()),
+                                       stringData,
+                                       base64Data);
 
     QByteArray response = responseMessage.toUtf8();
     sendToAddress(datagram.senderAddress(), datagram.senderPort(), response);
@@ -789,6 +798,46 @@ void P2PServer::processNATTest(const QNetworkDatagram &datagram)
     qint64 bytesSent = sendToAddress(datagram.senderAddress(), datagram.senderPort(), response);
     if (bytesSent > 0) {
         LOG_DEBUG(QString("✅ NAT测试响应已发送: %1 字节").arg(bytesSent));
+    }
+}
+
+void P2PServer::processP2PTest(const QNetworkDatagram &datagram)
+{
+    // 1. 解析收到的消息
+    QString message = QString::fromUtf8(datagram.data());
+    QStringList parts = message.split('|');
+
+    // 2. 验证消息格式是否正确
+    if (parts.size() < 2) {
+        LOG_WARNING(QString("❌ 无效的P2P_TEST格式，来自 %1:%2: %3")
+                        .arg(datagram.senderAddress().toString())
+                        .arg(datagram.senderPort())
+                        .arg(message));
+        return;
+    }
+
+    // 3. 提取唯一标识 (Nonce)
+    const QString nonce = parts[1];
+
+    LOG_INFO(QString("🤝 收到 P2P_TEST 请求，来自 %1:%2, Nonce: %3")
+                 .arg(datagram.senderAddress().toString())
+                 .arg(datagram.senderPort())
+                 .arg(nonce));
+
+    // 4. 构建响应消息 "P2P_TEST_ACK|nonce"
+    QByteArray responseMessage = QString("P2P_TEST_ACK|%1").arg(nonce).toUtf8();
+
+    // 5. 将响应发送回请求方
+    qint64 bytesSent = sendToAddress(datagram.senderAddress(), datagram.senderPort(), responseMessage);
+
+    if (bytesSent > 0) {
+        LOG_INFO(QString("✅ P2P_TEST_ACK 已成功发送给 %1:%2")
+                     .arg(datagram.senderAddress().toString())
+                     .arg(datagram.senderPort()));
+    } else {
+        LOG_ERROR(QString("❌ P2P_TEST_ACK 发送失败给 %1:%2")
+                      .arg(datagram.senderAddress().toString())
+                      .arg(datagram.senderPort()));
     }
 }
 
