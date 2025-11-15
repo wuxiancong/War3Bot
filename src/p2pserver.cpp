@@ -223,10 +223,13 @@ void P2PServer::processDatagram(const QNetworkDatagram &datagram)
     } else if (message.startsWith("UNREGISTER")) {
         LOG_INFO("👋 处理 UNREGISTER (注销) 请求");
         processUnregister(datagram);
-    } else if (message.startsWith("GET_PEERS")) {
-        LOG_INFO("📋 处理 GET_PEERS 请求");
-        processGetPeers(datagram);
-    } else if (message.startsWith("PUNCH")) {
+    } else if (message.startsWith("GET_PEER_LIST")) {
+        LOG_INFO("📋 处理 GET_PEER_LIST 请求");
+        processGetPeerList(datagram);
+    } else if (message.startsWith("GET_PEER_INFO")) {
+        LOG_INFO("📋 处理 GET_PEER_INFO 请求");
+        processGetPeerInfo(datagram);
+    }  else if (message.startsWith("PUNCH")) {
         LOG_INFO("🚀 处理 PUNCH (P2P连接发起) 请求");
         processPunchRequest(datagram);
     } else if (message.startsWith("KEEPALIVE")) {
@@ -388,7 +391,7 @@ void P2PServer::processRegister(const QNetworkDatagram &datagram)
     QByteArray response = QString("REGISTER_ACK|%1|%2").arg(peerId, status).toUtf8();
     sendToAddress(datagram.senderAddress(), datagram.senderPort(), response);
 
-    emit peerRegistered(peerId, clientUuid);
+    emit peerRegistered(peerId, clientUuid, m_peers.size());
 }
 
 void P2PServer::processUnregister(const QNetworkDatagram &datagram)
@@ -427,7 +430,7 @@ void P2PServer::processUnregister(const QNetworkDatagram &datagram)
     }
 }
 
-void P2PServer::processGetPeers(const QNetworkDatagram &datagram)
+void P2PServer::processGetPeerList(const QNetworkDatagram &datagram)
 {
     QString dataStr = QString(datagram.data());
     QStringList parts = dataStr.split('|');
@@ -444,6 +447,51 @@ void P2PServer::processGetPeers(const QNetworkDatagram &datagram)
 
     QByteArray peerListResponse = getPeers(count, clientUuid);
     sendToAddress(datagram.senderAddress(), datagram.senderPort(), peerListResponse);
+}
+
+void P2PServer::processGetPeerInfo(const QNetworkDatagram &datagram)
+{
+    QString data = QString(datagram.data());
+    QStringList parts = data.split('|');
+
+    // 格式: GET_PEER_INFO|CLIENT_UUID|TARGET_IP|TARGET_PORT
+    if (parts.size() < 4) {
+        LOG_WARNING(QString("❌ 无效的 GET_PEER_INFO 格式: %1").arg(data));
+        return;
+    }
+
+    QString requesterUuid = parts[1];
+    QString targetIp = parts[2];
+    quint16 targetPort = parts[3].toUShort();
+
+    LOG_INFO(QString("🔍 收到来自 %1 的对等端信息查询请求，目标: %2:%3")
+                 .arg(requesterUuid, targetIp).arg(targetPort));
+
+    PeerInfo foundPeer;
+    bool peerFound = false;
+
+    {
+        QReadLocker locker(&m_peersLock);
+        // 遍历所有已注册的对等端
+        for (const PeerInfo &peer : qAsConst(m_peers)) {
+            // 匹配公网IP和端口
+            if (peer.publicIp == targetIp && peer.publicPort == targetPort) {
+                foundPeer = peer;
+                peerFound = true;
+                break; // 找到后即可退出循环
+            }
+        }
+    }
+
+    if (peerFound) {
+        LOG_INFO(QString("✅ 找到匹配的对等端: %1").arg(foundPeer.clientUuid));
+        notifyPeerAboutPeer(requesterUuid, foundPeer);
+    } else {
+        LOG_WARNING(QString("❓ 未在已注册列表中找到目标对等端: %1:%2").arg(targetIp).arg(targetPort));
+        // 格式: PEER_INFO_ACK|TARGET_IP|TARGET_PORT|RESULT
+        QString responseMessage = QString("PEER_INFO_ACK|%1|%2|NOT_FOUND").arg(targetIp).arg(targetPort);
+        sendToAddress(datagram.senderAddress(), datagram.senderPort(), responseMessage.toUtf8());
+    }
 }
 
 void P2PServer::sendHandshakeAck(const QNetworkDatagram &datagram, const QString &peerId)
