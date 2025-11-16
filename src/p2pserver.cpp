@@ -454,7 +454,6 @@ void P2PServer::processGetPeerInfo(const QNetworkDatagram &datagram)
     QString data = QString(datagram.data());
     QStringList parts = data.split('|');
 
-    // 格式: GET_PEER_INFO|CLIENT_UUID|TARGET_IP|TARGET_PORT
     if (parts.size() < 4) {
         LOG_WARNING(QString("❌ 无效的 GET_PEER_INFO 格式: %1").arg(data));
         return;
@@ -463,34 +462,61 @@ void P2PServer::processGetPeerInfo(const QNetworkDatagram &datagram)
     QString requesterUuid = parts[1];
     QString targetIp = parts[2];
     quint16 targetPort = parts[3].toUShort();
+    bool searchByIpOnly = (targetPort == 0);
 
-    LOG_INFO(QString("🔍 收到来自 %1 的对等端信息查询请求，目标: %2:%3")
-                 .arg(requesterUuid, targetIp).arg(targetPort));
+    if (searchByIpOnly) {
+        // --- 处理模糊查询 (仅IP) ---
+        LOG_INFO(QString("🔍 收到来自 %1 的仅IP查询，目标IP: %2").arg(requesterUuid, targetIp));
 
-    PeerInfo foundPeer;
-    bool peerFound = false;
-
-    {
-        QReadLocker locker(&m_peersLock);
-        // 遍历所有已注册的对等端
-        for (const PeerInfo &peer : qAsConst(m_peers)) {
-            // 匹配公网IP和端口
-            if (peer.publicIp == targetIp && peer.publicPort == targetPort) {
-                foundPeer = peer;
-                peerFound = true;
-                break; // 找到后即可退出循环
+        QList<PeerInfo> foundPeers;
+        {
+            QReadLocker locker(&m_peersLock);
+            for (const PeerInfo &peer : qAsConst(m_peers)) {
+                if (peer.publicIp == targetIp) {
+                    foundPeers.append(peer);
+                }
             }
         }
-    }
 
-    if (peerFound) {
-        LOG_INFO(QString("✅ 找到匹配的对等端: %1").arg(foundPeer.clientUuid));
-        notifyPeerAboutPeer(requesterUuid, foundPeer);
+        if (!foundPeers.isEmpty()) {
+            // 成功，调用新的通知函数发送 PEERS_INFO
+            notifyPeerAboutPeers(requesterUuid, foundPeers);
+        } else {
+            // 失败，发送 NOT_FOUND
+            LOG_WARNING(QString("❓ IP %1 未找到任何匹配项。").arg(targetIp));
+            // 格式: PEER_INFO_ACK|TARGET_IP|TARGET_PORT|RESULT
+            QString response = QString("PEER_INFO_ACK|%1|0|NOT_FOUND").arg(targetIp);
+            sendToAddress(datagram.senderAddress(), datagram.senderPort(), response.toUtf8());
+        }
+
     } else {
-        LOG_WARNING(QString("❓ 未在已注册列表中找到目标对等端: %1:%2").arg(targetIp).arg(targetPort));
-        // 格式: PEER_INFO_ACK|TARGET_IP|TARGET_PORT|RESULT
-        QString responseMessage = QString("PEER_INFO_ACK|%1|%2|NOT_FOUND").arg(targetIp).arg(targetPort);
-        sendToAddress(datagram.senderAddress(), datagram.senderPort(), responseMessage.toUtf8());
+        // --- 处理精确查询 (IP + Port) ---
+        LOG_INFO(QString("🔍 收到来自 %1 的精确查询，目标: %2:%3").arg(requesterUuid, targetIp).arg(targetPort));
+
+        PeerInfo foundPeer;
+        bool peerFound = false;
+        {
+            QReadLocker locker(&m_peersLock);
+            for (const PeerInfo &peer : qAsConst(m_peers)) {
+                if (peer.publicIp == targetIp && peer.publicPort == targetPort) {
+                    foundPeer = peer;
+                    peerFound = true;
+                    break;
+                }
+            }
+        }
+
+        if (peerFound) {
+            // 成功，调用 notifyPeerAboutPeer，它会发送 PEER_INFO
+            LOG_INFO(QString("✅ 找到精确匹配: %1，发送单点信息。").arg(foundPeer.clientUuid));
+            notifyPeerAboutPeer(requesterUuid, foundPeer);
+        } else {
+            // 失败，发送 NOT_FOUND
+            LOG_WARNING(QString("❓ 精确目标 %1:%2 未找到。").arg(targetIp).arg(targetPort));
+            // 格式: PEER_INFO_ACK|TARGET_IP|TARGET_PORT|RESULT
+            QString response = QString("PEER_INFO_ACK|%1|%2|NOT_FOUND").arg(targetIp).arg(targetPort);
+            sendToAddress(datagram.senderAddress(), datagram.senderPort(), response.toUtf8());
+        }
     }
 }
 
@@ -758,6 +784,58 @@ void P2PServer::notifyPeerAboutPeer(const QString &targetUuid, const PeerInfo &o
         } else {
             LOG_ERROR(QString("❌ 对等端信息发送失败: %1 -> %2").arg(otherPeer.clientUuid, targetUuid));
         }
+    }
+}
+
+void P2PServer::notifyPeerAboutPeers(const QString &requesterUuid, const QList<PeerInfo> &peers)
+{
+    // 首先，我们需要根据 requesterUuid 找到请求者的地址
+    QHostAddress requesterAddress;
+    quint16 requesterPort = 0;
+    bool requesterFound = false;
+
+    {
+        QReadLocker locker(&m_peersLock);
+        if (m_peers.contains(requesterUuid)) {
+            const PeerInfo &requesterPeer = m_peers.value(requesterUuid);
+            // 这里可以复用您在 notifyPeerAboutPeer 中的IP清理逻辑
+            QString cleanIp = requesterPeer.publicIp;
+            if (cleanIp.startsWith("::ffff:")) {
+                cleanIp = cleanIp.mid(7);
+            }
+            requesterAddress = QHostAddress(cleanIp);
+            requesterPort = requesterPeer.publicPort;
+            requesterFound = !requesterAddress.isNull();
+        } else {
+            LOG_ERROR(QString("❌ 无法通知不存在的请求者: %1").arg(requesterUuid));
+            return; // 请求者都找不到了，直接返回
+        }
+    }
+
+    if (!requesterFound) {
+        LOG_ERROR(QString("❌ 无法解析请求者的地址: %1").arg(requesterUuid));
+        return;
+    }
+
+    // 构建 PEERS_INFO 消息
+    // 格式: PEERS_INFO|PEER_DATA_1;PEER_DATA_2;...
+    QStringList peerStrings;
+    for(const PeerInfo& peer : peers) {
+        peerStrings.append(QString("%1,%2,%3,%4,%5")
+                               .arg(peer.clientUuid, peer.publicIp)
+                               .arg(peer.publicPort).arg(peer.localIp)
+                               .arg(peer.localPort));
+    }
+    QString message = QString("PEERS_INFO|%1").arg(peerStrings.join(";"));
+
+    // 发送消息
+    qint64 bytesSent = sendToAddress(requesterAddress, requesterPort, message.toUtf8());
+
+    if (bytesSent > 0) {
+        LOG_INFO(QString("✅ 对等端列表发送成功 -> %1 (%2 个Peers, %3 字节)")
+                     .arg(requesterUuid).arg(peers.size()).arg(bytesSent));
+    } else {
+        LOG_ERROR(QString("❌ 对等端列表发送失败 -> %1").arg(requesterUuid));
     }
 }
 

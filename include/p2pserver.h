@@ -113,6 +113,7 @@ private:
     // 对等端匹配和通知
     bool findAndNotifyPeer(const QString &guestClientUuid, bool findHost = false);
     void notifyPeerAboutPeer(const QString &targetUuid, const PeerInfo &otherPeer);
+    void notifyPeerAboutPeers(const QString &requesterUuid, const QList<PeerInfo> &peers);
 
     // 消息发送
     void sendDefaultResponse(const QNetworkDatagram &datagram);
