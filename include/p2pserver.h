@@ -155,6 +155,7 @@ private:
 
     // 虚拟IP
     quint32 m_nextVirtualIp;
+    QSet<quint32> m_assignedVips;
 };
 
 #endif // P2PSERVER_H

@@ -365,14 +365,50 @@ void P2PServer::processRegister(const QNetworkDatagram &datagram)
     QString peerId = generatePeerId(datagram.senderAddress(), datagram.senderPort());
 
     PeerInfo peerInfo;
-    // 如果是已存在的用户重连，保留他原来的虚拟 IP
     if (m_peers.contains(clientUuid)) {
-        peerInfo = m_peers[clientUuid]; // 复制旧信息，主要是为了拿回 virtualIp
+        peerInfo = m_peers[clientUuid];
     } else {
-        // 新用户，分配新的虚拟 IP
-        peerInfo.virtualIp = ipIntToString(m_nextVirtualIp);
+        // ==================== 虚拟 IP 分配逻辑 ====================
+
+        const quint32 VIP_START = 0x1A000001; // 26.0.0.1
+        const quint32 VIP_END   = 0x1AFFFFFE; // 26.255.255.254
+
+        // 1. 防止死循环的安全计数器 (防止 IP 池全满了导致死循环)
+        int safetyCount = 0;
+        int maxAttempts = 100000; // 尝试十万次还找不到就放弃
+
+        // 2. 查找可用 IP (O(1) 复杂度)
+        while (m_assignedVips.contains(m_nextVirtualIp)) {
+            m_nextVirtualIp++;
+
+            // 处理溢出回绕
+            if (m_nextVirtualIp > VIP_END) {
+                m_nextVirtualIp = VIP_START;
+            }
+
+            // 安全检查
+            safetyCount++;
+            if (safetyCount > maxAttempts) {
+                qDebug() << "❌ 严重错误：虚拟IP池已满，无法分配新IP！";
+                return; // 拒绝注册
+            }
+        }
+
+        // 3. 找到空闲 IP 了
+        quint32 newVip = m_nextVirtualIp;
+
+        // 标记为已占用
+        m_assignedVips.insert(newVip);
+
+        // 只有确定分配后，才转成字符串，节省性能
+        peerInfo.virtualIp = ipIntToString(newVip);
+
+        // 指针移到下一个，为下一个人做准备
         m_nextVirtualIp++;
-        // TODO: 这里可以加一个逻辑处理 ip 溢出，比如超过 10.255.255.254 后重置
+        if (m_nextVirtualIp > VIP_END) m_nextVirtualIp = VIP_START;
+
+        // ==============================================================
+
         qDebug() << "🆕 为新用户" << clientUuid << "分配虚拟IP:" << peerInfo.virtualIp;
     }
     peerInfo.id = peerId;
@@ -1144,6 +1180,11 @@ void P2PServer::cleanupExpiredPeers()
     for (const QString &clientUuid  : expiredPeers) {
         LOG_INFO(QString("🗑️ 移除过期对等端: %1").arg(clientUuid));
         m_peers.remove(clientUuid );
+        // 释放虚拟 IP
+        QString vipStr = m_peers[clientUuid].virtualIp;
+        if (!vipStr.isEmpty()) {
+            m_assignedVips.remove(QHostAddress(vipStr).toIPv4Address());
+        }
         emit peerRemoved(clientUuid );
     }
 
@@ -1177,9 +1218,20 @@ QString P2PServer::findPeerUuidByAddress(const QHostAddress &address, quint16 po
 void P2PServer::removePeer(const QString &clientUuid)
 {
     QWriteLocker locker(&m_peersLock);
+
     if (m_peers.contains(clientUuid)) {
+        const PeerInfo &peer = m_peers[clientUuid];
+
+        // 释放虚拟 IP
+        if (!peer.virtualIp.isEmpty()) {
+            QHostAddress addr(peer.virtualIp);
+            quint32 vipInt = addr.toIPv4Address(); // 转回整数
+            m_assignedVips.remove(vipInt);         // 从占用集合中移除
+
+            qDebug() << "♻️ 释放虚拟IP:" << peer.virtualIp;
+        }
+
         m_peers.remove(clientUuid);
-        LOG_INFO(QString("🗑️ 已移除对等端 (UUID): %1").arg(clientUuid));
         emit peerRemoved(clientUuid);
     }
 }
