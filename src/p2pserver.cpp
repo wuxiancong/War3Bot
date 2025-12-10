@@ -30,7 +30,7 @@ P2PServer::P2PServer(QObject *parent)
     , m_broadcastTimer(nullptr)
     , m_totalRequests(0)
     , m_totalResponses(0)
-    , m_nextVirtualIp(0)
+    , m_nextVirtualIp(0x1A000001)
 {
 }
 
