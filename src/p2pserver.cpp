@@ -30,6 +30,7 @@ P2PServer::P2PServer(QObject *parent)
     , m_broadcastTimer(nullptr)
     , m_totalRequests(0)
     , m_totalResponses(0)
+    , m_nextVirtualIp(0)
 {
 }
 
@@ -344,7 +345,7 @@ void P2PServer::processRegister(const QNetworkDatagram &datagram)
 {
     QString data = QString(datagram.data());
     QStringList parts = data.split('|');
-
+    // 格式: REGISTER|UUID|LocalIP|LocalPort|Status|NATType
     if (parts.size() < 6) {
         LOG_WARNING(QString("❌ 无效的注册格式: %1").arg(data));
         LOG_WARNING(QString("👀 期望 6个部分，实际收到: %1 个部分").arg(parts.size()));
@@ -364,6 +365,16 @@ void P2PServer::processRegister(const QNetworkDatagram &datagram)
     QString peerId = generatePeerId(datagram.senderAddress(), datagram.senderPort());
 
     PeerInfo peerInfo;
+    // 如果是已存在的用户重连，保留他原来的虚拟 IP
+    if (m_peers.contains(clientUuid)) {
+        peerInfo = m_peers[clientUuid]; // 复制旧信息，主要是为了拿回 virtualIp
+    } else {
+        // 新用户，分配新的虚拟 IP
+        peerInfo.virtualIp = ipIntToString(m_nextVirtualIp);
+        m_nextVirtualIp++;
+        // TODO: 这里可以加一个逻辑处理 ip 溢出，比如超过 10.255.255.254 后重置
+        qDebug() << "🆕 为新用户" << clientUuid << "分配虚拟IP:" << peerInfo.virtualIp;
+    }
     peerInfo.id = peerId;
     peerInfo.clientUuid = clientUuid;
     peerInfo.localIp = localIp;
@@ -388,7 +399,7 @@ void P2PServer::processRegister(const QNetworkDatagram &datagram)
     LOG_INFO(QString("      NAT类型: %1").arg(peerInfo.natType));
     LOG_INFO(QString("      状态: %1").arg(status));
 
-    QByteArray response = QString("REGISTER_ACK|%1|%2").arg(peerId, status).toUtf8();
+    QByteArray response = QString("REGISTER_ACK|%1|%2|%3").arg(peerInfo.id, peerInfo.status, peerInfo.virtualIp).toUtf8();
     sendToAddress(datagram.senderAddress(), datagram.senderPort(), response);
 
     emit peerRegistered(peerId, clientUuid, m_peers.size());
@@ -770,11 +781,11 @@ void P2PServer::notifyPeerAboutPeer(const QString &targetUuid, const PeerInfo &o
     if (targetFound) {
         // 格式: PEER_INFO|CLIENT_UUID|PUBLIC_IP|PUBLIC_PORT|LOCAL_IP|LOCAL_PORT
         QString message = QString("PEER_INFO|%1|%2|%3|%4|%5")
-        .arg(otherPeer.clientUuid,
-             otherPeer.publicIp)
-            .arg(otherPeer.publicPort)
-            .arg(otherPeer.localIp)
-            .arg(otherPeer.localPort);
+                              .arg(otherPeer.clientUuid,
+                                   otherPeer.publicIp)
+                              .arg(otherPeer.publicPort)
+                              .arg(otherPeer.localIp)
+                              .arg(otherPeer.localPort);
 
         qint64 bytesSent = sendToAddress(targetAddress, targetPort, message.toUtf8());
 
@@ -1173,6 +1184,10 @@ void P2PServer::removePeer(const QString &clientUuid)
     }
 }
 
+QString P2PServer::ipIntToString(quint32 ip) {
+    return QHostAddress(ip).toString();
+}
+
 QString P2PServer::natTypeToString(NATType type)
 {
     switch (type) {
@@ -1273,7 +1288,7 @@ QByteArray P2PServer::getPeers(int maxCount, const QString &excludeClientUuid)
 QString P2PServer::formatPeerData(const PeerInfo &peer) const
 {
     // 使用多参数 .arg() 来提高效率
-    return QString("id=%1;cid=%2;lip=%3;lport=%4;pip=%5;pport=%6;rip=%7;rport=%8;tip=%9;tport=%10;nat=%11;seen=%12;stat=%13;relay=%14")
+    return QString("id=%1;cid=%2;lip=%3;lport=%4;pip=%5;pport=%6;rip=%7;rport=%8;tip=%9;tport=%10;nat=%11;seen=%12;stat=%13;relay=%14;vip=%15")
         .arg(peer.id,
              peer.clientUuid,
              peer.localIp,
@@ -1287,7 +1302,8 @@ QString P2PServer::formatPeerData(const PeerInfo &peer) const
              peer.natType,
              QString::number(peer.lastSeen),
              peer.status,
-             peer.isRelayMode ? "1" : "0");
+             peer.isRelayMode ? "1" : "0")
+        .arg(peer.virtualIp);
 }
 
 QString P2PServer::formatPeerLog(const PeerInfo &peer) const

@@ -28,6 +28,7 @@ enum NATType {
 struct PeerInfo {
     QString id;
     QString clientUuid;
+    QString virtualIp;
     QString localIp;
     quint16 localPort;
     QString publicIp;
@@ -125,6 +126,7 @@ private:
     void setupTimers();
     void cleanupExpiredPeers();
     void broadcastServerInfo();
+    QString ipIntToString(quint32 ip);
     QString natTypeToString(NATType type);
     QString formatPeerLog(const PeerInfo &peer) const;
     QString formatPeerData(const PeerInfo &peer) const;
@@ -150,6 +152,9 @@ private:
     int m_totalResponses;
     QReadWriteLock m_peersLock;
     QMap<QString, PeerInfo> m_peers;
+
+    // 虚拟IP
+    quint32 m_nextVirtualIp;
 };
 
 #endif // P2PSERVER_H
