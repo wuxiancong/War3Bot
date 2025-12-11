@@ -89,6 +89,7 @@ private:
 
     // Socket 管理
     void cleanupResources();
+    void cleanupInvalidPeers();
     bool setupSocketOptions();
     bool bindSocket(quint16 port);
 

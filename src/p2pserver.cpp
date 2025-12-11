@@ -343,50 +343,61 @@ void P2PServer::processHandshake(const QNetworkDatagram &datagram)
 
 void P2PServer::processRegister(const QNetworkDatagram &datagram)
 {
-    QString data = QString(datagram.data());
+    QString data = QString::fromUtf8(datagram.data());
     QStringList parts = data.split('|');
-    // 格式: REGISTER|UUID|LocalIP|LocalPort|Status|NATType
+
+    // 1. 基础格式校验
     if (parts.size() < 6) {
-        LOG_WARNING(QString("❌ 无效的注册格式: %1").arg(data));
-        LOG_WARNING(QString("👀 期望 6个部分，实际收到: %1 个部分").arg(parts.size()));
-        for (int i = 0; i < parts.size(); ++i) {
-            LOG_WARNING(QString("  [%1]: %2").arg(i).arg(parts[i]));
-        }
+        qDebug() << "❌ [注册失败] 无效的格式:" << data;
         return;
     }
 
-    QString clientUuid  = parts[1];
+    // 2. 提取并校验关键数据
+    QString clientUuid = parts[1].trimmed(); // 去除首尾空格
     QString localIp = parts[2];
     QString localPort = parts[3];
     QString status = parts.size() > 4 ? parts[4] : "WAITING";
     int natTypeInt = parts[5].toInt();
     NATType natType = static_cast<NATType>(natTypeInt);
 
+    // 防止注册空数据
+    if (clientUuid.isEmpty()) {
+        qDebug() << "❌ [注册失败] ClientUUID 为空，拒绝注册。来源:" << datagram.senderAddress().toString();
+        return;
+    }
+
+    // 3. 生成 PeerID
     QString peerId = generatePeerId(datagram.senderAddress(), datagram.senderPort());
 
+    // =======================================================================
+    // 🔒 加锁必须覆盖：查重 -> 分配IP -> 写入 Map 的全过程
+    //   绝对不能把 VIP 分配逻辑放在锁外面，因为 m_assignedVips 是共享的！
+    // =======================================================================
+    QWriteLocker locker(&m_peersLock);
+
     PeerInfo peerInfo;
+
+    // 4. 查重逻辑
     if (m_peers.contains(clientUuid)) {
+        // 老用户：保留原有信息（特别是保留原有的 Virtual IP）
         peerInfo = m_peers[clientUuid];
     } else {
-        // ==================== 虚拟 IP 分配逻辑 ====================
+        // ==================== 虚拟 IP 分配逻辑 (新用户) ====================
 
         const quint32 VIP_START = 0x1A000001; // 26.0.0.1
         const quint32 VIP_END   = 0x1AFFFFFE; // 26.255.255.254
 
-        // 1. 防止死循环的安全计数器 (防止 IP 池全满了导致死循环)
         int safetyCount = 0;
-        int maxAttempts = 100000; // 尝试十万次还找不到就放弃
+        int maxAttempts = 100000;
 
-        // 2. 查找可用 IP (O(1) 复杂度)
+        // 查找可用 IP (m_assignedVips 的读写必须在锁内)
         while (m_assignedVips.contains(m_nextVirtualIp)) {
             m_nextVirtualIp++;
 
-            // 处理溢出回绕
             if (m_nextVirtualIp > VIP_END) {
                 m_nextVirtualIp = VIP_START;
             }
 
-            // 安全检查
             safetyCount++;
             if (safetyCount > maxAttempts) {
                 qDebug() << "❌ 严重错误：虚拟IP池已满，无法分配新IP！";
@@ -394,48 +405,54 @@ void P2PServer::processRegister(const QNetworkDatagram &datagram)
             }
         }
 
-        // 3. 找到空闲 IP 了
+        // 找到空闲 IP
         quint32 newVip = m_nextVirtualIp;
 
-        // 标记为已占用
+        // 标记占用
         m_assignedVips.insert(newVip);
 
-        // 只有确定分配后，才转成字符串，节省性能
+        // 设置 info
         peerInfo.virtualIp = ipIntToString(newVip);
 
-        // 指针移到下一个，为下一个人做准备
+        // 移动游标
         m_nextVirtualIp++;
         if (m_nextVirtualIp > VIP_END) m_nextVirtualIp = VIP_START;
 
-        // ==============================================================
-
         qDebug() << "🆕 为新用户" << clientUuid << "分配虚拟IP:" << peerInfo.virtualIp;
+        // ==================================================================
     }
+
+    // 5. 更新其他信息 (无论是新老用户都要更新心跳和公网地址)
     peerInfo.id = peerId;
     peerInfo.clientUuid = clientUuid;
     peerInfo.localIp = localIp;
     peerInfo.localPort = localPort.toUShort();
     peerInfo.publicIp = datagram.senderAddress().toString();
+    // 处理 IPv6 映射的 IPv4 (::ffff:192.168.1.1)
+    if (peerInfo.publicIp.startsWith("::ffff:")) {
+        peerInfo.publicIp = peerInfo.publicIp.mid(7);
+    }
     peerInfo.publicPort = datagram.senderPort();
-    peerInfo.targetIp = "0.0.0.0";
+    peerInfo.targetIp = "0.0.0.0"; // 初始化
     peerInfo.targetPort = 0;
     peerInfo.lastSeen = QDateTime::currentMSecsSinceEpoch();
     peerInfo.natType = natTypeToString(natType);
     peerInfo.status = status;
 
-    {
-        QWriteLocker locker(&m_peersLock);
-        m_peers[clientUuid] = peerInfo;
-    }
+    // 6. 写入 Map
+    m_peers[clientUuid] = peerInfo;
 
-    LOG_INFO(QString("📝 对等端注册: %1").arg(peerId));
-    LOG_INFO(QString("      客户端ID: %1").arg(clientUuid));
-    LOG_INFO(QString("      公网地址: %1:%2").arg(peerInfo.publicIp).arg(peerInfo.publicPort));
-    LOG_INFO(QString("      内网地址: %1:%2").arg(localIp, localPort));
-    LOG_INFO(QString("      NAT类型: %1").arg(peerInfo.natType));
-    LOG_INFO(QString("      状态: %1").arg(status));
+    // 🔓 锁在这里自动释放 (sendToAddress 发送网络包耗时较长，建议放在锁外面，或者拷贝一份数据发)
+    locker.unlock();
 
-    QByteArray response = QString("REGISTER_ACK|%1|%2|%3").arg(peerInfo.id, peerInfo.status, peerInfo.virtualIp).toUtf8();
+    // 7. 发送响应 (放在锁外面，避免阻塞其他线程)
+    qDebug() << "📝 对等端注册成功:" << clientUuid << "VIP:" << peerInfo.virtualIp;
+
+    QByteArray response = QString("REGISTER_ACK|%1|%2|%3")
+                              .arg(peerInfo.id, peerInfo.status, peerInfo.virtualIp)
+                              .toUtf8();
+
+    // 注意：sendToAddress 内部如果只用 Socket 发送，不需要 m_peersLock
     sendToAddress(datagram.senderAddress(), datagram.senderPort(), response);
 
     emit peerRegistered(peerId, clientUuid, m_peers.size());
@@ -1148,6 +1165,10 @@ void P2PServer::sendToPeer(const QString &clientUuid, const QByteArray &data)
 
 void P2PServer::onCleanupTimeout()
 {
+    // 先清理格式错误的数据
+    cleanupInvalidPeers();
+
+    // 再清理超时的数据
     cleanupExpiredPeers();
 }
 
@@ -1165,27 +1186,80 @@ void P2PServer::broadcastServerInfo()
     LOG_DEBUG("📢 广播服务器信息");
 }
 
+void P2PServer::cleanupInvalidPeers()
+{
+    // 必须加写锁
+    QWriteLocker locker(&m_peersLock);
+
+    QList<QString> invalidKeys;
+
+    // 1. 扫描无效节点
+    for (auto it = m_peers.begin(); it != m_peers.end(); ++it) {
+        const PeerInfo &info = it.value();
+
+        // 判定条件：Key为空，或者 UUID为空，或者公网IP无效
+        if (it.key().isEmpty() || info.clientUuid.isEmpty() || info.publicIp == "0.0.0.0" || info.publicPort == 0) {
+            invalidKeys.append(it.key());
+        }
+    }
+
+    // 2. 执行删除
+    for (const QString &key : invalidKeys) {
+        // 先获取 info (引用)，用于释放资源
+        // 注意：如果是空 Key，可能取不到完整的 info，但尝试释放 IP 总是安全的
+        PeerInfo info = m_peers.value(key);
+
+        LOG_INFO(QString("🧹 清理无效/空数据节点, Key: '%1'").arg(key));
+
+        // 释放虚拟 IP (如果有的话)
+        if (!info.virtualIp.isEmpty()) {
+            QHostAddress addr(info.virtualIp);
+            quint32 vipInt = addr.toIPv4Address();
+            if (vipInt != 0) {
+                m_assignedVips.remove(vipInt);
+                qDebug() << "♻️ 回收虚拟IP:" << info.virtualIp;
+            }
+        }
+
+        // 从 Map 中彻底移除
+        m_peers.remove(key);
+    }
+}
+
 void P2PServer::cleanupExpiredPeers()
 {
     QWriteLocker locker(&m_peersLock);
     qint64 currentTime = QDateTime::currentMSecsSinceEpoch();
     QList<QString> expiredPeers;
 
+    // 1. 扫描过期节点
     for (auto it = m_peers.begin(); it != m_peers.end(); ++it) {
         if (currentTime - it.value().lastSeen > m_peerTimeout) {
             expiredPeers.append(it.key());
         }
     }
 
-    for (const QString &clientUuid  : expiredPeers) {
+    // 2. 执行删除
+    for (const QString &clientUuid : expiredPeers) {
+        // 必须在 remove 之前获取 PeerInfo！
+        // 否则 remove 后再用 [] 访问，会重新插入一个空的 PeerInfo！
+        PeerInfo info = m_peers.value(clientUuid);
+
         LOG_INFO(QString("🗑️ 移除过期对等端: %1").arg(clientUuid));
-        m_peers.remove(clientUuid );
+
         // 释放虚拟 IP
-        QString vipStr = m_peers[clientUuid].virtualIp;
-        if (!vipStr.isEmpty()) {
-            m_assignedVips.remove(QHostAddress(vipStr).toIPv4Address());
+        if (!info.virtualIp.isEmpty()) {
+            QHostAddress addr(info.virtualIp);
+            quint32 vipInt = addr.toIPv4Address();
+            if (vipInt != 0) {
+                m_assignedVips.remove(vipInt);
+                qDebug() << "♻️ 回收过期用户的虚拟IP:" << info.virtualIp;
+            }
         }
-        emit peerRemoved(clientUuid );
+
+        // 这里的 remove 才是安全的
+        m_peers.remove(clientUuid);
+        emit peerRemoved(clientUuid);
     }
 
     if (!expiredPeers.isEmpty()) {
@@ -1365,6 +1439,7 @@ QString P2PServer::formatPeerLog(const PeerInfo &peer) const
     logLines << QString("    ID: %1").arg(peer.id, -22); // 左对齐
     logLines << QString("    UUID: %1").arg(peer.clientUuid);
     logLines << QString("    Status: %1").arg(peer.status);
+    logLines << QString("    Virtual Addr: %1").arg(peer.virtualIp);
     logLines << QString("    Public Addr: %1:%2").arg(peer.publicIp).arg(peer.publicPort);
     logLines << QString("    Local Addr: %1:%2").arg(peer.localIp).arg(peer.localPort);
 
