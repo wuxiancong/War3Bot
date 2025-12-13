@@ -22,26 +22,38 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
-# 头文件
-set(HEADERS
-    include/logger.h
-    include/war3bot.h
+# =========================================================
+# 自动扫描源文件和头文件
+# =========================================================
+
+# 1. 扫描 include 目录下的所有 .h 文件
+file(GLOB_RECURSE HEADERS CONFIGURE_DEPENDS
+    "include/*.h"
+    "include/*.hpp"
 )
 
-# 源文件
-set(SOURCES
-    src/main.cpp
-    src/logger.cpp
-    src/war3bot.cpp
+# 2. 扫描 src 目录下的所有 .cpp 文件
+file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS
+    "src/*.cpp"
+    "src/*.c"
 )
 
-# set(CMAKE_EXE_LINKER_FLAGS "-static -static-libgcc -static-libstdc++")
+# 3. 扫描 bncsutil 目录下的文件 (因为你引入了这个库)
+file(GLOB_RECURSE BNCS_FILES CONFIGURE_DEPENDS
+    "bncsutil/*.h"
+    "bncsutil/*.c"
+    "bncsutil/*.cpp"
+)
 
+# =========================================================
 # 创建可执行文件
-add_executable(War3Bot ${SOURCES} ${HEADERS}
-    include/p2pserver.h
-    src/p2pserver.cpp
+# =========================================================
 
+# 将扫描到的所有文件合并放入 add_executable
+add_executable(War3Bot
+    ${SOURCES}
+    ${HEADERS}
+    ${BNCS_FILES}
 )
 
 # 链接 Qt 库和网络库
