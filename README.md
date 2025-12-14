@@ -281,20 +281,23 @@ if __name__ == "__main__":
 ```text
 War3Bot/
 ├── CMakeLists.txt          # CMake 构建配置
+|── bncsutil/               # bncsutil 目录
+|── war3files/              # war3 文件目录
 ├── include/                # 头文件目录
-│   ├── War3Bot.h           # 主程序类
-│   ├── gamesession.h       # 会话管理
-│   ├── w3gs_protocol.h     # 协议定义
-│   └── logger.h            # 日志系统
+│   ├── bnetconnection.h    # 连接战网
+│   ├── logger.h            # 日志系统
+│   ├── p2pserver.h         # P2P连接
+│   └── war3bot.h           # 机器人
 ├── src/                    # 源代码目录
 │   ├── main.cpp            # 入口文件
-│   ├── War3Bot.cpp
-│   ├── gamesession.cpp
-│   ├── w3gs_protocol.cpp
-│   └── logger.cpp
+│   ├── bnetconnection.cpp
+│   ├── logger.cpp
+│   ├── p2pserver.cpp
+│   └── war3bot.cpp
+|── lib/                    # 库目录
 └── config/                 # 配置相关
-    ├── War3Bot.ini         # 配置文件模板
-    └── War3Bot.service     # Systemd 服务文件
+    ├── war3bot.ini         # 配置文件模板
+    └── war3bot.service     # Systemd 服务文件
 ```
 
 ---
