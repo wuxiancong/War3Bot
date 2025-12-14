@@ -1,10 +1,10 @@
 #ifndef BNETCONNECTION_H
 #define BNETCONNECTION_H
 
-#include <QTimer>
 #include <QObject>
 #include <QTcpSocket>
 #include <QHostAddress>
+#include <QTimer>
 #include "bncsutil/nls.h"
 
 class BnetConnection : public QObject
@@ -12,19 +12,24 @@ class BnetConnection : public QObject
     Q_OBJECT
 
 public:
+    // 定义协议类型枚举
+    enum LoginProtocol {
+        Protocol_Old_0x29   = 0x29,  // 旧版协议 (DoubleHash BrokenSHA1)
+        Protocol_Logon2_0x3A= 0x3A,  // 中期协议 (同 0x29 算法，ID 不同)
+        Protocol_SRP_0x53   = 0x53   // 新版协议 (SRP NLS)
+    };
+
     enum PacketID {
         SID_NULL                    = 0x00,
         SID_ENTERCHAT               = 0x0A,
-        SID_CHATEVENT               = 0x0F,
-        SID_STARTADVEX3             = 0x1C, // 创建房间
+        SID_STARTADVEX3             = 0x1C,
         SID_PING                    = 0x25,
-        SID_LOGONRESPONSE           = 0x29, // 登录响应
-        SID_LOGONRESPONSE2          = 0x3A, // 登录请求(C->S) & 密钥交换(S->C)
-        SID_REQUIREDWORK            = 0x4C, // 需要下载更新
-        SID_AUTH_INFO               = 0x50, // 版本信息
-        SID_AUTH_CHECK              = 0x51, // 版本检查
-        SID_AUTH_ACCOUNTLOGON       = 0x53, // 客户端发送密码证明 (Client -> Server)
-        SID_AUTH_ACCOUNTLOGONPROOF  = 0x54  // 服务器返回登录结果 (Server -> Client)
+        SID_LOGONRESPONSE           = 0x29, // 0x29 响应
+        SID_LOGONRESPONSE2          = 0x3A, // 0x3A 响应
+        SID_AUTH_INFO               = 0x50,
+        SID_AUTH_CHECK              = 0x51,
+        SID_AUTH_ACCOUNTLOGON       = 0x53, // SRP 步骤1 响应
+        SID_AUTH_ACCOUNTLOGONPROOF  = 0x54  // SRP 步骤2 响应
     };
 
     static const quint8 BNET_HEADER = 0xFF;
@@ -36,14 +41,15 @@ public:
     void disconnectFromHost();
     bool isConnected() const;
 
-    void setCredentials(const QString &user, const QString &pass);
+    // 设置登录凭据和协议
+    void setCredentials(const QString &user, const QString &pass, LoginProtocol protocol = Protocol_SRP_0x53);
 
-    void login(const QString &username, const QString &password);
     void createGameOnLadder(const QString &gameName, const QByteArray &mapStatString, quint16 udpPort);
 
     QString getPrimaryIPv4();
     quint32 ipToUint32(const QString &ipAddress);
     quint32 ipToUint32(const QHostAddress &address);
+
 signals:
     void socketError(const QString &error);
     void authenticated();
@@ -59,20 +65,35 @@ private:
     void handlePacket(PacketID id, const QByteArray &data);
 
     void sendAuthInfo();
-    void sendLoginRequest();
-
     void handleAuthCheck(const QByteArray &data);
-    void handleLoginResponse(const QByteArray &data);
+
+    // 登录流程控制
+    void sendLoginRequest(LoginProtocol protocol);
+
+    // 0x53 SRP 处理
+    void handleSRPLoginResponse(const QByteArray &data);
+
+    // 哈希算法 (Broken SHA1)
+    static QByteArray calculateBrokenSHA1(const QByteArray &data);
+    // Double Hash Proof 计算 (用于 0x29 和 0x3A)
+    QByteArray calculateOldLogonProof(const QString &password, quint32 clientToken, quint32 serverToken);
 
 private:
+    LoginProtocol m_loginProtocol;
+    quint32 m_serverToken = 0;
+    quint32 m_clientToken = 0;
+    quint32 m_logonType = 0;
+
+    QString m_stormDllPath;
+    QString m_gameDllPath;
     QString m_war3ExePath;
     QTcpSocket *m_socket;
     QString m_serverAddr;
     quint16 m_serverPort;
+
     QString m_user;
     QString m_pass;
-    NLS *m_nls;
-
+    NLS *m_nls; // bncsutil NLS 对象
 };
 
 #endif // BNETCONNECTION_H
