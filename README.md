@@ -1,74 +1,133 @@
 # War3Bot
 
-War3Bot 是一个专为《魔兽争霸 III》设计的游戏会话代理服务器，基于 C++ 和 Qt 框架开发。
-```bash
-玩家A (192.168.1.100) → War3Bot服务器 (1.2.3.4:6112) ← 玩家B (192.168.1.200)
-                            ↓
-                    P2P连接建立成功
-                            ↓
-玩家A (192.168.1.100) ←→ 玩家B (192.168.1.200)
+**War3Bot** 是一个专为《魔兽争霸 III》设计的游戏会话代理服务器，基于 C++ 和 Qt 框架开发。它通过建立 P2P 连接，优化玩家之间的网络通信质量。
+
+**网络拓扑示意：**
+
+```mermaid
+graph LR
+    A[玩家A<br>192.168.1.100] -->|TCP连接| S[War3Bot服务器<br>1.2.3.4:6112]
+    B[玩家B<br>192.168.1.200] -->|TCP连接| S
+    S -.->|协助打洞| P2P[P2P直连建立]
+    A <==>|UDP直连| B
 ```
 
-# 功能特性
+## ✨ 功能特性
 
-- 完整的 W3GS 协议支持
-- 双向数据转发 (C->S 和 S->C)
-- 多会话管理
-- 玩家状态跟踪
-- 高性能异步网络处理
+*   🛡️ **协议支持**：完整的 W3GS 协议支持
+*   🔄 **双向转发**：支持 C->S 和 S->C 的数据转发
+*   🧵 **多路复用**：高效的多会话管理
+*   📊 **状态追踪**：实时跟踪玩家在线状态
+*   🚀 **高性能**：基于 Qt 异步网络模型的高性能处理
 
-# 快速安装
+---
 
-## Ubuntu 系统
+## 🛠️ 快速安装 (Ubuntu)
+
+### 1. 环境准备与编译
 
 ```bash
-# 1. 安装依赖
+# 1. 更新软件源并安装基础构建工具
 sudo apt update
 sudo apt install -y build-essential cmake
-sudo apt install qtbase5-dev qt5-qmake libqt5core5a libqt5network5
-sudo apt install libgmp-dev
-# 2. 克隆项目
+
+# 2. 安装 Qt5 依赖库
+sudo apt install -y qtbase5-dev qt5-qmake libqt5core5a libqt5network5
+
+# 3. 安装其他依赖
+sudo apt install -y libgmp-dev
+
+# 4. 克隆项目代码
 git clone https://github.com/wuxiancong/War3Bot.git
 cd War3Bot
 
-# 3. 编译安装
+# 5. 编译项目
 mkdir build && cd build
 cmake ..
 make -j$(nproc)
 
-# 4. 测试运行
+# 6. 验证编译结果
 ./War3Bot --help
-
-# 5. 重新编译
-cd /root/War3Bot/build
-rm -rf *
-cd ~
-cd War3Bot
-rm -rf *
-
 ```
-# 系统服务配置
-## 创建系统用户
+
+### 2. 重新编译 (更新代码后)
+
 ```bash
+# 清理旧构建并重新编译
+cd ~/War3Bot/build
+rm -rf *
+cmake ..
+make -j$(nproc)
+```
+
+---
+
+## ⚙️ 系统服务配置
+
+为了让 War3Bot 在后台稳定运行，建议配置 Systemd 服务。
+
+### 1. 创建专用用户和目录
+
+为了安全起见，建议使用非 root 用户运行服务。
+
+```bash
+# 创建系统用户 War3Bot
 sudo useradd -r -s /bin/false -d /opt/War3Bot War3Bot
-```
-## 创建目录
-```bash
+
+# 创建日志与配置目录
 sudo mkdir -p /var/log/War3Bot /etc/War3Bot
+
+# 设置目录权限
 sudo chown -R War3Bot:War3Bot /var/log/War3Bot
+sudo chown -R War3Bot:War3Bot /etc/War3Bot
 ```
-## 配置服务
-### War3Bot.service:
-sudo nano /etc/systemd/system/War3Bot.service
-```bash
+
+### 2. 安装配置文件
+
+创建配置文件 `/etc/War3Bot/War3Bot.ini`：
+
+```ini
+[server]
+broadcast_port=6112
+enable_broadcast=false
+peer_timeout=300000
+cleanup_interval=60000
+broadcast_interval=30000
+
+[log]
+level=info
+enable_console=true
+log_file=/var/log/war3bot/war3bot.log
+max_size=10485760
+backup_count=5
+
+[bnet]
+server=your_server_ip
+port=your_server_port
+username=your_bot_username
+password=your_bot_password
+
+```
+
+### 3. 配置 Systemd 服务
+
+创建服务文件 `sudo nano /etc/systemd/system/war3bot.service`：
+
+> **注意**：请确保 `ExecStart` 指向您实际编译生成的二进制文件路径。如果遵循上述安装步骤且未移动文件，路径可能为 `/root/War3Bot/build/War3Bot`（需 root 权限）或建议将其移动到 `/usr/local/bin/`。
+
+以下配置假设您已将编译好的 `War3Bot` 移动到了 `/usr/local/bin/War3Bot`，并使用 root 运行（简易模式）：
+
+```ini
 [Unit]
 Description=War3Bot Warcraft III Proxy
 After=network.target
 
 [Service]
 Type=simple
-User=root
-WorkingDirectory=/root/War3Bot/build
+# 若需使用专用用户，请取消注释并修改 ExecStart 路径权限
+# User=War3Bot 
+WorkingDirectory=/etc/War3Bot
+# 请根据实际二进制文件位置修改此处
 ExecStart=/root/War3Bot/build/War3Bot -p 6112
 Restart=always
 RestartSec=5
@@ -79,251 +138,225 @@ StandardError=journal
 WantedBy=multi-user.target
 ```
 
+### 4. 启动服务
+
 ```bash
+# 重载配置
 sudo systemctl daemon-reload
+
+# 启用开机自启
 sudo systemctl enable war3bot
-sudo systemctl start war3bot
-sudo systemctl stop war3bot
-```
-# 配置文件
-/etc/War3Bot/War3Bot.ini:
-```bash
-[server]
-port=6112
-max_sessions=100
-ping_interval=30000
 
-[game]
-host=127.0.0.1
-port=6112
-
-[logging]
-level=info
-file=/var/log/War3Bot/War3Bot.log
-```
-
-# 使用方法
-```bash
-# 命令行运行
-# 杀死所有包含 War3Bot 的进程
-pkill -f War3Bot
-# 停止服务
-sudo systemctl stop war3bot
 # 启动服务
 sudo systemctl start war3bot
-# 查看状态
-sudo systemctl status war3bot
-# 查看日志
-sudo journalctl -u war3bot -f
-```
-```bash
-# 查看所有 War3Bot 进程
-ps aux | grep War3Bot
 
-# 查看详细的进程信息
+# 停止服务
+sudo systemctl stop war3bot
+```
+
+---
+
+## 🖥️ 使用与管理
+
+### 常用管理命令
+
+```bash
+# 查看服务状态
+sudo systemctl status war3bot
+
+# 查看实时日志
+sudo journalctl -u war3bot -f
+
+# 命令行手动运行 (调试模式)
+./War3Bot -l debug -p 6112
+
+# 杀死所有相关进程
+pkill -f War3Bot
+```
+
+### 进程与端口监控
+
+```bash
+# 查看进程详情
 ps -ef | grep War3Bot
 
-# 查看进程树结构
-pstree | grep War3Bot
-
-# 查看6112端口是否被监听
-netstat -tulpn | grep 6112
-
-# 或者使用ss命令（更推荐）
-ss -tulpn | grep 6112
-
-# 查看所有与6112相关的连接
-netstat -an | grep 6112
-
-# 查看TCP和UDP的6112端口
+# 查看端口监听状态 (6112)
 ss -tulpn | grep :6112
-
+# 或者
+netstat -tulpn | grep 6112
 ```
 
-# 防火墙
+---
+
+## 🛡️ 防火墙配置
+
+War3Bot 需要同时开放 TCP 和 UDP 的 6112 端口。
+
+### 使用 UFW (Ubuntu 默认)
+
 ```bash
-# 检查防火墙
-sudo ufw status
 sudo ufw allow 6112/tcp
 sudo ufw allow 6112/udp
+sudo ufw status
+```
 
-# 查看 firewalld 状态
-firewall-cmd --list-all
+### 使用 Firewalld (CentOS/RHEL)
 
-# 查看具体端口
-firewall-cmd --list-ports
-
-# 检查 6112 端口是否开放
-firewall-cmd --query-port=6112/tcp
-firewall-cmd --query-port=6112/udp
-
-# 永久开放 6112 UDP 端口
-firewall-cmd --add-port=6112/tcp --permanent
-firewall-cmd --add-port=6112/udp --permanent
-firewall-cmd --reload
+```bash
+# 永久开放端口
+sudo firewall-cmd --add-port=6112/tcp --permanent
+sudo firewall-cmd --add-port=6112/udp --permanent
+sudo firewall-cmd --reload
 
 # 验证配置
-firewall-cmd --query-port=6112/tcp
-firewall-cmd --query-port=6112/udp
-
+sudo firewall-cmd --list-ports
 ```
-# 基本测试
+
+---
+
+## 🧪 测试与验证
+
+### 1. 基础连通性测试 (Linux)
+
 ```bash
-# 检查端口
+# 检查本地端口是否监听
 sudo netstat -tulpn | grep 6112
-```
-```bash
-# 发送测试数据
+
+# 发送 UDP 测试包
 echo "test" | nc -u localhost 6112
-```
-```bash
-# 监控流量
-sudo tcpdump -i lo -n udp port 6112 or port 6112
-```
 
-# 使用 CMD 验证P2P连接
-```bash
-# 测试到对等端的 6112 端口
-telnet 8.135.235.206 6112
-
-# 或者使用 PowerShell
-Test-NetConnection 8.135.235.206 -Port 6112
-
-# 查看所有网络连接
-netstat -an | findstr 6112
-
-# 查看 ESTABLISHED 状态的连接
-netstat -an | findstr ESTABLISHED | findstr 6112
-
-# 测试网络可达性
-ping 8.135.235.206
-
-# 跟踪路由
-tracert 8.135.235.206
+# 抓包监控流量
+sudo tcpdump -i any -n udp port 6112
 ```
 
-# Windows 查看6112端口
-```dash
-# 查看所有使用 6112 端口的连接
+### 2. 远程连接测试 (Windows Client)
+
+在 Windows 客户端机器上验证到服务器的连接。
+
+```powershell
+# 使用 PowerShell 测试 TCP 连接
+Test-NetConnection <服务器IP> -Port 6112
+
+# CMD: 跟踪路由
+tracert <服务器IP>
+
+# CMD: 查看本地 6112 端口占用
 netstat -ano | findstr 6112
-
-# 更详细的查看
-netstat -anob | findstr 6112
-
-# 查看监听状态的端口
-netstat -ano | findstr LISTENING | findstr 6112
-
-# 查看UDP端口
-netstat -ano -p UDP | findstr 6112
 ```
-## Python 测试客户端
-```bash
+
+### 3. Python 模拟测试脚本
+
+保存为 `test_bot.py` 并运行：
+
+```python
 #!/usr/bin/env python3
 import socket
 import struct
 
 def test_War3Bot():
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    # 请修改为实际服务器地址
     War3Bot_addr = ('localhost', 6112)
     
-    # 创建 W3GS PING 数据包
+    # 创建 W3GS PING 数据包 (Header: 0xF7)
+    # 结构: Header(1B) + Length(2B) + Type(1B) + Data
     header = struct.pack('<BHHB', 0xF7, 8, 0x01, 0)
-    sock.sendto(header, War3Bot_addr)
-    print("测试数据包已发送")
+    
+    try:
+        sock.sendto(header, War3Bot_addr)
+        print(f"测试数据包已发送至 {War3Bot_addr}")
+    except Exception as e:
+        print(f"发送失败: {e}")
+    finally:
+        sock.close()
 
 if __name__ == "__main__":
     test_War3Bot()
-
 ```
-# 项目结构
-```bash
+
+---
+
+## 📂 项目结构
+
+```text
 War3Bot/
-├── CMakeLists.txt
-├── include/
-│   ├── War3Bot.h
-│   ├── gamesession.h
-│   ├── w3gs_protocol.h
-│   └── logger.h
-├── src/
-│   ├── main.cpp
-│   ├── War3Bot.cpp
-│   ├── gamesession.cpp
-│   ├── w3gs_protocol.cpp
-│   └── logger.cpp
-└── config/
-    ├── War3Bot.ini
-    └── War3Bot.service
+├── CMakeLists.txt          # CMake 构建配置
+|── bncsutil/               # bncsutil 目录
+|── war3files/              # war3 文件目录
+├── include/                # 头文件目录
+│   ├── bnetconnection.h    # 连接战网
+│   ├── logger.h            # 日志系统
+│   ├── p2pserver.h         # P2P连接
+│   └── war3bot.h           # 机器人
+├── src/                    # 源代码目录
+│   ├── main.cpp            # 入口文件
+│   ├── bnetconnection.cpp
+│   ├── logger.cpp
+│   ├── p2pserver.cpp
+│   └── war3bot.cpp
+|── lib/                    # 库目录
+└── config/                 # 配置相关
+    ├── war3bot.ini         # 配置文件模板
+    └── war3bot.service     # Systemd 服务文件
 ```
 
-# 故障排查
-```bash
-# 调试模式运行
-/root/War3Bot/build/War3Bot -l debug
+---
 
-# 检查服务状态
-sudo systemctl status War3Bot
+## 📚 协议与技术细节
 
-# 查看详细日志
-sudo journalctl -u War3Bot --no-pager -n 50
+### P2P 建立流程
 
-# 调试模式运行
-./War3Bot -l debug -p 6112
-```
+1.  **连接建立**：游戏客户端通过 Hook 发起 SEARCHGAME 请求，与 War3Bot 建立 TCP 连接。
+2.  **会话创建**：War3Bot 创建 P2PSession，并通过 STUN 机制发现客户端的公网地址。
+3.  **地址交换**：当两个客户端都连接至 War3Bot 后，服务器交换双方的公网 IP 和端口。
+4.  **UDP 打洞**：客户端 A 与客户端 B 利用交换的信息进行 UDP 打洞，建立直接的 P2P 通信通道。
 
-# 协议支持
-## C->S 数据包
-- 0x01 - PING_FROM_HOST
+### 支持的数据包 (W3GS)
 
-- 0x04 - SLOT_INFOJOIN
+**Client -> Server (C->S):**
 
-- 0x0F - CHAT_TO_HOST
+| ID | 描述 |
+| :--- | :--- |
+| `0x00` | SID_NULL |
+| `0x0A` | SID_ENTERCHAT |
+| `0x0F` | SID_CHATEVENT |
+| `0x1C` | SID_STARTADVEX3 |
+| `0x25` | SID_PING |
+| `0x29` | SID_LOGONRESPONSE |
+| `0x3A` | SID_LOGONRESPONSE2 |
+| `0x4C` | SID_REQUIREDWORK |
+| `0x50` | SID_AUTH_INFO |
+| `0x51` | SID_AUTH_CHECK |
+| `0x53` | SID_AUTH_ACCOUNTLOGON |
+| `0x54` | SID_AUTH_ACCOUNTLOGONPROOF |
 
-- 0x11 - LEAVE_GAME
+**Server -> Client (S->C):**
 
-- 0x0A - INCOMING_ACTION
+| ID | 描述 |
+| :--- | :--- |
+| `0x02` | PONG_TO_HOST |
+| `0x03` | REJECT |
+| `0x08` | SLOT_INFO |
+| `0x18` | PLAYER_LEFT |
+| `0x0E` | CHAT_FROM_HOST |
 
-## S->C 数据包
-- 0x02 - PONG_TO_HOST
+---
 
-- 0x03 - REJECT
+## 🗑️ 卸载指南 (Ubuntu)
 
-- 0x08 - SLOT_INFO
-
-- 0x18 - PLAYER_LEFT
-
-- 0x0E - CHAT_FROM_HOST
-
-
-# 完整的 P2P 建立流程
-
-## 阶段1: 连接建立
-```bash
-游戏客户端 --(SEARCHGAME)--> Hook --(建立TCP连接)--> War3Bot
-                                     ↓
-                               创建 P2PSession
-                                     ↓  
-                                STUN 发现公网地址
-```
-
-## 阶段2: 地址交换
-```bash
-War3Bot 获取到公网地址后，等待另一个客户端连接
-当两个客户端都连接后，War3Bot 交换它们的公网地址
-```
-
-## 阶段3: 打洞和通信
+如果需要移除开发环境和 War3Bot：
 
 ```bash
-客户端A <--(UDP打洞)--> 客户端B
-     ↓                   ↓
-  直接P2P通信         直接P2P通信
-```
-# 卸载
-```bash
-## 要移除你安装的这些包，可以使用以下命令：
+# 1. 停止服务
+sudo systemctl stop war3bot
+sudo systemctl disable war3bot
+sudo rm /etc/systemd/system/war3bot.service
+sudo systemctl daemon-reload
+
+# 2. 删除文件
+sudo rm -rf /etc/War3Bot /var/log/War3Bot /opt/War3Bot
+
+# 3. 移除依赖库 (可选)
 sudo apt remove qtbase5-dev qt5-qmake libqt5core5a libqt5network5
-## 如果你还想彻底清除这些包及其配置文件，可以使用：
-sudo apt purge qtbase5-dev qt5-qmake libqt5core5a libqt5network5
-## 如果你想清理掉不再需要的依赖项，可以运行：
 sudo apt autoremove
 ```
