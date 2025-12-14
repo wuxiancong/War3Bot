@@ -1,9 +1,3 @@
-/**
- * BNCSutil
- * Battle.Net Utility Library
- * Refactored for modern C++ / Linux
- */
-
 #ifndef MUTIL_H
 #define MUTIL_H
 

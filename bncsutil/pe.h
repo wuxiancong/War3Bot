@@ -1,9 +1,3 @@
-/**
- * BNCSutil
- * Portable Executable Processing
- * Refactored
- */
-
 #ifndef CM_PE_H_INCLUDED
 #define CM_PE_H_INCLUDED 1
 

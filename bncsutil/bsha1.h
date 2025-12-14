@@ -7,18 +7,17 @@ extern "C" {
 
 /**
  * calcHashBuf
+ * 计算数据的"Broken SHA-1"哈希值
  *
- * Calculates a "Broken SHA-1" hash of data.
- *
- * Paramaters:
- * data: The data to hash.
- * length: The length of data.
- * hash: Buffer, at least 20 bytes in length, to receive the hash.
+ * 参数:
+ * data: 要哈希处理的数据
+ * length: 数据的长度
+ * hash: 至少20字节长度的缓冲区，用于接收哈希值
  */
 MEXP(void) calcHashBuf(const char* data, size_t length, char* hash);
-	
+
 /*
- * New implementation.  Broken.  No plans to fix.
+ * 新的实现。有缺陷。暂无修复计划。
  */
 MEXP(void) bsha1_hash(const char* input, unsigned int length, char* result);
 

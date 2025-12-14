@@ -1,9 +1,3 @@
-/**
- * BNCSutil
- * File Access
- * Refactored
- */
-
 #ifndef _FILE_H_INCLUDED_
 #define _FILE_H_INCLUDED_ 1
 

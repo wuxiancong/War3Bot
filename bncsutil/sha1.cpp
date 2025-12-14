@@ -1,59 +1,38 @@
-/*
- *  sha1.c
- *
- *  Description:
- *      This file implements the Secure Hashing Algorithm 1 as
- *      defined in FIPS PUB 180-1 published April 17, 1995.
- *
- *      The SHA-1, produces a 160-bit message digest for a given
- *      data stream.  It should take about 2**n steps to find a
- *      message with the same digest as a given message and
- *      2**(n/2) to find any two messages with the same digest,
- *      when n is the digest size in bits.  Therefore, this
- *      algorithm can serve as a means of providing a
- *      "fingerprint" for a message.
- *
- *  Portability Issues:
- *      SHA-1 is defined in terms of 32-bit "words".  This code
- *      uses <stdint.h> (included via "sha1.h" to define 32 and 8
- *      bit unsigned integer types.  If your C compiler does not
- *      support 32 bit unsigned integers, this code is not
- *      appropriate.
- *
- *  Caveats:
- *      SHA-1 is designed to work with messages less than 2^64 bits
- *      long.  Although SHA-1 allows a message digest to be generated
- *      for messages of any number of bits less than 2^64, this
- *      implementation only works with messages with a length that is
- *      a multiple of the size of an 8-bit character.
- *
- */
+/**
+ * @file shar1.cpp
+ * @brief SHA-1 哈希算法
+ * 作用：
+ * 实现了标准的 SHA-1 加密哈希算法。
+ * 主要功能：
+ * 1. CheckRevision：将 .exe 和 .dll 的文件内容计算为哈希值发送给服务器。
+ * 2. 账号登录：在 NLS (SRP) 登录流程中，用于对账号密码进行加密运算，确保密码不以明文传输。
+*/
 
-#include <bncsutil/sha1.h>
+#include <cstdint>
+#include "bncsutil/sha1.h"
 
 /*
- *  Define the SHA1 circular left shift macro
+ * 定义 SHA1 循环左移宏
  */
 #define SHA1CircularShift(bits,word) \
                 (((word) << (bits)) | ((word) >> (32-(bits))))
 
-/* Local Function Prototyptes */
-void SHA1PadMessage(SHA1Context *);
-void SHA1ProcessMessageBlock(SHA1Context *);
+/* 本地函数原型 */
+void SHA1PadMessage(SHA1Context*);
+void SHA1ProcessMessageBlock(SHA1Context*);
 
 /*
- *  SHA1Reset
+ * SHA1Reset
  *
- *  Description:
- *      This function will initialize the SHA1Context in preparation
- *      for computing a new SHA1 message digest.
+ * 描述:
+ *     此函数将初始化 SHA1Context，为计算新的 SHA1 消息摘要做准备。
  *
- *  Parameters:
- *      context: [in/out]
- *          The context to reset.
+ * 参数:
+ *     context: [输入/输出]
+ *         要重置的上下文。
  *
- *  Returns:
- *      sha Error Code.
+ * 返回值:
+ *     sha 错误代码。
  *
  */
 int SHA1Reset(SHA1Context *context)
@@ -80,24 +59,23 @@ int SHA1Reset(SHA1Context *context)
 }
 
 /*
- *  SHA1Result
+ * SHA1Result
  *
- *  Description:
- *      This function will return the 160-bit message digest into the
- *      Message_Digest array  provided by the caller.
- *      NOTE: The first octet of hash is stored in the 0th element,
- *            the last octet of hash in the 19th element.
+ * 描述:
+ *     此函数将返回 160 位消息摘要到调用者提供的 Message_Digest 数组中。
+ *     注意：哈希的第一个字节存储在第 0 个元素中，哈希的最后一个字节存储在第 19 个元素中。
  *
- *  Parameters:
- *      context: [in/out]
- *          The context to use to calculate the SHA-1 hash.
- *      Message_Digest: [out]
- *          Where the digest is returned.
+ * 参数:
+ *     context: [输入/输出]
+ *         用于计算 SHA-1 哈希的上下文。
+ *     Message_Digest: [输出]
+ *         返回摘要的位置。
  *
- *  Returns:
- *      sha Error Code.
+ * 返回值:
+ *     sha 错误代码。
  *
  */
+// 【关键修复 2】uint8_t 现在可以被识别了
 int SHA1Result( SHA1Context *context,
                 uint8_t Message_Digest[SHA1HashSize])
 {
@@ -118,10 +96,10 @@ int SHA1Result( SHA1Context *context,
         SHA1PadMessage(context);
         for(i=0; i<64; ++i)
         {
-            /* message may be sensitive, clear it out */
+            /* 消息可能包含敏感信息，将其清除 */
             context->Message_Block[i] = 0;
         }
-        context->Length_Low = 0;    /* and clear length */
+        context->Length_Low = 0;    /* 并清除长度 */
         context->Length_High = 0;
         context->Computed = 1;
 
@@ -130,34 +108,32 @@ int SHA1Result( SHA1Context *context,
     for(i = 0; i < SHA1HashSize; ++i)
     {
         Message_Digest[i] = context->Intermediate_Hash[i>>2]
-                            >> 8 * ( 3 - ( i & 0x03 ) );
+                            >> 8 *( 3 - ( i & 0x03 ) );
     }
 
     return shaSuccess;
 }
 
 /*
- *  SHA1Input
+ * SHA1Input
  *
- *  Description:
- *      This function accepts an array of octets as the next portion
- *      of the message.
+ * 描述:
+ *     此函数接受一个字节数组作为消息的下一部分。
  *
- *  Parameters:
- *      context: [in/out]
- *          The SHA context to update
- *      message_array: [in]
- *          An array of characters representing the next portion of
- *          the message.
- *      length: [in]
- *          The length of the message in message_array
+ * 参数:
+ *     context: [输入/输出]
+ *         要更新的 SHA 上下文。
+ *     message_array: [输入]
+ *         代表消息下一部分的字符数组。
+ *     length: [输入]
+ *         message_array 中消息的长度。
  *
- *  Returns:
- *      sha Error Code.
+ * 返回值:
+ *     sha 错误代码。
  *
  */
-int SHA1Input(    SHA1Context    *context,
-                  const uint8_t  *message_array,
+int SHA1Input(    SHA1Context   *context,
+                  const uint8_t *message_array,
                   unsigned       length)
 {
     if (!length)
@@ -192,7 +168,7 @@ int SHA1Input(    SHA1Context    *context,
         context->Length_High++;
         if (context->Length_High == 0)
         {
-            /* Message is too long */
+            /* 消息太长了 */
             context->Corrupted = 1;
         }
     }
@@ -209,48 +185,46 @@ int SHA1Input(    SHA1Context    *context,
 }
 
 /*
- *  SHA1ProcessMessageBlock
+ * SHA1ProcessMessageBlock
  *
- *  Description:
- *      This function will process the next 512 bits of the message
- *      stored in the Message_Block array.
+ * 描述:
+ *     此函数将处理存储在 Message_Block 数组中的消息的下一个 512 位。
  *
- *  Parameters:
- *      None.
+ * 参数:
+ *     无。
  *
- *  Returns:
- *      Nothing.
+ * 返回值:
+ *     无。
  *
- *  Comments:
-
- *      Many of the variable names in this code, especially the
- *      single character names, were used because those were the
- *      names used in the publication.
+ * 备注:
+ *     此代码中的许多变量名称，尤其是单字符名称，
+ *     是因为它们是出版物中使用的名称。
  *
  *
  */
 void SHA1ProcessMessageBlock(SHA1Context *context)
 {
-    const uint32_t K[] =    {       /* Constants defined in SHA-1   */
+    // 【关键修复 3】uint32_t 现在可以被识别了
+    const uint32_t K[] =    {       /* SHA-1 中定义的常量  */
                             0x5A827999,
                             0x6ED9EBA1,
                             0x8F1BBCDC,
                             0xCA62C1D6
                             };
-    int           t;                 /* Loop counter                */
-    uint32_t      temp;              /* Temporary word value        */
-    uint32_t      W[80];             /* Word sequence               */
-    uint32_t      A, B, C, D, E;     /* Word buffers                */
+    int           t;                 /* 循环计数器               */
+    uint32_t      temp;              /* 临时字值       */
+    uint32_t      W[80];             /* 字序列              */
+    uint32_t      A, B, C, D, E;     /* 字缓冲区               */
 
     /*
-     *  Initialize the first 16 words in the array W
-     */
+     * 初始化数组 W 中的前 16 个字
+    */
     for(t = 0; t < 16; t++)
     {
-        W[t] = context->Message_Block[t * 4] << 24;
-        W[t] |= context->Message_Block[t * 4 + 1] << 16;
-        W[t] |= context->Message_Block[t * 4 + 2] << 8;
-        W[t] |= context->Message_Block[t * 4 + 3];
+        W[t] = context->Message_Block[t *4] << 24;
+        W[t] |= context->Message_Block[t *4 + 1] << 16;
+        W[t] |= context->Message_Block[t *4 + 2] << 8;
+        W[t] |= context->Message_Block[t *4 + 3];
     }
 
     for(t = 16; t < 80; t++)
@@ -317,37 +291,32 @@ void SHA1ProcessMessageBlock(SHA1Context *context)
 }
 
 /*
- *  SHA1PadMessage
+ * SHA1PadMessage
  *
-
- *  Description:
- *      According to the standard, the message must be padded to an even
- *      512 bits.  The first padding bit must be a '1'.  The last 64
- *      bits represent the length of the original message.  All bits in
- *      between should be 0.  This function will pad the message
- *      according to those rules by filling the Message_Block array
- *      accordingly.  It will also call the ProcessMessageBlock function
- *      provided appropriately.  When it returns, it can be assumed that
- *      the message digest has been computed.
+ * 描述:
+ *     根据标准，消息必须填充到偶数 512 位。
+ *     第一个填充位必须是 '1'。最后 64 位表示原始消息的长度。
+ *     中间的所有位都应为 0。
+ *     此函数将根据这些规则通过相应填充 Message_Block 数组来填充消息。
+ *     它还将适当地调用提供的 ProcessMessageBlock 函数。
+ *     当它返回时，可以假设消息摘要已计算完成。
  *
- *  Parameters:
- *      context: [in/out]
- *          The context to pad
- *      ProcessMessageBlock: [in]
- *          The appropriate SHA*ProcessMessageBlock function
- *  Returns:
- *      Nothing.
+ * 参数:
+ *     context: [输入/输出]
+ *         要填充的上下文
+ *     ProcessMessageBlock: [输入]
+ *         相应的 SHA*ProcessMessageBlock 函数
+ * 返回值:
+ *     无。
  *
  */
 
 void SHA1PadMessage(SHA1Context *context)
 {
     /*
-     *  Check to see if the current message block is too small to hold
-     *  the initial padding bits and length.  If so, we will pad the
-     *  block, process it, and then continue padding into a second
-     *  block.
-     */
+     * 检查当前消息块是否太小，无法容纳初始填充位和长度。
+     * 如果是这样，我们将填充该块，处理它，然后继续填充到第二个块中。
+    */
     if (context->Message_Block_Index > 55)
     {
         context->Message_Block[context->Message_Block_Index++] = 0x80;
@@ -374,8 +343,8 @@ void SHA1PadMessage(SHA1Context *context)
     }
 
     /*
-     *  Store the message length as the last 8 octets
-     */
+     * 将消息长度存储为最后 8 个字节
+    */
     context->Message_Block[56] = context->Length_High >> 24;
     context->Message_Block[57] = context->Length_High >> 16;
     context->Message_Block[58] = context->Length_High >> 8;
