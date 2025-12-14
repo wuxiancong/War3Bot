@@ -88,17 +88,25 @@ sudo chown -R War3Bot:War3Bot /etc/War3Bot
 
 ```ini
 [server]
-port=6112
-max_sessions=100
-ping_interval=30000
+broadcast_port=6112
+enable_broadcast=false
+peer_timeout=300000
+cleanup_interval=60000
+broadcast_interval=30000
 
-[game]
-host=127.0.0.1
-port=6112
-
-[logging]
+[log]
 level=info
-file=/var/log/War3Bot/War3Bot.log
+enable_console=true
+log_file=/var/log/war3bot/war3bot.log
+max_size=10485760
+backup_count=5
+
+[bnet]
+server=your_server_ip
+port=your_server_port
+username=your_bot_username
+password=your_bot_password
+
 ```
 
 ### 3. 配置 Systemd 服务
@@ -306,11 +314,18 @@ War3Bot/
 
 | ID | 描述 |
 | :--- | :--- |
-| `0x01` | PING_FROM_HOST |
-| `0x04` | SLOT_INFOJOIN |
-| `0x0F` | CHAT_TO_HOST |
-| `0x11` | LEAVE_GAME |
-| `0x0A` | INCOMING_ACTION |
+| `0x00` | SID_NULL |
+| `0x0A` | SID_ENTERCHAT |
+| `0x0F` | SID_CHATEVENT |
+| `0x1C` | SID_STARTADVEX3 |
+| `0x25` | SID_PING |
+| `0x29` | SID_LOGONRESPONSE |
+| `0x3A` | SID_LOGONRESPONSE2 |
+| `0x4C` | SID_REQUIREDWORK |
+| `0x50` | SID_AUTH_INFO |
+| `0x51` | SID_AUTH_CHECK |
+| `0x53` | SID_AUTH_ACCOUNTLOGON |
+| `0x54` | SID_AUTH_ACCOUNTLOGONPROOF |
 
 **Server -> Client (S->C):**
 
