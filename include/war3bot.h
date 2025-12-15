@@ -1,7 +1,7 @@
 #ifndef WAR3BOT_H
 #define WAR3BOT_H
 
-#include "bnetconnection.h"
+#include "bnetbot.h"
 #include "p2pserver.h"
 
 class War3Bot : public QObject
@@ -28,7 +28,7 @@ private slots:
 private:
     P2PServer *m_p2pServer;
     bool m_forcePortReuse = false;
-    BnetConnection *m_bnetConnection;
+    BnetBot *m_bnetBot;
 };
 
 #endif // WAR3BOT_H

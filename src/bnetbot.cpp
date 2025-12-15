@@ -1,5 +1,5 @@
 #include "bncsutil/checkrevision.h"
-#include "bnetconnection.h"
+#include "BnetBot.h"
 #include "logger.h"
 #include <QDir>
 #include <QFileInfo>
@@ -9,19 +9,16 @@
 #include <QNetworkInterface>
 #include <QCryptographicHash>
 
-// 辅助宏：循环左移
-#define ROTL32(x, n) (((x) << ((n) & 31)) | ((x) >> (32 - ((n) & 31))))
-
-BnetConnection::BnetConnection(QObject *parent)
+BnetBot::BnetBot(QObject *parent)
     : QObject(parent)
     , m_loginProtocol(Protocol_Old_0x29)
     , m_nls(nullptr)
 {
     m_socket = new QTcpSocket(this);
 
-    connect(m_socket, &QTcpSocket::connected, this, &BnetConnection::onConnected);
-    connect(m_socket, &QTcpSocket::readyRead, this, &BnetConnection::onReadyRead);
-    connect(m_socket, &QTcpSocket::disconnected, this, &BnetConnection::onDisconnected);
+    connect(m_socket, &QTcpSocket::connected, this, &BnetBot::onConnected);
+    connect(m_socket, &QTcpSocket::readyRead, this, &BnetBot::onReadyRead);
+    connect(m_socket, &QTcpSocket::disconnected, this, &BnetBot::onDisconnected);
 
     connect(m_socket, &QTcpSocket::errorOccurred, this, [this](QAbstractSocket::SocketError){
         LOG_ERROR(QString("战网连接错误: %1").arg(m_socket->errorString()));
@@ -46,7 +43,7 @@ BnetConnection::BnetConnection(QObject *parent)
     LOG_INFO(QString("War3 路径: %1").arg(m_war3ExePath));
 }
 
-BnetConnection::~BnetConnection()
+BnetBot::~BnetBot()
 {
     disconnectFromHost();
     if (m_nls) {
@@ -55,7 +52,7 @@ BnetConnection::~BnetConnection()
     }
 }
 
-void BnetConnection::setCredentials(const QString &user, const QString &pass, LoginProtocol protocol)
+void BnetBot::setCredentials(const QString &user, const QString &pass, LoginProtocol protocol)
 {
     m_user = user.trimmed();
     m_pass = pass.trimmed();
@@ -69,7 +66,7 @@ void BnetConnection::setCredentials(const QString &user, const QString &pass, Lo
     LOG_INFO(QString("设置凭据: 用户[%1] 密码[%2] 协议[%3]").arg(m_user, m_pass, protoName));
 }
 
-void BnetConnection::connectToHost(const QString &address, quint16 port)
+void BnetBot::connectToHost(const QString &address, quint16 port)
 {
     m_serverAddr = address;
     m_serverPort = port;
@@ -77,7 +74,7 @@ void BnetConnection::connectToHost(const QString &address, quint16 port)
     m_socket->connectToHost(address, port);
 }
 
-void BnetConnection::onConnected()
+void BnetBot::onConnected()
 {
     LOG_INFO("✅ TCP 链路已建立，发送协议握手字节...");
     char protocolByte = 1;
@@ -85,7 +82,7 @@ void BnetConnection::onConnected()
     sendAuthInfo();
 }
 
-void BnetConnection::sendPacket(PacketID id, const QByteArray &payload)
+void BnetBot::sendPacket(PacketID id, const QByteArray &payload)
 {
     QByteArray packet;
     QDataStream out(&packet, QIODevice::WriteOnly);
@@ -109,7 +106,7 @@ void BnetConnection::sendPacket(PacketID id, const QByteArray &payload)
                  .arg(hexStr));
 }
 
-void BnetConnection::sendAuthInfo()
+void BnetBot::sendAuthInfo()
 {
     QString localIpStr = getPrimaryIPv4();
     quint32 localIp = localIpStr.isEmpty() ? 0 : ipToUint32(localIpStr);
@@ -135,8 +132,17 @@ void BnetConnection::sendAuthInfo()
     sendPacket(SID_AUTH_INFO, payload);
 }
 
+/** @brief 旧版战网认证哈希实现 (Old Battle.net Authentication)
+ *     bncsutil/oldauth.cpp 的 doubleHashPassword 函数和
+ *     bncsutil/bsha1.cpp 的 calcHashBuf 函数没有使用
+ *  Qt 版本的 BrokenSHA1 和 calculateOldLogonProof
+ */
+
+// 辅助宏：循环左移
+#define ROTL32(x, n) (((x) << ((n) & 31)) | ((x) >> (32 - ((n) & 31))))
+
 // === 核心哈希算法 (Broken SHA1, 返回 Big Endian) ===
-QByteArray BnetConnection::calculateBrokenSHA1(const QByteArray &data)
+QByteArray BnetBot::calculateBrokenSHA1(const QByteArray &data)
 {
     quint32 H[5] = { 0x67452301, 0xefcdab89, 0x98badcfe, 0x10325476, 0xc3d2e1f0 };
 
@@ -187,7 +193,7 @@ QByteArray BnetConnection::calculateBrokenSHA1(const QByteArray &data)
 }
 
 // === 双重哈希计算 (适用于 0x29 和 0x3A) ===
-QByteArray BnetConnection::calculateOldLogonProof(const QString &password, quint32 clientToken, quint32 serverToken)
+QByteArray BnetBot::calculateOldLogonProof(const QString &password, quint32 clientToken, quint32 serverToken)
 {
     // 1. Broken SHA1 (Output: BE)
     QByteArray passBytes = password.toLower().toUtf8();
@@ -229,7 +235,7 @@ QByteArray BnetConnection::calculateOldLogonProof(const QString &password, quint
     return proofToSend;
 }
 
-void BnetConnection::onReadyRead()
+void BnetBot::onReadyRead()
 {
     while (m_socket->bytesAvailable() > 0) {
         if (m_socket->bytesAvailable() < 4) return;
@@ -253,7 +259,7 @@ void BnetConnection::onReadyRead()
     }
 }
 
-void BnetConnection::handlePacket(PacketID id, const QByteArray &data)
+void BnetBot::handlePacket(PacketID id, const QByteArray &data)
 {
     LOG_INFO(QString("📥 收到包 ID: 0x%1").arg(QString::number(id, 16)));
 
@@ -345,7 +351,7 @@ void BnetConnection::handlePacket(PacketID id, const QByteArray &data)
     }
 }
 
-void BnetConnection::handleAuthCheck(const QByteArray &data)
+void BnetBot::handleAuthCheck(const QByteArray &data)
 {
     LOG_INFO("🔍 解析 Auth Challenge (0x51)...");
 
@@ -435,7 +441,7 @@ void BnetConnection::handleAuthCheck(const QByteArray &data)
     sendLoginRequest(m_loginProtocol);
 }
 
-void BnetConnection::sendLoginRequest(LoginProtocol protocol)
+void BnetBot::sendLoginRequest(LoginProtocol protocol)
 {
     if (protocol == Protocol_Old_0x29 || protocol == Protocol_Logon2_0x3A) {
         // === 旧版/中期协议 (Double Hash) ===
@@ -484,7 +490,7 @@ void BnetConnection::sendLoginRequest(LoginProtocol protocol)
 }
 
 // === SRP 0x53 处理逻辑 ===
-void BnetConnection::handleSRPLoginResponse(const QByteArray &data)
+void BnetBot::handleSRPLoginResponse(const QByteArray &data)
 {
     if (data.size() < 68) {
         LOG_ERROR("SRP 响应数据不足");
@@ -535,7 +541,7 @@ void BnetConnection::handleSRPLoginResponse(const QByteArray &data)
     sendPacket(SID_AUTH_ACCOUNTLOGONPROOF, response);
 }
 
-void BnetConnection::createGameOnLadder(const QString &gameName, const QByteArray &mapStatString, quint16 udpPort) {
+void BnetBot::createGameOnLadder(const QString &gameName, const QByteArray &mapStatString, quint16 udpPort) {
     LOG_INFO(QString("🚀 请求创建房间: %1").arg(gameName));
     QByteArray payload;
     QDataStream out(&payload, QIODevice::WriteOnly);
@@ -548,7 +554,7 @@ void BnetConnection::createGameOnLadder(const QString &gameName, const QByteArra
     sendPacket(SID_STARTADVEX3, payload);
 }
 
-QString BnetConnection::getPrimaryIPv4() {
+QString BnetBot::getPrimaryIPv4() {
     foreach(const QNetworkInterface &interface, QNetworkInterface::allInterfaces()) {
         if (interface.flags() & QNetworkInterface::IsUp && interface.flags() & QNetworkInterface::IsRunning && !(interface.flags() & QNetworkInterface::IsLoopBack)) {
             foreach(const QNetworkAddressEntry &entry, interface.addressEntries()) {
@@ -560,12 +566,12 @@ QString BnetConnection::getPrimaryIPv4() {
     return QString();
 }
 
-quint32 BnetConnection::ipToUint32(const QString &ipAddress) {
+quint32 BnetBot::ipToUint32(const QString &ipAddress) {
     return QHostAddress(ipAddress).toIPv4Address();
 }
-quint32 BnetConnection::ipToUint32(const QHostAddress &address) {
+quint32 BnetBot::ipToUint32(const QHostAddress &address) {
     return address.toIPv4Address();
 }
-void BnetConnection::disconnectFromHost() { m_socket->disconnectFromHost(); }
-bool BnetConnection::isConnected() const { return m_socket->state() == QAbstractSocket::ConnectedState; }
-void BnetConnection::onDisconnected() { LOG_WARNING("🔌 战网连接断开"); }
+void BnetBot::disconnectFromHost() { m_socket->disconnectFromHost(); }
+bool BnetBot::isConnected() const { return m_socket->state() == QAbstractSocket::ConnectedState; }
+void BnetBot::onDisconnected() { LOG_WARNING("🔌 战网连接断开"); }

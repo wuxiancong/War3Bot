@@ -1,5 +1,5 @@
-#ifndef BNETCONNECTION_H
-#define BNETCONNECTION_H
+#ifndef BNETBOT_H
+#define BNETBOT_H
 
 #include <QObject>
 #include <QTcpSocket>
@@ -7,7 +7,7 @@
 #include <QTimer>
 #include "bncsutil/nls.h"
 
-class BnetConnection : public QObject
+class BnetBot : public QObject
 {
     Q_OBJECT
 
@@ -34,8 +34,8 @@ public:
 
     static const quint8 BNET_HEADER = 0xFF;
 
-    explicit BnetConnection(QObject *parent = nullptr);
-    ~BnetConnection();
+    explicit BnetBot(QObject *parent = nullptr);
+    ~BnetBot();
 
     void connectToHost(const QString &address, quint16 port);
     void disconnectFromHost();
@@ -96,4 +96,4 @@ private:
     NLS *m_nls; // bncsutil NLS 对象
 };
 
-#endif // BNETCONNECTION_H
+#endif // BNETBOT_H
