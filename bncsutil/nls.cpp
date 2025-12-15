@@ -83,7 +83,7 @@ const uint8_t bncsutil_NLS_sig_n[] = {
     0xB6, 0x8D, 0xC2, 0xBA, 0x7F, 0x69, 0x8D, 0xCF
 };
 
- /* 内部使用的函数原型 */
+/* 内部使用的函数原型 */
 
 unsigned long nls_pre_seed();
 
@@ -93,7 +93,7 @@ void nls_get_v_mpz(nls_t *nls, mpz_t v, mpz_t x);
 
 uint32_t nls_get_u(const char *B);
 
- /* 函数实现 */
+/* 函数实现 */
 
 MEXP(nls_t*) nls_init(const char *username, const char *password) {
     return nls_init_l(username, (unsigned long) strlen(username),
@@ -126,19 +126,19 @@ MEXP(nls_t*) nls_init_l(const char *username, unsigned long username_length,
     d = (char*) nls->username;
     o = username;
     for (i = 0; i < nls->username_len; i++) {
-       * d = (char) toupper(*o);
+        * d = (char) toupper(*o);
         d++;
         o++;
     }
 
-   * ((char*) nls->username + username_length) = 0;
-   * ((char*) nls->password + password_length) = 0;
+    * ((char*) nls->username + username_length) = 0;
+    * ((char*) nls->password + password_length) = 0;
 
     // 密码转换为大写
     d = (char*) nls->password;
     o = password;
     for (i = 0; i < nls->password_len; i++) {
-       * d = (char) toupper(*o);
+        * d = (char) toupper(*o);
         d++;
         o++;
     }
@@ -150,7 +150,7 @@ MEXP(nls_t*) nls_init_l(const char *username, unsigned long username_length,
     mpz_init2(nls->a, 256);
     mpz_urandomm(nls->a, nls->rand, nls->n);  /* generates the private key */
 
-     /* The following line replaces preceding 2 lines during testing. */
+    /* The following line replaces preceding 2 lines during testing. */
     /*mpz_init_set_str(nls->a, "1234", 10);*/
 
     nls->A = nullptr;
@@ -223,7 +223,7 @@ MEXP(nls_t*) nls_reinit_l(nls_t *nls, const char *username,
     d = (char*) nls->username;
     o = username;
     for (i = 0; i < nls->username_len; i++) {
-       * d = (char) toupper(*o);
+        * d = (char) toupper(*o);
         d++;
         o++;
     }
@@ -231,13 +231,13 @@ MEXP(nls_t*) nls_reinit_l(nls_t *nls, const char *username,
     d = (char*) nls->password;
     o = password;
     for (i = 0; i < nls->password_len; i++) {
-       * d = (char) toupper(*o);
+        * d = (char) toupper(*o);
         d++;
         o++;
     }
 
-   * ((char*) nls->username + username_length) = 0;
-   * ((char*) nls->password + password_length) = 0;
+    * ((char*) nls->username + username_length) = 0;
+    * ((char*) nls->password + password_length) = 0;
 
     mpz_urandomm(nls->a, nls->rand, nls->n);  /* generates the private key */
 
@@ -299,13 +299,13 @@ MEXP(nls_t*) nls_account_change_proof(nls_t *nls, char *buf,
     if (!nls)
         return nullptr;
 
-     /* create new nls_t */
+    /* create new nls_t */
     nouveau = nls_init_l(nls->username, nls->username_len, new_password,
                          (unsigned long) strlen(new_password));
     if (!nouveau)
         return nullptr;
 
-     /* fill buf */
+    /* fill buf */
     nls_get_M1(nls, buf, B, salt);
 
     mpz_init2(s, 256);
@@ -433,8 +433,8 @@ MEXP(void) nls_get_K(nls_t *nls, char *out, const char *S) {
     }
 
     for (i = 0; i < 16; i++) {
-       * (op++) = *(Sp++);
-       * (ep++) = *(Sp++);
+        * (op++) = *(Sp++);
+        * (ep++) = *(Sp++);
     }
 
     SHA1Reset(&ctx);
@@ -449,8 +449,8 @@ MEXP(void) nls_get_K(nls_t *nls, char *out, const char *S) {
     op = (char*) odd_hash;
     ep = (char*) even_hash;
     for (i = 0; i < 20; i++) {
-       * (Sp++) = *(op++);
-       * (Sp++) = *(ep++);
+        * (Sp++) = *(op++);
+        * (Sp++) = *(ep++);
     }
 
     nls->K = (char*) malloc(40);
@@ -474,7 +474,7 @@ MEXP(void) nls_get_M1(nls_t *nls, char *out, const char *B, const char *salt) {
         return;
     }
 
-     /* calculate SHA-1 hash of username */
+    /* calculate SHA-1 hash of username */
     SHA1Reset(&sha);
     SHA1Input(&sha, (uint8_t*) nls->username, nls->username_len);
     SHA1Result(&sha, username_hash);
@@ -484,7 +484,7 @@ MEXP(void) nls_get_M1(nls_t *nls, char *out, const char *B, const char *salt) {
     nls_get_S(nls, S, B, salt);
     nls_get_K(nls, K, S);
 
-     /* calculate M[1] */
+    /* calculate M[1] */
     SHA1Reset(&sha);
     SHA1Input(&sha, (uint8_t*) bncsutil_NLS_I, 20);
     SHA1Input(&sha, username_hash, 20);
@@ -543,17 +543,17 @@ MEXP(int) nls_check_M2(nls_t *nls, const char *var_M2, const char *B,
 
         mustFree = 1;
 
-         /* get the other values needed for the hash */
+        /* get the other values needed for the hash */
         nls_get_A(nls, A);
         nls_get_S(nls, S, (char*) B, (char*) salt);
         nls_get_K(nls, K, S);
 
-         /* calculate SHA-1 hash of username */
+        /* calculate SHA-1 hash of username */
         SHA1Reset(&sha);
         SHA1Input(&sha, (uint8_t*) nls->username, nls->username_len);
         SHA1Result(&sha, username_hash);
 
-         /* calculate M[1] */
+        /* calculate M[1] */
         SHA1Reset(&sha);
         SHA1Input(&sha, (uint8_t*) bncsutil_NLS_I, 20);
         SHA1Input(&sha, username_hash, 20);
@@ -564,7 +564,7 @@ MEXP(int) nls_check_M2(nls_t *nls, const char *var_M2, const char *B,
         SHA1Result(&sha, (uint8_t*) M1);
     }
 
-     /* calculate M[2] */
+    /* calculate M[2] */
     SHA1Reset(&sha);
     SHA1Input(&sha, (uint8_t*) A, 32);
     SHA1Input(&sha, (uint8_t*) M1, 20);
@@ -579,7 +579,7 @@ MEXP(int) nls_check_M2(nls_t *nls, const char *var_M2, const char *B,
         free(M1);
     }
 
-     /* cache result */
+    /* cache result */
     nls->M2 = (char*) malloc(20);
     if (nls->M2)
         memcpy(nls->M2, local_M2, 20);
@@ -596,29 +596,29 @@ MEXP(int) nls_check_signature(uint32_t address, const char *signature_raw) {
     size_t size, alloc_size;
     int cmp_result;
 
-     /* build the "check" array */
+    /* build the "check" array */
     memcpy(check, &address, 4);
     memset(check + 4, 0xBB, 28);
 
-     /* initialize the modulus */
+    /* initialize the modulus */
     mpz_init2(modulus, 1024);
     mpz_import(modulus, 128, -1, 1, 0, 0, bncsutil_NLS_sig_n);
 
-     /* initialize the server signature */
+    /* initialize the server signature */
     mpz_init2(signature, 1024);
     mpz_import(signature, 128, -1, 1, 0, 0, signature_raw);
 
-     /* initialize the result */
+    /* initialize the result */
     mpz_init2(result, 1024);
 
-     /* calculate the result */
+    /* calculate the result */
     mpz_powm_ui(result, signature, NLS_SIGNATURE_KEY, modulus);
 
-     /* clear (free) the intermediates */
+    /* clear (free) the intermediates */
     mpz_clear(signature);
     mpz_clear(modulus);
 
-     /* allocate space for raw signature */
+    /* allocate space for raw signature */
     alloc_size = mpz_size(result) * sizeof(mp_limb_t);
     result_raw = (char*) malloc(alloc_size);
     if (!result_raw) {
@@ -626,19 +626,19 @@ MEXP(int) nls_check_signature(uint32_t address, const char *signature_raw) {
         return 0;
     }
 
-     /* get a byte array of the signature */
+    /* get a byte array of the signature */
     mpz_export(result_raw, &size, -1, 1, 0, 0, result);
 
-     /* clear (free) the result */
+    /* clear (free) the result */
     mpz_clear(result);
 
-     /* check the result */
+    /* check the result */
     cmp_result = (memcmp(result_raw, check, 32) == 0);
 
-     /* free the result_raw buffer */
+    /* free the result_raw buffer */
     free(result_raw);
 
-     /* return */
+    /* return */
     return cmp_result;
 }
 
@@ -648,7 +648,7 @@ unsigned long nls_pre_seed() {
 #else
     FILE *f;
     unsigned long r;
-     /* try to get data from /dev/random or /dev/urandom */
+    /* try to get data from /dev/random or /dev/urandom */
     f = fopen("/dev/urandom", "r");
     if (!f) {
         f = fopen("/dev/random", "r");

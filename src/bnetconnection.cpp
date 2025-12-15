@@ -2,11 +2,12 @@
 #include "bnetconnection.h"
 #include "logger.h"
 #include <QDir>
+#include <QFileInfo>
+#include <QDateTime>
 #include <QDataStream>
 #include <QCoreApplication>
 #include <QNetworkInterface>
-#include <QDateTime>
-#include <QFileInfo>
+#include <QCryptographicHash>
 
 // 辅助宏：循环左移
 #define ROTL32(x, n) (((x) << ((n) & 31)) | ((x) >> (32 - ((n) & 31))))
@@ -456,32 +457,26 @@ void BnetConnection::sendLoginRequest(LoginProtocol protocol)
         sendPacket(protocol == Protocol_Old_0x29 ? SID_LOGONRESPONSE : SID_LOGONRESPONSE2, payload);
     }
     else if (protocol == Protocol_SRP_0x53) {
-        // === SRP 协议 (0x53) ===
         LOG_INFO("正在发送 SRP 登录请求 (0x53)...");
 
         if (m_nls) delete m_nls;
 
-        // 1. 计算密码的 Broken SHA1 (Big Endian)
-        QByteArray passBytes = m_pass.toLower().toUtf8();
-        QByteArray passHashBE = calculateBrokenSHA1(passBytes);
+        // 直接使用大写的用户名和密码
+        std::string userStr = m_user.toUpper().toStdString();
+        std::string passStr = m_pass.toUpper().toStdString();
 
-        LOG_INFO(QString("SRP Secret (BE): %1").arg(QString(passHashBE.toHex())));
-
-        // 2. 构造 NLS 对象
-        std::string usernameInput = m_user.toUpper().trimmed().toUtf8().toStdString();
-        std::string passwordInput(passHashBE.constData(), passHashBE.size());
-
-        m_nls = new NLS(usernameInput, passwordInput);
+        m_nls = new NLS(userStr, passStr);
 
         QByteArray payload;
         QDataStream out(&payload, QIODevice::WriteOnly);
         out.setByteOrder(QDataStream::LittleEndian);
 
         QByteArray clientKey(32, 0);
+        // 获取公钥 A = g^a % N
         m_nls->getPublicKey((char*)clientKey.data());
 
         out.writeRawData(clientKey.data(), 32);
-        out.writeRawData(m_user.trimmed().toUtf8().constData(), m_user.length());
+        out.writeRawData(m_user.toLower().trimmed().toUtf8().constData(), m_user.length());
         out << (quint8)0;
 
         sendPacket(SID_AUTH_ACCOUNTLOGON, payload);
@@ -512,9 +507,22 @@ void BnetConnection::handleSRPLoginResponse(const QByteArray &data)
         return;
     }
 
+    // =============================================================
+    // 打印接收到的 Salt 和 ServerKey
+    // =============================================================
+    LOG_INFO(QString("SRP Rx Salt: %1").arg(QString(salt.toHex())));
+    LOG_INFO(QString("SRP Rx KeyB: %1").arg(QString(serverKey.toHex())));
+    // =============================================================
+
     // 计算 M1 Proof
     QByteArray proof(20, 0);
     m_nls->getClientSessionKey((char*)proof.data(), (char*)salt.data(), (char*)serverKey.data());
+
+    // =============================================================
+    // 打印客户端计算出的 Proof
+    // =============================================================
+    LOG_INFO(QString("SRP Calc Proof (M1): %1").arg(QString(proof.toHex())));
+    // =============================================================
 
     // 发送 0x54
     QByteArray response;
@@ -522,7 +530,7 @@ void BnetConnection::handleSRPLoginResponse(const QByteArray &data)
     out.setByteOrder(QDataStream::LittleEndian);
 
     out.writeRawData(proof.data(), 20);
-    out.writeRawData(QByteArray(20, 0).data(), 20); // M2 占位符 (客户端不验证服务端Proof可填0)
+    out.writeRawData(QByteArray(20, 0).data(), 20);
 
     sendPacket(SID_AUTH_ACCOUNTLOGONPROOF, response);
 }
