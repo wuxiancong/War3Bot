@@ -360,7 +360,6 @@ sudo rm -rf /etc/War3Bot /var/log/War3Bot /opt/War3Bot
 sudo apt remove qtbase5-dev qt5-qmake libqt5core5a libqt5network5
 sudo apt autoremove
 ```
-
 sequenceDiagram
     participant C as 客户端 (BnetBot)
     participant S as 服务端 (War3Server)
