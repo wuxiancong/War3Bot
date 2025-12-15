@@ -5,7 +5,9 @@
 #include <QTcpSocket>
 #include <QHostAddress>
 #include <QTimer>
-#include "bncsutil/nls.h"
+
+// 添加前置声明
+class BnetSRP3;
 
 class BnetBot : public QObject
 {
@@ -93,7 +95,7 @@ private:
 
     QString m_user;
     QString m_pass;
-    NLS *m_nls; // bncsutil NLS 对象
+    BnetSRP3 *m_srp;
 };
 
 #endif // BNETBOT_H
