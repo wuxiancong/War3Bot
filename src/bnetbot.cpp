@@ -479,7 +479,7 @@ void BnetBot::handleSRPLoginResponse(const QByteArray &data)
     // 1. 设置 Salt
     // 注意：Salt 在内存和 Hash 中通常作为大数 (BigEndian) 处理，
     // 我们将收到的字节流视为 Big Endian 传入，以保持原始字节顺序。
-    BigInt saltVal((const unsigned char*)saltBytes.constData(), 32, 1, true);
+    BigInt saltVal((const unsigned char*)saltBytes.constData(), 32, 1, false);
     m_srp->setSalt(saltVal);
 
     // 2. 转换服务端公钥 B

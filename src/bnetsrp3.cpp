@@ -2,18 +2,19 @@
  * -------------------------------------------------------------------------
  * 文件名: bnetsrp3.cpp
  * 说明:
- *      Battle.net SRP3 协议核心逻辑实现。
- *      包含了大数运算、SHA1 哈希组合以及战网特有的协议细节。
+ *      Battle.net SRP3 协议核心逻辑实现 (客户端修正版)。
+ *      [修复] 1. Scrambler 计算使用 Little Endian。
+ *      [修复] 2. 所有 getData blockSize 改为 1，防止字节序错乱。
  * -------------------------------------------------------------------------
  */
 
 #include "bnetsrp3.h"
 #include "bnethash.h"
+#include "logger.h"
 #include <cstring>
 #include <QDebug>
 
 // SRP 协议常量定义
-// g = 47
 static const quint8 bnetsrp3_g_val = 0x2F;
 
 // N: 32字节 (256位) 的大素数
@@ -32,44 +33,37 @@ static const unsigned char bnetsrp3_I_val[] = {
 };
 
 // 初始化静态 BigInt 常量
-// 注意：PvPGN 中大数通常以 Little Endian 方式处理
 BigInt BnetSRP3::N = BigInt(bnetsrp3_N_val, 32, 1, true);
 BigInt BnetSRP3::g = BigInt((quint64)bnetsrp3_g_val);
 BigInt BnetSRP3::I = BigInt(bnetsrp3_I_val, 20, 1, true);
 
-/**
- * @brief 初始化函数
- * 处理用户名大写转换、随机数生成等通用逻辑。
- */
 void BnetSRP3::init(const QString &username, const QString &password, BigInt* salt)
 {
-    // 战网协议对用户名和密码均采用大写形式进行哈希
     m_username = username.toUpper();
 
     if (!password.isNull()) {
-        // === 客户端模式 或 注册模式 ===
         m_password = password.toUpper();
-        // 生成随机私钥 a
         a = BigInt::random(32) % N;
-        // 生成随机盐 s
         s = BigInt::random(32);
+
+        LOG_INFO(QString("[SRP Init] 用户名: %1").arg(m_username));
+        // LOG_INFO(QString("[SRP Init] 生成临时私钥 a: %1").arg(a.toHexString()));
     } else {
-        // === 服务端验证模式 ===
         m_password = QString();
-        // 生成服务端随机私钥 b
         b = BigInt::random(32) % N;
         if (salt) s = *salt;
     }
 
     B = nullptr;
 
-    // 缓存 Salt 的字节形式，便于后续哈希计算
+    // 关键：raw_salt 存储 Little Endian 字节
     unsigned char buf[32];
-    s.getData(buf, 32, 1, true);
+    s.getData(buf, 32, 1, false);
     raw_salt = QByteArray((const char*)buf, 32);
+
+    LOG_INFO(QString("[SRP Init] Raw Salt (LE): %1").arg(QString(raw_salt.toHex())));
 }
 
-// 构造函数转发
 BnetSRP3::BnetSRP3(const QString &username, BigInt &salt)
 {
     init(username, QString(), &salt);
@@ -85,62 +79,69 @@ BnetSRP3::~BnetSRP3()
     if (B) delete B;
 }
 
-/**
- * @brief 计算客户端私钥 x
- * 公式: x = H(s, H(U:P))
- * 其中 H 是 Little-Endian SHA1
- */
 BigInt BnetSRP3::getClientPrivateKey() const
 {
-    // 1. 计算 H(P) = H("USERNAME:PASSWORD")
     QByteArray userpass = m_username.toLatin1() + ":" + m_password.toLatin1();
 
+    // 1. H(P)
     t_hash userpass_hash;
     little_endian_sha1_hash(&userpass_hash, userpass.size(), userpass.constData());
 
-    // 2. 计算 H(s, H(P))
     QByteArray private_value;
-    private_value.append(raw_salt);
+
+    // 2. Salt (Little Endian)
+    unsigned char saltBuf[32];
+    s.getData(saltBuf, 32, 1, false);
+    private_value.append((const char*)saltBuf, 32);
+
+    // 3. 拼接 H(P) (Big Endian)
     private_value.append((const char*)userpass_hash, 20);
 
+    // 4. 计算最终 Hash
     t_hash private_value_hash;
     little_endian_sha1_hash(&private_value_hash, private_value.size(), private_value.constData());
 
-    // 结果转为 BigInt
-    return BigInt((unsigned char*)private_value_hash, 20, 1, false);
+    // 5. 使用 blockSize=4 来翻转内存中 Big-Endian 的字节，将其还原为正确的整数值。
+    BigInt x((unsigned char*)private_value_hash, 20, 1, false);
+
+    LOG_INFO(QString("[SRP X] 计算出的私钥 x: %1").arg(x.toHexString()));
+
+    return x;
 }
 
-/**
- * @brief 计算扰码 u
- * 公式: u = H(B) (取哈希结果的前32位)
- */
 BigInt BnetSRP3::getScrambler(BigInt &B_ref) const
 {
     unsigned char raw_B[32];
-    // 获取 B 的字节表示 (4字节块交换，小端序)
-    B_ref.getData(raw_B, 32, 4, false);
+
+    // 【修复1】 将 true 改为 false。服务端计算 Scrambler 使用的是 Little Endian 的 B。
+    // 【修复2】 将 1 作为 blockSize。防止 BigInt 进行 Word Swap。
+    B_ref.getData(raw_B, 32, 1, false);
 
     t_hash hash;
     sha1_hash(&hash, 32, raw_B);
 
-    return BigInt((quint32)hash[0]);
+    BigInt u((quint32)hash[0]);
+
+    // DEBUG: 输出扰码 u
+    LOG_INFO(QString("[SRP U] 计算出的扰码 u: %1").arg(u.toHexString()));
+
+    return u;
 }
 
-/**
- * @brief 计算客户端原生会话密钥 S (Premaster Secret)
- * 公式: S = (B - g^x)^(a + ux) % N
- */
 BigInt BnetSRP3::getClientSecret(BigInt &B_ref) const
 {
     BigInt x = getClientPrivateKey();
     BigInt u = getScrambler(B_ref);
-    return (N + B_ref - g.powm(x, N)).powm((x * u) + a, N);
+
+    // S = (B - g^x)^(a + ux) % N
+    BigInt S = (N + B_ref - g.powm(x, N)).powm((x * u) + a, N);
+
+    // DEBUG: 输出原生密钥 S
+    LOG_INFO(QString("[SRP S] 计算出的 Pre-Master Secret S: %1").arg(S.toHexString()));
+
+    return S;
 }
 
-/**
- * @brief 计算服务端原生会话密钥 S (Premaster Secret)
- * 公式: S = (A * v^u)^b % N
- */
 BigInt BnetSRP3::getServerSecret(BigInt &A, BigInt &v)
 {
     BigInt B_val = getServerSessionPublicKey(v);
@@ -148,20 +149,16 @@ BigInt BnetSRP3::getServerSecret(BigInt &A, BigInt &v)
     return ((A * v.powm(u, N)) % N).powm(b, N);
 }
 
-/**
- * @brief 生成最终会话密钥 K
- * 战网特殊算法：将 S 的字节流分为奇数位和偶数位，分别哈希，然后交错拼接。
- * K = Interleave(SHA1(Odd(S)), SHA1(Even(S)))
- */
 BigInt BnetSRP3::hashSecret(BigInt &secret) const
 {
     unsigned char raw_secret[32];
-    secret.getData(raw_secret, 32, 4, false);
+
+    // 【修复3】 将 4 改为 1。S 需要以纯 Little Endian 提取用于交错混淆。
+    secret.getData(raw_secret, 32, 1, false);
 
     unsigned char odd[16];
     unsigned char even[16];
 
-    // 分离奇偶字节
     for (int i = 0; i < 16; i++) {
         odd[i] = raw_secret[i * 2];
         even[i] = raw_secret[i * 2 + 1];
@@ -175,16 +172,19 @@ BigInt BnetSRP3::hashSecret(BigInt &secret) const
     unsigned char* pOdd = (unsigned char*)odd_hash;
     unsigned char* pEven = (unsigned char*)even_hash;
 
-    // 交错拼接结果
     for (int i = 0; i < 20; i++) {
         hashedSecret.append(pOdd[i]);
         hashedSecret.append(pEven[i]);
     }
 
-    return BigInt((const unsigned char*)hashedSecret.constData(), 40, 1, false);
+    BigInt K((const unsigned char*)hashedSecret.constData(), 40, 1, false);
+
+    // DEBUG: 输出会话密钥 K
+    LOG_INFO(QString("[SRP K] 计算出的 Session Key K: %1").arg(K.toHexString()));
+
+    return K;
 }
 
-// 获取 Verifier: v = g^x % N
 BigInt BnetSRP3::getVerifier() const
 {
     return g.powm(getClientPrivateKey(), N);
@@ -199,17 +199,19 @@ void BnetSRP3::setSalt(BigInt salt_)
 {
     s = salt_;
     unsigned char buf[32];
-    s.getData(buf, 32, 1, true);
+    s.getData(buf, 32, 1, false); // 保持 Little Endian
     raw_salt = QByteArray((const char*)buf, 32);
+
+    LOG_INFO(QString("[SRP SetSalt] 更新 Salt (LE): %1").arg(QString(raw_salt.toHex())));
 }
 
-// 客户端公钥 A = g^a % N
 BigInt BnetSRP3::getClientSessionPublicKey() const
 {
-    return g.powm(a, N);
+    BigInt A = g.powm(a, N);
+    LOG_INFO(QString("[SRP A] 客户端公钥 A: %1").arg(A.toHexString()));
+    return A;
 }
 
-// 服务端公钥 B = (v + g^b) % N
 BigInt BnetSRP3::getServerSessionPublicKey(BigInt &v)
 {
     if (!B) {
@@ -220,6 +222,7 @@ BigInt BnetSRP3::getServerSessionPublicKey(BigInt &v)
 
 BigInt BnetSRP3::getHashedClientSecret(BigInt &B_ref) const
 {
+    LOG_INFO(QString("[SRP B] 服务端公钥 B: %1").arg(B_ref.toHexString()));
     BigInt clientSecret = getClientSecret(B_ref);
     return hashSecret(clientSecret);
 }
@@ -230,18 +233,15 @@ BigInt BnetSRP3::getHashedServerSecret(BigInt &A, BigInt &v)
     return hashSecret(serverSecret);
 }
 
-/**
- * @brief 生成客户端 Proof (M1)
- * M1 = H(I, H(U), s, A, B, K)
- * 注意：这里的字节序混合非常复杂，必须严格遵循 PvPGN/Bnet 标准。
- */
 BigInt BnetSRP3::getClientPasswordProof(BigInt &A, BigInt &B_ref, BigInt &K) const
 {
+    LOG_INFO("=== 开始计算 M1 Proof ===");
     QByteArray proofData;
     unsigned char buf[1024];
 
-    // 1. I (20 bytes, Little Endian, 4-byte block swap)
-    I.getData(buf, 20, 4, false);
+    // 1. I (H(g)^H(N))
+    // 【修复4】 blockSize=1
+    I.getData(buf, 20, 1, false);
     proofData.append((const char*)buf, 20);
 
     // 2. H(username)
@@ -250,49 +250,54 @@ BigInt BnetSRP3::getClientPasswordProof(BigInt &A, BigInt &B_ref, BigInt &K) con
     little_endian_sha1_hash(&usernameHash, userBytes.size(), userBytes.constData());
     proofData.append((const char*)usernameHash, 20);
 
-    // 3. Salt (32 bytes, Big Endian)
-    // 注意：PvPGN 此处直接使用了 s.getData (BigEndian)
-    s.getData(buf, 32, 1, true);
+    // 3. Salt
+    // 【修复5】 blockSize=1 (你的原代码是1，这里保持1是正确的)
+    s.getData(buf, 32, 1, false);
+
+    LOG_INFO(QString("  > M1 Salt (LE): %1").arg(QString(QByteArray((const char*)buf, 32).toHex())));
     proofData.append((const char*)buf, 32);
 
-    // 4. A (32 bytes, LE, 4-byte swap)
-    A.getData(buf, 32, 4, false);
+    // 4. A
+    // 【修复6】 blockSize=1 (关键！之前是4，导致了 ce 12 14 94 的错乱)
+    A.getData(buf, 32, 1, false);
+    LOG_INFO(QString("  > M1 A (LE):    %1").arg(QString(QByteArray((const char*)buf, 32).toHex())));
     proofData.append((const char*)buf, 32);
 
-    // 5. B (32 bytes, LE, 4-byte swap)
-    B_ref.getData(buf, 32, 4, false);
+    // 5. B
+    // 【修复7】 blockSize=1
+    B_ref.getData(buf, 32, 1, false);
+    LOG_INFO(QString("  > M1 B (LE):    %1").arg(QString(QByteArray((const char*)buf, 32).toHex())));
     proofData.append((const char*)buf, 32);
 
-    // 6. K (40 bytes, LE, 4-byte swap)
-    K.getData(buf, 40, 4, false);
+    // 6. K
+    // 【修复8】 blockSize=1
+    K.getData(buf, 40, 1, false);
+    LOG_INFO(QString("  > M1 K (LE):    %1").arg(QString(QByteArray((const char*)buf, 40).toHex())));
     proofData.append((const char*)buf, 40);
 
-    // 计算哈希
     t_hash proofHash;
     little_endian_sha1_hash(&proofHash, proofData.size(), proofData.constData());
 
-    return BigInt((unsigned char*)proofHash, 20, 1, false);
+    BigInt M1((unsigned char*)proofHash, 20, 1, false);
+    LOG_INFO(QString("[SRP M1] 计算出的 Proof M1: %1").arg(M1.toHexString()));
+    LOG_INFO("=== M1 计算结束 ===");
+
+    return M1;
 }
 
-/**
- * @brief 生成服务端 Proof (M2)
- * M2 = H(A, M1, K)
- */
 BigInt BnetSRP3::getServerPasswordProof(BigInt &A, BigInt &M, BigInt &K) const
 {
     QByteArray proofData;
     unsigned char buf[128];
 
-    // A (32 bytes)
-    A.getData(buf, 32, 4, false);
+    // 【修复9】 blockSize=1
+    A.getData(buf, 32, 1, false);
     proofData.append((const char*)buf, 32);
 
-    // M1 (Client Proof) (20 bytes)
-    M.getData(buf, 20, 4, false);
+    M.getData(buf, 20, 1, false);
     proofData.append((const char*)buf, 20);
 
-    // K (Session Key) (40 bytes)
-    K.getData(buf, 40, 4, false);
+    K.getData(buf, 40, 1, false);
     proofData.append((const char*)buf, 40);
 
     t_hash proofHash;
