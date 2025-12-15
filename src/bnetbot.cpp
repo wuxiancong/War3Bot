@@ -416,28 +416,41 @@ void BnetBot::sendLoginRequest(LoginProtocol protocol)
         sendPacket(protocol == Protocol_Old_0x29 ? SID_LOGONRESPONSE : SID_LOGONRESPONSE2, payload);
     }
     else if (protocol == Protocol_SRP_0x53) {
-        // === 使用移植后的 BnetSRP3 类处理 ===
+        // ============================================================
+        // [SRP Step 1] 客户端初始化 & 发送公钥 A
+        // ============================================================
         LOG_INFO("正在发送 SRP 登录请求 (0x53)...");
 
         if (m_srp) delete m_srp;
 
-        // 初始化 SRP 对象 (客户端模式)
+        // 初始化 SRP 对象 (内部生成随机私钥 a)
         m_srp = new BnetSRP3(m_user, m_pass);
 
         QByteArray payload;
         QDataStream out(&payload, QIODevice::WriteOnly);
         out.setByteOrder(QDataStream::LittleEndian);
 
-        // 1. 获取公钥 A = g^a % N
+        // --------------------------------------------------------------------------
+        // [SRP Step 1.1] 计算客户端公钥 A = g^a % N
+        // --------------------------------------------------------------------------
         BigInt A = m_srp->getClientSessionPublicKey();
 
-        // 2. 转换为 32 字节的小端序字节流 (战网数据包要求 LE)
+        // 记录日志
+        LOG_INFO(QString("[SRP Step 1.1] 客户端生成公钥 (A): %1").arg(A.toHexString()));
+
+        // --------------------------------------------------------------------------
+        // [SRP Step 1.2] 转换为 32 字节的小端序字节流 (准备发送)
+        // --------------------------------------------------------------------------
         QByteArray A_bytes = A.toByteArray(32, 1, false);
+        LOG_INFO(QString("[SRP Step 1.2] 公钥 (A) [Raw Bytes]: %1").arg(QString(A_bytes.toHex())));
 
         out.writeRawData(A_bytes.constData(), 32);
         out.writeRawData(m_user.toLower().trimmed().toUtf8().constData(), m_user.length());
         out << (quint8)0;
 
+        // --------------------------------------------------------------------------
+        // [SRP Step 1.3] 发送包 SID_AUTH_ACCOUNTLOGON
+        // --------------------------------------------------------------------------
         sendPacket(SID_AUTH_ACCOUNTLOGON, payload);
     }
 }
@@ -445,8 +458,11 @@ void BnetBot::sendLoginRequest(LoginProtocol protocol)
 // === SRP 0x53 响应处理 ===
 void BnetBot::handleSRPLoginResponse(const QByteArray &data)
 {
+    // ============================================================
+    // [SRP Step 3] 接收服务端公钥 B & 发送证明 M1
+    // ============================================================
     if (data.size() < 68) {
-        LOG_ERROR("SRP 响应数据不足 (SID_AUTH_ACCOUNTLOGON)");
+        LOG_ERROR("[SRP Step 3] 响应数据不足 (SID_AUTH_ACCOUNTLOGON)");
         return;
     }
 
@@ -457,17 +473,19 @@ void BnetBot::handleSRPLoginResponse(const QByteArray &data)
     QByteArray saltBytes(32, 0);
     QByteArray serverKeyBytes(32, 0); // Key B
 
+    // 读取数据
     in >> status;
     in.readRawData(saltBytes.data(), 32);
     in.readRawData(serverKeyBytes.data(), 32);
 
     if (status != 0) {
-        LOG_ERROR("SRP 步骤1 被拒绝，状态码: 0x" + QString::number(status, 16));
+        LOG_ERROR("[SRP Step 3.1] 被拒绝，状态码: 0x" + QString::number(status, 16));
         return;
     }
 
-    LOG_INFO(QString("SRP Rx Salt: %1").arg(QString(saltBytes.toHex())));
-    LOG_INFO(QString("SRP Rx KeyB: %1").arg(QString(serverKeyBytes.toHex())));
+    // [SRP Step 3.1] 记录原始字节流
+    LOG_INFO(QString("[SRP Step 3.1] 收到服务端 Salt (s) [Raw Bytes]: %1").arg(QString(saltBytes.toHex())));
+    LOG_INFO(QString("[SRP Step 3.1] 收到服务端公钥 (B) [Raw Bytes]: %1").arg(QString(serverKeyBytes.toHex())));
 
     if (!m_srp) {
         LOG_ERROR("SRP 对象未初始化！");
@@ -476,35 +494,54 @@ void BnetBot::handleSRPLoginResponse(const QByteArray &data)
 
     // === 计算 Proof (M1) ===
 
-    // 1. 设置 Salt
-    // 注意：Salt 在内存和 Hash 中通常作为大数 (BigEndian) 处理，
-    // 我们将收到的字节流视为 Big Endian 传入，以保持原始字节顺序。
+    // --------------------------------------------------------------------------
+    // [SRP Step 3.2] 设置 Salt
+    // --------------------------------------------------------------------------
+    // 注意：将接收到的字节流 (Little Endian) 传给 BigInt
     BigInt saltVal((const unsigned char*)saltBytes.constData(), 32, 1, false);
+    // 记录转换后的 BigInt 字符串，验证 (..., 1, false) 是否正确解析了 LE 字节
+    LOG_INFO(QString("[SRP Step 3.2] Salt 转换为 BigInt: %1").arg(saltVal.toHexString()));
     m_srp->setSalt(saltVal);
 
-    // 2. 转换服务端公钥 B
-    // 服务端发来的 B 是小端序 (Little Endian)
+    // --------------------------------------------------------------------------
+    // [SRP Step 3.3] 转换服务端公钥 B
+    // --------------------------------------------------------------------------
     BigInt B_val((const unsigned char*)serverKeyBytes.constData(), 32, 1, false);
+    LOG_INFO(QString("[SRP Step 3.3] B 转换为 BigInt:    %1").arg(B_val.toHexString()));
 
-    // 3. 计算 K (Hashed Client Secret)
+    // --------------------------------------------------------------------------
+    // [SRP Step 3.4] 计算会话密钥 K = Hash(S)
+    // --------------------------------------------------------------------------
+    // 这一步内部会计算: x = H(s, H(P)), u = H(B), S = (B - g^x)^(a + ux)
+    // 务必确保 bnetsrp3.cpp 中 getClientPrivateKey 的 x 构造使用了 blockSize=4
     BigInt K = m_srp->getHashedClientSecret(B_val);
 
-    // 4. 获取 A (Client Public Key) 再次用于 Proof 计算
-    BigInt A = m_srp->getClientSessionPublicKey();
+    // 记录 K 以便调试 (K 对了，说明 x, u, S 都对了)
+    LOG_INFO(QString("[SRP Step 3.4] 计算出的会话密钥 (K): %1").arg(K.toHexString()));
 
-    // 5. 计算 Proof M1
+    // --------------------------------------------------------------------------
+    // [SRP Step 3.x] 获取本地公钥 A
+    // --------------------------------------------------------------------------
+    // 获取 A (用于 Proof 计算)
+    BigInt A = m_srp->getClientSessionPublicKey();
+    LOG_INFO(QString("[SRP Step 3.x] 本地公钥 (A):       %1").arg(A.toHexString()));
+
+    // --------------------------------------------------------------------------
+    // [SRP Step 3.5] 计算客户端证明 M1 = H(I, H(U), s, A, B, K)
+    // --------------------------------------------------------------------------
     BigInt M1 = m_srp->getClientPasswordProof(A, B_val, K);
 
-    // 6. 将 Proof 转换为 20 字节的数据 (Hash 结果，这里使用 Little Endian 输出)
+    // 将 Proof 转换为 20 字节的数据
     QByteArray proofBytes = M1.toByteArray(20, 1, false);
 
-    LOG_INFO(QString("SRP Calc Proof (M1): %1").arg(QString(proofBytes.toHex())));
+    LOG_INFO(QString("[SRP Step 3.5] 计算出的 Proof (M1): %1").arg(QString(proofBytes.toHex())));
 
     // === 发送 SID_AUTH_ACCOUNTLOGONPROOF (0x54) ===
     QByteArray response;
     QDataStream out(&response, QIODevice::WriteOnly);
     out.setByteOrder(QDataStream::LittleEndian);
 
+    // [SRP Step 3.6] 发送 M1 给服务端进行验证
     out.writeRawData(proofBytes.constData(), 20);
     out.writeRawData(QByteArray(20, 0).data(), 20); // M2 verification space
 
@@ -512,7 +549,6 @@ void BnetBot::handleSRPLoginResponse(const QByteArray &data)
 }
 
 void BnetBot::createGameOnLadder(const QString &gameName, const QByteArray &mapStatString, quint16 udpPort) {
-    // ... (保持不变)
     LOG_INFO(QString("🚀 请求创建房间: %1").arg(gameName));
     QByteArray payload;
     QDataStream out(&payload, QIODevice::WriteOnly);

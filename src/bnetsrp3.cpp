@@ -102,7 +102,7 @@ BigInt BnetSRP3::getClientPrivateKey() const
     little_endian_sha1_hash(&private_value_hash, private_value.size(), private_value.constData());
 
     // 5. 使用 blockSize=4 来翻转内存中 Big-Endian 的字节，将其还原为正确的整数值。
-    BigInt x((unsigned char*)private_value_hash, 20, 1, false);
+    BigInt x((unsigned char*)private_value_hash, 20, 4, false);
 
     LOG_INFO(QString("[SRP X] 计算出的私钥 x: %1").arg(x.toHexString()));
 
