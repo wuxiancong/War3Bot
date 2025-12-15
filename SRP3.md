@@ -1,9 +1,3 @@
-这是一个详细的 Battle.net (Warcraft 3 / PvPGN) **SRP3 协议登录流程**文档。
-
-该流程涵盖了从建立连接到验证通过的所有数学计算和网络交互细节。
-
----
-
 # Battle.net SRP3 登录流程详解
 
 **协议 ID**: `Protocol 0x53` (SRP NLS)
