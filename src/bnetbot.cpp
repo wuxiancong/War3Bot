@@ -7,6 +7,7 @@
 #include <QFileInfo>
 #include <QDateTime>
 #include <QDataStream>
+#include <QRandomGenerator>
 #include <QCoreApplication>
 #include <QNetworkInterface>
 #include <QCryptographicHash>
@@ -533,16 +534,13 @@ void BnetBot::handleSRPLoginResponse(const QByteArray &data)
 
     // --------------------------------------------------------------------------
     // [SRP Step 3.2] 设置 Salt
-    // 服务端使用 blockSize=4 来加载 Salt，我们也必须用 4
     // --------------------------------------------------------------------------
-    BigInt saltVal((const unsigned char*)saltBytes.constData(), 32, 4, false);
+    BigInt saltVal((const unsigned char*)saltBytes.constData(), 32, 1, false);
     LOG_INFO(QString("[SRP Step 3.2] Salt 转换为 BigInt: %1").arg(saltVal.toHexString()));
     m_srp->setSalt(saltVal);
 
     // --------------------------------------------------------------------------
     // [SRP Step 3.3] 转换服务端公钥 B
-    // 使用 1 直接读取 LE 流即可还原正确的 B
-    // 服务端发送的是 LE 流，客户端 bigInt(..., 4) 会导致错误的翻转。
     // --------------------------------------------------------------------------
     BigInt B_val((const unsigned char*)serverKeyBytes.constData(), 32, 1, false);
     LOG_INFO(QString("[SRP Step 3.3] B 转换为 BigInt:    %1").arg(B_val.toHexString()));
@@ -601,36 +599,55 @@ void BnetBot::createGameOnLadder(const QString &gameName, const QByteArray &mapS
 
 void BnetBot::createAccount()
 {
-    LOG_INFO("📝 正在发起账号注册 (SID_AUTH_ACCOUNTCREATE 0x52)...");
+    LOG_INFO("📝 正在发起账号注册 (Legacy Plaintext Mode 0x52)...");
 
     if (m_user.isEmpty() || m_pass.isEmpty()) {
         LOG_ERROR("注册失败: 用户名或密码为空");
         return;
     }
 
-    // 1. 初始化 SRP 对象
-    // 这会自动生成随机 Salt (s) 和根据密码计算 Verifier (v)
-    if (m_srp) delete m_srp;
-    m_srp = new BnetSRP3(m_user, m_pass);
+    // ---------------------------------------------------------
+    // 1. 准备 Salt (32字节)
+    // ---------------------------------------------------------
+    // 在发送明文密码模式下，服务端会忽略客户端发来的 Salt，并自己重新生成。
+    // 但为了保持数据包格式正确，我们填充 32 字节的随机数。
+    QByteArray s_bytes;
+    s_bytes.resize(32);
+    for (int i = 0; i < 32; ++i) {
+        s_bytes[i] = (char)(QRandomGenerator::global()->generate() & 0xFF);
+    }
 
-    // 2. 获取 Salt (s) 和 Verifier (v)
-    BigInt s = m_srp->getSalt();
-    BigInt v = m_srp->getVerifier();
+    // ---------------------------------------------------------
+    // 2. 准备 Verifier 字段 (32字节，存放明文密码)
+    // ---------------------------------------------------------
+    // 官方客户端行为：直接把密码字符串拷贝进去，剩余补 0。
+    // 服务端检测到这是可打印字符后，会自动计算 SC Hash 和 SRP Verifier。
+    QByteArray v_bytes;
+    v_bytes.resize(32);
+    v_bytes.fill(0); // 必须初始化为 0，这很重要！
 
-    LOG_INFO(QString("[Register] Generated Salt:     %1").arg(s.toHexString()));
-    LOG_INFO(QString("[Register] Generated Verifier: %1").arg(v.toHexString()));
+    // 获取密码字节 (通常使用 Latin1 或 UTF8)
+    QByteArray passRaw = m_pass.toLatin1(); // 官方客户端通常使用非 Unicode 编码发送密码
 
+    // 截断密码以防溢出 (虽然密码很少超过 32 字符)
+    int copyLen = qMin(passRaw.size(), 32);
+
+    // 将密码复制到 buffer 头部
+    memcpy(v_bytes.data(), passRaw.constData(), copyLen);
+
+    LOG_INFO(QString("[Register] Salt (Random): %1").arg(QString(s_bytes.toHex())));
+    LOG_INFO(QString("[Register] Verifier (Plaintext): %1 (Hex: %2)").arg(m_pass, QString(v_bytes.toHex())));
+
+    // ---------------------------------------------------------
     // 3. 构造数据包
+    // ---------------------------------------------------------
     QByteArray payload;
     QDataStream out(&payload, QIODevice::WriteOnly);
     out.setByteOrder(QDataStream::LittleEndian);
 
-    QByteArray s_bytes = s.toByteArray(32, 4, false);
-    QByteArray v_bytes = v.toByteArray(32, 1, false);
-
-    out.writeRawData(s_bytes.constData(), 32);
-    out.writeRawData(v_bytes.constData(), 32);
-    out.writeRawData(m_user.toLower().trimmed().toUtf8().constData(), m_user.length());
+    out.writeRawData(s_bytes.constData(), 32); // 发送随机 Salt
+    out.writeRawData(v_bytes.constData(), 32); // 发送明文密码
+    out.writeRawData(m_user.toLower().trimmed().toLatin1().constData(), m_user.length());
     out << (quint8)0; // 字符串结束符
 
     // 4. 发送

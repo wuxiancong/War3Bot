@@ -3,8 +3,8 @@
  * 文件名: bnetsrp3.cpp
  * 说明:
  *      Battle.net SRP3 协议核心逻辑实现 (客户端修正版)。
- *      [修复] 1. Scrambler 计算使用 Little Endian。
- *      [修复] 2. 所有 getData blockSize 改为 1，防止字节序错乱。
+ *      1. Scrambler 计算使用 Little Endian。
+ *      2. 所有 getData blockSize 改为 1，防止字节序错乱。
  * -------------------------------------------------------------------------
  */
 
