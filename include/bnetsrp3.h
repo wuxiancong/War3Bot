@@ -119,7 +119,7 @@ private:
 
     QString m_username;
     QString m_password;
-    QByteArray raw_salt; // 原始字节序的 Salt
+    QByteArray m_raw_salt; // 原始字节序的 Salt
 };
 
 #endif // BNETSRP3_H
