@@ -270,6 +270,34 @@ void BnetBot::handlePacket(PacketID id, const QByteArray &data)
         if (data.size() > 16) handleAuthCheck(data);
         break;
 
+    case SID_AUTH_ACCOUNTCREATE:
+    {
+        if (data.size() < 4) return;
+        quint32 status;
+        QDataStream ds(data);
+        ds.setByteOrder(QDataStream::LittleEndian);
+        ds >> status;
+
+        if (status == 0) {
+            LOG_INFO("🎉 账号注册成功！");
+            emit accountCreated();
+            // 注册成功后，立即尝试登录
+            LOG_INFO("🔄 正在自动登录新注册的账号...");
+            sendLoginRequest(Protocol_SRP_0x53);
+        }
+        else if (status == 0x04) {
+            LOG_WARNING("⚠️ 账号已存在 (Status: 0x04)");
+            // 如果账号已存在，尝试直接登录
+            LOG_INFO("🔄 尝试直接登录...");
+            sendLoginRequest(Protocol_SRP_0x53);
+        }
+        else {
+            // 其他错误码 (如包含非法字符等)
+            LOG_ERROR(QString("❌ 注册失败: 错误码 0x%1").arg(QString::number(status, 16)));
+        }
+        break;
+    }
+
     // === SRP 步骤 1 响应 ===
     case SID_AUTH_ACCOUNTLOGON:
         if (m_loginProtocol == Protocol_SRP_0x53) {
@@ -479,7 +507,21 @@ void BnetBot::handleSRPLoginResponse(const QByteArray &data)
     in.readRawData(serverKeyBytes.data(), 32);
 
     if (status != 0) {
-        LOG_ERROR("[SRP Step 3.1] 被拒绝，状态码: 0x" + QString::number(status, 16));
+        if (status == 0x01) {
+            // 0x01 = 账号不存在 (SERVER_LOGINREPLY_W3_MESSAGE_BADACCT)
+            LOG_WARNING(QString("⚠️ 账号 %1 不存在，正在自动发起注册...").arg(m_user));
+
+            // 触发注册流程 (0x52)
+            createAccount();
+        }
+        else if (status == 0x05) {
+            // 0x05 = 密码错误 (SERVER_LOGINREPLY_W3_MESSAGE_BADPASS)
+            LOG_ERROR(QString("❌ 登录失败: 密码错误 (User: %1)").arg(m_user));
+        }
+        else {
+            // 其他错误 (如封禁等)
+            LOG_ERROR("[SRP Step 3.1] 被拒绝，状态码: 0x" + QString::number(status, 16));
+        }
         return;
     }
 
@@ -560,6 +602,44 @@ void BnetBot::createGameOnLadder(const QString &gameName, const QByteArray &mapS
     out.writeRawData(mapStatString.constData(), mapStatString.size());
     out << (quint8)0 << (quint16)udpPort;
     sendPacket(SID_STARTADVEX3, payload);
+}
+
+void BnetBot::createAccount()
+{
+    LOG_INFO("📝 正在发起账号注册 (SID_AUTH_ACCOUNTCREATE 0x52)...");
+
+    if (m_user.isEmpty() || m_pass.isEmpty()) {
+        LOG_ERROR("注册失败: 用户名或密码为空");
+        return;
+    }
+
+    // 1. 初始化 SRP 对象
+    // 这会自动生成随机 Salt (s) 和根据密码计算 Verifier (v)
+    if (m_srp) delete m_srp;
+    m_srp = new BnetSRP3(m_user, m_pass);
+
+    // 2. 获取 Salt (s) 和 Verifier (v)
+    BigInt s = m_srp->getSalt();
+    BigInt v = m_srp->getVerifier();
+
+    LOG_INFO(QString("[Register] Generated Salt:     %1").arg(s.toHexString()));
+    LOG_INFO(QString("[Register] Generated Verifier: %1").arg(v.toHexString()));
+
+    // 3. 构造数据包
+    QByteArray payload;
+    QDataStream out(&payload, QIODevice::WriteOnly);
+    out.setByteOrder(QDataStream::LittleEndian);
+
+    QByteArray s_bytes = s.toByteArray(32, 4, false);
+    QByteArray v_bytes = v.toByteArray(32, 1, false);
+
+    out.writeRawData(s_bytes.constData(), 32);
+    out.writeRawData(v_bytes.constData(), 32);
+    out.writeRawData(m_user.toLower().trimmed().toUtf8().constData(), m_user.length());
+    out << (quint8)0; // 字符串结束符
+
+    // 4. 发送
+    sendPacket(SID_AUTH_ACCOUNTCREATE, payload);
 }
 
 QString BnetBot::getPrimaryIPv4() {

@@ -3,11 +3,13 @@
 
 War3Bot::War3Bot(QObject *parent)
     : QObject(parent)
-    , m_p2pServer(nullptr)
     , m_forcePortReuse(false)
+    , m_p2pServer(nullptr)
     , m_bnetBot(nullptr)
+    , m_botManager(nullptr)
 {
     m_bnetBot = new BnetBot(this);
+    m_botManager = new BotManager(this);
     connect(m_bnetBot, &BnetBot::authenticated, this, &War3Bot::onBnetAuthenticated);
     connect(m_bnetBot, &BnetBot::gameListRegistered, this, &War3Bot::onGameListRegistered);
 }
@@ -17,6 +19,9 @@ War3Bot::~War3Bot()
     stopServer();
     if (m_bnetBot) {
         m_bnetBot->deleteLater();
+    }
+    if (m_botManager) {
+        m_botManager->stopAll();
     }
 }
 
@@ -63,12 +68,21 @@ bool War3Bot::startServer(quint16 port, const QString &configFile)
             QString bnetUser = settings.value("bnet/username", "").toString();
             QString bnetPass = settings.value("bnet/password", "").toString();
 
-            if (bnetUser.isEmpty() || bnetPass.isEmpty()) {
-                LOG_WARNING("INI 配置文件中未找到 [bnet] 用户名或密码，跳过自动连接。");
+            if (bnetUser.isEmpty()) {
+                LOG_WARNING("INI 配置文件中未找到 [bnet] 用户名，跳过自动连接。");
             } else {
-                LOG_INFO(QString("读取配置成功，准备连接战网: %1 (用户: %2)").arg(bnetHost, bnetUser));
-                // 调用更新后的连接函数
-                connectToBattleNet(bnetHost, bnetPort, bnetUser, bnetPass);
+                // =========================================================
+                // 判断是否启用基础机器人集群 (bot1 ~ bot9)
+                // =========================================================
+                if (bnetUser == "bot") {
+                    LOG_INFO("检测到配置用户名为 'bot'，正在初始化基础机器人集群 (bot1 ~ bot9)...");
+                    m_botManager->initializeBots(9, configPath);
+                    m_botManager->startAll();
+
+                } else {
+                    LOG_INFO(QString("读取配置成功，准备连接战网: %1 (单用户: %2)").arg(bnetHost, bnetUser));
+                    connectToBattleNet(bnetHost, bnetPort, bnetUser, bnetPass);
+                }
             }
         } else {
             LOG_WARNING(QString("找不到配置文件: %1，无法读取战网信息").arg(configPath));

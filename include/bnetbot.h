@@ -30,6 +30,7 @@ public:
         SID_LOGONRESPONSE2          = 0x3A, // 0x3A 响应
         SID_AUTH_INFO               = 0x50,
         SID_AUTH_CHECK              = 0x51,
+        SID_AUTH_ACCOUNTCREATE      = 0x52, // 注册账号
         SID_AUTH_ACCOUNTLOGON       = 0x53, // SRP 步骤1 响应
         SID_AUTH_ACCOUNTLOGONPROOF  = 0x54  // SRP 步骤2 响应
     };
@@ -46,6 +47,9 @@ public:
     // 设置登录凭据和协议
     void setCredentials(const QString &user, const QString &pass, LoginProtocol protocol = Protocol_SRP_0x53);
 
+    // 注册账号
+    void createAccount();
+
     void createGameOnLadder(const QString &gameName, const QByteArray &mapStatString, quint16 udpPort);
 
     QString getPrimaryIPv4();
@@ -56,8 +60,9 @@ signals:
     void socketError(const QString &error);
     void authenticated();
     void gameListRegistered();
+    void accountCreated();
 
-private slots:
+public slots:
     void onReadyRead();
     void onConnected();
     void onDisconnected();

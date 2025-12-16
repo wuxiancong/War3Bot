@@ -1,5 +1,7 @@
 #include "logger.h"
 #include "war3bot.h"
+#include "botmanager.h"
+
 #include <QDir>
 #include <QTimer>
 #include <QThread>
@@ -126,6 +128,9 @@ int main(int argc, char *argv[]) {
     parser.setApplicationDescription("魔兽争霸 III P2P 连接机器人");
     parser.addHelpOption();
     parser.addVersionOption();
+
+    QCommandLineOption botCountOption({"b", "bot-count"}, "启动的机器人数量", "count", "0");
+    parser.addOption(botCountOption);
 
     QCommandLineOption portOption({"p", "port"}, "监听端口 (默认: 6112)", "port", "6112");
     parser.addOption(portOption);
@@ -262,8 +267,8 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    War3Bot bot;
-    if (!bot.startServer(port, configFile)) {
+    War3Bot war3bot;
+    if (!war3bot.startServer(port, configFile)) {
         LOG_CRITICAL("启动 War3Bot 服务器失败");
         return -1;
     }
@@ -271,9 +276,25 @@ int main(int argc, char *argv[]) {
     LOG_INFO("War3Bot 服务器正在运行。按 Ctrl+C 停止。");
     LOG_INFO("=== 服务器启动完成，开始监听 ===");
 
+    // 2. 启动 BotManager (战网机器人客户端)
+    int botCount = parser.value(botCountOption).toInt();
+
+    BotManager botManager;
+    if (botCount > 0) {
+        LOG_INFO(QString("正在启动 %1 个战网机器人...").arg(botCount));
+
+        // 初始化机器人 (从 configFile 读取 username/password)
+        botManager.initializeBots(botCount, configFile);
+
+        // 开始连接
+        botManager.startAll();
+    } else {
+        LOG_INFO("未指定机器人数量，仅运行 P2P 服务器模式。");
+    }
+
     // 添加定时状态报告
     QTimer *statusTimer = new QTimer(&app);
-    QObject::connect(statusTimer, &QTimer::timeout, &app, [&bot, startTime = QDateTime::currentDateTime()]() {
+    QObject::connect(statusTimer, &QTimer::timeout, &app, [&war3bot, &botManager, startTime = QDateTime::currentDateTime()]() {
         qint64 uptimeSeconds = startTime.secsTo(QDateTime::currentDateTime());
         qint64 days = uptimeSeconds / (24 * 3600);
         qint64 hours = (uptimeSeconds % (24 * 3600)) / 3600;
@@ -286,13 +307,27 @@ int main(int argc, char *argv[]) {
         else if (minutes > 0) uptimeStr = QString("运行 %1分钟%2秒").arg(minutes).arg(seconds);
         else uptimeStr = QString("运行 %1秒").arg(seconds);
 
-        LOG_INFO(QString("🔄 服务器状态 - %1 - 运行中: %2").arg(uptimeStr, bot.isRunning() ? "是" : "否"));
+        // 统计机器人状态
+        int connectedBots = 0;
+        int waitingBots = 0;
+        const auto& bots = botManager.getAllBots();
+        for(const auto* b : bots) {
+            if (b->state == BotState::Idle) connectedBots++;
+            if (b->state == BotState::Waiting) waitingBots++;
+        }
+
+        QString botStatus = "";
+        if (!bots.isEmpty()) {
+            botStatus = QString(" | Bots: %1/%2 在线 (%3 房间中)").arg(connectedBots).arg(bots.size()).arg(waitingBots);
+        }
+
+        LOG_INFO(QString("🔄 服务器状态 - %1 - 运行中: %2").arg(uptimeStr, war3bot.isRunning() ? "是" : "否"));
     });
     statusTimer->start(30000); // 每30秒报告一次
 
-    QObject::connect(&app, &QCoreApplication::aboutToQuit, &bot, [&bot]() {
+    QObject::connect(&app, &QCoreApplication::aboutToQuit, &war3bot, [&war3bot]() {
         LOG_INFO("正在关闭 War3Bot 服务器...");
-        bot.stopServer();
+        war3bot.stopServer();
     });
 
     int result = app.exec();

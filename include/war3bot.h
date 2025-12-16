@@ -3,6 +3,7 @@
 
 #include "bnetbot.h"
 #include "p2pserver.h"
+#include "botmanager.h"
 
 class War3Bot : public QObject
 {
@@ -26,9 +27,10 @@ private slots:
     void onPunchRequested(const QString &sourcePeerId, const QString &targetPeerId);
 
 private:
-    P2PServer *m_p2pServer;
     bool m_forcePortReuse = false;
+    P2PServer *m_p2pServer;
     BnetBot *m_bnetBot;
+    BotManager *m_botManager;
 };
 
 #endif // WAR3BOT_H
