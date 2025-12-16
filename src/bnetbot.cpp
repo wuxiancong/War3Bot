@@ -496,15 +496,16 @@ void BnetBot::handleSRPLoginResponse(const QByteArray &data)
 
     // --------------------------------------------------------------------------
     // [SRP Step 3.2] 设置 Salt
+    // 服务端使用 blockSize=4 来加载 Salt，我们也必须用 4
     // --------------------------------------------------------------------------
-    // 注意：将接收到的字节流 (Little Endian) 传给 BigInt
-    BigInt saltVal((const unsigned char*)saltBytes.constData(), 32, 1, false);
-    // 记录转换后的 BigInt 字符串，验证 (..., 1, false) 是否正确解析了 LE 字节
+    BigInt saltVal((const unsigned char*)saltBytes.constData(), 32, 4, false);
     LOG_INFO(QString("[SRP Step 3.2] Salt 转换为 BigInt: %1").arg(saltVal.toHexString()));
     m_srp->setSalt(saltVal);
 
     // --------------------------------------------------------------------------
     // [SRP Step 3.3] 转换服务端公钥 B
+    // 使用 1 直接读取 LE 流即可还原正确的 B
+    // 服务端发送的是 LE 流，客户端 bigInt(..., 4) 会导致错误的翻转。
     // --------------------------------------------------------------------------
     BigInt B_val((const unsigned char*)serverKeyBytes.constData(), 32, 1, false);
     LOG_INFO(QString("[SRP Step 3.3] B 转换为 BigInt:    %1").arg(B_val.toHexString()));
@@ -513,7 +514,7 @@ void BnetBot::handleSRPLoginResponse(const QByteArray &data)
     // [SRP Step 3.4] 计算会话密钥 K = Hash(S)
     // --------------------------------------------------------------------------
     // 这一步内部会计算: x = H(s, H(P)), u = H(B), S = (B - g^x)^(a + ux)
-    // 务必确保 bnetsrp3.cpp 中 getClientPrivateKey 的 x 构造使用了 blockSize=4
+    // 务必确保 bnetsrp3.cpp 中 getClientPrivateKey 的 x 构造使用了 blockSize=1
     BigInt K = m_srp->getHashedClientSecret(B_val);
 
     // 记录 K 以便调试 (K 对了，说明 x, u, S 都对了)

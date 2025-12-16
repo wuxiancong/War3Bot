@@ -101,8 +101,9 @@ BigInt BnetSRP3::getClientPrivateKey() const
     t_hash private_value_hash;
     little_endian_sha1_hash(&private_value_hash, private_value.size(), private_value.constData());
 
-    // 5. 使用 blockSize=4 来翻转内存中 Big-Endian 的字节，将其还原为正确的整数值。
-    BigInt x((unsigned char*)private_value_hash, 20, 4, false);
+    // 5. 服务端在 getClientPrivateKey 中使用的是 1, false
+    //    哈希结果已经在 little_endian_sha1_hash 中翻转过了
+    BigInt x((unsigned char*)private_value_hash, 20, 1, false);
 
     LOG_INFO(QString("[SRP X] 计算出的私钥 x: %1").arg(x.toHexString()));
 
@@ -113,8 +114,8 @@ BigInt BnetSRP3::getScrambler(BigInt &B_ref) const
 {
     unsigned char raw_B[32];
 
-    // 【修复1】 将 true 改为 false。服务端计算 Scrambler 使用的是 Little Endian 的 B。
-    // 【修复2】 将 1 作为 blockSize。防止 BigInt 进行 Word Swap。
+    // 将 true 改为 false。服务端计算 Scrambler 使用的是 Little Endian 的 B。
+    // 将 1 作为 blockSize。防止 BigInt 进行 Word Swap。
     B_ref.getData(raw_B, 32, 1, false);
 
     t_hash hash;
