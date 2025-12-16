@@ -157,12 +157,12 @@ int main(int argc, char *argv[]) {
     if (!configFileInfo.exists()) {
         // 尝试在可执行文件目录查找
         QString exeDir = QCoreApplication::applicationDirPath();
-        QString alternativeConfig = exeDir + "/" + configFile;
+        QString alternativeConfig = exeDir + "/config/" + configFile;
         if (QFileInfo::exists(alternativeConfig)) {
             configFile = alternativeConfig;
         } else {
             // 如果都不存在，创建默认配置文件
-            QString defaultConfigPath = exeDir + "/war3bot.ini";
+            QString defaultConfigPath = exeDir + "/config/war3bot.ini";
             QFile defaultConfig(defaultConfigPath);
             if (defaultConfig.open(QIODevice::WriteOnly | QIODevice::Text)) {
                 QTextStream out(&defaultConfig);
