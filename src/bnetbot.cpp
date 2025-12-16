@@ -354,11 +354,6 @@ void BnetBot::handleAuthCheck(const QByteArray &data)
     LOG_INFO(QString("AuthParams -> Type:%1 ServerToken:0x%2 ClientToken:0x%3")
                  .arg(QString::number(m_logonType), QString::number(m_serverToken, 16), QString::number(m_clientToken, 16)));
 
-    // ... (MPQ 和 checkRevision 逻辑保持不变) ...
-    // 为节省篇幅，此处省略 MPQ 解析部分，请保持原有的 checkRevisionFlat 调用逻辑不变
-    // 假设您原有的代码能正确计算 checkSum
-
-    // 重新获取文件名以计算 hash (这里简化，请确保您原有的 checkRevision 代码被保留)
     int offset = 20;
     int strEnd = data.indexOf('\0', offset);
     QByteArray mpqFileName = data.mid(offset, strEnd - offset);
