@@ -8,9 +8,6 @@
 
 #include <zlib.h>
 #include "StormLib.h"
-#ifdef Q_OS_WIN
-#include <windows.h>
-#endif
 
 War3Map::War3Map() : m_valid(false), m_numPlayers(0), m_numTeams(0)
 {
