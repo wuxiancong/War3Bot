@@ -6,8 +6,6 @@
 #include <QByteArray>
 #include <QDataStream>
 
-#include <windows.h>
-
 // 游戏类型枚举
 enum W3GameFlag {
     W3FLAG_TEAMSTOGETHER = 0x00004000,
