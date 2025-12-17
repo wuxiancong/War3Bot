@@ -284,16 +284,22 @@ War3Bot/
 |── bncsutil/               # bncsutil 目录
 |── war3files/              # war3 文件目录
 ├── include/                # 头文件目录
-│   ├── bnetconnection.h    # 连接战网
-│   ├── logger.h            # 日志系统
-│   ├── p2pserver.h         # P2P连接
-│   └── war3bot.h           # 机器人
+│   ├── client.h          # 连接战网
+│   ├── logger.h          # 日志系统
+│   ├── p2pserver.h       # P2P连接
+│    |── botmanager.h       # srp3
+│    |── bnetsrp3.h          # srp3
+│   ├── war3bot.h        # 机器人
+│   └── war3map.h
 ├── src/                    # 源代码目录
 │   ├── main.cpp            # 入口文件
-│   ├── bnetconnection.cpp
-│   ├── logger.cpp
-│   ├── p2pserver.cpp
-│   └── war3bot.cpp
+│   ├── client.cpp          # 连接战网
+│   ├── logger.cpp          # 日志系统
+│   ├── p2pserver.cpp       # P2P连接
+│    |── botmanager.cpp       # srp3
+│    |── bnetsrp3.cpp          # srp3
+│   ├── war3bot.cpp         # 机器人
+│   └── war3map.cpp
 |── lib/                    # 库目录
 └── config/                 # 配置相关
     ├── war3bot.ini         # 配置文件模板
