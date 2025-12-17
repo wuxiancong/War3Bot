@@ -134,13 +134,9 @@ MEXP(nls_t*) nls_init_l(const char *username, unsigned long username_length,
     * ((char*) nls->username + username_length) = 0;
     * ((char*) nls->password + password_length) = 0;
 
-    // 密码转换为大写
-    d = (char*) nls->password;
-    o = password;
-    for (i = 0; i < nls->password_len; i++) {
-        * d = (char) toupper(*o);
-        d++;
-        o++;
+    // 密码保留大小写
+    if (nls->password_len > 0) {
+        memcpy((char*)nls->password, password, nls->password_len);
     }
 
     mpz_init_set_str(nls->n, NLS_VAR_N_STR, 16);
@@ -228,12 +224,9 @@ MEXP(nls_t*) nls_reinit_l(nls_t *nls, const char *username,
         o++;
     }
 
-    d = (char*) nls->password;
-    o = password;
-    for (i = 0; i < nls->password_len; i++) {
-        * d = (char) toupper(*o);
-        d++;
-        o++;
+    // 密码保留大小写
+    if (nls->password_len > 0) {
+        memcpy((char*)nls->password, password, nls->password_len);
     }
 
     * ((char*) nls->username + username_length) = 0;

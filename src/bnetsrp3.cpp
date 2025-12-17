@@ -48,10 +48,9 @@ void BnetSRP3::init(const QString &username, const QString &password, BigInt* sa
     LOG_INFO(QString("[SRP 初始化] 原始输入 -> 用户名: \"%1\"").arg(m_username));
 
     if (!password.isNull()) {
-        m_password = password.toUpper();
+        m_password = password;
         a = BigInt::random(32) % N;
         s = BigInt::random(32);
-        // 注册/生成模式
     } else {
         m_password = QString();
         b = BigInt::random(32) % N;
@@ -85,7 +84,7 @@ BnetSRP3::~BnetSRP3()
 
 BigInt BnetSRP3::getClientPrivateKey() const
 {
-    QByteArray userpass = m_username.toUpper().toLatin1() + ":" + m_password.toUpper().toLatin1();
+    QByteArray userpass = m_username.toUpper().toLatin1() + ":" + m_password.toLatin1();
     LOG_INFO(QString("[SRP 内部] 正在计算 x, 输入: \"%1\"").arg(QString(userpass)));
 
     // 1. 计算 H(I:P)

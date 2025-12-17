@@ -154,7 +154,7 @@ QByteArray BnetBot::calculateBrokenSHA1(const QByteArray &data)
 QByteArray BnetBot::calculateOldLogonProof(const QString &password, quint32 clientToken, quint32 serverToken)
 {
     // 1. Broken SHA1 (Output: BE)
-    QByteArray passBytes = password.toLower().toUtf8();
+    QByteArray passBytes = password.toLatin1();
     QByteArray passHashBE = calculateBrokenSHA1(passBytes);
 
     // 2. 准备外层输入
@@ -462,7 +462,7 @@ void BnetBot::sendLoginRequest(LoginProtocol protocol)
         // --------------------------------------------------------------------------
         // [SRP 步骤 1.2] 转换为 32 字节的小端序字节流 (准备发送)
         // --------------------------------------------------------------------------
-        QByteArray A_bytes = A.toByteArray(32, 1, false);
+        QByteArray A_bytes = A.toByteArray(32, 4, false);
 
         // 对应服务端: [LOGIN DEBUG] Client sent A (Raw): ...
         LOG_INFO(QString("[登录调试] 客户端发送 A (原始数据/Raw): %1").arg(QString(A_bytes.toHex())));
@@ -536,8 +536,7 @@ void BnetBot::handleSRPLoginResponse(const QByteArray &data)
     // --------------------------------------------------------------------------
     // [SRP 步骤 3.2] 设置 Salt
     // --------------------------------------------------------------------------
-    BigInt saltVal((const unsigned char*)saltBytes.constData(), 32, 1, false);
-    // 对应服务端: [LOGIN DEBUG] BigInt Interpretation of Salt: ...
+    BigInt saltVal((const unsigned char*)saltBytes.constData(), 32, 4, false);
     LOG_INFO(QString("[登录调试] Salt 转为 BigInt: %1").arg(saltVal.toHexString()));
 
     m_srp->setSalt(saltVal);
@@ -546,7 +545,6 @@ void BnetBot::handleSRPLoginResponse(const QByteArray &data)
     // [SRP 步骤 3.3] 转换服务端公钥 B
     // --------------------------------------------------------------------------
     BigInt B_val((const unsigned char*)serverKeyBytes.constData(), 32, 4, false);
-    // 客户端日志增加一行对应服务端的接收逻辑
     LOG_INFO(QString("[登录调试] 服务端 B 转为 BigInt: %1").arg(B_val.toHexString()));
 
     // --------------------------------------------------------------------------
@@ -554,8 +552,6 @@ void BnetBot::handleSRPLoginResponse(const QByteArray &data)
     // --------------------------------------------------------------------------
     // 这一步内部会计算: x = H(s, H(P)), u = H(B), S = (B - g^x)^(a + ux)
     BigInt K = m_srp->getHashedClientSecret(B_val);
-
-    // 对应服务端: [LOGIN DEBUG] Calculated Session Key K: ...
     LOG_INFO(QString("[登录调试] 计算出的会话密钥 K: %1").arg(K.toHexString()));
 
     // --------------------------------------------------------------------------
@@ -567,14 +563,10 @@ void BnetBot::handleSRPLoginResponse(const QByteArray &data)
     // [SRP 步骤 3.5] 计算客户端证明 M1 = H(I, H(U), s, A, B, K)
     // --------------------------------------------------------------------------
     BigInt M1 = m_srp->getClientPasswordProof(A, B_val, K);
-
-    // 对应服务端: [LOGIN DEBUG] Expected Proof M1: ...
     LOG_INFO(QString("[登录调试] 计算出的证明 M1:    %1").arg(M1.toHexString()));
 
     // 将 Proof 转换为 20 字节的数据
     QByteArray proofBytes = M1.toByteArray(20, 4, false);
-
-    // 对应服务端: [PROOF DEBUG] Client Sent: ...
     LOG_INFO(QString("[验证调试] 客户端发送 M1:      %1").arg(QString(proofBytes.toHex())));
 
     // === 发送 SID_AUTH_ACCOUNTLOGONPROOF (0x54) ===
