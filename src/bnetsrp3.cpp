@@ -134,22 +134,69 @@ BigInt BnetSRP3::getScrambler(BigInt &B_ref) const
 
 BigInt BnetSRP3::getClientSecret(BigInt &B_ref) const
 {
+    // SRP 核心公式: S = (B - g^x)^(a + u * x) % N
+
+    // 1. 获取私钥 x 和 扰码 u
     BigInt x = getClientPrivateKey();
     BigInt u = getScrambler(B_ref);
 
-    // S = (B - g^x)^(a + ux) % N
-    BigInt S = (N + B_ref - g.powm(x, N)).powm((x * u) + a, N);
+    // 2. 计算底数 Base = (B - g^x) % N
+    BigInt g_pow_x = g.powm(x, N);
+    BigInt N_plus_B = N + B_ref;
+    BigInt base = (N_plus_B - g_pow_x) % N;
 
-    LOG_INFO(QString("[SRP 内部] 计算出的预主密钥 S (BigInt): %1").arg(S.toHexString()));
+    // 3. 计算指数 Exp = a + u * x
+    BigInt x_mul_u = x * u;
+    BigInt exp = x_mul_u + a;
+
+    // 4. 计算最终 S
+    BigInt S = base.powm(exp, N);
+
+    LOG_INFO("=== [客户端 S 计算细节] ===");
+    LOG_INFO(QString("B:       %1").arg(B_ref.toHexString()));
+    LOG_INFO(QString("x:       %1").arg(x.toHexString()));
+    LOG_INFO(QString("u:       %1").arg(u.toHexString()));
+    LOG_INFO(QString("a:       %1").arg(a.toHexString()));
+    LOG_INFO(QString("g^x%N:   %1").arg(g_pow_x.toHexString()));
+    LOG_INFO(QString("N+B:     %1").arg(N_plus_B.toHexString()));
+    LOG_INFO(QString("Base:    %1").arg(base.toHexString()));
+    LOG_INFO(QString("x*u:     %1").arg(x_mul_u.toHexString()));
+    LOG_INFO(QString("Exp:     %1").arg(exp.toHexString()));
+    LOG_INFO(QString("S (Result): %1").arg(S.toHexString()));
 
     return S;
 }
 
 BigInt BnetSRP3::getServerSecret(BigInt &A, BigInt &v)
 {
+    // SRP 服务端公式: S = (A * v^u)^b % N
+
+    // 1. 获取/生成 B 和 u
     BigInt B_val = getServerSessionPublicKey(v);
     BigInt u = getScrambler(B_val);
-    return ((A * v.powm(u, N)) % N).powm(b, N);
+
+    // 2. 计算 v^u % N
+    BigInt v_pow_u = v.powm(u, N);
+
+    // 3. 计算底数 Base = (A * v^u) % N
+    BigInt base_unmod = A * v_pow_u;
+    BigInt base = base_unmod % N;
+
+    // 4. 计算 S = Base^b % N
+    BigInt S = base.powm(b, N);
+
+    LOG_INFO("=== [客户端(ServerLogic) S 计算细节] ===");
+    LOG_INFO(QString("A:       %1").arg(A.toHexString()));
+    LOG_INFO(QString("v:       %1").arg(v.toHexString()));
+    LOG_INFO(QString("B:       %1").arg(B_val.toHexString()));
+    LOG_INFO(QString("b:       %1").arg(b.toHexString()));
+    LOG_INFO(QString("u:       %1").arg(u.toHexString()));
+    LOG_INFO(QString("v^u%N:   %1").arg(v_pow_u.toHexString()));
+    LOG_INFO(QString("A*v^u:   %1").arg(base_unmod.toHexString()));
+    LOG_INFO(QString("Base:    %1").arg(base.toHexString()));
+    LOG_INFO(QString("S:       %1").arg(S.toHexString()));
+
+    return S;
 }
 
 BigInt BnetSRP3::hashSecret(BigInt &secret) const

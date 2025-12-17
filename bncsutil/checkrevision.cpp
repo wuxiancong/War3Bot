@@ -354,7 +354,7 @@ MEXP(int) getExeInfo(const char *file_name, char *exe_info,
                                     PAGE_READWRITE);
         if (buf == NULL)
             return 0;
-        if (GetFileVersionInfo(file_name, NULL, infoSize, buf) == FALSE)
+        if (GetFileVersionInfo(file_name, 0, infoSize, buf) == FALSE)
             return 0;
         if (!VerQueryValue(buf, "\\", (LPVOID*) &ffi, (PUINT) &infoSize))
             return 0;

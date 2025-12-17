@@ -3,10 +3,8 @@
  * 文件名: bigint.h
  * 说明:
  *      任意大小无符号整数运算类 (BigInt) 的 Qt 移植版。
- *      该类用于实现 SRP (Secure Remote Password) 协议所需的数学运算，
- *      特别是大数的加减乘除和模幂运算。
- *
- *      原作者: Olaf Freyer
+ *      修复了原始实现中除法截断和模幂运算的严重缺陷。
+ *      该类用于实现 SRP (Secure Remote Password) 协议所需的数学运算。
  * -------------------------------------------------------------------------
  */
 
@@ -30,7 +28,7 @@ public:
      * @brief 核心构造函数：从字节序列构造大数
      * @param bytes 输入的字节数组
      * @param blockSize 块大小 (用于特殊的字节交换逻辑，默认为1表示不交换)
-     * @param bigEndian 输入数据是否为大端序 (Big Endian)
+     * @param bigEndian 输入数据是否为大端序 (Big Endian)。默认为 true 以匹配 SRP 标准。
      */
     BigInt(const QByteArray &bytes, int blockSize = 1, bool bigEndian = true);
     BigInt(const unsigned char *input, int input_size, int blockSize = 1, bool bigEndian = true);
@@ -54,9 +52,17 @@ public:
     BigInt operator* (const BigInt& right) const;
     BigInt operator/ (const BigInt& right) const;
     BigInt operator% (const BigInt& right) const;
-    BigInt operator<< (int bytesToShift) const;   // 按字节左移 (即左移 bytesToShift * 8 位)
+
+    // 按字节左移 (bytes * 8 位) - 用于数据段对齐
+    BigInt operator<< (int bytesToShift) const;
+
+    // [新增] 按位右移 (bits 位) - 用于优化 powm
+    BigInt operator>> (int bitsToShift) const;
 
     // === 工具函数 ===
+
+    // [新增] 判断是否为奇数
+    bool isOdd() const;
 
     // 转为十六进制字符串 (小写)
     QString toHexString() const;

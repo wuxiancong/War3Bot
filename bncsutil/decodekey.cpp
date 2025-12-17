@@ -12,7 +12,6 @@
  * 2. 线程安全: 使用互斥锁 (Mutex/Critical Section) 保护全局对象池，防止多线程竞争。
  * 3. 接口导出: 提供 `kd_create`, `kd_calculateHash`, `kd_free` 等 C 风格函数。
  */
-
 #ifndef DECODECDKEY_CPP
 #define DECODECDKEY_CPP
 
