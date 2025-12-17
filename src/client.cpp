@@ -16,9 +16,9 @@
 Client::Client(QObject *parent)
     : QObject(parent)
     , m_loginProtocol(Protocol_Old_0x29)
-    , m_srp(nullptr)
     , m_tcpSocket(nullptr)
     , m_udpSocket(nullptr)
+    , m_srp(nullptr)
 {
     m_tcpSocket = new QTcpSocket(this);
     m_udpSocket = new QUdpSocket(this);
