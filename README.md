@@ -287,7 +287,7 @@ War3Bot/
 │   ├── client.h            # 连接战网
 │   ├── logger.h            # 日志系统
 │   ├── p2pserver.h         # P2P连接
-│   |── botmanager.h        # 机器人管路
+│   |── botmanager.h        # 机器人管理
 │   |── bnetsrp3.h          # srp3
 │   ├── war3bot.h           # 机器人
 │   └── war3map.h
@@ -296,7 +296,7 @@ War3Bot/
 │   ├── client.cpp          # 连接战网
 │   ├── logger.cpp          # 日志系统
 │   ├── p2pserver.cpp       # P2P连接
-│   |── botmanager.cpp      # 机器人管路
+│   |── botmanager.cpp      # 机器人管理
 │   |── bnetsrp3.cpp        # srp3
 │   ├── war3bot.cpp         # 机器人
 │   └── war3map.cpp
