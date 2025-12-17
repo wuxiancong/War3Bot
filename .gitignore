@@ -23,6 +23,7 @@ war3bot
 *.exe
 *.out
 *.app
+!war3files/*.exe
 
 # Object files
 *.o
