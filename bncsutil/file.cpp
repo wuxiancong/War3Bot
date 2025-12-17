@@ -81,7 +81,7 @@ file_t file_open(const char *filename, unsigned int mode)
 
     try {
         data = new _file;
-    } catch (const std::bad_alloc &) { // 使用引用捕获异常
+    } catch (const std::bad_alloc &) {
         CloseHandle(file);
         return (file_t) 0;
     }
@@ -94,8 +94,6 @@ file_t file_open(const char *filename, unsigned int mode)
         return (file_t) 0;
     }
 
-    // 我们已经分配了确切的长度 (strlen + 1)，所以 memcpy 是安全的且跨平台的
-    // 这消除了 "insecure function strcpy" 的警告
     memcpy((void*)data->filename, filename, filename_buf_len);
 
     data->f = file;
@@ -197,7 +195,7 @@ file_t file_open(const char* filename, unsigned int mode_flags)
 
     try {
         data = new _file;
-    } catch (const std::bad_alloc&) { // ★★★ 修改点：使用引用捕获异常 ★★★
+    } catch (const std::bad_alloc&) {
         fclose(f);
         return (file_t) 0;
     }
