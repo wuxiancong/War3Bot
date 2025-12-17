@@ -4,7 +4,7 @@
 #include <QObject>
 #include <QVector>
 #include <QSettings>
-#include "bnetbot.h"
+#include "client.h"
 
 // === 1. 机器人状态枚举 ===
 enum class BotState {
@@ -22,7 +22,7 @@ struct Bot {
     QString username;       // 完整用户名 (例如 bot1)
     QString password;       // 密码
     BotState state;         // 当前状态
-    BnetBot *client;        // 网络客户端对象
+    Client *client;         // 客户端对象
 
     Bot(int _id, QString _user, QString _pass)
         : id(_id), username(_user), password(_pass), state(BotState::Disconnected), client(nullptr) {}

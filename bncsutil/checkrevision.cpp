@@ -210,11 +210,9 @@ MEXP(int) checkRevision(const char *formula, const char *files[], int numFiles,
         }
     }
 
-    // [关键点] 这里之前如果 values 未初始化，就会报错
     values[0] ^= checkrevision_seeds[mpqNumber];
 
     for (int i = 0; i < numFiles; i++) {
-        // [修复 2] 删除了 rounded_size，因为它未被使用
         size_t file_len, remainder, buffer_size;
 
         f = file_open(files[i], FILE_READ);
@@ -232,7 +230,6 @@ MEXP(int) checkRevision(const char *formula, const char *files[], int numFiles,
         }
 
         if (remainder == 0) {
-            // 映射的缓冲区直接使用，无需填充
             dwBuf = (uint32_t*) file_buffer;
             buffer_size = file_len;
         } else {
@@ -259,8 +256,6 @@ MEXP(int) checkRevision(const char *formula, const char *files[], int numFiles,
         }
 
         current = dwBuf;
-        // [注意] buffer_size 必须保证是 4 的倍数，否则 current++ 可能越界
-        // 由于 buffer_size 要么是 file_len (需为4倍数)，要么是填充后的(肯定为1024倍数)，通常没问题
         for (size_t j = 0; j < buffer_size; j += 4) {
             values[3] = LSB4(*(current++));
             for (int k = 0; k < curFormula; k++) {
@@ -444,10 +439,9 @@ MEXP(int) getExeInfo(const char *file_name, char *exe_info,
         fclose(f);
 #endif
     }
-    break;  // 必须添加 break 语句
+    break;
 
     default:
-        // 未知平台，设置默认版本
         *version = 0;
         break;
     }

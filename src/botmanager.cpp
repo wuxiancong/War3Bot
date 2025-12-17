@@ -34,35 +34,35 @@ void BotManager::initializeBots(int count, const QString& configPath)
 
         Bot *bot = new Bot(i, fullUsername, password);
 
-        // 创建 BnetBot 实例
-        bot->client = new BnetBot(this);
+        // 创建 Client 实例
+        bot->client = new Client(this);
 
         // 设置凭据 (默认使用 SRP 0x53)
-        bot->client->setCredentials(fullUsername, password, BnetBot::Protocol_SRP_0x53);
+        bot->client->setCredentials(fullUsername, password, Client::Protocol_SRP_0x53);
 
         // === 绑定信号槽 ===
 
         // 1. 连接成功/登录成功
-        connect(bot->client, &BnetBot::authenticated, this, [this, i]() {
+        connect(bot->client, &Client::authenticated, this, [this, i]() {
             this->onBotAuthenticated(i);
         });
 
         // 2. 注册成功
-        connect(bot->client, &BnetBot::accountCreated, this, [this, i]() {
+        connect(bot->client, &Client::accountCreated, this, [this, i]() {
             this->onBotAccountCreated(i);
         });
 
         // 3. 房间创建成功
-        connect(bot->client, &BnetBot::gameListRegistered, this, [this, i]() {
+        connect(bot->client, &Client::gameListRegistered, this, [this, i]() {
             this->onBotGameCreated(i);
         });
 
         // 4. 断开连接
-        // 假设 BnetBot 有 disconnected 信号，如果没有请自行添加或使用 socket 的 disconnected
-        // 这里假设你在 BnetBot 中定义了 onDisconnected 槽并也许发出了信号
-        // 如果 BnetBot 没有直接暴露 disconnected 信号，可以通过 socketError 捕获或者添加一个
+        // 假设 Client 有 disconnected 信号，如果没有请自行添加或使用 socket 的 disconnected
+        // 这里假设你在 Client 中定义了 onDisconnected 槽并也许发出了信号
+        // 如果 Client 没有直接暴露 disconnected 信号，可以通过 socketError 捕获或者添加一个
         // 这里演示用 socketError 模拟断开/错误
-        connect(bot->client, &BnetBot::socketError, this, [this, i](QString err) {
+        connect(bot->client, &Client::socketError, this, [this, i](QString err) {
             this->onBotError(i, err);
         });
 
@@ -79,7 +79,7 @@ void BotManager::startAll()
             bot->state = BotState::Unregistered; // 初始连接视为未注册/连接中
 
             // 连接服务器
-            // 注意：BnetBot::connectToHost 内部会处理连接和随后的 AuthCheck/Login/Register 流程
+            // 注意：Client::connectToHost 内部会处理连接和随后的 AuthCheck/Login/Register 流程
             bot->client->connectToHost(m_targetServer, m_targetPort);
 
             // 稍微错开连接时间，避免瞬间并发过高

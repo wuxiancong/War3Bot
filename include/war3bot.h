@@ -1,7 +1,7 @@
 #ifndef WAR3BOT_H
 #define WAR3BOT_H
 
-#include "bnetbot.h"
+#include "client.h"
 #include "p2pserver.h"
 #include "botmanager.h"
 
@@ -29,7 +29,7 @@ private slots:
 private:
     bool m_forcePortReuse = false;
     P2PServer *m_p2pServer;
-    BnetBot *m_bnetBot;
+    Client *m_client;
     BotManager *m_botManager;
 };
 

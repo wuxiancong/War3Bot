@@ -25,8 +25,11 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 if(WIN32)
     add_definitions(
+        -NOMINMAX
         -DMOS_WINDOWS
         -DMUTIL_LIB_BUILD
+        -DWIN32_LEAN_AND_MEAN
+        -D_CRT_SECURE_NO_WARNINGS
         -D_SILENCE_STDEXT_ARR_ITERS_DEPRECATION_WARNING
     )
 endif()
@@ -37,12 +40,9 @@ elseif(MSVC)
     set(CMAKE_GENERATOR_PLATFORM Win32)
 
     # 2. 设置运行时库为动态链接 (/MD)
-    # 移除所有其他运行时库的默认设置
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreadedDLL")
 
     # 3. 编译选项
-    # /MP: 启用多核编译 (加快编译速度)
-    # /utf-8: 源码和执行字符集设为 UTF-8 (需 VS2015+)
     add_compile_options("/utf-8" "/MP")
 
     # 4. 设置链接器选项
@@ -65,7 +65,7 @@ add_executable(War3Bot ${SOURCES} ${HEADERS} ${BNCS_FILES})
 # ★★★ 自动复制 war3files 和 config 到生成目录 ★★★
 # =========================================================
 
-# 1. 复制 war3files 文件夹 (如果源码目录下存在)
+# 1. 复制 war3files 文件夹
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/war3files")
     add_custom_command(TARGET War3Bot POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E make_directory
@@ -79,7 +79,7 @@ else()
     message(WARNING "在源码目录未找到 war3files 文件夹，请手动创建并放入 War3.exe, Storm.dll, Game.dll")
 endif()
 
-# 2. 复制 config 文件夹 (如果源码目录下存在)
+# 2. 复制 config 文件夹
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/config")
     add_custom_command(TARGET War3Bot POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E make_directory
@@ -92,41 +92,35 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/config")
 endif()
 
 # =========================================================
-# 4. GMP 库配置
+# 4. 外部库配置 (GMP & StormLib)
 # =========================================================
 
-# 定义本地库的根路径
+# 定义本地库的根路径 (对应 D:\Qt_\War3Bot\lib)
 set(LOCAL_LIB_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/lib")
 
+# ---------------------------------------------------------
+# 4.1 GMP 配置
+# ---------------------------------------------------------
 if(MSVC)
-    # 指向我们刚刚创建并复制了文件的目录
     set(GMP_ROOT "${LOCAL_LIB_ROOT}/msvc/gmp")
 
-    # 1. 检查文件是否存在
     if(NOT EXISTS "${GMP_ROOT}/include/gmp.h")
-        message(FATAL_ERROR "未找到 GMP 头文件，请确保已将 gmp.h 复制到 ${GMP_ROOT}/include")
+        message(FATAL_ERROR "未找到 GMP 头文件: ${GMP_ROOT}/include/gmp.h")
     endif()
 
-    # 2. 包含头文件路径
     target_include_directories(War3Bot PRIVATE "${GMP_ROOT}/include")
-
-    # 3. 链接 gmp.lib
     target_link_libraries(War3Bot PRIVATE "${GMP_ROOT}/lib/gmp.lib")
 
-    # 4. 代码用了 C++ 接口，把 gmpxx 也链上
     if(EXISTS "${GMP_ROOT}/lib/gmpxx.lib")
         target_link_libraries(War3Bot PRIVATE "${GMP_ROOT}/lib/gmpxx.lib")
     endif()
 
-    # 5. 编译后自动将 gmp.dll 复制到 .exe 旁边
     add_custom_command(TARGET War3Bot POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${GMP_ROOT}/bin/gmp-10.dll"
         "$<TARGET_FILE_DIR:War3Bot>/gmp-10.dll"
         COMMENT "正在部署 gmp-10.dll..."
     )
-
-    # 6. 如果有 C++ 接口 DLL，也顺便复制过去
     if(EXISTS "${GMP_ROOT}/bin/gmpxx-4.dll")
         add_custom_command(TARGET War3Bot POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -137,22 +131,51 @@ if(MSVC)
     endif()
 
 elseif(MINGW)
-    # MinGW 的原有配置
     set(GMP_ROOT "${LOCAL_LIB_ROOT}/mingw/gmp")
     target_include_directories(War3Bot PRIVATE "${GMP_ROOT}/include")
     target_link_libraries(War3Bot PRIVATE "${GMP_ROOT}/lib/libgmpxx.a" "${GMP_ROOT}/lib/libgmp.a")
+endif()
+
+# ---------------------------------------------------------
+# 4.2 StormLib 配置
+# ---------------------------------------------------------
+if(MSVC)
+    set(STORMLIB_ROOT "${LOCAL_LIB_ROOT}/msvc/stormLib")
+
+    target_include_directories(War3Bot PRIVATE "${STORMLIB_ROOT}/include")
+
+    target_link_libraries(War3Bot PRIVATE
+        "${STORMLIB_ROOT}/lib/StormLib.lib"
+        "${STORMLIB_ROOT}/lib/zlib.lib"
+        "${STORMLIB_ROOT}/lib/bz2.lib"
+    )
+
+    # 之前添加的防自动链接宏
+    target_compile_definitions(War3Bot PRIVATE STORMLIB_NO_AUTO_LINK_LIB)
+
+elseif(MINGW)
+    set(STORMLIB_ROOT "${LOCAL_LIB_ROOT}/mingw/stormLib")
+    target_include_directories(War3Bot PRIVATE "${STORMLIB_ROOT}/include")
+    target_link_libraries(War3Bot PRIVATE
+        "${STORMLIB_ROOT}/lib/libStormLib.a"
+        "${STORMLIB_ROOT}/lib/libzlib.a"
+        "${STORMLIB_ROOT}/lib/libbz2.a"
+    )
 endif()
 
 # =========================================================
 # 5. 公共链接配置
 # =========================================================
 
-target_include_directories(War3Bot PRIVATE include bncsutil) # 确保能include bncsutil
+target_include_directories(War3Bot PRIVATE include bncsutil)
+
+# 链接库列表
 target_link_libraries(War3Bot PRIVATE
     Qt5::Core
     Qt5::Network
     ws2_32
     version
+    wininet  # 新增: StormLib 通常需要 wininet (Windows Internet API)
 )
 
 if(WIN32)

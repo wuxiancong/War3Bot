@@ -5,20 +5,20 @@ War3Bot::War3Bot(QObject *parent)
     : QObject(parent)
     , m_forcePortReuse(false)
     , m_p2pServer(nullptr)
-    , m_bnetBot(nullptr)
+    , m_client(nullptr)
     , m_botManager(nullptr)
 {
-    m_bnetBot = new BnetBot(this);
+    m_client = new Client(this);
     m_botManager = new BotManager(this);
-    connect(m_bnetBot, &BnetBot::authenticated, this, &War3Bot::onBnetAuthenticated);
-    connect(m_bnetBot, &BnetBot::gameListRegistered, this, &War3Bot::onGameListRegistered);
+    connect(m_client, &Client::authenticated, this, &War3Bot::onBnetAuthenticated);
+    connect(m_client, &Client::gameListRegistered, this, &War3Bot::onGameListRegistered);
 }
 
 War3Bot::~War3Bot()
 {
     stopServer();
-    if (m_bnetBot) {
-        m_bnetBot->deleteLater();
+    if (m_client) {
+        m_client->deleteLater();
     }
     if (m_botManager) {
         m_botManager->stopAll();
@@ -96,12 +96,12 @@ bool War3Bot::startServer(quint16 port, const QString &configFile)
 
 void War3Bot::connectToBattleNet(const QString &hostname, quint16 port, const QString &user, const QString &pass)
 {
-    if (!m_bnetBot) return;
+    if (!m_client) return;
 
     LOG_INFO(QString("正在配置战网账号信息: 用户[%1]").arg(user));
 
-    m_bnetBot->setCredentials(user, pass);
-    m_bnetBot->connectToHost(hostname, port);
+    m_client->setCredentials(user, pass);
+    m_client->connectToHost(hostname, port);
 }
 
 void War3Bot::stopServer()
@@ -136,7 +136,7 @@ void War3Bot::onBnetAuthenticated()
 {
     LOG_INFO("战网登录成功");
     // 示例：自动创建一个 DotA 房间
-    // m_bnetBot->createGameOnLadder("DotA v6.83d -ap", QByteArray(), 6112);
+    // m_client->createGameOnLadder("DotA v6.83d -ap", QByteArray(), 6112);
 }
 
 void War3Bot::onGameListRegistered()
