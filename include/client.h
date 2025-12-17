@@ -23,7 +23,7 @@ public:
         Protocol_SRP_0x53   = 0x53   // 新版协议 (SRP NLS)
     };
 
-    enum PacketID {
+    enum TCPPacketID {
         SID_NULL                    = 0x00,
         SID_ENTERCHAT               = 0x0A,
         SID_GETCHANNELLIST          = 0x0B,
@@ -38,6 +38,27 @@ public:
         SID_AUTH_ACCOUNTCREATE      = 0x52, // 注册账号
         SID_AUTH_ACCOUNTLOGON       = 0x53, // SRP 步骤1 响应
         SID_AUTH_ACCOUNTLOGONPROOF  = 0x54  // SRP 步骤2 响应
+    };
+
+    enum UdpPacketID {
+        // 主机 <-> 客户端 心跳
+        W3GS_PING_FROM_HOST         = 0x01, // S>C: 主机 Ping 客户端 (30秒一次)
+        W3GS_PONG_TO_HOST           = 0x46, // C>S: 客户端回复主机 (响应 0x01)
+
+        // 局域网 / 搜房
+        W3GS_REQJOIN                = 0x1E, // C>S: 请求加入房间
+        W3GS_SEARCHGAME             = 0x2F, // C>S: 局域网搜房请求
+        W3GS_GAMEINFO               = 0x30, // S>C: 局域网房间广播 (UDP broadcast)
+        W3GS_REFRESHGAME            = 0x32, // S>C: 房间刷新 (Slot info)
+        W3GS_DECREATEGAME           = 0x33, // S>C: 房间关闭
+
+        // P2P 测速 (决定房间在列表里的延迟显示)
+        W3GS_PING_FROM_OTHERS       = 0x35, // P2P: 别人 Ping 我 (10秒一次)
+        W3GS_PONG_TO_OTHERS         = 0x36, // P2P: 我回复别人 (响应 0x35)
+
+        // 游戏内
+        W3GS_INCOMING_ACTION        = 0x0C, // 游戏动作
+        W3GS_MAPCHECK               = 0x3D  // 地图检查
     };
 
     // 游戏类型枚举
@@ -95,8 +116,9 @@ public slots:
     void onUdpReadyRead();
 
 private:
-    void sendPacket(PacketID id, const QByteArray &payload);
-    void handlePacket(PacketID id, const QByteArray &data);
+    void sendPacket(TCPPacketID id, const QByteArray &payload);
+    void handleTcpPacket(TCPPacketID id, const QByteArray &data);
+    void handleUdpPacket(const QByteArray &data, const QHostAddress &sender, quint16 senderPort);
 
     void sendAuthInfo();
     void handleAuthCheck(const QByteArray &data);

@@ -108,7 +108,7 @@ void Client::onConnected()
     sendAuthInfo();
 }
 
-void Client::sendPacket(PacketID id, const QByteArray &payload)
+void Client::sendPacket(TCPPacketID id, const QByteArray &payload)
 {
     QByteArray packet;
     QDataStream out(&packet, QIODevice::WriteOnly);
@@ -236,7 +236,7 @@ void Client::onTcpReadyRead()
 
         QByteArray packetData = m_tcpSocket->read(length);
         quint8 packetIdVal = (quint8)packetData[1];
-        handlePacket((PacketID)packetIdVal, packetData.mid(4));
+        handleTcpPacket((TCPPacketID)packetIdVal, packetData.mid(4));
     }
 }
 
@@ -245,14 +245,23 @@ void Client::onUdpReadyRead()
     while (m_udpSocket->hasPendingDatagrams()) {
         QNetworkDatagram datagram = m_udpSocket->receiveDatagram();
         QByteArray data = datagram.data();
-        LOG_INFO(QString("📨 [UDP] 收到 %1 字节来自 %2:%3")
+
+        // 1. 打印详细 HEX 日志
+        QString hexStr = data.toHex().toUpper();
+        for(int i = 2; i < hexStr.length(); i += 3) hexStr.insert(i, " ");
+
+        LOG_INFO(QString("📨 [UDP] 收到 %1 字节来自 %2:%3 | 内容: %4")
                      .arg(data.size())
                      .arg(datagram.senderAddress().toString())
-                     .arg(datagram.senderPort()));
+                     .arg(datagram.senderPort())
+                     .arg(hexStr));
+
+        // 2. 处理 UDP 包
+        handleUdpPacket(data, datagram.senderAddress(), datagram.senderPort());
     }
 }
 
-void Client::handlePacket(PacketID id, const QByteArray &data)
+void Client::handleTcpPacket(TCPPacketID id, const QByteArray &data)
 {
     LOG_INFO(QString("📥 收到包 ID: 0x%1").arg(QString::number(id, 16)));
 
@@ -525,6 +534,113 @@ void Client::handlePacket(PacketID id, const QByteArray &data)
     }
     default:
         break;
+    }
+}
+
+void Client::handleUdpPacket(const QByteArray &data, const QHostAddress &sender, quint16 senderPort)
+{
+    // 1. 长度校验
+    if (data.size() < 4) return;
+
+    QDataStream in(data);
+    in.setByteOrder(QDataStream::LittleEndian);
+
+    quint8 header;
+    quint8 msgId;
+    quint16 length;
+
+    in >> header >> msgId >> length;
+
+    // 2. War3 UDP 头校验 (0xF7)
+    if (header != 0xF7) {
+        LOG_WARNING(QString("🗑️ [UDP] 忽略非 War3 包 (Head: 0x%1) 来自 %2:%3")
+                        .arg(QString::number(header, 16), sender.toString())
+                        .arg(senderPort));
+        return;
+    }
+
+    // 3. 强制转换以便 switch 使用
+    UdpPacketID pid = (UdpPacketID)msgId;
+
+    switch (pid) {
+
+        // =================================================================
+        // 场景 A: 我是主机 (Host)
+        // =================================================================
+
+    case W3GS_PING_FROM_OTHERS: // 0x35
+    {
+        // 将 ID 改为 0x36 原样发回
+        QByteArray pong = data;
+        pong[1] = (char)W3GS_PONG_TO_OTHERS; // 0x35 -> 0x36
+
+        m_udpSocket->writeDatagram(pong, sender, senderPort);
+
+        LOG_INFO(QString("⚡ [UDP] 收到 P2P Ping (0x35) -> 已回复 0x36 | 来自: %1:%2")
+                     .arg(sender.toString()).arg(senderPort));
+        break;
+    }
+
+    case W3GS_REQJOIN: // 0x1E
+    {
+        // 收到加入请求 (通常包含玩家名字、密钥等，长度较大)
+        LOG_INFO(QString("🚪 [UDP] 收到加入请求 (0x1E) | 来自: %1:%2 | Size: %3")
+                     .arg(sender.toString()).arg(senderPort).arg(data.size()));
+
+        // 注意：如果你是主机，这里应该解析数据并回复 W3GS_SLOTINFO (0x09) 或 REJECT
+        // 但如果走战网 TCP 加入，UDP 这里的处理通常用于辅助 NAT 打洞。
+        break;
+    }
+
+        // =================================================================
+        // 场景 B: 我是玩家 (Client) 正在加入别人
+        // =================================================================
+
+    case W3GS_PING_FROM_HOST: // 0x01
+    {
+        // 主机来检查我是否还活着
+        LOG_INFO(QString("💓 [UDP] 收到主机 Ping (0x01) -> 正在回复 0x46"));
+
+        QByteArray pong = data;
+        pong[1] = (char)W3GS_PONG_TO_HOST; // 0x01 -> 0x46
+
+        m_udpSocket->writeDatagram(pong, sender, senderPort);
+        break;
+    }
+
+    case W3GS_PONG_TO_OTHERS: // 0x36
+    {
+        // 我 Ping 别人 (0x35)，别人回复了我 (0x36)
+        LOG_INFO(QString("📶 [UDP] 收到 P2P Pong (0x36) | 延迟检测成功"));
+        break;
+    }
+
+    // =================================================================
+    // 场景 C: 局域网探测 (LAN)
+    // =================================================================
+
+    case W3GS_SEARCHGAME: // 0x2F
+    {
+        LOG_INFO(QString("🔍 [UDP] 收到局域网搜房请求 (0x2F)"));
+        break;
+    }
+
+    case W3GS_GAMEINFO:     // 0x30
+    case W3GS_REFRESHGAME:  // 0x32
+    {
+        LOG_INFO(QString("🗺️ [UDP] 收到局域网房间广播 (0x%1)").arg(QString::number(msgId, 16)));
+        break;
+    }
+
+    default:
+    {
+        QString hexStr = data.toHex().toUpper();
+        LOG_INFO(QString("❓ [UDP] 未处理包 ID: 0x%1 | Size: %2 | Hex: %3")
+                     .arg(QString::number(msgId, 16))
+                     .arg(data.size())
+                     .arg(hexStr));
+        break;
+    }
     }
 }
 
