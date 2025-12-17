@@ -38,6 +38,10 @@ war3bot
 *.dll
 *.lib
 !lib/linux/*.a
+!war3files/*.dll
+
+# Mpq File
+!war3files/*.mpq
 
 # IDE files
 .vscode/
