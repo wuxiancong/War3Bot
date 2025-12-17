@@ -117,7 +117,7 @@ BigInt BnetSRP3::getClientPrivateKey() const
 BigInt BnetSRP3::getScrambler(BigInt &B_ref) const
 {
     unsigned char raw_B[32];
-    B_ref.getData(raw_B, 32, 4, false);
+    B_ref.getData(raw_B, 32, 1, false);
 
     t_hash hash;
     sha1_hash(&hash, 32, raw_B);
@@ -203,7 +203,7 @@ BigInt BnetSRP3::hashSecret(BigInt &secret) const
 {
     unsigned char raw_secret[32];
     // S -> Bytes (Little Endian)
-    secret.getData(raw_secret, 32, 4, false);
+    secret.getData(raw_secret, 32, 1, false);
 
     unsigned char odd[16];
     unsigned char even[16];
@@ -310,17 +310,17 @@ BigInt BnetSRP3::getClientPasswordProof(BigInt &A, BigInt &B_ref, BigInt &K) con
     proofData.append(m_raw_salt);
 
     // 4. A
-    A.getData(buf, 32, 4, false);
+    A.getData(buf, 32, 1, false);
     LOG_INFO(QString("  > A (小端序/LE):     %1").arg(debug_buf_to_hex(buf, 32)));
     proofData.append((const char*)buf, 32);
 
     // 5. B
-    B_ref.getData(buf, 32, 4, false);
+    B_ref.getData(buf, 32, 1, false);
     LOG_INFO(QString("  > B (小端序/LE):     %1").arg(debug_buf_to_hex(buf, 32)));
     proofData.append((const char*)buf, 32);
 
     // 6. K
-    K.getData(buf, 40, 4, false);
+    K.getData(buf, 40, 1, false);
     LOG_INFO(QString("  > K (小端序/LE):     %1").arg(debug_buf_to_hex(buf, 40)));
     proofData.append((const char*)buf, 40);
 

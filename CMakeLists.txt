@@ -121,10 +121,20 @@ if(MSVC)
     # 5. 编译后自动将 gmp.dll 复制到 .exe 旁边
     add_custom_command(TARGET War3Bot POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${GMP_ROOT}/bin/gmp.dll"
-        "$<TARGET_FILE_DIR:War3Bot>/gmp.dll"
-        COMMENT "正在将 gmp.dll 部署到运行目录..."
+        "${GMP_ROOT}/bin/gmp-10.dll"
+        "$<TARGET_FILE_DIR:War3Bot>/gmp-10.dll"
+        COMMENT "正在部署 gmp-10.dll..."
     )
+
+    # 6. 如果有 C++ 接口 DLL，也顺便复制过去
+    if(EXISTS "${GMP_ROOT}/bin/gmpxx-4.dll")
+        add_custom_command(TARGET War3Bot POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${GMP_ROOT}/bin/gmpxx-4.dll"
+            "$<TARGET_FILE_DIR:War3Bot>/gmpxx-4.dll"
+            COMMENT "正在部署 gmpxx-4.dll..."
+        )
+    endif()
 
 elseif(MINGW)
     # MinGW 的原有配置

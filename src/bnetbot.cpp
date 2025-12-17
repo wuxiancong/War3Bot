@@ -462,9 +462,7 @@ void BnetBot::sendLoginRequest(LoginProtocol protocol)
         // --------------------------------------------------------------------------
         // [SRP 步骤 1.2] 转换为 32 字节的小端序字节流 (准备发送)
         // --------------------------------------------------------------------------
-        QByteArray A_bytes = A.toByteArray(32, 4, false);
-
-        // 对应服务端: [LOGIN DEBUG] Client sent A (Raw): ...
+        QByteArray A_bytes = A.toByteArray(32, 1, false);
         LOG_INFO(QString("[登录调试] 客户端发送 A (原始数据/Raw): %1").arg(QString(A_bytes.toHex())));
 
         out.writeRawData(A_bytes.constData(), 32);
@@ -520,10 +518,7 @@ void BnetBot::handleSRPLoginResponse(const QByteArray &data)
         return;
     }
 
-    // 对应服务端: [LOGIN DEBUG] Sent Salt to Client: ... (服务端发送，客户端接收)
     LOG_INFO(QString("[登录调试] 收到服务端 Salt (原始数据/Raw): %1").arg(QString(saltBytes.toHex())));
-
-    // 对应服务端: [LOGIN DEBUG] Calculated Server B: ... (服务端计算并发来，客户端接收)
     LOG_INFO(QString("[登录调试] 收到服务端 B (原始数据/Raw):    %1").arg(QString(serverKeyBytes.toHex())));
 
     if (!m_srp) {
@@ -544,7 +539,7 @@ void BnetBot::handleSRPLoginResponse(const QByteArray &data)
     // --------------------------------------------------------------------------
     // [SRP 步骤 3.3] 转换服务端公钥 B
     // --------------------------------------------------------------------------
-    BigInt B_val((const unsigned char*)serverKeyBytes.constData(), 32, 4, false);
+    BigInt B_val((const unsigned char*)serverKeyBytes.constData(), 32, 1, false);
     LOG_INFO(QString("[登录调试] 服务端 B 转为 BigInt: %1").arg(B_val.toHexString()));
 
     // --------------------------------------------------------------------------
@@ -566,7 +561,7 @@ void BnetBot::handleSRPLoginResponse(const QByteArray &data)
     LOG_INFO(QString("[登录调试] 计算出的证明 M1:    %1").arg(M1.toHexString()));
 
     // 将 Proof 转换为 20 字节的数据
-    QByteArray proofBytes = M1.toByteArray(20, 4, false);
+    QByteArray proofBytes = M1.toByteArray(20, 1, false);
     LOG_INFO(QString("[验证调试] 客户端发送 M1:      %1").arg(QString(proofBytes.toHex())));
 
     // === 发送 SID_AUTH_ACCOUNTLOGONPROOF (0x54) ===
