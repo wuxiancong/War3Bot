@@ -36,6 +36,7 @@ war3bot
 *.dylib
 *.dll
 *.lib
+!lib/linux/*.a
 
 # IDE files
 .vscode/
