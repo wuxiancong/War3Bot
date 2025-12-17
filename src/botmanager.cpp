@@ -1,4 +1,4 @@
-#include "BotManager.h"
+#include "botmanager.h"
 #include "logger.h"
 #include <QThread>
 
