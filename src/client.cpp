@@ -9,6 +9,7 @@
 #include <QDataStream>
 #include <QRandomGenerator>
 #include <QCoreApplication>
+#include <QNetworkDatagram>
 #include <QNetworkInterface>
 #include <QCryptographicHash>
 
@@ -16,16 +17,26 @@ Client::Client(QObject *parent)
     : QObject(parent)
     , m_loginProtocol(Protocol_Old_0x29)
     , m_srp(nullptr)
+    , m_tcpSocket(nullptr)
+    , m_udpSocket(nullptr)
 {
-    m_socket = new QTcpSocket(this);
+    m_tcpSocket = new QTcpSocket(this);
+    m_udpSocket = new QUdpSocket(this);
 
-    connect(m_socket, &QTcpSocket::connected, this, &Client::onConnected);
-    connect(m_socket, &QTcpSocket::readyRead, this, &Client::onReadyRead);
-    connect(m_socket, &QTcpSocket::disconnected, this, &Client::onDisconnected);
+    connect(m_tcpSocket, &QTcpSocket::connected, this, &Client::onConnected);
+    connect(m_tcpSocket, &QTcpSocket::readyRead, this, &Client::onTcpReadyRead);
+    connect(m_udpSocket, &QUdpSocket::readyRead, this, &Client::onUdpReadyRead);
+    connect(m_tcpSocket, &QTcpSocket::disconnected, this, &Client::onDisconnected);
 
-    connect(m_socket, &QTcpSocket::errorOccurred, this, [this](QAbstractSocket::SocketError){
-        LOG_ERROR(QString("战网连接错误: %1").arg(m_socket->errorString()));
+    connect(m_tcpSocket, &QTcpSocket::errorOccurred, this, [this](QAbstractSocket::SocketError){
+        LOG_ERROR(QString("战网连接错误: %1").arg(m_tcpSocket->errorString()));
     });
+
+    if (m_udpSocket->bind(QHostAddress::AnyIPv4, 6112)) {
+        LOG_INFO("✅ UDP 监听启动成功: 0.0.0.0:6112");
+    } else {
+        LOG_ERROR(QString("❌ UDP 6112 绑定失败: %1").arg(m_udpSocket->errorString()));
+    }
 
     QString appDir = QCoreApplication::applicationDirPath();
     QDir dir(appDir);
@@ -55,6 +66,16 @@ Client::~Client()
         delete m_srp;
         m_srp = nullptr;
     }
+    // 清理 TCP
+    if (m_tcpSocket) {
+        m_tcpSocket->close();
+        delete m_tcpSocket;
+    }
+    // 清理 UDP
+    if (m_udpSocket) {
+        m_udpSocket->close();
+        delete m_udpSocket;
+    }
 }
 
 void Client::setCredentials(const QString &user, const QString &pass, LoginProtocol protocol)
@@ -76,14 +97,14 @@ void Client::connectToHost(const QString &address, quint16 port)
     m_serverAddr = address;
     m_serverPort = port;
     LOG_INFO(QString("正在建立 TCP 连接至战网: %1:%2").arg(address).arg(port));
-    m_socket->connectToHost(address, port);
+    m_tcpSocket->connectToHost(address, port);
 }
 
 void Client::onConnected()
 {
     LOG_INFO("✅ TCP 链路已建立，发送协议握手字节...");
     char protocolByte = 1;
-    m_socket->write(&protocolByte, 1);
+    m_tcpSocket->write(&protocolByte, 1);
     sendAuthInfo();
 }
 
@@ -101,7 +122,7 @@ void Client::sendPacket(PacketID id, const QByteArray &payload)
         packet.append(payload);
     }
 
-    m_socket->write(packet);
+    m_tcpSocket->write(packet);
 
     QString hexStr = packet.toHex().toUpper();
     for(int i = 2; i < hexStr.length(); i += 3) hexStr.insert(i, " ");
@@ -195,14 +216,14 @@ QByteArray Client::calculateOldLogonProof(const QString &password, quint32 clien
     return proofToSend;
 }
 
-void Client::onReadyRead()
+void Client::onTcpReadyRead()
 {
-    while (m_socket->bytesAvailable() > 0) {
-        if (m_socket->bytesAvailable() < 4) return;
+    while (m_tcpSocket->bytesAvailable() > 0) {
+        if (m_tcpSocket->bytesAvailable() < 4) return;
 
-        QByteArray headerData = m_socket->peek(4);
+        QByteArray headerData = m_tcpSocket->peek(4);
         if ((quint8)headerData[0] != BNET_HEADER) {
-            m_socket->read(1); // 丢弃无效字节
+            m_tcpSocket->read(1); // 丢弃无效字节
             continue;
         }
 
@@ -211,11 +232,23 @@ void Client::onReadyRead()
         lenStream.setByteOrder(QDataStream::LittleEndian);
         lenStream >> length;
 
-        if (m_socket->bytesAvailable() < length) return;
+        if (m_tcpSocket->bytesAvailable() < length) return;
 
-        QByteArray packetData = m_socket->read(length);
+        QByteArray packetData = m_tcpSocket->read(length);
         quint8 packetIdVal = (quint8)packetData[1];
         handlePacket((PacketID)packetIdVal, packetData.mid(4));
+    }
+}
+
+void Client::onUdpReadyRead()
+{
+    while (m_udpSocket->hasPendingDatagrams()) {
+        QNetworkDatagram datagram = m_udpSocket->receiveDatagram();
+        QByteArray data = datagram.data();
+        LOG_INFO(QString("📨 [UDP] 收到 %1 字节来自 %2:%3")
+                     .arg(data.size())
+                     .arg(datagram.senderAddress().toString())
+                     .arg(datagram.senderPort()));
     }
 }
 
@@ -736,6 +769,15 @@ void Client::handleSRPLoginResponse(const QByteArray &data)
 
 void Client::createGameOnLadder(const QString &gameName, const QString &password, quint16 udpPort, GameType gameType)
 {
+    if (m_udpSocket->localPort() != udpPort) {
+        m_udpSocket->close();
+        if (m_udpSocket->bind(QHostAddress::AnyIPv4, udpPort)) {
+            LOG_INFO(QString("✅ UDP 端口切换至 %1 成功").arg(udpPort));
+        } else {
+            LOG_ERROR(QString("❌ UDP 端口切换至 %1 失败！房间将不可见。").arg(udpPort));
+        }
+    }
+
     LOG_INFO(QString("🚀 请求广播房间: [%1] (Port: %2)").arg(gameName).arg(udpPort));
 
     if (m_war3Map.load(m_dota683dPath)) {
@@ -791,8 +833,7 @@ void Client::createGameOnLadder(const QString &gameName, const QString &password
 
         // 发送包 SID_STARTADVEX3 (0x1C)
         sendPacket(SID_STARTADVEX3, payload);
-
-        LOG_INFO("📤 房间创建请求包已发送");
+        LOG_INFO("📤 房间创建请求已发送，等待 UDP 握手...");
     } else {
         LOG_ERROR(QString("❌ 地图加载失败: %1").arg(m_dota683dPath));
     }
@@ -903,6 +944,6 @@ quint32 Client::ipToUint32(const QString &ipAddress) {
 quint32 Client::ipToUint32(const QHostAddress &address) {
     return address.toIPv4Address();
 }
-void Client::disconnectFromHost() { m_socket->disconnectFromHost(); }
-bool Client::isConnected() const { return m_socket->state() == QAbstractSocket::ConnectedState; }
+void Client::disconnectFromHost() { m_tcpSocket->disconnectFromHost(); }
+bool Client::isConnected() const { return m_tcpSocket->state() == QAbstractSocket::ConnectedState; }
 void Client::onDisconnected() { LOG_WARNING("🔌 战网连接断开"); }

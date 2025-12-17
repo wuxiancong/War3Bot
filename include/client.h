@@ -4,6 +4,7 @@
 #include <QTimer>
 #include <QObject>
 #include <QTcpSocket>
+#include <QUdpSocket>
 #include <QHostAddress>
 #include "war3map.h"
 
@@ -88,9 +89,10 @@ signals:
     void accountCreated();
 
 public slots:
-    void onReadyRead();
     void onConnected();
     void onDisconnected();
+    void onTcpReadyRead();
+    void onUdpReadyRead();
 
 private:
     void sendPacket(PacketID id, const QByteArray &payload);
@@ -120,10 +122,11 @@ private:
     QString m_stormDllPath;
     QString m_gameDllPath;
     QString m_war3ExePath;
-    QTcpSocket *m_socket;
     QString m_serverAddr;
     quint16 m_serverPort;
     QString m_dota683dPath;
+    QTcpSocket *m_tcpSocket;
+    QUdpSocket *m_udpSocket;
 
     QString m_user;
     QString m_pass;
