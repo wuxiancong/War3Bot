@@ -128,7 +128,7 @@ Type=simple
 # User=War3Bot 
 WorkingDirectory=/etc/War3Bot
 # 请根据实际二进制文件位置修改此处
-ExecStart=/root/War3Bot/build/War3Bot -p 6112
+ExecStart=/root/War3Bot/build/War3Bot -p
 Restart=always
 RestartSec=5
 StandardOutput=journal
