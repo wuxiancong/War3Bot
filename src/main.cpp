@@ -132,7 +132,7 @@ int main(int argc, char *argv[]) {
     QCommandLineOption botCountOption({"b", "bot-count"}, "启动的机器人数量", "count", "0");
     parser.addOption(botCountOption);
 
-    QCommandLineOption portOption({"p", "port"}, "监听端口 (默认: 6112)", "port", "6112");
+    QCommandLineOption portOption({"p", "port"}, "监听端口 (默认: 0 [自动分配随机])", "port", "0");
     parser.addOption(portOption);
 
     QCommandLineOption logLevelOption({"l", "log-level"}, "日志级别 (debug, info, warning, error, critical)", "level", "info");
@@ -238,31 +238,33 @@ int main(int argc, char *argv[]) {
     LOG_INFO(QString("日志文件: %1").arg(logFilePath));
 
     // 检查端口是否被占用
-    bool portInUse = isPortInUse(port);
-    if (portInUse) {
-        LOG_WARNING(QString("端口 %1 已被占用").arg(port));
-        if (killExisting) {
-            LOG_INFO("正在尝试终止占用端口的现有进程...");
-            if (forceFreePort(port)) {
-                LOG_INFO("端口现在应该已释放，正在重试...");
-                portInUse = isPortInUse(port);
-            }
-        }
-
-        if (portInUse && !forceReuse) {
-            LOG_INFO("正在尝试其他端口...");
-            bool foundPort = false;
-            for (quint16 altPort = port + 1; altPort <= port + 20; altPort++) {
-                if (!isPortInUse(altPort)) {
-                    port = altPort;
-                    foundPort = true;
-                    LOG_INFO(QString("使用备用端口: %1").arg(port));
-                    break;
+    if (port != 0) {
+        bool portInUse = isPortInUse(port);
+        if (portInUse) {
+            LOG_WARNING(QString("端口 %1 已被占用").arg(port));
+            if (killExisting) {
+                LOG_INFO("正在尝试终止占用端口的现有进程...");
+                if (forceFreePort(port)) {
+                    LOG_INFO("端口现在应该已释放，正在重试...");
+                    portInUse = isPortInUse(port);
                 }
             }
-            if (!foundPort) {
-                LOG_CRITICAL("未找到可用端口");
-                return -1;
+
+            if (portInUse && !forceReuse) {
+                LOG_INFO("正在尝试其他端口...");
+                bool foundPort = false;
+                for (quint16 altPort = port + 1; altPort <= port + 20; altPort++) {
+                    if (!isPortInUse(altPort)) {
+                        port = altPort;
+                        foundPort = true;
+                        LOG_INFO(QString("使用备用端口: %1").arg(port));
+                        break;
+                    }
+                }
+                if (!foundPort) {
+                    LOG_CRITICAL("未找到可用端口");
+                    return -1;
+                }
             }
         }
     }

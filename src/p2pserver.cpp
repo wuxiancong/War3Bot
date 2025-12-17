@@ -64,13 +64,13 @@ bool P2PServer::startServer(quint16 port, const QString &configFile)
 
     connect(m_udpSocket, &QUdpSocket::readyRead, this, &P2PServer::onReadyRead);
 
-    m_listenPort = port;
+    m_listenPort = m_udpSocket->localPort();
     m_isRunning = true;
 
     // 启动定时器
     setupTimers();
 
-    LOG_INFO(QString("✅ P2P服务器已在端口 %1 启动").arg(port));
+    LOG_INFO(QString("✅ P2P服务器已在端口 %1 启动").arg(m_listenPort));
     logServerConfiguration();
 
     emit serverStarted(port);
