@@ -35,7 +35,7 @@ sudo apt install -y build-essential cmake
 sudo apt install -y qtbase5-dev qt5-qmake libqt5core5a libqt5network5
 
 # 3. 安装其他依赖
-sudo apt install -y libgmp-dev
+sudo apt install -y libgmp-dev zlib1g-dev libbz2-dev libgmp-dev
 
 # 4. 克隆项目代码
 git clone https://github.com/wuxiancong/War3Bot.git
