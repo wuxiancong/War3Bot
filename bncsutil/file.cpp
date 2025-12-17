@@ -16,12 +16,12 @@
 #include <bncsutil/mutil.h>
 #include <bncsutil/file.h>
 #include <map>
+#include <new>     // for std::bad_alloc
 #include <cstdlib> // malloc/free
 #include <cstring> // memcpy, strlen
 
 // 使用更标准的宏 _WIN32 来检测 Windows 平台
 #if defined(_WIN32) || defined(MOS_WINDOWS)
-#define WIN32_LEAN_AND_MEAN
 #define BWIN 1
 #include <windows.h>
 typedef std::map<const void*, HANDLE> mapping_map;
@@ -81,7 +81,7 @@ file_t file_open(const char *filename, unsigned int mode)
 
     try {
         data = new _file;
-    } catch (const std::bad_alloc &) {
+    } catch (const std::bad_alloc &) { // 使用引用捕获异常
         CloseHandle(file);
         return (file_t) 0;
     }
@@ -197,7 +197,7 @@ file_t file_open(const char* filename, unsigned int mode_flags)
 
     try {
         data = new _file;
-    } catch (std::bad_alloc) {
+    } catch (const std::bad_alloc&) { // ★★★ 修改点：使用引用捕获异常 ★★★
         fclose(f);
         return (file_t) 0;
     }
