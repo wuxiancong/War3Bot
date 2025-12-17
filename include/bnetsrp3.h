@@ -87,7 +87,6 @@ public:
      */
     BigInt getServerPasswordProof(BigInt &A, BigInt &M, BigInt &K) const;
 
-private:
     // 初始化内部状态，生成随机私钥 a 或 b
     void init(const QString &username, const QString &password, BigInt* salt);
 
@@ -106,6 +105,7 @@ private:
     // 对原生密钥 S 进行奇偶交错哈希，生成最终会话密钥 K
     BigInt hashSecret(BigInt &secret) const;
 
+private:
     // === SRP 协议常量 ===
     static BigInt N;    // 大素数模数 (Modulus)
     static BigInt g;    // 生成元 (Generator)

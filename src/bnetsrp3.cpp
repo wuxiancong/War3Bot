@@ -31,9 +31,9 @@ static const unsigned char bnetsrp3_I_val[] = {
 };
 
 // 初始化静态 BigInt 常量
-BigInt BnetSRP3::N = BigInt(bnetsrp3_N_val, 32, 1, true);
+BigInt BnetSRP3::N = BigInt(bnetsrp3_N_val, 32);
 BigInt BnetSRP3::g = BigInt((quint64)bnetsrp3_g_val);
-BigInt BnetSRP3::I = BigInt(bnetsrp3_I_val, 20, 1, true);
+BigInt BnetSRP3::I = BigInt(bnetsrp3_I_val, 20);
 
 // 内部静态辅助函数
 static QString debug_buf_to_hex(const unsigned char *buf, size_t len)
@@ -61,7 +61,7 @@ void BnetSRP3::init(const QString &username, const QString &password, BigInt* sa
 
     unsigned char buf[32];
     memset(buf, 0, 32);
-    s.getData(buf, 32, 1, false);
+    s.getData(buf, 32, 4, false);
     m_raw_salt = QByteArray((const char*)buf, 32);
 
     LOG_INFO(QString("[SRP 初始化] 原始盐值 (小端序/LE): %1").arg(debug_buf_to_hex(buf, 32)));
@@ -202,7 +202,7 @@ void BnetSRP3::setSalt(BigInt salt_)
 
     unsigned char buf[32];
     memset(buf, 0, 32);
-    s.getData(buf, 32, 1, false);
+    s.getData(buf, 32, 4, false);
 
     m_raw_salt = QByteArray((const char*)buf, 32);
 
@@ -246,7 +246,7 @@ BigInt BnetSRP3::getClientPasswordProof(BigInt &A, BigInt &B_ref, BigInt &K) con
     unsigned char buf[256];
 
     // 1. I (H(g)^H(N))
-    I.getData(buf, 20, 4, false);
+    I.getData(buf, 20, 1, false);
     LOG_INFO(QString("  > I (Buffer):        %1").arg(debug_buf_to_hex(buf, 20)));
     proofData.append((const char*)buf, 20);
 
