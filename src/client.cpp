@@ -536,7 +536,6 @@ void Client::handleAuthCheck(const QByteArray &data)
         LOG_ERROR("War3.exe 不存在，无法计算哈希");
         return;
     }
-    // ...
 
     LOG_INFO(QString("✅ 哈希: 0x%1").arg(QString::number(checkSum, 16).toUpper()));
 
