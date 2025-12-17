@@ -245,18 +245,6 @@ void Client::onUdpReadyRead()
     while (m_udpSocket->hasPendingDatagrams()) {
         QNetworkDatagram datagram = m_udpSocket->receiveDatagram();
         QByteArray data = datagram.data();
-
-        // 1. 打印详细 HEX 日志
-        QString hexStr = data.toHex().toUpper();
-        for(int i = 2; i < hexStr.length(); i += 3) hexStr.insert(i, " ");
-
-        LOG_INFO(QString("📨 [UDP] 收到 %1 字节来自 %2:%3 | 内容: %4")
-                     .arg(data.size())
-                     .arg(datagram.senderAddress().toString())
-                     .arg(datagram.senderPort())
-                     .arg(hexStr));
-
-        // 2. 处理 UDP 包
         handleUdpPacket(data, datagram.senderAddress(), datagram.senderPort());
     }
 }
@@ -553,13 +541,20 @@ void Client::handleUdpPacket(const QByteArray &data, const QHostAddress &sender,
 
     // 2. War3 UDP 头校验 (0xF7)
     if (header != 0xF7) {
-        LOG_WARNING(QString("🗑️ [UDP] 忽略非 War3 包 (Head: 0x%1) 来自 %2:%3")
-                        .arg(QString::number(header, 16), sender.toString())
-                        .arg(senderPort));
         return;
     }
 
-    // 3. 强制转换以便 switch 使用
+    // 3. 打印详细 HEX 日志
+    QString hexStr = data.toHex().toUpper();
+    for(int i = 2; i < hexStr.length(); i += 3) hexStr.insert(i, " ");
+
+    LOG_INFO(QString("📨 [UDP] 收到 %1 字节来自 %2:%3 | 内容: %4")
+                 .arg(data.size())
+                 .arg(sender.toString())
+                 .arg(senderPort)
+                 .arg(hexStr));
+
+    // 4. 强制转换以便 switch 使用
     UdpPacketID pid = (UdpPacketID)msgId;
 
     switch (pid) {
