@@ -68,8 +68,12 @@ public:
         GameType_Melee              = 0x02,
         GameType_FFA                = 0x03,
         GameType_1v1                = 0x04,
-        GameType_UMS                = 0x0A,     // Use Map Settings (星际争霸/部分War3地图)
-        GameType_W3XP_Custom        = 0x2001    // 0x2001 = 0x01 (Custom) | 0x2000 (Expansion/W3XP Mask)
+        GameType_Ladder             = 0x09,     // 基础天梯游戏
+        GameType_UMS                = 0x0A,     // Use Map Settings (星际/部分War3)
+
+        // 复合类型 (冰封王座 W3XP)
+        GameType_W3XP_Custom        = 0x2001,   // 0x2001 = 0x01 (Custom) | 0x2000 (Expansion)
+        GameType_W3XP_Ladder        = 0x2009    // 0x2009 = 0x09 (Ladder) | 0x2000 (Expansion)
     };
 
     // 游戏状态标志

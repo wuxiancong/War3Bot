@@ -905,17 +905,35 @@ void Client::createGameOnLadder(const QString &gameName, const QString &password
     LOG_INFO(QString("🚀 请求广播房间: [%1] (Port: %2)").arg(gameName).arg(udpPort));
 
     if (m_war3Map.load(m_dota683dPath)) {
+        // 1. 获取编码后的地图数据
+        QByteArray encodedData = m_war3Map.getEncodedStatString(m_user);
 
-        // 3. 生成 StatString
-        QByteArray mapStatString = m_war3Map.getEncodedStatString(m_user);
-        m_hostCounter++; // 自增计数器
-
-        if (mapStatString.isEmpty()) {
+        if (encodedData.isEmpty()) {
             LOG_ERROR("❌ 无法创建房间：MapStatString 生成为空！");
             return;
         }
 
-        LOG_INFO(QString("🗺️ MapStatString 生成完毕 (Size: %1)").arg(mapStatString.size()));
+        // =========================================================
+        // 3. 构造带明文头的 StatString
+        // 格式: "9" + "20000000" + [EncodedData]
+        // =========================================================
+
+        QByteArray finalStatString;
+
+        // A. 写入空闲槽位 (通常固定为 '9' 或 '1'~'C')
+        finalStatString.append('9');
+
+        // B. 写入反转的 Host Counter Hex 字符串
+        // 例如: Counter=1 -> Hex="00000001" -> Reverse="10000000"
+        QString hexCounter = QString("%1").arg(m_hostCounter, 8, 16, QChar('0'));
+        std::string reverseHex = hexCounter.toStdString();
+        std::reverse(reverseHex.begin(), reverseHex.end()); // 反转字符串
+        finalStatString.append(reverseHex.c_str());
+
+        // C. 追加编码后的地图数据
+        finalStatString.append(encodedData);
+
+        LOG_INFO(QString("🔧 StatString 头部: %1 (Counter: %2)").arg(QString(finalStatString.left(9))).arg(m_hostCounter));
 
         QByteArray payload;
         QDataStream out(&payload, QIODevice::WriteOnly);
@@ -956,7 +974,7 @@ void Client::createGameOnLadder(const QString &gameName, const QString &password
         out << (quint8)0;
 
         // 9. (STRING) Game Statstring
-        out.writeRawData(mapStatString.constData(), mapStatString.size());
+        out.writeRawData(finalStatString.constData(), finalStatString.size());
         out << (quint8)0;
 
         // 发送包
