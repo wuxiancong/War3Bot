@@ -906,7 +906,6 @@ void Client::createGame(const QString &gameName, const QString &password, quint1
 
     if (m_war3Map.load(m_dota683dPath)) {
         // 1. 获取编码后的地图数据
-        // 注意：这里不需要传 m_hostCounter (或者传 0)，保证 rawData 是纯净的
         QByteArray encodedData = m_war3Map.getEncodedStatString(m_user);
 
         if (encodedData.isEmpty()) {
@@ -937,7 +936,6 @@ void Client::createGame(const QString &gameName, const QString &password, quint1
         // C. 追加编码后的地图数据
         finalStatString.append(encodedData);
 
-        // ================= [调试日志：最终 StatString] =================
         QString finalHex, finalAscii;
         for (char c : finalStatString) {
             finalHex.append(QString("%1 ").arg((quint8)c, 2, 16, QChar('0')).toUpper());
@@ -947,7 +945,6 @@ void Client::createGame(const QString &gameName, const QString &password, quint1
         LOG_INFO(QString("   HEAD: %1 (Counter: %2)").arg(QString(finalStatString.left(9))).arg(m_hostCounter));
         LOG_INFO(QString("   HEX : %1").arg(finalHex));
         LOG_INFO(QString("   ASC : %1").arg(finalAscii));
-        // =============================================================
 
         QByteArray payload;
         QDataStream out(&payload, QIODevice::WriteOnly);

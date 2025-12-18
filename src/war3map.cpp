@@ -270,15 +270,13 @@ QByteArray War3Map::getEncodedStatString(const QString &hostName, const QString 
     QDataStream out(&rawData, QIODevice::WriteOnly);
     out.setByteOrder(QDataStream::LittleEndian);
 
-    // 1. 计算最终的 Flags
     QByteArray gameFlagsBytes = getMapGameFlags();
     quint32 gameFlagsInt;
     QDataStream ds(gameFlagsBytes);
     ds.setByteOrder(QDataStream::LittleEndian);
     ds >> gameFlagsInt;
 
-    quint32 finalFlags = m_mapOptions & 0xFFFF0000;
-    finalFlags &= ~MAPOPT_HIDEMINIMAP;
+    quint32 finalFlags = 0;
     finalFlags |= gameFlagsInt;
 
     out << finalFlags << (quint8)0;
@@ -332,7 +330,7 @@ void War3Map::analyzeStatString(const QString &label, const QByteArray &encodedD
     bool fastSpeed = ((flags & 0x0000000F) == 0x02);
     bool obs = (flags & 0x00060000);
 
-    LOG_INFO(QString("      -> 隐藏地图(0x10000): %1").arg(hideMap ? "⚠️ 是 (导致黑屏)" : "✅ 否"));
+    LOG_INFO(QString("      -> 隐藏地图(0x10000): %1").arg(hideMap ? "⚠️ 是" : "✅ 否"));
     LOG_INFO(QString("      -> 游戏速度(Low=2)  : %1").arg(fastSpeed ? "✅ 快速" : "❌ 非法/慢速"));
     LOG_INFO(QString("      -> 观察者(0x60000)  : %1").arg(obs ? "✅ 开启" : "❓ 未知"));
 
