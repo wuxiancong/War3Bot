@@ -132,7 +132,7 @@ int main(int argc, char *argv[]) {
     QCommandLineOption botCountOption({"b", "bot-count"}, "启动的机器人数量", "count", "0");
     parser.addOption(botCountOption);
 
-    QCommandLineOption portOption({"p", "port"}, "监听端口 (默认: 0 [自动分配随机])", "port", "0");
+    QCommandLineOption portOption({"p", "port"}, "监听端口 (默认: 6116])", "port", "6116");
     parser.addOption(portOption);
 
     QCommandLineOption logLevelOption({"l", "log-level"}, "日志级别 (debug, info, warning, error, critical)", "level", "info");

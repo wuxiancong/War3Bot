@@ -27,7 +27,6 @@ set(CMAKE_AUTOUIC ON)
 # Windows 特有宏定义
 if(WIN32)
     add_definitions(
-        -NOMINMAX
         -DMOS_WINDOWS
         -DMUTIL_LIB_BUILD
         -DWIN32_LEAN_AND_MEAN
