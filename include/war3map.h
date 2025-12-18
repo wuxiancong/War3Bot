@@ -49,7 +49,7 @@ public:
      * @brief 生成最终用于发送的编码后 StatString
      * @param hostName 主机名 (创建者名字)
      */
-    QByteArray getEncodedStatString(const QString &hostName, const QString &netPathOverride = "", quint32 hostCounter = 1);
+    QByteArray getEncodedStatString(const QString &hostName, const QString &netPathOverride = "");
 private:
     bool m_valid;
     QString m_mapPath;

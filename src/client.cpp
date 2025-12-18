@@ -939,7 +939,7 @@ void Client::createGameOnLadder(const QString &gameName, const QString &password
         out << (quint16)gameType;
 
         // 4. (UINT16) Sub Game Type
-        out << (quint16)0x01;
+        out << (quint16)0x49;
 
         // 5. (UINT32) Provider Version Constant
         out << (quint32)0xFFFFFFFF;

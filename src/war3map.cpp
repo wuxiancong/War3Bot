@@ -226,7 +226,7 @@ QByteArray War3Map::encodeStatString(const QByteArray &data)
     return result;
 }
 
-QByteArray War3Map::getEncodedStatString(const QString &hostName, const QString &netPathOverride, quint32 hostCounter)
+QByteArray War3Map::getEncodedStatString(const QString &hostName, const QString &netPathOverride)
 {
     if (!m_valid) {
         LOG_ERROR("[War3Map] ❌ 尝试获取 StatString 但地图未有效加载");
