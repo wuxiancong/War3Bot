@@ -889,8 +889,10 @@ void Client::stopGame()
 
 void Client::createGameOnLadder(const QString &gameName, const QString &password, quint16 udpPort, GameType gameType)
 {
+    // 1. 先发送停止广播，清理旧状态
     stopGame();
 
+    // 2. 切换 UDP 端口
     if (m_udpSocket->localPort() != udpPort) {
         m_udpSocket->close();
         if (m_udpSocket->bind(QHostAddress::AnyIPv4, udpPort)) {
@@ -904,11 +906,9 @@ void Client::createGameOnLadder(const QString &gameName, const QString &password
 
     if (m_war3Map.load(m_dota683dPath)) {
 
-        // 生成 StatString
+        // 3. 生成 StatString
         QByteArray mapStatString = m_war3Map.getEncodedStatString(m_user);
-
-        // 每次创建后自增，防止服务器认为是重复请求
-        m_hostCounter++;
+        m_hostCounter++; // 自增计数器
 
         if (mapStatString.isEmpty()) {
             LOG_ERROR("❌ 无法创建房间：MapStatString 生成为空！");
@@ -916,56 +916,53 @@ void Client::createGameOnLadder(const QString &gameName, const QString &password
         }
 
         LOG_INFO(QString("🗺️ MapStatString 生成完毕 (Size: %1)").arg(mapStatString.size()));
-        LOG_INFO(QString("🗺️ MapStatString Hex: %1").arg(QString(mapStatString.toHex().toUpper())));
 
         QByteArray payload;
         QDataStream out(&payload, QIODevice::WriteOnly);
         out.setByteOrder(QDataStream::LittleEndian);
 
         // 1. (UINT32) Game State
-        // War3 标准: 0x10 = Public(16), 0x11 = Private(17)
-        quint32 state = 0x00000010;
-
+        quint32 state = 0x00000000;
         if (!password.isEmpty()) {
-            // 如果有密码，设置为 0x11 (或者 state |= 0x01)
-            state = 0x00000011;
+            state |= 0x01;
         }
 
-        LOG_INFO(QString("正在发送房间状态: 0x%1 (是否公开: %2)")
-                     .arg(QString::number(state, 16).toUpper(), state == 0x10 ? "是" : "否"));
+        LOG_INFO(QString("发送状态(C->S): 0x%1 (密码: %2)")
+                     .arg(QString::number(state, 16), !password.isEmpty() ? "有" : "无"));
 
         out << state;
 
-        // 2. (UINT32) Game Elapsed Time (创建时为 0)
+        // 2. (UINT32) Game Elapsed Time
         out << (quint32)0;
 
-        // 3. (UINT16) Game Type (0x0A = UMS/DotA)
+        // 3. (UINT16) Game Type
+        out << (quint16)gameType;
+
+        // 4. (UINT16) Sub Game Type
         out << (quint16)0x01;
 
-        // 4. (UINT16) Sub Game Type (通常为 0x01)
-        out << (quint16)0x01;
-
-        // 5. (UINT32) Provider Version Constant (War3 = 0xFFFFFFFF)
+        // 5. (UINT32) Provider Version Constant
         out << (quint32)0xFFFFFFFF;
 
-        // 6. (UINT32) Ladder Type (0 = Non-Ladder/Custom)
+        // 6. (UINT32) Ladder Type
         out << (quint32)0;
 
         // 7. (STRING) Game Name
         out.writeRawData(gameName.toUtf8().constData(), gameName.toUtf8().size());
-        out << (quint8)0; // Null Terminator
+        out << (quint8)0;
 
         // 8. (STRING) Game Password
         out.writeRawData(password.toUtf8().constData(), password.toUtf8().size());
-        out << (quint8)0; // Null Terminator
+        out << (quint8)0;
 
         // 9. (STRING) Game Statstring
         out.writeRawData(mapStatString.constData(), mapStatString.size());
-        out << (quint8)0; // Null Terminator
+        out << (quint8)0;
 
-        // 发送包 SID_STARTADVEX3 (0x1C)
+        // 发送包
         sendPacket(SID_STARTADVEX3, payload);
-        LOG_INFO("📤 房间创建请求已发送，等待 UDP 握手...");
+        LOG_INFO("📤 房间创建请求已发送，等待服务器响应...");
+
     } else {
         LOG_ERROR(QString("❌ 地图加载失败: %1").arg(m_dota683dPath));
     }
