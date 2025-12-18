@@ -213,19 +213,6 @@ bool War3Map::load(const QString &mapPath)
     }
 
     SFileCloseArchive(hMpq);
-
-    // =========================================================================
-    // ⚡ 最终修正: 针对 DotA 的 CRC 覆写
-    // =========================================================================
-    if (m_mapPath.contains("DotA", Qt::CaseInsensitive)) {
-        // DotA 6.83d 标准 CRC (Little Endian: 3B EB CF F3) = 0xF3CFEB3B
-        // 这一步确保预览图 100% 显示
-        quint32 correctCRC = 0xF3CFEB3B;
-        m_mapCRC = toBytes(correctCRC);
-        LOG_INFO(QString("🔧 [Auto-Fix] DotA map detected. Forcing Standard CRC: 0x%1")
-                     .arg(QString::number(correctCRC, 16).toUpper()));
-    }
-
     m_valid = true;
     return true;
 }
