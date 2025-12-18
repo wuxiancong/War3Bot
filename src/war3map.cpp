@@ -59,7 +59,6 @@ bool War3Map::load(const QString &mapPath)
     HANDLE hMpq = NULL;
     QString nativePath = QDir::toNativeSeparators(mapPath);
 
-    // ★★★ 这里的 flags 是关键 ★★★
     DWORD flags = MPQ_OPEN_READ_ONLY;
 
 #ifdef UNICODE
@@ -223,18 +222,12 @@ QByteArray War3Map::encodeStatString(const QByteArray &data)
         }
 
         if ((i % 7) == 6 || i == data.size() - 1) {
-            // 1. 先写入 Mask
             result.append((char)mask);
-
-            // 2. 再写入数据块
             result.append(chunk);
-
-            // 重置
             chunk.clear();
             mask = 1;
         }
     }
-
     return result;
 }
 
@@ -249,15 +242,24 @@ QByteArray War3Map::getEncodedStatString(const QString &hostName, const QString 
     QDataStream out(&rawData, QIODevice::WriteOnly);
     out.setByteOrder(QDataStream::LittleEndian);
 
-    // 1. 取出 w3i 中的 flags
-    quint32 finalFlags = m_mapOptions & 0xFFFF0000;
+    // 1. 初始化为 w3i 的原始 flags
+    quint32 finalFlags = m_mapOptions;
 
-    // 2. 注入房间设置
-    finalFlags = m_mapOptions | 0x00000002;
-    finalFlags |= 0x00004000;
+    // 2. 注入关键游戏设置 (Game Settings)
+    // 0x00000002 : Game Speed Fast
     finalFlags |= 0x00000002;
 
-    out << finalFlags  << (quint8)0;
+    // 0x00004000 : Teams Together
+    finalFlags |= 0x00004000;
+
+    // 0x00060000 : Observers / Referees
+    finalFlags |= 0x00060000;
+
+    LOG_INFO(QString("[War3Map] 生成 Flags: 原始 0x%1 -> 最终 0x%2")
+                 .arg(QString::number(m_mapOptions, 16).toUpper(),
+                      QString::number(finalFlags, 16).toUpper()));
+
+    out << finalFlags << (quint8)0;
     out.writeRawData(m_mapWidth.constData(), 2);
     out.writeRawData(m_mapHeight.constData(), 2);
     out.writeRawData(m_mapCRC.constData(), 4);
@@ -280,29 +282,13 @@ QByteArray War3Map::getEncodedStatString(const QString &hostName, const QString 
 
     out.writeRawData(m_mapSHA1.constData(), 20);
 
-    // ================= [调试日志：编码前 RawData] =================
-    QString rawHex, rawAscii;
+    // ================= [调试日志] =================
+    QString rawHex;
     for (char c : qAsConst(rawData)) {
         rawHex.append(QString("%1 ").arg((quint8)c, 2, 16, QChar('0')).toUpper());
-        rawAscii.append((c >= 32 && c <= 126) ? c : '.');
     }
-    LOG_INFO(QString("[War3Map] RawData (Size %1):").arg(rawData.size()));
-    LOG_INFO(QString("   HEX: %1").arg(rawHex));
-    LOG_INFO(QString("   ASC: %1").arg(rawAscii));
-    // ============================================================
+    LOG_INFO(QString("[War3Map] RawData Size: %1 HEX: %2").arg(rawData.size()).arg(rawHex));
+    // =============================================
 
-    QByteArray result = encodeStatString(rawData);
-
-    // ================= [调试日志：编码后 EncodedData] =================
-    QString encHex, encAscii;
-    for (char c : qAsConst(result)) {
-        encHex.append(QString("%1 ").arg((quint8)c, 2, 16, QChar('0')).toUpper());
-        encAscii.append((c >= 32 && c <= 126) ? c : '.');
-    }
-    LOG_INFO(QString("[War3Map] EncodedData (Size %1):").arg(result.size()));
-    LOG_INFO(QString("   HEX: %1").arg(encHex));
-    LOG_INFO(QString("   ASC: %1").arg(encAscii));
-    // ==============================================================
-
-    return result;
+    return encodeStatString(rawData);
 }
