@@ -172,7 +172,7 @@ bool War3Map::load(const QString &mapPath)
 
                 m_mapWidth = toBytes16((quint16)rawW);
                 m_mapHeight = toBytes16((quint16)rawH);
-                m_mapOptions = rawFlags & (W3FLAG_TEAMSTOGETHER | W3FLAG_FIXEDTEAMS | W3FLAG_UNITSHARE | W3FLAG_RANDOMHERO | W3FLAG_RANDOMRACES);
+                m_mapOptions = rawFlags;
 
                 LOG_INFO(QString("[War3Map] w3i 解析成功. Size: %1x%2 Flags: 0x%3")
                              .arg(rawW).arg(rawH).arg(QString::number(m_mapOptions, 16).toUpper()));
@@ -208,21 +208,33 @@ quint32 War3Map::xorRotateLeft(unsigned char *data, quint32 length)
 
 QByteArray War3Map::encodeStatString(const QByteArray &data)
 {
-    unsigned char mask = 1;
     QByteArray result;
+    unsigned char mask = 1;
+    QByteArray chunk;
+
     for (int i = 0; i < data.size(); ++i) {
         unsigned char c = (unsigned char)data[i];
-        if ((c % 2) == 0) {
-            result.append((char)(c + 1));
+
+        if (c % 2 == 0) {
+            chunk.append((char)(c + 1));
         } else {
-            result.append((char)c);
+            chunk.append((char)c);
             mask |= 1 << ((i % 7) + 1);
         }
+
         if ((i % 7) == 6 || i == data.size() - 1) {
-            result.insert(result.size() - 1 - (i % 7), (char)mask);
+            // 1. 先写入 Mask
+            result.append((char)mask);
+
+            // 2. 再写入数据块
+            result.append(chunk);
+
+            // 重置
+            chunk.clear();
             mask = 1;
         }
     }
+
     return result;
 }
 
@@ -237,7 +249,15 @@ QByteArray War3Map::getEncodedStatString(const QString &hostName, const QString 
     QDataStream out(&rawData, QIODevice::WriteOnly);
     out.setByteOrder(QDataStream::LittleEndian);
 
-    out << m_mapOptions << (quint8)0;
+    // 1. 取出 w3i 中的 flags
+    quint32 finalFlags = m_mapOptions & 0xFFFF0000;
+
+    // 2. 注入房间设置
+    finalFlags = m_mapOptions | 0x00000002;
+    finalFlags |= 0x00004000;
+    finalFlags |= 0x00000002;
+
+    out << finalFlags  << (quint8)0;
     out.writeRawData(m_mapWidth.constData(), 2);
     out.writeRawData(m_mapHeight.constData(), 2);
     out.writeRawData(m_mapCRC.constData(), 4);

@@ -107,7 +107,7 @@ public:
     void joinChannel(const QString &channelName);
 
     // 创建游戏
-    void createGameOnLadder(const QString &gameName, const QString &password,quint16 udpPort, GameType gameType);
+    void createGame(const QString &gameName, const QString &password,quint16 udpPort, GameType gameType);
 
     QString getPrimaryIPv4();
     quint32 ipToUint32(const QString &ipAddress);
