@@ -282,13 +282,11 @@ QByteArray War3Map::getEncodedStatString(const QString &hostName, const QString 
 
     out.writeRawData(m_mapSHA1.constData(), 20);
 
-    // ================= [调试日志] =================
     QString rawHex;
     for (char c : qAsConst(rawData)) {
         rawHex.append(QString("%1 ").arg((quint8)c, 2, 16, QChar('0')).toUpper());
     }
     LOG_INFO(QString("[War3Map] RawData Size: %1 HEX: %2").arg(rawData.size()).arg(rawHex));
-    // =============================================
 
     return encodeStatString(rawData);
 }
