@@ -243,7 +243,7 @@ QByteArray War3Map::getEncodedStatString(const QString &hostName, const QString 
     out.setByteOrder(QDataStream::LittleEndian);
 
     // 1. 初始化为 w3i 的原始 flags
-    quint32 finalFlags = m_mapOptions;
+    quint32 finalFlags = m_mapOptions & 0xFFFF0000;
 
     // 2. 注入关键游戏设置 (Game Settings)
     // 0x00000002 : Game Speed Fast
@@ -255,8 +255,9 @@ QByteArray War3Map::getEncodedStatString(const QString &hostName, const QString 
     // 0x00060000 : Observers / Referees
     finalFlags |= 0x00060000;
 
-    LOG_INFO(QString("[War3Map] 生成 Flags: 原始 0x%1 -> 最终 0x%2")
+    LOG_INFO(QString("[War3Map] 生成 Flags: 原始 0x%1 -> 清洗后 0x%2 -> 最终发送 0x%3")
                  .arg(QString::number(m_mapOptions, 16).toUpper(),
+                      QString::number(m_mapOptions & 0xFFFF0000, 16).toUpper(),
                       QString::number(finalFlags, 16).toUpper()));
 
     out << finalFlags << (quint8)0;
