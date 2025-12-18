@@ -971,10 +971,10 @@ void Client::createGame(const QString &gameName, const QString &password, quint1
         out << (quint16)0x49;
 
         // 5. (UINT32) Provider Version Constant
-        out << (quint32)0xFFFFFFFF;
+        out << (quint32)0;
 
         // 6. (UINT32) Ladder Type
-        out << (quint32)1;
+        out << (quint32)0;
 
         // 7. (STRING) Game Name
         out.writeRawData(gameName.toUtf8().constData(), gameName.toUtf8().size());

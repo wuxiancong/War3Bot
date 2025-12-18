@@ -286,7 +286,7 @@ QByteArray War3Map::getEncodedStatString(const QString &hostName, const QString 
 
     QString finalPath = netPathOverride.isEmpty() ?
                             "Maps\\Download\\" + QFileInfo(m_mapPath).fileName() : netPathOverride;
-    finalPath = QDir::toNativeSeparators(finalPath);
+    finalPath = finalPath.replace("/", "\\");
 
     out.writeRawData(finalPath.toLocal8Bit().constData(), finalPath.toLocal8Bit().size());
     out << (quint8)0;
@@ -308,7 +308,11 @@ void War3Map::analyzeStatString(const QString &label, const QByteArray &encodedD
     quint32 flags;
     quint16 w, h;
     quint32 crc;
-    in >> flags >> w >> h >> crc;
+    quint8 padding;
+
+    in >> flags;
+    in >> padding;
+    in >> w >> h >> crc;
 
     // 读取路径字符串
     QByteArray pathBytes;
