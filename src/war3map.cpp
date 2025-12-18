@@ -5,30 +5,60 @@
 #include <QtEndian>
 #include <QFileInfo>
 #include <QCryptographicHash>
+#include <QDebug>
 
 #include <zlib.h>
 #include "StormLib.h"
 
-War3Map::War3Map() : m_valid(false), m_numPlayers(0), m_numTeams(0)
-{
-}
-
-War3Map::~War3Map()
-{
-}
-
 static QByteArray toBytes(quint32 val) {
-    QByteArray b;
-    b.resize(4);
-    qToLittleEndian(val, (uchar*)b.data());
-    return b;
+    QByteArray b; b.resize(4); qToLittleEndian(val, (uchar*)b.data()); return b;
+}
+static QByteArray toBytes16(quint16 val) {
+    QByteArray b; b.resize(2); qToLittleEndian(val, (uchar*)b.data()); return b;
 }
 
-static QByteArray toBytes16(quint16 val) {
-    QByteArray b;
-    b.resize(2);
-    qToLittleEndian(val, (uchar*)b.data());
-    return b;
+War3Map::War3Map() :
+    m_valid(false),
+    m_numPlayers(0),
+    m_numTeams(0),
+    m_mapSpeed(MAPSPEED_FAST),
+    m_mapVisibility(MAPVIS_DEFAULT),
+    m_mapObservers(MAPOBS_NONE),
+    m_mapFlags(MAPFLAG_TEAMSTOGETHER | MAPFLAG_FIXEDTEAMS)
+{
+}
+
+War3Map::~War3Map() {}
+
+
+QByteArray War3Map::getMapGameFlags()
+{
+    quint32 GameFlags = 0;
+
+    // 1. Speed (Mask 0x03)
+    if (m_mapSpeed == MAPSPEED_SLOW)        GameFlags = 0x00000000;
+    else if (m_mapSpeed == MAPSPEED_NORMAL) GameFlags = 0x00000001;
+    else                                    GameFlags = 0x00000002;
+
+    // 2. Visibility (Mask 0x0F00)
+    if (m_mapVisibility == MAPVIS_HIDETERRAIN)       GameFlags |= 0x00000100;
+    else if (m_mapVisibility == MAPVIS_EXPLORED)     GameFlags |= 0x00000200;
+    else if (m_mapVisibility == MAPVIS_ALWAYSVISIBLE)GameFlags |= 0x00000400;
+    else                                             GameFlags |= 0x00000800;
+
+    // 3. Observers (Mask 0x40003000)
+    if (m_mapObservers == MAPOBS_ONDEFEAT)      GameFlags |= 0x00002000;
+    else if (m_mapObservers == MAPOBS_ALLOWED)  GameFlags |= 0x00003000;
+    else if (m_mapObservers == MAPOBS_REFEREES) GameFlags |= 0x40000000;
+
+    // 4. Teams/Units/Hero/Race (Mask 0x07064000)
+    if (m_mapFlags & MAPFLAG_TEAMSTOGETHER) GameFlags |= 0x00004000;
+    if (m_mapFlags & MAPFLAG_FIXEDTEAMS)    GameFlags |= 0x00060000;
+    if (m_mapFlags & MAPFLAG_UNITSHARE)     GameFlags |= 0x01000000;
+    if (m_mapFlags & MAPFLAG_RANDOMHERO)    GameFlags |= 0x02000000;
+    if (m_mapFlags & MAPFLAG_RANDOMRACES)   GameFlags |= 0x04000000;
+
+    return toBytes(GameFlags);
 }
 
 bool War3Map::load(const QString &mapPath)
@@ -187,45 +217,46 @@ bool War3Map::load(const QString &mapPath)
     return true;
 }
 
-quint32 War3Map::xorRotateLeft(unsigned char *data, quint32 length)
-{
-    quint32 i = 0;
-    quint32 val = 0;
+quint32 War3Map::xorRotateLeft(unsigned char *data, quint32 length) {
+    quint32 i = 0, val = 0;
     if (length > 3) {
         while (i < length - 3) {
-            val = ROTL(val ^ ( (quint32)data[i] + ((quint32)data[i+1] << 8) +
-                              ((quint32)data[i+2] << 16) + ((quint32)data[i+3] << 24) ), 3);
+            val = ROTL(val ^ ((quint32)data[i] + ((quint32)data[i+1]<<8) + ((quint32)data[i+2]<<16) + ((quint32)data[i+3]<<24)), 3);
             i += 4;
         }
     }
-    while (i < length) {
-        val = ROTL(val ^ data[i], 3);
-        ++i;
-    }
+    while (i < length) { val = ROTL(val ^ data[i], 3); ++i; }
     return val;
 }
 
-QByteArray War3Map::encodeStatString(const QByteArray &data)
+QByteArray War3Map::decodeStatString(const QByteArray &encoded)
 {
+    QByteArray decoded;
+    int i = 0;
+    while (i < encoded.size()) {
+        unsigned char mask = (unsigned char)encoded[i++];
+        for (int j = 0; j < 7 && i < encoded.size(); ++j) {
+            if ((mask & (1 << (j + 1))) == 0) {
+                decoded.append(encoded[i] - 1);
+            } else {
+                decoded.append(encoded[i]);
+            }
+            i++;
+        }
+    }
+    return decoded;
+}
+
+QByteArray War3Map::encodeStatString(const QByteArray &data) {
     QByteArray result;
     unsigned char mask = 1;
     QByteArray chunk;
-
     for (int i = 0; i < data.size(); ++i) {
         unsigned char c = (unsigned char)data[i];
-
-        if (c % 2 == 0) {
-            chunk.append((char)(c + 1));
-        } else {
-            chunk.append((char)c);
-            mask |= 1 << ((i % 7) + 1);
-        }
-
+        if (c % 2 == 0) chunk.append((char)(c + 1));
+        else { chunk.append((char)c); mask |= 1 << ((i % 7) + 1); }
         if ((i % 7) == 6 || i == data.size() - 1) {
-            result.append((char)mask);
-            result.append(chunk);
-            chunk.clear();
-            mask = 1;
+            result.append((char)mask); result.append(chunk); chunk.clear(); mask = 1;
         }
     }
     return result;
@@ -233,61 +264,81 @@ QByteArray War3Map::encodeStatString(const QByteArray &data)
 
 QByteArray War3Map::getEncodedStatString(const QString &hostName, const QString &netPathOverride)
 {
-    if (!m_valid) {
-        LOG_ERROR("[War3Map] ❌ 尝试获取 StatString 但地图未有效加载");
-        return QByteArray();
-    }
+    if (!m_valid) return QByteArray();
 
     QByteArray rawData;
     QDataStream out(&rawData, QIODevice::WriteOnly);
     out.setByteOrder(QDataStream::LittleEndian);
 
-    // 1. 初始化为 w3i 的原始 flags
+    // 1. 计算最终的 Flags
+    QByteArray gameFlagsBytes = getMapGameFlags();
+    quint32 gameFlagsInt;
+    QDataStream ds(gameFlagsBytes);
+    ds.setByteOrder(QDataStream::LittleEndian);
+    ds >> gameFlagsInt;
+
     quint32 finalFlags = m_mapOptions & 0xFFFF0000;
-
-    // 2. 注入关键游戏设置 (Game Settings)
-    // 0x00000002 : Game Speed Fast
-    finalFlags |= 0x00000002;
-
-    // 0x00004000 : Teams Together
-    finalFlags |= 0x00004000;
-
-    // 0x00060000 : Observers / Referees
-    finalFlags |= 0x00060000;
-
-    LOG_INFO(QString("[War3Map] 生成 Flags: 原始 0x%1 -> 清洗后 0x%2 -> 最终发送 0x%3")
-                 .arg(QString::number(m_mapOptions, 16).toUpper(),
-                      QString::number(m_mapOptions & 0xFFFF0000, 16).toUpper(),
-                      QString::number(finalFlags, 16).toUpper()));
+    finalFlags &= ~MAPOPT_HIDEMINIMAP;
+    finalFlags |= gameFlagsInt;
 
     out << finalFlags << (quint8)0;
     out.writeRawData(m_mapWidth.constData(), 2);
     out.writeRawData(m_mapHeight.constData(), 2);
     out.writeRawData(m_mapCRC.constData(), 4);
 
-    QString finalPath;
-    if (!netPathOverride.isEmpty()) {
-        finalPath = netPathOverride;
-    } else {
-        QFileInfo fi(m_mapPath);
-        finalPath = "Maps\\Download\\" + fi.fileName();
-    }
-
+    QString finalPath = netPathOverride.isEmpty() ?
+                            "Maps\\Download\\" + QFileInfo(m_mapPath).fileName() : netPathOverride;
     finalPath = QDir::toNativeSeparators(finalPath);
 
     out.writeRawData(finalPath.toLocal8Bit().constData(), finalPath.toLocal8Bit().size());
     out << (quint8)0;
-
     out.writeRawData(hostName.toUtf8().constData(), hostName.toUtf8().size());
     out << (quint8)0;
-
     out.writeRawData(m_mapSHA1.constData(), 20);
 
-    QString rawHex;
-    for (char c : qAsConst(rawData)) {
-        rawHex.append(QString("%1 ").arg((quint8)c, 2, 16, QChar('0')).toUpper());
-    }
-    LOG_INFO(QString("[War3Map] RawData Size: %1 HEX: %2").arg(rawData.size()).arg(rawHex));
+    QByteArray encoded = encodeStatString(rawData);
+    analyzeStatString("War3Map生成结果", encoded);
+    return encoded;
+}
 
-    return encodeStatString(rawData);
+void War3Map::analyzeStatString(const QString &label, const QByteArray &encodedData)
+{
+    QByteArray decoded = War3Map::decodeStatString(encodedData);
+    QDataStream in(decoded);
+    in.setByteOrder(QDataStream::LittleEndian);
+
+    quint32 flags;
+    quint16 w, h;
+    quint32 crc;
+    in >> flags >> w >> h >> crc;
+
+    // 读取路径字符串
+    QByteArray pathBytes;
+    char c;
+    while (!in.atEnd()) {
+        in.readRawData(&c, 1);
+        if (c == 0) break;
+        pathBytes.append(c);
+    }
+
+    LOG_INFO("========================================");
+    LOG_INFO(QString("📊 StatString分析 [%1]").arg(label));
+    LOG_INFO(QString("   Encoded Hex: %1").arg(QString(encodedData.toHex().toUpper())));
+    LOG_INFO(QString("   Decoded Hex: %1").arg(QString(decoded.toHex().toUpper())));
+    LOG_INFO("----------------------------------------");
+    LOG_INFO(QString("   [Flags]    : 0x%1").arg(QString::number(flags, 16).toUpper()));
+
+    bool hideMap = (flags & 0x00010000);
+    bool fastSpeed = ((flags & 0x0000000F) == 0x02);
+    bool obs = (flags & 0x00060000);
+
+    LOG_INFO(QString("      -> 隐藏地图(0x10000): %1").arg(hideMap ? "⚠️ 是 (导致黑屏)" : "✅ 否"));
+    LOG_INFO(QString("      -> 游戏速度(Low=2)  : %1").arg(fastSpeed ? "✅ 快速" : "❌ 非法/慢速"));
+    LOG_INFO(QString("      -> 观察者(0x60000)  : %1").arg(obs ? "✅ 开启" : "❓ 未知"));
+
+    LOG_INFO(QString("   [Width]    : %1").arg(w));
+    LOG_INFO(QString("   [Height]   : %1").arg(h));
+    LOG_INFO(QString("   [CRC]      : 0x%1").arg(QString::number(crc, 16).toUpper()));
+    LOG_INFO(QString("   [Path]     : %1").arg(QString(pathBytes)));
+    LOG_INFO("========================================");
 }
