@@ -909,10 +909,17 @@ void Client::createGameOnLadder(const QString &gameName, const QString &password
         out.setByteOrder(QDataStream::LittleEndian);
 
         // 1. (UINT32) Game State
-        quint32 state = 0x00000000;
+        // War3 标准: 0x10 = Public(16), 0x11 = Private(17)
+        quint32 state = 0x00000010;
+
         if (!password.isEmpty()) {
-            state |= 0x01; // Private
+            // 如果有密码，设置为 0x11 (或者 state |= 0x01)
+            state = 0x00000011;
         }
+
+        LOG_INFO(QString("正在发送房间状态: 0x%1 (是否公开: %2)")
+                     .arg(QString::number(state, 16).toUpper(), state == 0x10 ? "是" : "否"));
+
         out << state;
 
         // 2. (UINT32) Game Elapsed Time (创建时为 0)
