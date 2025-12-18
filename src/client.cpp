@@ -610,9 +610,9 @@ void Client::handleUdpPacket(const QByteArray &data, const QHostAddress &sender,
         break;
     }
 
-    // =================================================================
-    // 场景 C: 局域网探测 (LAN)
-    // =================================================================
+        // =================================================================
+        // 场景 C: 局域网探测 (LAN)
+        // =================================================================
 
     case W3GS_SEARCHGAME: // 0x2F
     {
@@ -878,8 +878,19 @@ void Client::handleSRPLoginResponse(const QByteArray &data)
     sendPacket(SID_AUTH_ACCOUNTLOGONPROOF, response);
 }
 
+void Client::stopGame()
+{
+    LOG_INFO("🛑 发送停止房间广播请求 (SID_STOPADV)...");
+
+    // SID_STOPADV 不需要 Payload，直接发送空字节数组即可
+    // 协议格式: FF 02 04 00 (Header + ID + Length)
+    sendPacket(SID_STOPADV, QByteArray());
+}
+
 void Client::createGameOnLadder(const QString &gameName, const QString &password, quint16 udpPort, GameType gameType)
 {
+    stopGame();
+
     if (m_udpSocket->localPort() != udpPort) {
         m_udpSocket->close();
         if (m_udpSocket->bind(QHostAddress::AnyIPv4, udpPort)) {
@@ -895,6 +906,9 @@ void Client::createGameOnLadder(const QString &gameName, const QString &password
 
         // 生成 StatString
         QByteArray mapStatString = m_war3Map.getEncodedStatString(m_user);
+
+        // 每次创建后自增，防止服务器认为是重复请求
+        m_hostCounter++;
 
         if (mapStatString.isEmpty()) {
             LOG_ERROR("❌ 无法创建房间：MapStatString 生成为空！");
@@ -926,7 +940,7 @@ void Client::createGameOnLadder(const QString &gameName, const QString &password
         out << (quint32)0;
 
         // 3. (UINT16) Game Type (0x0A = UMS/DotA)
-        out << (quint16)gameType;
+        out << (quint16)0x01;
 
         // 4. (UINT16) Sub Game Type (通常为 0x01)
         out << (quint16)0x01;

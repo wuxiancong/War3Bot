@@ -25,6 +25,7 @@ public:
 
     enum TCPPacketID {
         SID_NULL                    = 0x00,
+        SID_STOPADV                 = 0x02,
         SID_ENTERCHAT               = 0x0A,
         SID_GETCHANNELLIST          = 0x0B,
         SID_JOINCHANNEL             = 0x0C,
@@ -86,6 +87,9 @@ public:
 
     // 设置登录凭据和协议
     void setCredentials(const QString &user, const QString &pass, LoginProtocol protocol = Protocol_SRP_0x53);
+
+    // 停止广播/取消房间
+    void stopGame();
 
     // 注册账号
     void createAccount();
@@ -149,6 +153,7 @@ private:
     QString m_dota683dPath;
     QTcpSocket *m_tcpSocket;
     QUdpSocket *m_udpSocket;
+    quint32 m_hostCounter = 1;
 
     QString m_user;
     QString m_pass;
