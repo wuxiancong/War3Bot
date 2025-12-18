@@ -364,7 +364,7 @@ void Client::handleTcpPacket(TCPPacketID id, const QByteArray &data)
             // 对于此事件，'text' 字段存储的是频道名称
             LOG_INFO(QString("🏠 已加入频道: [%1]").arg(text));
             // 创建房间
-            createGameOnLadder("fast 1k~2k", "", 6112, GameType::GameType_UMS);
+            createGameOnLadder("fast 1k~2k", "", 6112, GameType::GameType_W3XP_Custom);
             break;
 
         case 0x09: // EID_USERFLAGS (用户权限/图标变更)
@@ -922,9 +922,9 @@ void Client::createGameOnLadder(const QString &gameName, const QString &password
         out.setByteOrder(QDataStream::LittleEndian);
 
         // 1. (UINT32) Game State
-        quint32 state = 0x00000000;
+        quint32 state = 0x00000010;
         if (!password.isEmpty()) {
-            state |= 0x01;
+            state = 0x00000011;
         }
 
         LOG_INFO(QString("发送状态(C->S): 0x%1 (密码: %2)")
