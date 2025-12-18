@@ -906,6 +906,7 @@ void Client::createGameOnLadder(const QString &gameName, const QString &password
 
     if (m_war3Map.load(m_dota683dPath)) {
         // 1. 获取编码后的地图数据
+        // 注意：这里不需要传 m_hostCounter (或者传 0)，保证 rawData 是纯净的
         QByteArray encodedData = m_war3Map.getEncodedStatString(m_user);
 
         if (encodedData.isEmpty()) {
@@ -913,27 +914,40 @@ void Client::createGameOnLadder(const QString &gameName, const QString &password
             return;
         }
 
+        m_hostCounter++; // 自增计数器
+
         // =========================================================
         // 3. 构造带明文头的 StatString
-        // 格式: "9" + "20000000" + [EncodedData]
+        // 格式: "9" + "Counter反转" + [EncodedData]
         // =========================================================
 
         QByteArray finalStatString;
 
-        // A. 写入空闲槽位 (通常固定为 '9' 或 '1'~'C')
+        // A. 写入空闲槽位 (通常固定为 '9') - ASCII 0x39
         finalStatString.append('9');
 
         // B. 写入反转的 Host Counter Hex 字符串
-        // 例如: Counter=1 -> Hex="00000001" -> Reverse="10000000"
         QString hexCounter = QString("%1").arg(m_hostCounter, 8, 16, QChar('0'));
-        std::string reverseHex = hexCounter.toStdString();
-        std::reverse(reverseHex.begin(), reverseHex.end()); // 反转字符串
-        finalStatString.append(reverseHex.c_str());
+        QString reverseHex;
+        for(int i = hexCounter.length() - 1; i >= 0; i--) {
+            reverseHex.append(hexCounter[i]);
+        }
+        finalStatString.append(reverseHex.toLatin1());
 
         // C. 追加编码后的地图数据
         finalStatString.append(encodedData);
 
-        LOG_INFO(QString("🔧 StatString 头部: %1 (Counter: %2)").arg(QString(finalStatString.left(9))).arg(m_hostCounter));
+        // ================= [调试日志：最终 StatString] =================
+        QString finalHex, finalAscii;
+        for (char c : finalStatString) {
+            finalHex.append(QString("%1 ").arg((quint8)c, 2, 16, QChar('0')).toUpper());
+            finalAscii.append((c >= 32 && c <= 126) ? c : '.');
+        }
+        LOG_INFO(QString("🔧 最终 StatString (Size %1):").arg(finalStatString.size()));
+        LOG_INFO(QString("   HEAD: %1 (Counter: %2)").arg(QString(finalStatString.left(9))).arg(m_hostCounter));
+        LOG_INFO(QString("   HEX : %1").arg(finalHex));
+        LOG_INFO(QString("   ASC : %1").arg(finalAscii));
+        // =============================================================
 
         QByteArray payload;
         QDataStream out(&payload, QIODevice::WriteOnly);
@@ -953,10 +967,10 @@ void Client::createGameOnLadder(const QString &gameName, const QString &password
         // 2. (UINT32) Game Elapsed Time
         out << (quint32)0;
 
-        // 3. (UINT16) Game Type
+        // 3. (UINT16) Game Type (0x2001)
         out << (quint16)gameType;
 
-        // 4. (UINT16) Sub Game Type
+        // 4. (UINT16) Sub Game Type (0x49)
         out << (quint16)0x49;
 
         // 5. (UINT32) Provider Version Constant

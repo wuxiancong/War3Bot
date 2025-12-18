@@ -260,5 +260,29 @@ QByteArray War3Map::getEncodedStatString(const QString &hostName, const QString 
 
     out.writeRawData(m_mapSHA1.constData(), 20);
 
-    return encodeStatString(rawData);
+    // ================= [调试日志：编码前 RawData] =================
+    QString rawHex, rawAscii;
+    for (char c : qAsConst(rawData)) {
+        rawHex.append(QString("%1 ").arg((quint8)c, 2, 16, QChar('0')).toUpper());
+        rawAscii.append((c >= 32 && c <= 126) ? c : '.');
+    }
+    LOG_INFO(QString("[War3Map] RawData (Size %1):").arg(rawData.size()));
+    LOG_INFO(QString("   HEX: %1").arg(rawHex));
+    LOG_INFO(QString("   ASC: %1").arg(rawAscii));
+    // ============================================================
+
+    QByteArray result = encodeStatString(rawData);
+
+    // ================= [调试日志：编码后 EncodedData] =================
+    QString encHex, encAscii;
+    for (char c : qAsConst(result)) {
+        encHex.append(QString("%1 ").arg((quint8)c, 2, 16, QChar('0')).toUpper());
+        encAscii.append((c >= 32 && c <= 126) ? c : '.');
+    }
+    LOG_INFO(QString("[War3Map] EncodedData (Size %1):").arg(result.size()));
+    LOG_INFO(QString("   HEX: %1").arg(encHex));
+    LOG_INFO(QString("   ASC: %1").arg(encAscii));
+    // ==============================================================
+
+    return result;
 }
