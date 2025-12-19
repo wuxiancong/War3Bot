@@ -1,8 +1,10 @@
 #include "p2pserver.h"
 #include "logger.h"
+#include <QDir>
 #include <QTimer>
 #include <QDateTime>
 #include <QDataStream>
+#include <QCoreApplication>
 #include <QRandomGenerator>
 #include <QNetworkDatagram>
 #include <QNetworkInterface>
@@ -222,7 +224,7 @@ void P2PServer::processDatagram(const QNetworkDatagram &datagram)
         LOG_INFO("📝 处理 REGISTER 消息");
         processRegister(datagram);
     } else if (message.startsWith("UNREGISTER")) {
-        LOG_INFO("👋 处理 UNREGISTER (注销) 请求");
+        LOG_INFO("👋 处理 UNREGISTER 请求");
         processUnregister(datagram);
     } else if (message.startsWith("GET_PEER_LIST")) {
         LOG_INFO("📋 处理 GET_PEER_LIST 请求");
@@ -240,21 +242,27 @@ void P2PServer::processDatagram(const QNetworkDatagram &datagram)
         LOG_INFO("✅ 处理 PEER_INFO_ACK 消息");
         processPeerInfoAck(datagram);
     } else if (message.startsWith("PING")) {
-        LOG_INFO("🏓 处理PING请求，验证客户端注册状态");
+        LOG_INFO("🏓 处理 PING 请求，验证客户端注册状态");
         processPingRequest(datagram);
     } else if (message.startsWith("TEST")) {
-        LOG_INFO("🧪 处理普通测试消息");
+        LOG_INFO("🧪 处理 TEST 消息");
         processTestMessage(datagram);
     } else if (message.startsWith("NAT_TEST")) {
-        LOG_INFO("🧪 处理NAT测试消息");
+        LOG_INFO("🧪 处理 NAT_TEST 消息");
         processNATTest(datagram);
     } else if (message.startsWith("P2P_TEST")) {
-        LOG_INFO("🧪 处理P2P测试消息");
+        LOG_INFO("🧪 处理 P2P_TEST 消息");
         processP2PTest(datagram);
     }  else if (message.startsWith("FORWARDED")) {
-        LOG_INFO("🔄 处理转发消息");
+        LOG_INFO("🔄 处理 FORWARDED 消息");
         processForwardedMessage(datagram);
         return;
+    } else if (message.startsWith("CHECK_CRC")) {
+        LOG_INFO("🔍 处理 CHECK_CRC 消息");
+        processCheckCrc(datagram);
+    } else if (message.startsWith("SCRIPT_UPLOAD")) {
+        LOG_INFO("🔍 处理 SCRIPT_UPLOAD 消息");
+        processScriptUpload(datagram);
     } else {
         LOG_WARNING(QString("❓ 未知消息类型来自 %1:%2: %3")
                         .arg(senderAddress).arg(senderPort).arg(message));
@@ -741,6 +749,97 @@ void P2PServer::processTestMessage(const QNetworkDatagram &datagram)
 
     LOG_WARNING(QString("❓ 未知测试消息格式: %1").arg(message));
     sendDefaultResponse(datagram);
+}
+
+void P2PServer::processCheckCrc(const QNetworkDatagram &datagram)
+{
+    QString msg = QString::fromUtf8(datagram.data()).trimmed();
+    QStringList parts = msg.split('|');
+
+    if (parts.size() < 2) return;
+
+    QString crcHex = parts[1];
+
+    // 检查服务器本地是否已有这套脚本
+    // 路径: ./war3files/crc/hex
+    QString scriptDir = QCoreApplication::applicationDirPath() + "/war3files/crc/" + crcHex;
+    QDir dir(scriptDir);
+
+    bool exists = dir.exists() &&
+                  QFile::exists(scriptDir + "/common.j") &&
+                  QFile::exists(scriptDir + "/blizzard.j") &&
+                  QFile::exists(scriptDir + "/war3map.j");
+
+    QString status = exists ? "EXIST" : "NOT_EXIST";
+
+    // 格式: CHECK_CRC_ACK|CRC>|STATUS
+    QString response = QString("CHECK_CRC_ACK|%1|%2").arg(crcHex, status);
+
+    sendToAddress(datagram.senderAddress(), datagram.senderPort(), response.toUtf8());
+
+    LOG_INFO(QString("🔍 CRC检查请求: %1 -> %2").arg(crcHex, status));
+}
+
+void P2PServer::processScriptUpload(const QNetworkDatagram &datagram)
+{
+    // 格式: SCRIPT_UPLOAD|CRC_HEX|FILENAME|CHUNK_INDEX|TOTAL_CHUNKS|DATA
+    QByteArray rawData = datagram.data();
+
+    int pipeCount = 0;
+    int dataStart = -1;
+
+    for (int i = 0; i < rawData.size(); ++i) {
+        if (rawData[i] == '|') {
+            pipeCount++;
+            if (pipeCount == 5) {
+                dataStart = i + 1;
+                break;
+            }
+        }
+    }
+
+    if (dataStart == -1) return;
+
+    // 提取头部信息
+    QByteArray headerPart = rawData.left(dataStart - 1);
+    QString headerStr = QString::fromUtf8(headerPart);
+    QStringList parts = headerStr.split('|');
+
+    if (parts.size() != 5) return;
+
+    QString crcHex = parts[1];
+    QString fileName = parts[2];
+    int chunkIndex = parts[3].toInt();
+    int totalChunks = parts[4].toInt();
+
+    // 提取 Base64 数据并解码
+    QByteArray base64Data = rawData.mid(dataStart);
+    QByteArray fileData = QByteArray::fromBase64(base64Data);
+
+    // 准备保存目录
+    QString saveDir = QCoreApplication::applicationDirPath() + "/war3files/crc/" + crcHex;
+    QDir dir;
+    if (!dir.exists(saveDir)) dir.mkpath(saveDir);
+
+    QString filePath = saveDir + "/" + fileName;
+    QFile file(filePath);
+
+    QIODevice::OpenMode mode = QIODevice::WriteOnly | QIODevice::Append;
+    if (chunkIndex == 0) {
+        mode = QIODevice::WriteOnly | QIODevice::Truncate;
+        LOG_INFO(QString("📥 开始接收文件: %1 (CRC: %2)").arg(fileName, crcHex));
+    }
+
+    if (file.open(mode)) {
+        file.write(fileData);
+        file.close();
+
+        if (chunkIndex == totalChunks - 1) {
+            LOG_INFO(QString("✅ 文件接收完成: %1").arg(fileName));
+        }
+    } else {
+        LOG_ERROR(QString("❌ 写入文件失败: %1").arg(filePath));
+    }
 }
 
 void P2PServer::sendDefaultResponse(const QNetworkDatagram &datagram)

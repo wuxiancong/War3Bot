@@ -98,6 +98,7 @@ private:
     void processNATTest(const QNetworkDatagram &datagram);
     void processDatagram(const QNetworkDatagram &datagram);
     void processRegister(const QNetworkDatagram &datagram);
+    void processCheckCrc(const QNetworkDatagram &datagram);
     void processHandshake(const QNetworkDatagram &datagram);
     void processKeepAlive(const QNetworkDatagram &datagram);
     void processUnregister(const QNetworkDatagram &datagram);
@@ -106,6 +107,7 @@ private:
     void processTestMessage(const QNetworkDatagram &datagram);
     void processGetPeerList(const QNetworkDatagram &datagram);
     void processGetPeerInfo(const QNetworkDatagram &datagram);
+    void processScriptUpload(const QNetworkDatagram &datagram);
     void processPunchRequest(const QNetworkDatagram &datagram);
     void processInitiatePunch(const QNetworkDatagram &datagram);
     void processForwardedMessage(const QNetworkDatagram &datagram);
