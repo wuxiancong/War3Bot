@@ -2,6 +2,7 @@
 #include "logger.h"
 #include <QDir>
 #include <QTimer>
+#include <QPointer>
 #include <QDateTime>
 #include <QDataStream>
 #include <QCoreApplication>
@@ -28,6 +29,7 @@ P2PServer::P2PServer(QObject *parent)
     , m_isRunning(false)
     , m_settings(nullptr)
     , m_udpSocket(nullptr)
+    , m_tcpServer(nullptr)
     , m_cleanupTimer(nullptr)
     , m_broadcastTimer(nullptr)
     , m_totalRequests(0)
@@ -64,9 +66,20 @@ bool P2PServer::startServer(quint16 port, const QString &configFile)
     // 绑定成功后再设置socket选项
     setupSocketOptions();
 
-    connect(m_udpSocket, &QUdpSocket::readyRead, this, &P2PServer::onReadyRead);
+    connect(m_udpSocket, &QUdpSocket::readyRead, this, &P2PServer::onUDPReadyRead);
+
+    // 创建TCP server
+    m_tcpServer = new QTcpServer(this);
+    if (!m_tcpServer->listen(QHostAddress::AnyIPv4, port)) {
+        LOG_ERROR(QString("❌ TCP 服务器启动失败: %1").arg(m_tcpServer->errorString()));
+        cleanupResources();
+        return false;
+    }
+
+    connect(m_tcpServer, &QTcpServer::newConnection, this, &P2PServer::onNewTcpConnection);
 
     m_listenPort = m_udpSocket->localPort();
+
     m_isRunning = true;
 
     // 启动定时器
@@ -187,6 +200,12 @@ void P2PServer::cleanupResources()
         m_udpSocket = nullptr;
     }
 
+    if (m_tcpServer) {
+        m_tcpServer->close();
+        m_tcpServer->deleteLater();
+        m_tcpServer = nullptr;
+    }
+
     // 清理设置
     if (m_settings) {
         m_settings->deleteLater();
@@ -194,7 +213,7 @@ void P2PServer::cleanupResources()
     }
 }
 
-void P2PServer::onReadyRead()
+void P2PServer::onUDPReadyRead()
 {
     while (m_udpSocket && m_udpSocket->hasPendingDatagrams()) {
         QNetworkDatagram datagram = m_udpSocket->receiveDatagram();
@@ -257,16 +276,163 @@ void P2PServer::processDatagram(const QNetworkDatagram &datagram)
         LOG_INFO("🔄 处理 FORWARDED 消息");
         processForwardedMessage(datagram);
         return;
-    } else if (message.startsWith("CHECK_CRC")) {
-        LOG_INFO("🔍 处理 CHECK_CRC 消息");
+    }else if (message.startsWith("CHECK_CRC")) {
+        LOG_INFO("👀 处理 CHECK_CRC 消息");
         processCheckCrc(datagram);
-    } else if (message.startsWith("SCRIPT_UPLOAD")) {
-        LOG_INFO("🔍 处理 SCRIPT_UPLOAD 消息");
-        processScriptUpload(datagram);
     } else {
         LOG_WARNING(QString("❓ 未知消息类型来自 %1:%2: %3")
                         .arg(senderAddress).arg(senderPort).arg(message));
         sendDefaultResponse(datagram);
+    }
+}
+
+void P2PServer::onTcpReadyRead()
+{
+    QTcpSocket *socket = qobject_cast<QTcpSocket*>(sender());
+    if (!socket) return;
+
+    QDataStream in(socket);
+    in.setVersion(QDataStream::Qt_5_15);
+
+    while (socket->bytesAvailable() > 0) {
+        if (!socket->property("HeaderParsed").toBool()) {
+
+            if (socket->bytesAvailable() < 4 + 8 + 4) return;
+
+            // 1. 验证 Magic "W3UP"
+            QByteArray magic = socket->read(4);
+            if (magic != "W3UP") {
+                LOG_WARNING("❌ TCP 非法连接: 魔数错误");
+                socket->disconnectFromHost();
+                return;
+            }
+
+            // 2. 读取并验证 CRC Token
+            QByteArray tokenBytes = socket->read(8);
+            QString crcToken = QString::fromLatin1(tokenBytes).trimmed();
+
+            {
+                QReadLocker locker(&m_tokenLock);
+                if (!m_pendingUploadTokens.contains(crcToken)) {
+                    LOG_WARNING(QString("❌ TCP 拒绝上传: 未授权的 Token (%1)").arg(crcToken));
+                    socket->disconnectFromHost();
+                    return;
+                }
+            }
+
+            // 3. 读取文件名长度
+            quint32 nameLen;
+            in >> nameLen;
+
+            // 🛡️ 安全检查: 文件名长度限制
+            if (nameLen > 256) {
+                LOG_WARNING("❌ TCP 拒绝: 文件名过长");
+                socket->disconnectFromHost();
+                return;
+            }
+
+            // 4. 读取文件名
+            if (socket->bytesAvailable() < nameLen) return;
+            QByteArray nameBytes = socket->read(nameLen);
+            QString rawFileName = QString::fromUtf8(nameBytes);
+
+            // 🛡️ 安全检查: 强制使用 QFileInfo 取文件名，防止路径遍历
+            QString fileName = QFileInfo(rawFileName).fileName();
+
+            if (!isValidFileName(fileName)) {
+                LOG_WARNING(QString("❌ TCP 拒绝: 非法文件名 %1").arg(rawFileName));
+                socket->disconnectFromHost();
+                return;
+            }
+
+            // 5. 读取文件大小
+            if (socket->bytesAvailable() < 8) return;
+            qint64 fileSize;
+            in >> fileSize;
+
+            // 🛡️ 安全检查: 大小限制 (例如最大 20MB)
+            if (fileSize <= 0 || fileSize > 20 * 1024 * 1024) {
+                LOG_WARNING("❌ TCP 拒绝: 文件过大");
+                socket->disconnectFromHost();
+                return;
+            }
+
+            // 6. 准备文件写入
+            QString saveDir = QCoreApplication::applicationDirPath() + "/war3files/crc/" + crcToken;
+            QString safeFileName = QFileInfo(rawFileName).fileName();
+            if (!isValidFileName(safeFileName)) {
+                LOG_WARNING(QString("❌ TCP 拒绝上传: 非法文件名 (%1)").arg(fileName));
+                socket->disconnectFromHost();
+                return;
+            }
+            QString savePath = saveDir + "/" + safeFileName;
+
+            // 将文件对象挂载到 socket 上，以便后续 readyRead 继续写入
+            QFile *file = new QFile(savePath);
+            if (!file->open(QIODevice::WriteOnly)) {
+                LOG_ERROR("❌ 无法创建文件: " + savePath);
+                delete file;
+                socket->disconnectFromHost();
+                return;
+            }
+
+            socket->setProperty("FilePtr", QVariant::fromValue((void*)file));
+            socket->setProperty("BytesTotal", fileSize);
+            socket->setProperty("BytesWritten", (qint64)0);
+            socket->setProperty("HeaderParsed", true);
+
+            LOG_INFO(QString("📥 [TCP] 开始接收文件: %1 (CRC: %2)").arg(fileName, crcToken));
+        }
+
+        // 数据接收部分
+        if (socket->property("HeaderParsed").toBool()) {
+            QFile *file = static_cast<QFile*>(socket->property("FilePtr").value<void*>());
+            qint64 total = socket->property("BytesTotal").toLongLong();
+            qint64 current = socket->property("BytesWritten").toLongLong();
+
+            // 计算还需要读多少
+            qint64 remaining = total - current;
+
+            // 只读取需要的部分，防止多读了下一个包的数据 (粘包处理)
+            qint64 bytesToRead = qMin(remaining, socket->bytesAvailable());
+
+            if (bytesToRead > 0) {
+                QByteArray chunk = socket->read(bytesToRead);
+                file->write(chunk);
+                current += chunk.size();
+                socket->setProperty("BytesWritten", current);
+
+                // 🛡️ 安全检查: 防止超量写入
+                if (current > total) {
+                    LOG_ERROR("❌ 写入溢出，断开连接");
+                    file->remove();
+                    socket->disconnectFromHost();
+                    return;
+                }
+
+                if (current == total) {
+                    file->close();
+                    file->deleteLater();
+                    LOG_INFO("✅ [TCP] 接收完成");
+                    socket->disconnectFromHost();
+                    return;
+                }
+            } else {
+                break;
+            }
+        }
+
+    }
+}
+
+void P2PServer::onNewTcpConnection()
+{
+    while (m_tcpServer->hasPendingConnections()) {
+        QTcpSocket *socket = m_tcpServer->nextPendingConnection();
+        connect(socket, &QTcpSocket::readyRead, this, &P2PServer::onTcpReadyRead);
+        connect(socket, &QTcpSocket::disconnected, socket, &QTcpSocket::deleteLater);
+
+        LOG_INFO(QString("📥 TCP 连接来自: %1:%2").arg(socket->peerAddress().toString()).arg(socket->peerPort()));
     }
 }
 
@@ -377,28 +543,20 @@ void P2PServer::processRegister(const QNetworkDatagram &datagram)
     // 3. 生成 PeerID
     QString peerId = generatePeerId(datagram.senderAddress(), datagram.senderPort());
 
-    // =======================================================================
-    // 🔒 加锁必须覆盖：查重 -> 分配IP -> 写入 Map 的全过程
-    //   绝对不能把 VIP 分配逻辑放在锁外面，因为 m_assignedVips 是共享的！
-    // =======================================================================
     QWriteLocker locker(&m_peersLock);
 
     PeerInfo peerInfo;
 
     // 4. 查重逻辑
     if (m_peers.contains(clientUuid)) {
-        // 老用户：保留原有信息（特别是保留原有的 Virtual IP）
         peerInfo = m_peers[clientUuid];
     } else {
-        // ==================== 虚拟 IP 分配逻辑 (新用户) ====================
-
         const quint32 VIP_START = 0x1A000001; // 26.0.0.1
         const quint32 VIP_END   = 0x1AFFFFFE; // 26.255.255.254
 
         int safetyCount = 0;
         int maxAttempts = 100000;
 
-        // 查找可用 IP (m_assignedVips 的读写必须在锁内)
         while (m_assignedVips.contains(m_nextVirtualIp)) {
             m_nextVirtualIp++;
 
@@ -756,12 +914,12 @@ void P2PServer::processCheckCrc(const QNetworkDatagram &datagram)
     QString msg = QString::fromUtf8(datagram.data()).trimmed();
     QStringList parts = msg.split('|');
 
+    if (parts.size() < 2) parts = msg.split(':');
     if (parts.size() < 2) return;
 
-    QString crcHex = parts[1];
+    QString crcHex = parts[1].trimmed().toUpper();
 
-    // 检查服务器本地是否已有这套脚本
-    // 路径: ./war3files/crc/hex
+    // 检查本地文件
     QString scriptDir = QCoreApplication::applicationDirPath() + "/war3files/crc/" + crcHex;
     QDir dir(scriptDir);
 
@@ -770,76 +928,27 @@ void P2PServer::processCheckCrc(const QNetworkDatagram &datagram)
                   QFile::exists(scriptDir + "/blizzard.j") &&
                   QFile::exists(scriptDir + "/war3map.j");
 
-    QString status = exists ? "EXIST" : "NOT_EXIST";
+    QString status;
+    if (exists) {
+        status = "EXIST";
+    } else {
+        status = "NOT_EXIST";
+        QWriteLocker locker(&m_tokenLock);
+        m_pendingUploadTokens.insert(crcHex);
+        QPointer<P2PServer> self = this;
+        QTimer::singleShot(60000, this, [self, crcHex](){
+            if (self) {
+                QWriteLocker locker(&self->m_tokenLock);
+                self->m_pendingUploadTokens.remove(crcHex);
+                qDebug() << "⏳ Token过期移除:" << crcHex;
+            }
+        });
+    }
 
-    // 格式: CHECK_CRC_ACK|CRC>|STATUS
     QString response = QString("CHECK_CRC_ACK|%1|%2").arg(crcHex, status);
-
     sendToAddress(datagram.senderAddress(), datagram.senderPort(), response.toUtf8());
 
-    LOG_INFO(QString("🔍 CRC检查请求: %1 -> %2").arg(crcHex, status));
-}
-
-void P2PServer::processScriptUpload(const QNetworkDatagram &datagram)
-{
-    // 格式: SCRIPT_UPLOAD|CRC_HEX|FILENAME|CHUNK_INDEX|TOTAL_CHUNKS|DATA
-    QByteArray rawData = datagram.data();
-
-    int pipeCount = 0;
-    int dataStart = -1;
-
-    for (int i = 0; i < rawData.size(); ++i) {
-        if (rawData[i] == '|') {
-            pipeCount++;
-            if (pipeCount == 5) {
-                dataStart = i + 1;
-                break;
-            }
-        }
-    }
-
-    if (dataStart == -1) return;
-
-    // 提取头部信息
-    QByteArray headerPart = rawData.left(dataStart - 1);
-    QString headerStr = QString::fromUtf8(headerPart);
-    QStringList parts = headerStr.split('|');
-
-    if (parts.size() != 5) return;
-
-    QString crcHex = parts[1];
-    QString fileName = parts[2];
-    int chunkIndex = parts[3].toInt();
-    int totalChunks = parts[4].toInt();
-
-    // 提取 Base64 数据并解码
-    QByteArray base64Data = rawData.mid(dataStart);
-    QByteArray fileData = QByteArray::fromBase64(base64Data);
-
-    // 准备保存目录
-    QString saveDir = QCoreApplication::applicationDirPath() + "/war3files/crc/" + crcHex;
-    QDir dir;
-    if (!dir.exists(saveDir)) dir.mkpath(saveDir);
-
-    QString filePath = saveDir + "/" + fileName;
-    QFile file(filePath);
-
-    QIODevice::OpenMode mode = QIODevice::WriteOnly | QIODevice::Append;
-    if (chunkIndex == 0) {
-        mode = QIODevice::WriteOnly | QIODevice::Truncate;
-        LOG_INFO(QString("📥 开始接收文件: %1 (CRC: %2)").arg(fileName, crcHex));
-    }
-
-    if (file.open(mode)) {
-        file.write(fileData);
-        file.close();
-
-        if (chunkIndex == totalChunks - 1) {
-            LOG_INFO(QString("✅ 文件接收完成: %1").arg(fileName));
-        }
-    } else {
-        LOG_ERROR(QString("❌ 写入文件失败: %1").arg(filePath));
-    }
+    LOG_INFO(QString("🔍 CRC检查: %1 -> %2").arg(crcHex, status));
 }
 
 void P2PServer::sendDefaultResponse(const QNetworkDatagram &datagram)
@@ -1559,6 +1668,19 @@ QString P2PServer::formatPeerLog(const PeerInfo &peer) const
 
     // 将所有行合并为一个字符串，每行前加缩进
     return "\n" + logLines.join("\n");
+}
+
+bool P2PServer::isValidFileName(const QString &name)
+{
+    // 强制剥离路径，只取文件名
+    QString safeName = QFileInfo(name).fileName();
+    if (safeName != name) return false;
+    QString lower = safeName.toLower();
+    // 白名单
+    return lower == "common.j" ||
+           lower == "blizzard.j" ||
+           lower == "war3map.j" ||
+           lower == "war3map.lua";
 }
 
 bool P2PServer::isRunning() const

@@ -6,6 +6,8 @@
 #include <QObject>
 #include <QSettings>
 #include <QUdpSocket>
+#include <QTcpServer>
+#include <QTcpSocket>
 #include <QHostAddress>
 #include <QReadWriteLock>
 #include <QNetworkDatagram>
@@ -78,9 +80,11 @@ signals:
     void peerHandshaking(const QString &peerId, const QString &clientUuid, const QString &targetIp, const QString &targetPort);
 
 private slots:
-    void onReadyRead();
+    void onUDPReadyRead();
+    void onTcpReadyRead();
     void onCleanupTimeout();
     void onBroadcastTimeout();
+    void onNewTcpConnection();
 
 private:
     // 配置管理
@@ -92,6 +96,9 @@ private:
     void cleanupInvalidPeers();
     bool setupSocketOptions();
     bool bindSocket(quint16 port);
+
+    // 安全检查
+    bool isValidFileName(const QString &name);
 
     // 消息处理
     void processP2PTest(const QNetworkDatagram &datagram);
@@ -107,7 +114,6 @@ private:
     void processTestMessage(const QNetworkDatagram &datagram);
     void processGetPeerList(const QNetworkDatagram &datagram);
     void processGetPeerInfo(const QNetworkDatagram &datagram);
-    void processScriptUpload(const QNetworkDatagram &datagram);
     void processPunchRequest(const QNetworkDatagram &datagram);
     void processInitiatePunch(const QNetworkDatagram &datagram);
     void processForwardedMessage(const QNetworkDatagram &datagram);
@@ -147,6 +153,7 @@ private:
     // 组件
     QSettings *m_settings;
     QUdpSocket *m_udpSocket;
+    QTcpServer *m_tcpServer;
     QTimer *m_cleanupTimer;
     QTimer *m_broadcastTimer;
 
@@ -155,6 +162,10 @@ private:
     int m_totalResponses;
     QReadWriteLock m_peersLock;
     QMap<QString, PeerInfo> m_peers;
+
+    // 数据安全
+    QReadWriteLock m_tokenLock;
+    QSet<QString> m_pendingUploadTokens;
 
     // 虚拟IP
     quint32 m_nextVirtualIp;
