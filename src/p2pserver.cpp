@@ -450,13 +450,12 @@ void P2PServer::onTcpReadyRead()
                             }
                         }
 
-                        // 上传完成后，重新计算热门 CRC
-                        updateMostFrequentCrc();
-
                         if (!peerFound) {
                             LOG_WARNING(QString("⚠️ 文件接收完成，但未找到 IP 为 %1 的用户来绑定 CRC").arg(senderIp));
                         }
                     }
+                    // 上传完成后，重新计算热门 CRC
+                    updateMostFrequentCrc();
 
                     LOG_INFO("✅ [TCP] 接收完成");
                     socket->disconnectFromHost();
@@ -959,7 +958,6 @@ void P2PServer::processCheckCrc(const QNetworkDatagram &datagram)
     QString msg = QString::fromUtf8(datagram.data()).trimmed();
     QStringList parts = msg.split('|');
 
-    if (parts.size() < 2) parts = msg.split(':');
     if (parts.size() < 2) return;
 
     QString crcHex = parts[1].trimmed().toUpper();
@@ -1481,42 +1479,44 @@ void P2PServer::cleanupInvalidPeers()
 
 void P2PServer::cleanupExpiredPeers()
 {
-    QWriteLocker locker(&m_peersLock);
-    qint64 currentTime = QDateTime::currentMSecsSinceEpoch();
-    QList<QString> expiredPeers;
+    {
+        QWriteLocker locker(&m_peersLock);
+        qint64 currentTime = QDateTime::currentMSecsSinceEpoch();
+        QList<QString> expiredPeers;
 
-    // 1. 扫描过期节点
-    for (auto it = m_peers.begin(); it != m_peers.end(); ++it) {
-        if (currentTime - it.value().lastSeen > m_peerTimeout) {
-            expiredPeers.append(it.key());
-        }
-    }
-
-    // 2. 执行删除
-    for (const QString &clientUuid : expiredPeers) {
-        // 必须在 remove 之前获取 PeerInfo！
-        // 否则 remove 后再用 [] 访问，会重新插入一个空的 PeerInfo！
-        PeerInfo info = m_peers.value(clientUuid);
-
-        LOG_INFO(QString("🗑️ 移除过期对等端: %1").arg(clientUuid));
-
-        // 释放虚拟 IP
-        if (!info.virtualIp.isEmpty()) {
-            QHostAddress addr(info.virtualIp);
-            quint32 vipInt = addr.toIPv4Address();
-            if (vipInt != 0) {
-                m_assignedVips.remove(vipInt);
-                qDebug() << "♻️ 回收过期用户的虚拟IP:" << info.virtualIp;
+        // 1. 扫描过期节点
+        for (auto it = m_peers.begin(); it != m_peers.end(); ++it) {
+            if (currentTime - it.value().lastSeen > m_peerTimeout) {
+                expiredPeers.append(it.key());
             }
         }
 
-        // 这里的 remove 才是安全的
-        m_peers.remove(clientUuid);
-        emit peerRemoved(clientUuid);
-    }
+        // 2. 执行删除
+        for (const QString &clientUuid : expiredPeers) {
+            // 必须在 remove 之前获取 PeerInfo！
+            // 否则 remove 后再用 [] 访问，会重新插入一个空的 PeerInfo！
+            PeerInfo info = m_peers.value(clientUuid);
 
-    if (!expiredPeers.isEmpty()) {
-        LOG_INFO(QString("🧹 已清理 %1 个过期对等端").arg(expiredPeers.size()));
+            LOG_INFO(QString("🗑️ 移除过期对等端: %1").arg(clientUuid));
+
+            // 释放虚拟 IP
+            if (!info.virtualIp.isEmpty()) {
+                QHostAddress addr(info.virtualIp);
+                quint32 vipInt = addr.toIPv4Address();
+                if (vipInt != 0) {
+                    m_assignedVips.remove(vipInt);
+                    qDebug() << "♻️ 回收过期用户的虚拟IP:" << info.virtualIp;
+                }
+            }
+
+            // 这里的 remove 才是安全的
+            m_peers.remove(clientUuid);
+            emit peerRemoved(clientUuid);
+        }
+
+        if (!expiredPeers.isEmpty()) {
+            LOG_INFO(QString("🧹 已清理 %1 个过期对等端").arg(expiredPeers.size()));
+        }
     }
     updateMostFrequentCrc();
 }
@@ -1545,24 +1545,25 @@ QString P2PServer::findPeerUuidByAddress(const QHostAddress &address, quint16 po
 
 void P2PServer::removePeer(const QString &clientUuid)
 {
-    QWriteLocker locker(&m_peersLock);
-
     if (m_peers.contains(clientUuid)) {
-        const PeerInfo &peer = m_peers[clientUuid];
+        {
+            QWriteLocker locker(&m_peersLock);
+            const PeerInfo &peer = m_peers[clientUuid];
 
-        // 释放虚拟 IP
-        if (!peer.virtualIp.isEmpty()) {
-            QHostAddress addr(peer.virtualIp);
-            quint32 vipInt = addr.toIPv4Address(); // 转回整数
-            m_assignedVips.remove(vipInt);         // 从占用集合中移除
+            // 释放虚拟 IP
+            if (!peer.virtualIp.isEmpty()) {
+                QHostAddress addr(peer.virtualIp);
+                quint32 vipInt = addr.toIPv4Address(); // 转回整数
+                m_assignedVips.remove(vipInt);         // 从占用集合中移除
 
-            qDebug() << "♻️ 释放虚拟IP:" << peer.virtualIp;
+                qDebug() << "♻️ 释放虚拟IP:" << peer.virtualIp;
+            }
+
+            m_peers.remove(clientUuid);
+            emit peerRemoved(clientUuid);
         }
-
-        m_peers.remove(clientUuid);
-        emit peerRemoved(clientUuid);
+        updateMostFrequentCrc();
     }
-    updateMostFrequentCrc();
 }
 
 QString P2PServer::ipIntToString(quint32 ip) {
