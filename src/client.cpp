@@ -364,7 +364,11 @@ void Client::handleTcpPacket(TCPPacketID id, const QByteArray &data)
             // 对于此事件，'text' 字段存储的是频道名称
             LOG_INFO(QString("🏠 已加入频道: [%1]").arg(text));
             // 创建房间
-            createGame("fast 1k~2k", "", 6112, GameType::GameType_W3XP_Custom);
+            createGame("fast 1k~2k", "", 6112,
+                       ProviderVersion::Provider_TFT_New,
+                       GameTypeCombo::Game_TFT_Custom,
+                       SubGameType::SubType_Internet,
+                       LadderType::Ladder_None);
             break;
 
         case 0x09: // EID_USERFLAGS (用户权限/图标变更)
@@ -887,7 +891,8 @@ void Client::stopGame()
     sendPacket(SID_STOPADV, QByteArray());
 }
 
-void Client::createGame(const QString &gameName, const QString &password, quint16 udpPort, GameType gameType)
+void Client::createGame(const QString &gameName, const QString &password, quint16 udpPort,
+                        ProviderVersion providerVersion, GameTypeCombo gameTypeCombo, SubGameType subGameType, LadderType ladderType)
 {
     // 1. 先发送停止广播，清理旧状态
     stopGame();
@@ -965,16 +970,16 @@ void Client::createGame(const QString &gameName, const QString &password, quint1
         out << (quint32)0;
 
         // 3. (UINT16) Game Type (0x2001)
-        out << (quint16)gameType;
+        out << (quint16)gameTypeCombo;
 
         // 4. (UINT16) Sub Game Type (0x49)
-        out << (quint16)0x49;
+        out << (quint16)subGameType;
 
         // 5. (UINT32) Provider Version Constant
-        out << (quint32)0;
+        out << (quint32)providerVersion;
 
         // 6. (UINT32) Ladder Type
-        out << (quint32)0;
+        out << (quint32)ladderType;
 
         // 7. (STRING) Game Name
         out.writeRawData(gameName.toUtf8().constData(), gameName.toUtf8().size());

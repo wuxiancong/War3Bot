@@ -62,24 +62,68 @@ public:
         W3GS_MAPCHECK               = 0x3D  // 地图检查
     };
 
-    // 游戏类型枚举
-    enum GameType {
-        GameType_Custom             = 0x01,     // 基础自定义游戏 (War3 标准)
-        GameType_Melee              = 0x02,
-        GameType_FFA                = 0x03,
-        GameType_1v1                = 0x04,
-        GameType_Ladder             = 0x09,     // 基础天梯游戏
-        GameType_UMS                = 0x0A,     // Use Map Settings (星际/部分War3)
-
-        // 复合类型 (冰封王座 W3XP)
-        GameType_W3XP_Custom        = 0x2001,   // 0x2001 = 0x01 (Custom) | 0x2000 (Expansion)
-        GameType_W3XP_Ladder        = 0x2009    // 0x2009 = 0x09 (Ladder) | 0x2000 (Expansion)
+    // 1. 基础游戏类型 (低 8 位)
+    enum GameBaseType {
+        Type_Unknown        = 0x00,
+        Type_Custom         = 0x01,     // 自定义游戏 (RPG, DotA 等)
+        Type_Melee          = 0x02,     // 普通近战 (非天梯)
+        Type_FFA            = 0x03,     // 混战
+        Type_1v1            = 0x04,     // 1v1
+        Type_Ladder         = 0x09,     // 天梯模式 (官方对战)
+        Type_UMS            = 0x0A      // Use Map Settings (自定义地图设置)
     };
 
-    // 游戏状态标志
+    // 2. 游戏版本/特性标志 (高 24 位)
+    // 这里的 flag 可以与 BaseType 进行 | 运算
+    enum GameTypeFlags {
+        Flag_None           = 0x0000,
+        Flag_Expansion      = 0x2000,   // 冰封王座 (W3XP) 标志，所有 TFT 游戏必须带
+        Flag_FixedTeams     = 0x4000,   // 固定队伍
+        Flag_Official       = 0x8000    // 官方/暴雪认证 (通常用于 0x09 天梯图)
+    };
+
+    // 3. 组合后的常用游戏类型 (用于 createGame 参数)
+    enum GameTypeCombo {
+        Game_TFT_Custom     = 0x2001,   // 最常用的自定义图 (DotA)
+        Game_TFT_Official   = 0xC009,   // 官方对战图 (Booty Bay 等)
+        Game_RoC_Custom     = 0x0001    // 混乱之治 (RoC) 时代的老图 (现在很少见)
+    };
+
+    // 4. 子游戏类型 (SubGameType / Option) - 决定地图来源目录
+    enum SubGameType {
+        SubType_None        = 0x00,     // 局域网/未知
+        SubType_Blizzard    = 0x42,     // 'B' - Maps/FrozenThrone (官方对战)
+        SubType_Scenario    = 0x43,     // 'C' - Maps/Scenario (自带娱乐/RPG)
+        SubType_Internet    = 0x49,     // 'I' - Maps/Download (玩家下载的图，如 DotA)
+        SubType_Load        = 0x4C,     // 'L' - 加载游戏
+        SubType_Save        = 0x53      // 'S' - 存档
+    };
+
+    // 5. 游戏状态 (Game State)
     enum GameState {
-        GameState_Private           = 0x10, // 私有
-        GameState_Public            = 0x11  // 公开
+        State_None          = 0x00,
+        State_Private_Mask  = 0x01,     // 私有位掩码
+
+        State_Open_Public   = 0x10,     // 公开游戏 (0x10)
+        State_Open_Private  = 0x11,     // 私有游戏 (0x10 | 0x01)
+
+        State_Full          = 0x02,     // 已满
+        State_Started       = 0x04      // 已开始
+    };
+
+    // 6. 提供商版本 (Provider Version)
+    enum ProviderVersion {
+        Provider_All_Bits   = 0xFFFFFFFF,
+        Provider_RoC        = 0x00000000,   // 混乱之治 / 暗黑2
+        Provider_SC_BW      = 0x000000FF,   // 星际争霸 / 早期 War3 (1.23及以下)
+        Provider_TFT_New    = 0x000003FF    // 现代 War3 (1.24+, 1.27, 网易平台等)
+    };
+
+    // 7. 天梯类型 (Ladder Type)
+    enum LadderType {
+        Ladder_None         = 0x00000000,   // 非天梯 / 标准游戏 (War3 自建房必须用这个)
+        Ladder_Standard     = 0x00000001,   // 标准天梯 (Ladder) 客户端忽略 StatString，尝试请求天梯积分/排名。
+        Ladder_IronMan      = 0x00000003    // 铁人天梯 (Iron Man Ladder) 主要用于《魔兽争霸 II》战网版，War3 中极少使用，某些私服可能用于特殊模式。
     };
 
     static const quint8 BNET_HEADER = 0xFF;
@@ -107,7 +151,8 @@ public:
     void joinChannel(const QString &channelName);
 
     // 创建游戏
-    void createGame(const QString &gameName, const QString &password,quint16 udpPort, GameType gameType);
+    void createGame(const QString &gameName, const QString &password,quint16 udpPort,
+                    ProviderVersion providerVersion, GameTypeCombo gameTypeCombo, SubGameType subGameType, LadderType ladderType);
 
     QString getPrimaryIPv4();
     quint32 ipToUint32(const QString &ipAddress);
