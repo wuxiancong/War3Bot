@@ -366,7 +366,7 @@ void Client::handleTcpPacket(TCPPacketID id, const QByteArray &data)
             // 创建房间
             createGame("fast 1k~2k", "", 6112,
                        ProviderVersion::Provider_TFT_New,
-                       GameTypeCombo::Game_TFT_Custom,
+                       ComboGameType::Game_TFT_Custom,
                        SubGameType::SubType_Internet,
                        LadderType::Ladder_None);
             break;
@@ -892,7 +892,7 @@ void Client::stopGame()
 }
 
 void Client::createGame(const QString &gameName, const QString &password, quint16 udpPort,
-                        ProviderVersion providerVersion, GameTypeCombo gameTypeCombo, SubGameType subGameType, LadderType ladderType)
+                        ProviderVersion providerVersion, ComboGameType comboGameType, SubGameType subGameType, LadderType ladderType)
 {
     // 1. 先发送停止广播，清理旧状态
     stopGame();
@@ -970,7 +970,7 @@ void Client::createGame(const QString &gameName, const QString &password, quint1
         out << (quint32)0;
 
         // 3. (UINT16) Game Type (0x2001)
-        out << (quint16)gameTypeCombo;
+        out << (quint16)comboGameType;
 
         // 4. (UINT16) Sub Game Type (0x49)
         out << (quint16)subGameType;

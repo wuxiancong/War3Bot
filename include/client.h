@@ -62,19 +62,29 @@ public:
         W3GS_MAPCHECK               = 0x3D  // 地图检查
     };
 
-    // 1. 基础游戏类型 (低 8 位)
-    enum GameBaseType {
-        Type_Unknown        = 0x00,
-        Type_Custom         = 0x01,     // 自定义游戏 (RPG, DotA 等)
-        Type_Melee          = 0x02,     // 普通近战 (非天梯)
-        Type_FFA            = 0x03,     // 混战
-        Type_1v1            = 0x04,     // 1v1
-        Type_Ladder         = 0x09,     // 天梯模式 (官方对战)
-        Type_UMS            = 0x0A      // Use Map Settings (自定义地图设置)
+    // 1. 基础游戏类型
+    enum BaseGameType {
+        Type_Unknown            = 0x00,     // 未知/默认
+        Type_D2_ClosedBN        = 0x00,     // 暗黑2 关闭战网
+        Type_D2_OpenBN          = 0x04,     // 暗黑2 开放战网
+        Type_Melee              = 0x02,     // 普通近战 (非天梯)
+        Type_FFA                = 0x03,     // 混战 (Free for All)
+        Type_1v1                = 0x04,     // 1v1
+        Type_CTF                = 0x05,     // 夺旗 (Capture The Flag)
+        Type_Greed              = 0x06,     // 贪婪模式 (收集资源)
+        Type_Slaughter          = 0x07,     // 屠杀模式 (限时)
+        Type_SuddenDeath        = 0x08,     // 突然死亡
+        Type_Ladder             = 0x09,     // 天梯模式
+        Type_IronManLadder      = 0x10,     // 铁人天梯 (W2BN专用)
+        Type_UMS                = 0x0A,     // Use Map Settings (自定义地图设置)
+        Type_TeamMelee          = 0x0B,     // 团队近战
+        Type_TeamFFA            = 0x0C,     // 团队混战
+        Type_TeamCTF            = 0x0D,     // 团队夺旗
+        Type_TopVsBottom        = 0x0F,     // Top vs Bottom
+        Type_PGL                = 0x20      // PGL (Professional Gaming League)
     };
 
-    // 2. 游戏版本/特性标志 (高 24 位)
-    // 这里的 flag 可以与 BaseType 进行 | 运算
+    // 2. 游戏版本/特性标志
     enum GameTypeFlags {
         Flag_None           = 0x0000,
         Flag_Expansion      = 0x2000,   // 冰封王座 (W3XP) 标志，所有 TFT 游戏必须带
@@ -82,8 +92,8 @@ public:
         Flag_Official       = 0x8000    // 官方/暴雪认证 (通常用于 0x09 天梯图)
     };
 
-    // 3. 组合后的常用游戏类型 (用于 createGame 参数)
-    enum GameTypeCombo {
+    // 3. 组合后的常用游戏类型
+    enum ComboGameType {
         Game_TFT_Custom     = 0x2001,   // 最常用的自定义图 (DotA)
         Game_TFT_Official   = 0xC009,   // 官方对战图 (Booty Bay 等)
         Game_RoC_Custom     = 0x0001    // 混乱之治 (RoC) 时代的老图 (现在很少见)
@@ -101,14 +111,21 @@ public:
 
     // 5. 游戏状态 (Game State)
     enum GameState {
-        State_None          = 0x00,
-        State_Private_Mask  = 0x01,     // 私有位掩码
+        // 基础状态（使用位掩码）
+        State_None              = 0x00,
+        State_Private           = 0x01,     // 游戏是私有的
+        State_Full              = 0x02,     // 游戏已满
+        State_HasOtherPlayers   = 0x04,     // 包含除创建者外的其他玩家
+        State_InProgress        = 0x08,     // 游戏进行中
+        State_DisconnectIsLoss  = 0x10,     // 掉线算作失败
+        State_Replay            = 0x80,     // 游戏是回放
 
-        State_Open_Public   = 0x10,     // 公开游戏 (0x10)
-        State_Open_Private  = 0x11,     // 私有游戏 (0x10 | 0x01)
-
-        State_Full          = 0x02,     // 已满
-        State_Started       = 0x04      // 已开始
+        // 组合状态（常用场景）
+        State_Open_Public       = State_HasOtherPlayers,                        // 公开游戏（有玩家加入）
+        State_Open_Private      = State_Private | State_HasOtherPlayers,        // 私有游戏（有玩家加入）
+        State_Ladder_InProgress = State_InProgress | State_DisconnectIsLoss,    // 天梯进行中
+        State_Lobby_Full        = State_Full | State_HasOtherPlayers,           // 大厅已满（有玩家但未开始）
+        State_ActiveGame        = State_InProgress | State_HasOtherPlayers      // 活跃游戏（有玩家且进行中）
     };
 
     // 6. 提供商版本 (Provider Version)
@@ -152,7 +169,7 @@ public:
 
     // 创建游戏
     void createGame(const QString &gameName, const QString &password,quint16 udpPort,
-                    ProviderVersion providerVersion, GameTypeCombo gameTypeCombo, SubGameType subGameType, LadderType ladderType);
+                    ProviderVersion providerVersion, ComboGameType comboGameType, SubGameType subGameType, LadderType ladderType);
 
     QString getPrimaryIPv4();
     quint32 ipToUint32(const QString &ipAddress);
