@@ -10,6 +10,8 @@
 #include <zlib.h>
 #include "StormLib.h"
 
+QString War3Map::s_priorityCrcDir = "";
+
 static QByteArray toBytes(quint32 val) {
     QByteArray b; b.resize(4); qToLittleEndian(val, (uchar*)b.data()); return b;
 }
@@ -116,22 +118,40 @@ bool War3Map::load(const QString &mapPath)
         sha1.addData(data);
     };
 
-    // 读取外部 common.j
-    QFile commonJ("war3files/common.j");
-    if (commonJ.open(QIODevice::ReadOnly)) {
-        processFile(commonJ.readAll());
-        commonJ.close();
-    } else {
-        LOG_WARNING("[War3Map] ⚠️ 警告：找不到 war3files/common.j，CRC计算将必定错误！");
+    auto tryReadFile = [&](const QString &fileName) -> bool {
+        // 1. 优先尝试热门 CRC 目录
+        if (!s_priorityCrcDir.isEmpty()) {
+            QString priorityPath = s_priorityCrcDir + "/" + fileName;
+            QFile f(priorityPath);
+            if (f.exists() && f.open(QIODevice::ReadOnly)) {
+                processFile(f.readAll());
+                f.close();
+                LOG_INFO(QString("[War3Map] ✅ 使用热门CRC文件: %1").arg(priorityPath));
+                return true;
+            }
+        }
+
+        // 2. 回退到默认目录
+        QString defaultPath = "war3files/" + fileName;
+        QFile fDefault(defaultPath);
+        if (fDefault.open(QIODevice::ReadOnly)) {
+            processFile(fDefault.readAll());
+            fDefault.close();
+            LOG_INFO(QString("[War3Map] 使用默认文件: %1").arg(defaultPath));
+            return true;
+        }
+
+        return false;
+    };
+
+    // 读取 common.j
+    if (!tryReadFile("common.j")) {
+        LOG_WARNING("[War3Map] ⚠️ 警告：找不到 common.j，CRC计算将必定错误！");
     }
 
-    // 读取外部 blizzard.j
-    QFile blizzardJ("war3files/blizzard.j");
-    if (blizzardJ.open(QIODevice::ReadOnly)) {
-        processFile(blizzardJ.readAll());
-        blizzardJ.close();
-    } else {
-        LOG_WARNING("[War3Map] ⚠️ 警告：找不到 war3files/blizzard.j");
+    // 读取 blizzard.j
+    if (!tryReadFile("blizzard.j")) {
+        LOG_WARNING("[War3Map] ⚠️ 警告：找不到 blizzard.j");
     }
 
     // 魔数处理
@@ -343,4 +363,10 @@ void War3Map::analyzeStatString(const QString &label, const QByteArray &encodedD
     LOG_INFO(QString("   [CRC]      : 0x%1").arg(QString::number(crc, 16).toUpper()));
     LOG_INFO(QString("   [Path]     : %1").arg(QString(pathBytes)));
     LOG_INFO("========================================");
+}
+
+void War3Map::setPriorityCrcDirectory(const QString &dirPath)
+{
+    s_priorityCrcDir = dirPath;
+    LOG_INFO(QString("[War3Map] 设置计算CRC的文件搜索路径: %1").arg(dirPath));
 }

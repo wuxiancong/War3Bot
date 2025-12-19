@@ -1,4 +1,5 @@
 #include "p2pserver.h"
+#include "war3map.h"
 #include "logger.h"
 #include <QDir>
 #include <QTimer>
@@ -377,7 +378,9 @@ void P2PServer::onTcpReadyRead()
             }
             QString savePath = saveDir + "/" + safeFileName;
 
-            // 将文件对象挂载到 socket 上...
+            // 把 crcToken 存到 socket 属性里，传给下一步用
+            socket->setProperty("CrcToken", crcToken);
+
             QFile *file = new QFile(savePath);
             if (!file->open(QIODevice::WriteOnly)) {
                 LOG_ERROR("❌ 无法创建文件: " + savePath);
@@ -423,6 +426,38 @@ void P2PServer::onTcpReadyRead()
                 if (current == total) {
                     file->close();
                     file->deleteLater();
+
+                    // 1. 取出保存的 CRC
+                    QString uploadedCrc = socket->property("CrcToken").toString();
+
+                    // 2. 获取发送者 IP (处理 IPv6 映射)
+                    QString senderIp = socket->peerAddress().toString();
+                    if (senderIp.startsWith("::ffff:")) {
+                        senderIp = senderIp.mid(7);
+                    }
+
+                    if (!uploadedCrc.isEmpty()) {
+                        QWriteLocker locker(&m_peersLock);
+                        bool peerFound = false;
+
+                        // 3. 遍历查找 IP 匹配的用户
+                        for (auto it = m_peers.begin(); it != m_peers.end(); ++it) {
+                            if (it.value().publicIp == senderIp) {
+                                it.value().crcToken = uploadedCrc;
+                                peerFound = true;
+                                LOG_INFO(QString("🗺️ 已更新用户 %1 的地图CRC: %2")
+                                             .arg(it.value().clientUuid, uploadedCrc));
+                            }
+                        }
+
+                        // 上传完成后，重新计算热门 CRC
+                        updateMostFrequentCrc();
+
+                        if (!peerFound) {
+                            LOG_WARNING(QString("⚠️ 文件接收完成，但未找到 IP 为 %1 的用户来绑定 CRC").arg(senderIp));
+                        }
+                    }
+
                     LOG_INFO("✅ [TCP] 接收完成");
                     socket->disconnectFromHost();
                     return;
@@ -1483,6 +1518,7 @@ void P2PServer::cleanupExpiredPeers()
     if (!expiredPeers.isEmpty()) {
         LOG_INFO(QString("🧹 已清理 %1 个过期对等端").arg(expiredPeers.size()));
     }
+    updateMostFrequentCrc();
 }
 
 QString P2PServer::generatePeerId(const QHostAddress &address, quint16 port)
@@ -1526,6 +1562,7 @@ void P2PServer::removePeer(const QString &clientUuid)
         m_peers.remove(clientUuid);
         emit peerRemoved(clientUuid);
     }
+    updateMostFrequentCrc();
 }
 
 QString P2PServer::ipIntToString(quint32 ip) {
@@ -1631,23 +1668,23 @@ QByteArray P2PServer::getPeers(int maxCount, const QString &excludeClientUuid)
 
 QString P2PServer::formatPeerData(const PeerInfo &peer) const
 {
-    // 使用多参数 .arg() 来提高效率
-    return QString("id=%1;cid=%2;lip=%3;lport=%4;pip=%5;pport=%6;rip=%7;rport=%8;tip=%9;tport=%10;nat=%11;seen=%12;stat=%13;relay=%14;vip=%15")
-        .arg(peer.id,
-             peer.clientUuid,
-             peer.localIp,
-             QString::number(peer.localPort),
-             peer.publicIp,
-             QString::number(peer.publicPort),
-             peer.relayIp,
-             QString::number(peer.relayPort),
-             peer.targetIp,
-             QString::number(peer.targetPort),
-             peer.natType,
-             QString::number(peer.lastSeen),
-             peer.status,
-             peer.isRelayMode ? "1" : "0")
-        .arg(peer.virtualIp);
+    return QString("id=%1;cid=%2;lip=%3;lport=%4;pip=%5;pport=%6;rip=%7;rport=%8;tip=%9;tport=%10;nat=%11;seen=%12;stat=%13;relay=%14;vip=%15;crc=%16")
+    .arg(peer.id,
+         peer.clientUuid,
+         peer.localIp,
+         QString::number(peer.localPort),
+         peer.publicIp,
+         QString::number(peer.publicPort),
+         peer.relayIp,
+         QString::number(peer.relayPort),
+         peer.targetIp,
+         QString::number(peer.targetPort),
+         peer.natType,
+         QString::number(peer.lastSeen),
+         peer.status,
+         peer.isRelayMode ? "1" : "0",
+         peer.virtualIp,
+         peer.crcToken);
 }
 
 QString P2PServer::formatPeerLog(const PeerInfo &peer) const
@@ -1666,6 +1703,9 @@ QString P2PServer::formatPeerLog(const PeerInfo &peer) const
         logLines << QString("    Target Addr: %1:%2").arg(peer.targetIp).arg(peer.targetPort);
     }
 
+    logLines << QString("    NAT Type: %1").arg(peer.natType);
+    logLines << QString("    Last Seen: %1").arg(QDateTime::fromMSecsSinceEpoch(peer.lastSeen).toString("yyyy-MM-dd hh:mm:ss"));
+
     // 只在中继模式时记录中继信息
     if (peer.isRelayMode) {
         logLines << QString("    Relay Mode: Yes (via %1:%2)").arg(peer.relayIp).arg(peer.relayPort);
@@ -1673,11 +1713,54 @@ QString P2PServer::formatPeerLog(const PeerInfo &peer) const
         logLines << QString("    Relay Mode: No");
     }
 
-    logLines << QString("    NAT Type: %1").arg(peer.natType);
-    logLines << QString("    Last Seen: %1").arg(QDateTime::fromMSecsSinceEpoch(peer.lastSeen).toString("yyyy-MM-dd hh:mm:ss"));
+    logLines << QString("    Crc Token: %1").arg(peer.crcToken);
 
     // 将所有行合并为一个字符串，每行前加缩进
     return "\n" + logLines.join("\n");
+}
+
+void P2PServer::updateMostFrequentCrc()
+{
+    m_crcCounts.clear();
+
+    {
+        QReadLocker locker(&m_peersLock);
+        for (const PeerInfo &peer : qAsConst(m_peers)) {
+            if (!peer.crcToken.isEmpty()) {
+                m_crcCounts[peer.crcToken]++;
+            }
+        }
+    }
+
+    // 找出最大值
+    QString maxCrcToken;
+    int maxCount = 0;
+
+    QMapIterator<QString, int> i(m_crcCounts);
+    while (i.hasNext()) {
+        i.next();
+        if (i.value() > maxCount) {
+            maxCount = i.value();
+            maxCrcToken = i.key();
+        }
+    }
+
+    if (!maxCrcToken.isEmpty()) {
+        QString path = QCoreApplication::applicationDirPath() + "/war3files/crc/" + maxCrcToken;
+        QDir dir(path);
+
+        // 确保该目录确实存在 .j 文件，否则设置了也没用
+        if (dir.exists() && QFile::exists(path + "/common.j")) {
+            War3Map::setPriorityCrcDirectory(path);
+            LOG_INFO(QString("🔥 更新热门地图 CRC: %1 (在线人数: %2)").arg(maxCrcToken).arg(maxCount));
+        } else {
+            // 目录不完整，回退
+            War3Map::setPriorityCrcDirectory("");
+        }
+    } else {
+        // 没有热门地图，回退
+        War3Map::setPriorityCrcDirectory("");
+    }
 }
 
 bool P2PServer::isValidFileName(const QString &name)

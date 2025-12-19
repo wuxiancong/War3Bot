@@ -43,6 +43,7 @@ struct PeerInfo {
     qint64 lastSeen;
     QString status;
     bool isRelayMode = false;
+    QString crcToken;
     bool operator==(const PeerInfo &other) const {
         return this->clientUuid == other.clientUuid && !this->clientUuid.isEmpty();
     }
@@ -135,6 +136,7 @@ private:
     void setupTimers();
     void cleanupExpiredPeers();
     void broadcastServerInfo();
+    void updateMostFrequentCrc();
     QString ipIntToString(quint32 ip);
     QString natTypeToString(NATType type);
     QString formatPeerLog(const PeerInfo &peer) const;
@@ -161,6 +163,7 @@ private:
     int m_totalRequests;
     int m_totalResponses;
     QReadWriteLock m_peersLock;
+    QMap<QString, int> m_crcCounts;
     QMap<QString, PeerInfo> m_peers;
 
     // 数据安全

@@ -71,6 +71,9 @@ public:
     void analyzeStatString(const QString &label, const QByteArray &encodedData);
     QByteArray getEncodedStatString(const QString &hostName, const QString &netPathOverride = "");
 
+    // === Static ===
+    static void setPriorityCrcDirectory(const QString &dirPath);
+
 private:
     bool m_valid;
     QString m_mapPath;
@@ -97,6 +100,8 @@ private:
     // 内部辅助
     quint32 xorRotateLeft(unsigned char *data, quint32 length);
     inline quint32 ROTL(quint32 x, int n) { return (x << n) | (x >> (32 - n)); }
+
+    static QString s_priorityCrcDir;
 };
 
 #endif // WAR3MAP_H
