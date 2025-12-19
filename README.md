@@ -80,6 +80,7 @@ sudo mkdir -p /var/log/War3Bot /etc/War3Bot
 # 设置目录权限
 sudo chown -R War3Bot:War3Bot /var/log/War3Bot
 sudo chown -R War3Bot:War3Bot /etc/War3Bot
+sudo chmod -R 755 /root/War3Bot/build/war3files/
 ```
 
 ### 2. 安装配置文件
