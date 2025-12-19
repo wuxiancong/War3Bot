@@ -359,6 +359,16 @@ void P2PServer::onTcpReadyRead()
 
             // 6. 准备文件写入
             QString saveDir = QCoreApplication::applicationDirPath() + "/war3files/crc/" + crcToken;
+
+            QDir dir(saveDir);
+            if (!dir.exists()) {
+                if (!dir.mkpath(".")) {
+                    LOG_ERROR("❌ 无法创建目录: " + saveDir);
+                    socket->disconnectFromHost();
+                    return;
+                }
+            }
+
             QString safeFileName = QFileInfo(rawFileName).fileName();
             if (!isValidFileName(safeFileName)) {
                 LOG_WARNING(QString("❌ TCP 拒绝上传: 非法文件名 (%1)").arg(fileName));
@@ -367,7 +377,7 @@ void P2PServer::onTcpReadyRead()
             }
             QString savePath = saveDir + "/" + safeFileName;
 
-            // 将文件对象挂载到 socket 上，以便后续 readyRead 继续写入
+            // 将文件对象挂载到 socket 上...
             QFile *file = new QFile(savePath);
             if (!file->open(QIODevice::WriteOnly)) {
                 LOG_ERROR("❌ 无法创建文件: " + savePath);
