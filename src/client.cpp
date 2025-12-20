@@ -896,13 +896,27 @@ void Client::createGame(const QString &gameName, const QString &password, quint1
                         ProviderVersion providerVersion, ComboGameType comboGameType, SubGameType subGameType, LadderType ladderType)
 {
     // 切换 UDP 端口
-    if (m_udpSocket->localPort() != udpPort) {
+    bool needRebind = false;
+
+    // 检查当前状态
+    if (m_udpSocket->state() != QAbstractSocket::BoundState) {
+        needRebind = true;
+    } else {
+        if (m_udpSocket->localPort() != udpPort) {
+            needRebind = true;
+        }
+    }
+
+    if (needRebind) {
         m_udpSocket->close();
-        if (m_udpSocket->bind(QHostAddress::AnyIPv4, udpPort)) {
+        if (m_udpSocket->bind(QHostAddress::AnyIPv4, udpPort, QUdpSocket::ShareAddress)) {
             LOG_INFO(QString("✅ UDP 端口切换至 %1 成功").arg(udpPort));
         } else {
-            LOG_ERROR(QString("❌ UDP 端口切换至 %1 失败！房间将不可见。").arg(udpPort));
+            LOG_ERROR(QString("❌ UDP 端口切换至 %1 失败！端口被占用。").arg(udpPort));
+            return;
         }
+    } else {
+        LOG_INFO(QString("ℹ️ UDP 端口已经是 %1，无需切换").arg(udpPort));
     }
 
     LOG_INFO(QString("🚀 请求广播房间: [%1] (Port: %2)").arg(gameName).arg(udpPort));
