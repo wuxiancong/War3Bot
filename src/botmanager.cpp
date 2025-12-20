@@ -37,6 +37,9 @@ void BotManager::initializeBots(int count, const QString& configPath)
         // 创建 Client 实例
         bot->client = new Client(this);
 
+        // 设置房间自增 ID 初始值
+        bot->client->setHostCounter(i);
+
         // 设置凭据 (默认使用 SRP 0x53)
         bot->client->setCredentials(fullUsername, password, Protocol_SRP_0x53);
 

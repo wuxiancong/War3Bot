@@ -227,17 +227,17 @@ int main(int argc, char *argv[]) {
         bool isBotMode = (configUser == "bot");
 
         // ---------------------------------------------------------
-        // 命令: connect <地址> <端口> <用户名> <密码>
+        // 命令: connect <用户名> <密码> <地址> <端口>
         // ---------------------------------------------------------
         if (action == "connect") {
-            QString server = (parts.size() > 1) ? parts[1] : "";
-            int p          = (parts.size() > 2) ? parts[2].toInt() : 0;
-            QString user   = (parts.size() > 3) ? parts[3] : "";
-            QString pass   = (parts.size() > 4) ? parts[4] : "";
-            war3bot.connectToBattleNet(server, p, user, pass);
+            QString user   = (parts.size() > 1) ? parts[1] : "";
+            QString pass   = (parts.size() > 2) ? parts[2] : "";
+            QString server = (parts.size() > 3) ? parts[3] : "";
+            int port       = (parts.size() > 4) ? parts[4].toInt() : 0;
+            war3bot.connectToBattleNet(server, port, user, pass);
         }
         // ---------------------------------------------------------
-        // 命令: create <游戏名> [密码] [指定Bot账号]
+        // 命令: create <游戏名称> [用户账号] [用户密码] [游戏密码]
         // ---------------------------------------------------------
         else if (action == "create") {
             if (parts.size() < 2) {
@@ -245,9 +245,9 @@ int main(int argc, char *argv[]) {
                 return;
             }
             QString gameName = parts[1];
-            QString gamePass = (parts.size() > 2) ? parts[2] : "";
-            QString targetUser = (parts.size() > 3) ? parts[3] : "";
-            QString targetUserPass = (parts.size() > 4) ? parts[4] : "";
+            QString targetUser = (parts.size() > 2) ? parts[2] : "";
+            QString targetUserPass = (parts.size() > 3) ? parts[3] : "";
+            QString gameEnterRoomPass = (parts.size() > 4) ? parts[4] : "";
 
             if (isBotMode) {
                 const auto &bots = activeBotManager->getAllBots(); // 使用正确的 Manager
@@ -261,7 +261,7 @@ int main(int argc, char *argv[]) {
                         if (bot->username.compare(targetUser, Qt::CaseInsensitive) == 0) {
                             if (bot->client->isConnected()) {
                                 LOG_INFO(QString("🤖 [Bot-%1] 指定调用 %2 创建游戏...").arg(bot->id).arg(bot->username));
-                                bot->client->createGame(gameName, gamePass, ProviderVersion::Provider_TFT_New, ComboGameType::Game_TFT_Custom, SubGameType::SubType_Internet, LadderType::Ladder_None);
+                                bot->client->createGame(gameName, gameEnterRoomPass, ProviderVersion::Provider_TFT_New, ComboGameType::Game_TFT_Custom, SubGameType::SubType_Internet, LadderType::Ladder_None);
                                 bot->state = BotState::Creating;
                                 foundBot = true;
                             } else {
@@ -275,7 +275,7 @@ int main(int argc, char *argv[]) {
                     else {
                         if (bot->client->isConnected() && bot->state == BotState::Idle) {
                             LOG_INFO(QString("🤖 [Bot-%1] 状态空闲，已被选中创建游戏: %2").arg(bot->id).arg(gameName));
-                            bot->client->createGame(gameName, gamePass, ProviderVersion::Provider_TFT_New, ComboGameType::Game_TFT_Custom, SubGameType::SubType_Internet, LadderType::Ladder_None);
+                            bot->client->createGame(gameName, gameEnterRoomPass, ProviderVersion::Provider_TFT_New, ComboGameType::Game_TFT_Custom, SubGameType::SubType_Internet, LadderType::Ladder_None);
                             bot->state = BotState::Creating;
                             foundBot = true;
                             break;
@@ -289,7 +289,7 @@ int main(int argc, char *argv[]) {
                 }
             } else {
                 // 单用户模式
-                war3bot.createGame(gameName, gamePass, targetUser, targetUserPass);
+                war3bot.createGame(gameName, gameEnterRoomPass, targetUser, targetUserPass);
             }
         }
         // ---------------------------------------------------------
