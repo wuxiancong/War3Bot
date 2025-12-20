@@ -1,7 +1,8 @@
 # Warcraft III (1.26) 地图校验和计算逻辑总结
 
 ## 1. 核心算法流程
-游戏在建立房间或玩家加入时，会按顺序读取三个核心脚本文件，计算其基础 CRC32 值，然后通过特定的位运算混合生成最终的 Checksum。这个值用于判定玩家是否与主机地图一致。
+游戏在建立房间或玩家加入时，会按顺序读取三个核心脚本文件，计算其基础 CRC32 值，然后通过特定的位运算混合生成最终的 
+Checksum。这个值用于判定玩家是否与主机地图一致。
 
 ### 涉及文件
 1.  **`common.j`** (基础 JASS 库)
@@ -14,14 +15,14 @@
 
 1. **第一阶段（混合环境包）**：
 
-   $$
-   Val_{temp} = \text{ROL}\Big( \text{ROL}( CRC_{bliz} \oplus CRC_{com}, \ 3 ) \oplus \text{0x03F1379E}, \ 3 \Big)
-   $$
+   
+   $$Val_{temp}$$ = \text{ROL}\Big( \text{ROL}( CRC_{bliz} \oplus CRC_{com}, \ 3 ) \oplus \text{0x03F1379E}, \ 3 \Big)
+   
 2. **第二阶段（混合地图脚本）**：
 
-   $$
-   \text{Checksum} = \text{ROL}\Big( CRC_{map} \oplus Val_{temp}, \ 3 \Big)
-   $$
+   
+   $$\text{Checksum}$$ = \text{ROL}\Big( CRC_{map} \oplus Val_{temp}, \ 3 \Big)
+   
 
 
 
