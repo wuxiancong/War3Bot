@@ -28,42 +28,308 @@
 
 ---
 
-## 2. 关键反汇编代码分析
+## 2. 关键反汇编代码分析 (Top-Down)
 
-### A. 获取基础 CRC (底层)
-在进入混合逻辑前，游戏调用 `Storm.dll` (Ordinal #279) 获取单个文件的 CRC。
+调用层级：`HostGame (5C25C0)` / `LocalCheck (3AEF80)` -> `VersionCheck (39ED70)` -> `Wrapper (3B1BB0)` -> `CoreCalc (3B1A20)`。
+
+### A. 第 1 层：建房初始化 (Host Game Entry)
+**偏移地址**：`6F5C25C0`
+**功能**：建房流程的高层入口。负责收集房间名、主机名、地图路径，并调用下层计算 CRC。
 ```assembly
-; 示意逻辑
-call game.6F3B1970      ; 读取并计算文件 CRC
-call game.6F39E5C0      ; 从对象中获取计算好的 CRC 值
+6F5C25C0 | B8 5C390000              | mov eax,395C                                 |
+6F5C25C5 | E8 C6EB2100              | call game.6F7E1190                           |
+6F5C25CA | A1 40E1AA6F              | mov eax,dword ptr ds:[6FAAE140]              |
+6F5C25CF | 33C4                     | xor eax,esp                                  |
+6F5C25D1 | 898424 58390000          | mov dword ptr ss:[esp+3958],eax              |
+6F5C25D8 | 8B8424 60390000          | mov eax,dword ptr ss:[esp+3960]              |
+6F5C25DF | 894424 1C                | mov dword ptr ss:[esp+1C],eax                |
+6F5C25E3 | 8B8424 7C390000          | mov eax,dword ptr ss:[esp+397C]              |
+6F5C25EA | A8 10                    | test al,10                                   |
+6F5C25EC | 56                       | push esi                                     |
+6F5C25ED | 8BB424 6C390000          | mov esi,dword ptr ss:[esp+396C]              |
+6F5C25F4 | 894C24 10                | mov dword ptr ss:[esp+10],ecx                |
+6F5C25F8 | 8B8C24 68390000          | mov ecx,dword ptr ss:[esp+3968]              |
+6F5C25FF | 895424 14                | mov dword ptr ss:[esp+14],edx                |
+6F5C2603 | 8B9424 84390000          | mov edx,dword ptr ss:[esp+3984]              |
+6F5C260A | 57                       | push edi                                     |
+6F5C260B | 894C24 1C                | mov dword ptr ss:[esp+1C],ecx                |
+6F5C260F | 895424 10                | mov dword ptr ss:[esp+10],edx                |
+6F5C2613 | 75 07                    | jne game.6F5C261C                            |
+6F5C2615 | A9 00004000              | test eax,war3.400000                         |
+6F5C261A | 74 0B                    | je game.6F5C2627                             |
+6F5C261C | C78424 74390000 0C000000 | mov dword ptr ss:[esp+3974],C                |
+6F5C2627 | 8BBC24 7C390000          | mov edi,dword ptr ss:[esp+397C]              |
+6F5C262E | 53                       | push ebx                                     |
+6F5C262F | 33DB                     | xor ebx,ebx                                  |
+6F5C2631 | 55                       | push ebp                                     |
+6F5C2632 | 33ED                     | xor ebp,ebp                                  |
+6F5C2634 | F7C7 00020000            | test edi,200                                 |
+6F5C263A | 895C24 10                | mov dword ptr ss:[esp+10],ebx                |
+6F5C263E | 895C24 14                | mov dword ptr ss:[esp+14],ebx                |
+6F5C2642 | 8BCE                     | mov ecx,esi                                  |
+6F5C2644 | 75 6B                    | jne game.6F5C26B1                            |
+6F5C2646 | 53                       | push ebx                                     |
+6F5C2647 | 6A 01                    | push 1                                       |
+6F5C2649 | 8D5424 18                | lea edx,dword ptr ss:[esp+18]                |
+6F5C264D | E8 1EC7DDFF              | call game.6F39ED70                           | <--- [关键调用] 进入版本检查与CRC计算
+6F5C2652 | 53                       | push ebx                                     |
+6F5C2653 | 6A 01                    | push 1                                       |
+6F5C2655 | 8D9424 5C390000          | lea edx,dword ptr ss:[esp+395C]              |
+6F5C265C | 8BCE                     | mov ecx,esi                                  |
+6F5C265E | E8 ADC7DDFF              | call game.6F39EE10                           |
+6F5C2663 | 8D8C24 D4000000          | lea ecx,dword ptr ss:[esp+D4]                |
+6F5C266A | E8 B1F7A4FF              | call game.6F011E20                           |
+6F5C266F | 8D4424 28                | lea eax,dword ptr ss:[esp+28]                |
+6F5C2673 | 50                       | push eax                                     |
+6F5C2674 | 53                       | push ebx                                     |
+6F5C2675 | 53                       | push ebx                                     |
+6F5C2676 | 8D9424 E0000000          | lea edx,dword ptr ss:[esp+E0]                |
+6F5C267D | 8BCE                     | mov ecx,esi                                  |
+6F5C267F | E8 1CB3A5FF              | call game.6F01D9A0                           |
+6F5C2684 | 395C24 28                | cmp dword ptr ss:[esp+28],ebx                |
+6F5C2688 | 8B8C24 E0040000          | mov ecx,dword ptr ss:[esp+4E0]               |
+6F5C268F | 8BAC24 DC040000          | mov ebp,dword ptr ss:[esp+4DC]               |
+6F5C2696 | 894C24 14                | mov dword ptr ss:[esp+14],ecx                |
+6F5C269A | 74 05                    | je game.6F5C26A1                             |
+6F5C269C | 83CF 08                  | or edi,8                                     |
+6F5C269F | EB 28                    | jmp game.6F5C26C9                            |
+6F5C26A1 | 8BCE                     | mov ecx,esi                                  |
+6F5C26A3 | E8 78ECA3FF              | call game.6F001320                           |
+6F5C26A8 | 85C0                     | test eax,eax                                 |
+6F5C26AA | 74 1D                    | je game.6F5C26C9                             |
+6F5C26AC | 83CF 08                  | or edi,8                                     |
+6F5C26AF | EB 18                    | jmp game.6F5C26C9                            |
+6F5C26B1 | E8 2AFEFFFF              | call game.6F5C24E0                           |
+6F5C26B6 | 85C0                     | test eax,eax                                 |
+6F5C26B8 | 74 0F                    | je game.6F5C26C9                             |
+6F5C26BA | E8 F1AAFFFF              | call game.6F5BD1B0                           |
+6F5C26BF | 8B90 30040000            | mov edx,dword ptr ds:[eax+430]               |
+6F5C26C5 | 895424 10                | mov dword ptr ss:[esp+10],edx                |
+6F5C26C9 | 399C24 9C390000          | cmp dword ptr ss:[esp+399C],ebx              |
+6F5C26D0 | 74 06                    | je game.6F5C26D8                             |
+6F5C26D2 | 81CF 00000080            | or edi,80000000                              |
+6F5C26D8 | 8B4424 2C                | mov eax,dword ptr ss:[esp+2C]                |
+6F5C26DC | 6A 20                    | push 20                                      |
+6F5C26DE | 50                       | push eax                                     |
+6F5C26DF | 8D4C24 38                | lea ecx,dword ptr ss:[esp+38]                |
+6F5C26E3 | 51                       | push ecx                                     |
+6F5C26E4 | 885C24 3C                | mov byte ptr ss:[esp+3C],bl                  |
+6F5C26E8 | 885C24 5C                | mov byte ptr ss:[esp+5C],bl                  |
+6F5C26EC | 889C24 90000000          | mov byte ptr ss:[esp+90],bl                  |
+6F5C26F3 | 889C24 C6000000          | mov byte ptr ss:[esp+C6],bl                  |
+6F5C26FA | E8 C58E1200              | call <JMP.&Ordinal#501>                      |
+6F5C26FF | 8B5424 24                | mov edx,dword ptr ss:[esp+24]                |
+6F5C2703 | 6A 10                    | push 10                                      |
+6F5C2705 | 52                       | push edx                                     |
+6F5C2706 | 8D4424 58                | lea eax,dword ptr ss:[esp+58]                |
+6F5C270A | 50                       | push eax                                     |
+6F5C270B | E8 B48E1200              | call <JMP.&Ordinal#501>                      |
+6F5C2710 | 8A8C24 88390000          | mov cl,byte ptr ss:[esp+3988]                |
+6F5C2717 | 8B9424 8C390000          | mov edx,dword ptr ss:[esp+398C]              |
+6F5C271E | 66:8B4424 14             | mov ax,word ptr ss:[esp+14]                  |
+6F5C2723 | 884C24 61                | mov byte ptr ss:[esp+61],cl                  |
+6F5C2727 | 8B8C24 54390000          | mov ecx,dword ptr ss:[esp+3954]              |
+6F5C272E | 894C24 70                | mov dword ptr ss:[esp+70],ecx                |
+6F5C2732 | 8B8C24 60390000          | mov ecx,dword ptr ss:[esp+3960]              |
+6F5C2739 | 895424 64                | mov dword ptr ss:[esp+64],edx                |
+6F5C273D | 8B9424 58390000          | mov edx,dword ptr ss:[esp+3958]              |
+6F5C2744 | 66:894424 6A             | mov word ptr ss:[esp+6A],ax                  |
+6F5C2749 | 8B8424 5C390000          | mov eax,dword ptr ss:[esp+395C]              |
+6F5C2750 | 6A 36                    | push 36                                      |
+6F5C2752 | 898C24 80000000          | mov dword ptr ss:[esp+80],ecx                |
+6F5C2759 | 895424 78                | mov dword ptr ss:[esp+78],edx                |
+6F5C275D | 8B9424 68390000          | mov edx,dword ptr ss:[esp+3968]              |
+6F5C2764 | 894424 7C                | mov dword ptr ss:[esp+7C],eax                |
+6F5C2768 | 8B4424 14                | mov eax,dword ptr ss:[esp+14]                |
+6F5C276C | 56                       | push esi                                     |
+6F5C276D | 8D8C24 8C000000          | lea ecx,dword ptr ss:[esp+8C]                |
+6F5C2774 | 51                       | push ecx                                     |
+6F5C2775 | 66:896C24 74             | mov word ptr ss:[esp+74],bp                  |
+6F5C277A | 899424 8C000000          | mov dword ptr ss:[esp+8C],edx                |
+6F5C2781 | 894424 78                | mov dword ptr ss:[esp+78],eax                |
+6F5C2785 | E8 3A8E1200              | call <JMP.&Ordinal#501>                      |
+6F5C278A | 8B7424 18                | mov esi,dword ptr ss:[esp+18]                |
+6F5C278E | 6A 10                    | push 10                                      |
+6F5C2790 | 56                       | push esi                                     |
+6F5C2791 | 8D9424 C2000000          | lea edx,dword ptr ss:[esp+C2]                |
+6F5C2798 | 52                       | push edx                                     |
+6F5C2799 | E8 268E1200              | call <JMP.&Ordinal#501>                      |
+6F5C279E | 399C24 94390000          | cmp dword ptr ss:[esp+3994],ebx              |
+6F5C27A5 | 8B8C24 98390000          | mov ecx,dword ptr ss:[esp+3998]              |
+6F5C27AC | 8B9424 7C390000          | mov edx,dword ptr ss:[esp+397C]              |
+6F5C27B3 | 0F95C0                   | setne al                                     |
+6F5C27B6 | F7D9                     | neg ecx                                      |
+6F5C27B8 | 1AC9                     | sbb cl,cl                                    |
+6F5C27BA | 89BC24 D0000000          | mov dword ptr ss:[esp+D0],edi                |
+6F5C27C1 | 8B7C24 1C                | mov edi,dword ptr ss:[esp+1C]                |
+6F5C27C5 | 899424 CC000000          | mov dword ptr ss:[esp+CC],edx                |
+6F5C27CC | 8D5424 30                | lea edx,dword ptr ss:[esp+30]                |
+6F5C27D0 | 83E1 02                  | and ecx,2                                    |
+6F5C27D3 | 0AC1                     | or al,cl                                     |
+6F5C27D5 | 8BCF                     | mov ecx,edi                                  |
+6F5C27D7 | 884424 60                | mov byte ptr ss:[esp+60],al                  |
+6F5C27DB | E8 00AAFFFF              | call game.6F5BD1E0                           |
+6F5C27E0 | 85C0                     | test eax,eax                                 |
+6F5C27E2 | 5D                       | pop ebp                                      |
+6F5C27E3 | 5B                       | pop ebx                                      |
+6F5C27E4 | 74 3B                    | je game.6F5C2821                             |
+6F5C27E6 | F787 B4000000 00000080   | test dword ptr ds:[edi+B4],80000000          |
+6F5C27F0 | 74 0F                    | je game.6F5C2801                             |
+6F5C27F2 | BA 03000000              | mov edx,3                                    |
+6F5C27F7 | B9 F09A966F              | mov ecx,game.6F969AF0                        |
+6F5C27FC | E8 5F97F0FF              | call game.6F4CBF60                           |
+6F5C2801 | 8B4424 18                | mov eax,dword ptr ss:[esp+18]                |
+6F5C2805 | 8A8C24 98390000          | mov cl,byte ptr ss:[esp+3998]                |
+6F5C280C | 6A 10                    | push 10                                      |
+6F5C280E | 56                       | push esi                                     |
+6F5C280F | 50                       | push eax                                     |
+6F5C2810 | C640 10 01               | mov byte ptr ds:[eax+10],1                   |
+6F5C2814 | 8848 11                  | mov byte ptr ds:[eax+11],cl                  |
+6F5C2817 | E8 A88D1200              | call <JMP.&Ordinal#501>                      |
+6F5C281C | B8 01000000              | mov eax,1                                    |
+6F5C2821 | 8B8C24 60390000          | mov ecx,dword ptr ss:[esp+3960]              |
+6F5C2828 | 5F                       | pop edi                                      |
+6F5C2829 | 5E                       | pop esi                                      |
+6F5C282A | 33CC                     | xor ecx,esp                                  |
+6F5C282C | E8 28E82100              | call game.6F7E1059                           |
+6F5C2831 | 81C4 5C390000            | add esp,395C                                 |
+6F5C2837 | C2 3400                  | ret 34                                       |
 ```
-
-### B. 核心混合逻辑 (关键特征)
+### B. 第 1.5 层：本地加载检查 (Local Map Check)
+**偏移地址**：`6F3AEF80`
+**功能**：本地选择地图或加入房间时的校验。确认 MPQ 完整性并计算 CRC 用于比对。
+#### 偏移：5C25C0
 ```assembly
-; [Step 1] 混合 Common 和 Blizzard
-6F3B1AEB | 33DD                | xor ebx,ebp                ; EBX = CRC(blizzard) XOR CRC(common)
-; [Step 2] 第一次循环左移 3位
-6F3B1AED | C1C3 03             | rol ebx,3                  ; EBX = ROL(EBX, 3)
-; [Step 3] 异或魔数 (特征码)
-6F3B1AF0 | 81F3 9E37F103       | xor ebx,3F1379E            ; EBX = EBX XOR 0x03F1379E
-; [Step 4] 第二次循环左移 3位
-6F3B1AF6 | C1C3 03             | rol ebx,3                  ; EBX = ROL(EBX, 3)
+6F3AEF80 | B8 A4390000              | mov eax,39A4                                 |
+6F3AEF85 | E8 06224300              | call game.6F7E1190                           |
+6F3AEF8A | A1 40E1AA6F              | mov eax,dword ptr ds:[6FAAE140]              |
+6F3AEF8F | 33C4                     | xor eax,esp                                  |
+6F3AEF91 | 898424 A0390000          | mov dword ptr ss:[esp+39A0],eax              |
+6F3AEF98 | 53                       | push ebx                                     |
+6F3AEF99 | 8B9C24 B8390000          | mov ebx,dword ptr ss:[esp+39B8]              |
+6F3AEFA0 | 55                       | push ebp                                     |
+6F3AEFA1 | 56                       | push esi                                     |
+6F3AEFA2 | 57                       | push edi                                     |
+6F3AEFA3 | 8BBC24 B8390000          | mov edi,dword ptr ss:[esp+39B8]              |
+6F3AEFAA | 8BF1                     | mov esi,ecx                                  |
+6F3AEFAC | E8 6FFBFFFF              | call game.6F3AEB20                           |
+6F3AEFB1 | 8B46 30                  | mov eax,dword ptr ds:[esi+30]                |
+6F3AEFB4 | 8D48 24                  | lea ecx,dword ptr ds:[eax+24]                |
+6F3AEFB7 | E8 74561100              | call game.6F4C4630                           |
+6F3AEFBC | 837E 04 00               | cmp dword ptr ds:[esi+4],0                   |
+6F3AEFC0 | 74 18                    | je game.6F3AEFDA                             |
+6F3AEFC2 | 85C0                     | test eax,eax                                 |
+6F3AEFC4 | 74 14                    | je game.6F3AEFDA                             |
+6F3AEFC6 | 68 FFFFFF7F              | push 7FFFFFFF                                |
+6F3AEFCB | 50                       | push eax                                     |
+6F3AEFCC | 57                       | push edi                                     |
+6F3AEFCD | E8 B8C63300              | call <JMP.&Ordinal#508>                      |
+6F3AEFD2 | 85C0                     | test eax,eax                                 |
+6F3AEFD4 | 0F84 36010000            | je game.6F3AF110                             |
+6F3AEFDA | 68 04010000              | push 104                                     |
+6F3AEFDF | 8D9424 B0380000          | lea edx,dword ptr ss:[esp+38B0]              |
+6F3AEFE6 | 8BCF                     | mov ecx,edi                                  |
+6F3AEFE8 | C74424 14 00000000       | mov dword ptr ss:[esp+14],0                  |
+6F3AEFF0 | E8 7B2DC6FF              | call game.6F011D70                           |
+6F3AEFF5 | 85C0                     | test eax,eax                                 |
+6F3AEFF7 | 0F84 21010000            | je game.6F3AF11E                             |
+6F3AEFFD | 6A 00                    | push 0                                       |
+6F3AEFFF | 6A 01                    | push 1                                       |
+6F3AF001 | 8D5424 18                | lea edx,dword ptr ss:[esp+18]                |
+6F3AF005 | 8BCF                     | mov ecx,edi                                  |
+6F3AF007 | E8 64FDFEFF              | call game.6F39ED70                           | <--- [关键调用] 进入版本检查与CRC计算
+6F3AF00C | 6A 00                    | push 0                                       |
+6F3AF00E | 6A 01                    | push 1                                       |
+6F3AF010 | 8D9424 A0380000          | lea edx,dword ptr ss:[esp+38A0]              |
+6F3AF017 | 8BCF                     | mov ecx,edi                                  |
+6F3AF019 | E8 F2FDFEFF              | call game.6F39EE10                           |
+6F3AF01E | 68 CC50876F              | push game.6F8750CC                           |
+6F3AF023 | 8BCE                     | mov ecx,esi                                  |
+6F3AF025 | E8 7606FFFF              | call game.6F39F6A0                           |
+6F3AF02A | 8B9424 C0390000          | mov edx,dword ptr ss:[esp+39C0]              |
+6F3AF031 | 8B4C24 10                | mov ecx,dword ptr ss:[esp+10]                |
+6F3AF035 | E8 76FEFEFF              | call game.6F39EEB0                           |
+6F3AF03A | 85C0                     | test eax,eax                                 |
+6F3AF03C | 0F84 D5000000            | je game.6F3AF117                             |
+6F3AF042 | 8BD3                     | mov edx,ebx                                  |
+6F3AF044 | 8D8C24 98380000          | lea ecx,dword ptr ss:[esp+3898]              |
+6F3AF04B | E8 80FEFEFF              | call game.6F39EED0                           |
+6F3AF050 | 85C0                     | test eax,eax                                 |
+6F3AF052 | 0F84 BF000000            | je game.6F3AF117                             |
+6F3AF058 | 8D4C24 18                | lea ecx,dword ptr ss:[esp+18]                |
+6F3AF05C | E8 BF2DC6FF              | call game.6F011E20                           |
+6F3AF061 | 8D4424 14                | lea eax,dword ptr ss:[esp+14]                |
+6F3AF065 | 50                       | push eax                                     |
+6F3AF066 | 6A 00                    | push 0                                       |
+6F3AF068 | 6A 00                    | push 0                                       |
+6F3AF06A | 8D5424 24                | lea edx,dword ptr ss:[esp+24]                |
+6F3AF06E | 8BCF                     | mov ecx,edi                                  |
+6F3AF070 | E8 2BE9C6FF              | call game.6F01D9A0                           |
+6F3AF075 | BB 01000000              | mov ebx,1                                    |
+6F3AF07A | 395C24 14                | cmp dword ptr ss:[esp+14],ebx                |
+6F3AF07E | 8BE8                     | mov ebp,eax                                  |
+6F3AF080 | 74 1D                    | je game.6F3AF09F                             |
+6F3AF082 | 8BCF                     | mov ecx,edi                                  |
+6F3AF084 | E8 47F2C5FF              | call game.6F00E2D0                           |
+6F3AF089 | 85C0                     | test eax,eax                                 |
+6F3AF08B | 75 10                    | jne game.6F3AF09D                            |
+6F3AF08D | 8D8C24 98380000          | lea ecx,dword ptr ss:[esp+3898]              |
+6F3AF094 | E8 17270000              | call game.6F3B17B0                           |
+6F3AF099 | 85C0                     | test eax,eax                                 |
+6F3AF09B | 74 02                    | je game.6F3AF09F                             |
+6F3AF09D | 33DB                     | xor ebx,ebx                                  |
+6F3AF09F | 8BD3                     | mov edx,ebx                                  |
+6F3AF0A1 | 8D8C24 AC380000          | lea ecx,dword ptr ss:[esp+38AC]              |
+6F3AF0A8 | E8 A3630000              | call game.6F3B5450                           |
+6F3AF0AD | 85C0                     | test eax,eax                                 |
+6F3AF0AF | 8946 04                  | mov dword ptr ds:[esi+4],eax                 |
+6F3AF0B2 | 74 63                    | je game.6F3AF117                             |
+6F3AF0B4 | 33C0                     | xor eax,eax                                  |
+6F3AF0B6 | 85ED                     | test ebp,ebp                                 |
+6F3AF0B8 | 74 18                    | je game.6F3AF0D2                             |
+6F3AF0BA | 8B8C24 58040000          | mov ecx,dword ptr ss:[esp+458]               |
+6F3AF0C1 | 8BC1                     | mov eax,ecx                                  |
+6F3AF0C3 | 83E0 20                  | and eax,20                                   |
+6F3AF0C6 | 03C0                     | add eax,eax                                  |
+6F3AF0C8 | 03C0                     | add eax,eax                                  |
+6F3AF0CA | 83E1 40                  | and ecx,40                                   |
+6F3AF0CD | 0BC1                     | or eax,ecx                                   |
+6F3AF0CF | C1E0 0E                  | shl eax,E                                    |
+6F3AF0D2 | 8B4E 30                  | mov ecx,dword ptr ds:[esi+30]                |
+6F3AF0D5 | 0941 38                  | or dword ptr ds:[ecx+38],eax                 |
+6F3AF0D8 | 8B4E 30                  | mov ecx,dword ptr ds:[esi+30]                |
+6F3AF0DB | 8B9424 BC390000          | mov edx,dword ptr ss:[esp+39BC]              |
+6F3AF0E2 | 8951 34                  | mov dword ptr ds:[ecx+34],edx                |
+6F3AF0E5 | 8B4E 04                  | mov ecx,dword ptr ds:[esi+4]                 |
+6F3AF0E8 | E8 83630000              | call game.6F3B5470                           |
+6F3AF0ED | 8B4E 30                  | mov ecx,dword ptr ds:[esi+30]                |
+6F3AF0F0 | 57                       | push edi                                     |
+6F3AF0F1 | 83C1 24                  | add ecx,24                                   |
+6F3AF0F4 | 8946 08                  | mov dword ptr ds:[esi+8],eax                 |
+6F3AF0F7 | E8 F46B1100              | call game.6F4C5CF0                           |
+6F3AF0FC | 8B46 30                  | mov eax,dword ptr ds:[esi+30]                |
+6F3AF0FF | 8B4C24 10                | mov ecx,dword ptr ss:[esp+10]                |
+6F3AF103 | 8948 1C                  | mov dword ptr ds:[eax+1C],ecx                |
+6F3AF106 | 8B56 30                  | mov edx,dword ptr ds:[esi+30]                |
+6F3AF109 | C742 20 01000000         | mov dword ptr ds:[edx+20],1                  |
+6F3AF110 | B8 01000000              | mov eax,1                                    |
+6F3AF115 | EB 09                    | jmp game.6F3AF120                            |
+6F3AF117 | 8BCE                     | mov ecx,esi                                  |
+6F3AF119 | E8 02FAFFFF              | call game.6F3AEB20                           |
+6F3AF11E | 33C0                     | xor eax,eax                                  |
+6F3AF120 | 8B8C24 B0390000          | mov ecx,dword ptr ss:[esp+39B0]              |
+6F3AF127 | 5F                       | pop edi                                      |
+6F3AF128 | 5E                       | pop esi                                      |
+6F3AF129 | 5D                       | pop ebp                                      |
+6F3AF12A | 5B                       | pop ebx                                      |
+6F3AF12B | 33CC                     | xor ecx,esp                                  |
+6F3AF12D | E8 271F4300              | call game.6F7E1059                           |
+6F3AF132 | 81C4 A4390000            | add esp,39A4                                 |
+6F3AF138 | C2 1000                  | ret 10                                       |
 ```
-
-### C. 最终混合 (加入 war3map.j)
-```assembly
-; [Step 5] 与环境校验和异或
-6F3B1B27 | 3310                | xor edx,dword ptr ds:[eax] ; EDX = CRC(war3map) XOR 中间值
-; [Step 6] 最终循环左移 3位
-6F3B1B2B | C1C2 03             | rol edx,3                  ; EDX = ROL(EDX, 3)
-6F3B1B2F | 8910                | mov dword ptr ds:[eax],edx ; 保存最终 Checksum (断点位)
-```
-
-### D. 完整反汇编（v1.26）
-以下是关键调用链的完整反汇编代码，包含版本检查入口、参数准备封装以及核心算法实现。
-
-#### 偏移：39ED70 (入口与版本检查)
-此函数负责判断游戏版本是否大于 `1770` (Hex 6000, 即 1.22+)，若满足则调用新的校验逻辑。
+### C. 第 2 层：版本分发与检查
+**偏移地址**：`6F39ED70`
+**功能**：检查当前游戏版本号。1.26 版本 Build 为 6401 (> 6000/0x1770)，进入新逻辑。
 ```assembly
 6F39ED70 | 81EC 08010000            | sub esp,108                                  |
 6F39ED76 | A1 40E1AA6F              | mov eax,dword ptr ds:[6FAAE140]              |
@@ -108,8 +374,9 @@ call game.6F39E5C0      ; 从对象中获取计算好的 CRC 值
 6F39EE03 | C2 0800                  | ret 8                                        |
 ```
 
-#### 偏移：3B1BB0 (参数封装层)
-此函数负责将三个文件名（common.j, blizzard.j, war3map.j）和内存指针压栈，准备调用核心算法。
+### D. 第 3 层：参数封装 (Wrapper)
+**偏移地址**：`6F3B1BB0`
+**功能**：将 `common.j`, `blizzard.j`, `war3map.j` 的文件名字符串和内存指针压栈。
 ```assembly
 6F3B1BB0 | 83EC 08                  | sub esp,8                                    |
 6F3B1BB3 | 8B4424 10                | mov eax,dword ptr ss:[esp+10]                |
@@ -150,8 +417,9 @@ call game.6F39E5C0      ; 从对象中获取计算好的 CRC 值
 6F3B1C20 | C2 0800                  | ret 8                                        |
 ```
 
-#### 偏移：3B1A20 (核心计算算法)
-此处包含 `0x3F1379E` 魔数，是最终混合三个文件 CRC 的地方。
+### E. 第 4 层：核心算法 (Core Calculation)
+**偏移地址**：`6F3B1A20`
+**功能**：执行具体的位运算混合逻辑。此处包含特征码 `0x03F1379E`。
 ```assembly
 6F3B1A20 | 83EC 0C                  | sub esp,C                                    |
 6F3B1A23 | 8B4424 1C                | mov eax,dword ptr ss:[esp+1C]                |
@@ -275,8 +543,8 @@ call game.6F39E5C0      ; 从对象中获取计算好的 CRC 值
 
 ---
 
-## 3. C++ 还原代码
-如果你需要编写工具（如改图工具、版本伪装器），可以使用以下代码还原该逻辑：
+## 3. C++ 算法还原
+用于编写版本伪装器或改图工具的核心代码：
 
 ```cpp
 #include <cstdint>
@@ -317,8 +585,13 @@ uint32_t CalculateWarcraftChecksum(uint32_t crc_common, uint32_t crc_blizzard, u
 }
 ```
 
-## 4. 逆向结论
-1.  **特征码**：`0x03F1379E` 是 War3 1.26 版本特有的 XOR Key。此值用于在 1.22 及以上版本中进行“环境校验”。
+## 4. 逆向结论与利用
+1.  **特征码**：`0x03F1379E` 是 War3 1.26 版本特有的 XOR Key。此值用于在 1.22 (Build 6000) 及以上版本中进行“环境校验”。
 2.  **过检测思路**：
-    *   **方法一 (内存 Hook)**：在 `6F3B1B2F` 处（最后一次 `MOV [EAX], EDX`）下钩子，将 EDX 修改为原始地图的 Checksum。
-    *   **方法二 (Storm Hook)**：Hook `Storm.dll` 的文件读取或 CRC 函数，当请求 `war3map.j` 时欺骗游戏返回原始文件的 CRC。
+    *   **方法一 (底层强杀 - 推荐)**：
+        *   Hook 地址：`6F3B1B2F` (CoreCalc 函数末尾)。
+        *   操作：在指令 `mov [eax], edx` 执行前，将 `EDX` 寄存器修改为正版地图的 Checksum。
+        *   优点：同时通过建房检查（`6F5C25C0`）和加房检查（`6F3AEF80`），因为它们都调用这个底层函数。
+    *   **方法二 (Storm Hook)**：
+        *   Hook `Storm.dll` 的文件读取或 CRC 函数 (Ordinal #279)。
+        *   操作：当请求 `war3map.j` 时，欺骗游戏返回原始文件的 CRC。
