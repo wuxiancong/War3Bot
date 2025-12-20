@@ -474,7 +474,7 @@ int main(int argc, char *argv[]) {
 
                         if (shouldStop) {
                             // 发送停止协议
-                            bot->client->stopGame();
+                            bot->client->stopAdv();
 
                             // 手动重置机器人状态为空闲
                             if (bot->state == BotState::Waiting || bot->state == BotState::Creating) {
@@ -494,7 +494,7 @@ int main(int argc, char *argv[]) {
             }
             // === 场景 B: 单用户模式 ===
             else {
-                war3bot.stopGame();
+                war3bot.stopAdv();
             }
         }
         else {
