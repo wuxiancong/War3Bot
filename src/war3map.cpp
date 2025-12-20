@@ -2,21 +2,27 @@
 #include "logger.h"
 #include <QDir>
 #include <QFile>
+#include <QDebug>
 #include <QtEndian>
 #include <QFileInfo>
 #include <QCryptographicHash>
-#include <QDebug>
 
 #include <zlib.h>
 #include "StormLib.h"
 
 QString War3Map::s_priorityCrcDir = "";
 
+// 辅助函数：转换字节序
 static QByteArray toBytes(quint32 val) {
     QByteArray b; b.resize(4); qToLittleEndian(val, (uchar*)b.data()); return b;
 }
 static QByteArray toBytes16(quint16 val) {
     QByteArray b; b.resize(2); qToLittleEndian(val, (uchar*)b.data()); return b;
+}
+
+// 辅助函数：循环左移
+inline quint32 rotl(quint32 x, int k) {
+    return (x << k) | (x >> (32 - k));
 }
 
 War3Map::War3Map() :
@@ -31,7 +37,6 @@ War3Map::War3Map() :
 }
 
 War3Map::~War3Map() {}
-
 
 QByteArray War3Map::getMapGameFlags()
 {
@@ -63,6 +68,42 @@ QByteArray War3Map::getMapGameFlags()
     return toBytes(GameFlags);
 }
 
+quint32 War3Map::computeXoroCRC(const QByteArray &data)
+{
+    quint32 xoroVal = 0;
+    const unsigned char* p = (const unsigned char*)data.constData();
+    quint32 size = data.size();
+
+    quint32 i = 0;
+    // 1. 以 4 字节为单位的大块处理
+    if (size > 3) {
+        while (i < size - 3) {
+            // 构建 32 位整数 (Little Endian)
+            quint32 val = (quint32)p[i] +
+                          ((quint32)p[i+1] << 8) +
+                          ((quint32)p[i+2] << 16) +
+                          ((quint32)p[i+3] << 24);
+
+            // 核心混淆：异或后左移 3 位
+            xoroVal = rotl(xoroVal ^ val, 3);
+            i += 4;
+        }
+    }
+
+    // 2. 处理剩余的尾部字节
+    while (i < size) {
+        xoroVal = rotl(xoroVal ^ p[i], 3);
+        i++;
+    }
+
+    // 3. 最终魔数混淆 (Magic Number)
+    // 必须在所有数据处理完后只执行一次
+    xoroVal = rotl(xoroVal, 3);
+    xoroVal = rotl(xoroVal ^ 0x03F1379E, 3);
+
+    return xoroVal;
+}
+
 bool War3Map::load(const QString &mapPath)
 {
     m_valid = false;
@@ -82,7 +123,7 @@ bool War3Map::load(const QString &mapPath)
     QByteArray mapData = file.readAll();
     file.close();
 
-    // 2. 计算 Map Info (Real CRC32)
+    // 2. 计算 Map Info (标准 CRC32，用于文件完整性校验)
     uLong crc = crc32(0L, Z_NULL, 0);
     crc = crc32(crc, (const Bytef*)mapData.constData(), mapData.size());
     m_mapInfo = toBytes((quint32)crc);
@@ -90,7 +131,6 @@ bool War3Map::load(const QString &mapPath)
     // 3. 打开 MPQ 档案
     HANDLE hMpq = NULL;
     QString nativePath = QDir::toNativeSeparators(mapPath);
-
     DWORD flags = MPQ_OPEN_READ_ONLY;
 
 #ifdef UNICODE
@@ -109,60 +149,51 @@ bool War3Map::load(const QString &mapPath)
         return false;
     }
 
-    // 4. 计算 Map CRC (XORO) & SHA1
-    QCryptographicHash sha1(QCryptographicHash::Sha1);
-    quint32 xoroVal = 0;
+    // =========================================================================
+    // ★★★ 核心修改：使用 Combined Buffer (合并缓冲区) 模式 ★★★
+    // 确保与客户端验证逻辑完全一致 (A + B + C -> CRC)
+    // =========================================================================
+    QByteArray combinedData;
 
-    auto processFile = [&](const QByteArray &data) {
-        xoroVal = xoroVal ^ xorRotateLeft((unsigned char*)data.constData(), data.size());
-        sha1.addData(data);
-    };
-
-    auto tryReadFile = [&](const QString &fileName) -> bool {
-        // 1. 优先尝试热门 CRC 目录
+    // 辅助 Lambda：追加本地 .j 文件到总缓冲区
+    auto appendLocalScript = [&](const QString &fileName) -> bool {
+        // A. 优先尝试热门 CRC 目录
         if (!s_priorityCrcDir.isEmpty()) {
             QString priorityPath = s_priorityCrcDir + "/" + fileName;
             QFile f(priorityPath);
             if (f.exists() && f.open(QIODevice::ReadOnly)) {
-                processFile(f.readAll());
+                combinedData.append(f.readAll());
                 f.close();
-                LOG_INFO(QString("[War3Map] ✅ 使用热门CRC文件: %1").arg(priorityPath));
+                LOG_INFO(QString("[War3Map] ✅ 追加脚本(Priority): %1 (Total: %2)").arg(fileName).arg(combinedData.size()));
                 return true;
             }
         }
-
-        // 2. 回退到默认目录
+        // B. 回退到默认目录
         QString defaultPath = "war3files/" + fileName;
         QFile fDefault(defaultPath);
         if (fDefault.open(QIODevice::ReadOnly)) {
-            processFile(fDefault.readAll());
+            combinedData.append(fDefault.readAll());
             fDefault.close();
-            LOG_INFO(QString("[War3Map] 使用默认文件: %1").arg(defaultPath));
+            LOG_INFO(QString("[War3Map] ✅ 追加脚本(Default): %1 (Total: %2)").arg(fileName).arg(combinedData.size()));
             return true;
         }
-
         return false;
     };
 
-    // 读取 common.j
-    if (!tryReadFile("common.j")) {
+    // 4.1 追加 common.j
+    if (!appendLocalScript("common.j")) {
         LOG_WARNING("[War3Map] ⚠️ 警告：找不到 common.j，CRC计算将必定错误！");
     }
 
-    // 读取 blizzard.j
-    if (!tryReadFile("blizzard.j")) {
+    // 4.2 追加 blizzard.j
+    if (!appendLocalScript("blizzard.j")) {
         LOG_WARNING("[War3Map] ⚠️ 警告：找不到 blizzard.j");
     }
 
-    // 魔数处理
-    xoroVal = ROTL(xoroVal, 3);
-    xoroVal = ROTL(xoroVal ^ 0x03F1379E, 3);
-    sha1.addData("\x9E\x37\xF1\x03", 4);
-
-    // 寻找地图内的脚本文件
+    // 4.3 追加 war3map.j (从地图内提取)
     const char *scriptFiles[] = { "war3map.j", "scripts\\war3map.j", "war3map.w3e", "war3map.wpm", "war3map.doo", "war3map.w3u", "war3map.w3b", "war3map.w3d", "war3map.w3a", "war3map.w3q" };
 
-    int scriptsFound = 0;
+    bool mapScriptFound = false;
     for (const char *filename : scriptFiles) {
         HANDLE hFile = NULL;
         if (SFileOpenFileEx(hMpq, filename, 0, &hFile)) {
@@ -173,22 +204,37 @@ bool War3Map::load(const QString &mapPath)
                 DWORD bytesRead = 0;
                 SFileReadFile(hFile, buffer.data(), fileSize, &bytesRead, NULL);
 
-                xoroVal = ROTL(xoroVal ^ xorRotateLeft((unsigned char*)buffer.constData(), bytesRead), 3);
-                sha1.addData(buffer);
-                scriptsFound++;
+                // 追加到总 buffer
+                combinedData.append(buffer);
+                mapScriptFound = true;
+                LOG_INFO(QString("[War3Map] ✅ 追加地图脚本: %1 (Size: %2, Total: %3)")
+                             .arg(filename).arg(bytesRead).arg(combinedData.size()));
             }
             SFileCloseFile(hFile);
         }
+        if (mapScriptFound) break; // 找到优先级最高的一个脚本即可
     }
 
+    if (!mapScriptFound) {
+        LOG_WARNING("[War3Map] ⚠️ 警告：在 MPQ 中未找到 war3map.j 或其他脚本文件");
+    }
+
+    // 5. 计算最终 CRC (XORO)
+    // 使用上面的 computeXoroCRC 对整个合并后的数据进行一次性计算
+    quint32 xoroVal = computeXoroCRC(combinedData);
     m_mapCRC = toBytes(xoroVal);
+
+    // 6. 计算 SHA1 (也是基于合并后的数据 + 魔数)
+    QCryptographicHash sha1(QCryptographicHash::Sha1);
+    sha1.addData(combinedData);
+    sha1.addData("\x9E\x37\xF1\x03", 4); // SHA1 的固定后缀
     m_mapSHA1 = sha1.result();
 
-    LOG_INFO(QString("[War3Map] 地图校验完毕. 脚本文件数: %1").arg(scriptsFound));
+    LOG_INFO(QString("[War3Map] 校验完成. Combined Buffer Size: %1").arg(combinedData.size()));
     LOG_INFO(QString("[War3Map] Map CRC (XORO): %1").arg(QString(m_mapCRC.toHex().toUpper())));
     LOG_INFO(QString("[War3Map] Map SHA1:       %1").arg(QString(m_mapSHA1.toHex().toUpper())));
 
-    // 5. 解析 war3map.w3i
+    // 7. 解析 war3map.w3i
     HANDLE hW3i = NULL;
     if (SFileOpenFileEx(hMpq, "war3map.w3i", 0, &hW3i)) {
         DWORD fileSize = SFileGetFileSize(hW3i, NULL);
@@ -235,18 +281,6 @@ bool War3Map::load(const QString &mapPath)
     SFileCloseArchive(hMpq);
     m_valid = true;
     return true;
-}
-
-quint32 War3Map::xorRotateLeft(unsigned char *data, quint32 length) {
-    quint32 i = 0, val = 0;
-    if (length > 3) {
-        while (i < length - 3) {
-            val = ROTL(val ^ ((quint32)data[i] + ((quint32)data[i+1]<<8) + ((quint32)data[i+2]<<16) + ((quint32)data[i+3]<<24)), 3);
-            i += 4;
-        }
-    }
-    while (i < length) { val = ROTL(val ^ data[i], 3); ++i; }
-    return val;
 }
 
 QByteArray War3Map::decodeStatString(const QByteArray &encoded)

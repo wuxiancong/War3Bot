@@ -66,6 +66,7 @@ public:
     QByteArray getMapWidth() const { return m_mapWidth; }
     QByteArray getMapHeight() const { return m_mapHeight; }
 
+    quint32 computeXoroCRC(const QByteArray &data);
     QByteArray encodeStatString(const QByteArray &data);
     QByteArray decodeStatString(const QByteArray &encoded);
     void analyzeStatString(const QString &label, const QByteArray &encodedData);
@@ -96,10 +97,6 @@ private:
     W3MapVisibility m_mapVisibility;
     W3MapObservers  m_mapObservers;
     quint32         m_mapFlags;
-
-    // 内部辅助
-    quint32 xorRotateLeft(unsigned char *data, quint32 length);
-    inline quint32 ROTL(quint32 x, int n) { return (x << n) | (x >> (32 - n)); }
 
     static QString s_priorityCrcDir;
 };
