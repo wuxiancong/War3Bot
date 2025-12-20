@@ -344,11 +344,11 @@ $CRC_{map}$
 6F39ED7D | 898424 04010000          | mov dword ptr ss:[esp+104],eax               |
 6F39ED84 | 56                       | push esi                                     |
 6F39ED85 | 8BF2                     | mov esi,edx                                  |
-6F39ED87 | 68 04010000              | push 104                                     |
-6F39ED8C | 8D5424 08                | lea edx,dword ptr ss:[esp+8]                 |
-6F39ED90 | E8 DB2FC7FF              | call game.6F011D70                           |
-6F39ED95 | 85C0                     | test eax,eax                                 |
-6F39ED97 | 75 18                    | jne game.6F39EDB1                            |
+6F39ED87 | 68 04010000              | push 104                                     | <--- 入参 0x104 = 260 (即 Windows 的 MAX_PATH 常量)
+6F39ED8C | 8D5424 08                | lea edx,dword ptr ss:[esp+8]                 | <--- 获取栈上的缓冲区地址
+6F39ED90 | E8 DB2FC7FF              | call game.6F011D70                           | <--- 调用函数：获取游戏目录/路径
+6F39ED95 | 85C0                     | test eax,eax                                 | <--- 检查函数返回值：获取路径成功了吗？
+6F39ED97 | 75 18                    | jne game.6F39EDB1                            | <--- 成功(非0)则跳转继续，失败(0)则退出
 6F39ED99 | 5E                       | pop esi                                      |
 6F39ED9A | 8B8C24 04010000          | mov ecx,dword ptr ss:[esp+104]               |
 6F39EDA1 | 33CC                     | xor ecx,esp                                  |
@@ -356,10 +356,10 @@ $CRC_{map}$
 6F39EDA8 | 81C4 08010000            | add esp,108                                  |
 6F39EDAE | C2 0800                  | ret 8                                        |
 6F39EDB1 | 57                       | push edi                                     |
-6F39EDB2 | 8BBC24 18010000          | mov edi,dword ptr ss:[esp+118]               |
-6F39EDB9 | 85FF                     | test edi,edi                                 |
-6F39EDBB | 75 05                    | jne game.6F39EDC2                            |
-6F39EDBD | BF AB170000              | mov edi,17AB                                 |
+6F39EDB2 | 8BBC24 18010000          | mov edi,dword ptr ss:[esp+118]               | <--- 获取参数2
+6F39EDB9 | 85FF                     | test edi,edi                                 | <--- 检查参数2是否为 0
+6F39EDBB | 75 05                    | jne game.6F39EDC2                            | <--- 如果不是0，继续
+6F39EDBD | BF AB170000              | mov edi,17AB                                 | <--- 如果是0，赋予默认值 0x17AB (十进制 6059)
 6F39EDC2 | 8B9424 14010000          | mov edx,dword ptr ss:[esp+114]               |
 6F39EDC9 | 57                       | push edi                                     |
 6F39EDCA | 52                       | push edx                                     |
@@ -426,7 +426,7 @@ $CRC_{map}$
 
 ### E. 第 4 层：核心算法 (Core Calculation)
 **偏移地址**：`Game.dll + 3B1A20`
-**功能**：执行具体的位运算混合逻辑。此处包含特征码 `0x03F1379E`。
+**功能**：执行具体的位运算混合逻辑。`3F1379E` 是暴雪硬编码的一个Magic Number（魔法数/盐值），用来混合 common.j 和 blizzard.j 的哈希值，生成最终的**“游戏逻辑环境校验码”**。。
 ```assembly
 6F3B1A20 | 83EC 0C                  | sub esp,C                                    |
 6F3B1A23 | 8B4424 1C                | mov eax,dword ptr ss:[esp+1C]                |
@@ -547,8 +547,142 @@ $CRC_{map}$
 6F3B1B9B | 83C4 0C                  | add esp,C                                    |
 6F3B1B9E | C2 2000                  | ret 20                                       |
 ```
+### 2. 魔法数 `3F1379E` 的作用：环境指纹
+
+现在回到调用者函数 `6F3B1A20`，看看它是如何使用这个哈希结果的。
+
+这段逻辑是在计算**JASS 基础环境的指纹**。Warcraft III 的游戏逻辑依赖于两个核心文件：
+1.  **`common.j`**: 原生函数定义（Native）。
+2.  **`blizzard.j`**: 暴雪标准库函数（BJ 函数）。
+
+如果这两个文件被篡改（例如修改了 `common.j` 来实现开图），游戏的逻辑就会改变。
+
+**代码逻辑还原：**
+
+1.  **计算 `common.j` 的哈希：**
+    ```assembly
+    6F3B1AA0 | call game.6F39E5C0 | 计算 common.j 的 Hash
+    6F3B1AA5 | mov ebp,eax        | 保存到 ebp
+    ```
+
+2.  **计算 `blizzard.j` 的哈希：**
+    ```assembly
+    6F3B1ADC | call game.6F39E5C0 | 计算 blizzard.j 的 Hash
+    6F3B1AE1 | mov ebx,eax        | 保存到 ebx
+    ```
+
+3.  **混合哈希（关键点）：**
+    ```assembly
+    6F3B1AEB | 33DD             | xor ebx,ebp      | Hash(Blizzard) ^ Hash(Common)
+    6F3B1AED | C1C3 03          | rol ebx,3        | 左移 3 位
+    6F3B1AF0 | 81F3 9E37F103    | xor ebx,3F1379E  | 【关键】XOR 魔法数 0x03F1379E
+    6F3B1AF6 | C1C3 03          | rol ebx,3        | 再左移 3 位
+    ```
+
+4.  **最终用途（混合地图脚本）：**
+    在代码的后面 (`6F3B1B27`)，这个计算出来的“环境哈希”还会去和 `war3map.j`（地图脚本）的哈希进行 XOR。
+
+### 总结
+*   **`3F1379E` 的作用：** 这是一个**盐（Salt）**。它的存在是为了防止有人仅仅通过修改地图脚本来伪造校验值。它确保了最终生成的校验码（Net Checksum）不仅包含了地图的信息，还强制包含了当前游戏版本的基础库（`common.j`/`blizzard.j`）的信息。
+
+**游戏反作弊意义：**
+如果一名玩家修改了本地的 `common.j`（比如去除了迷雾函数的限制），他的 `ebp` 值就会改变，经过这一系列运算后，他生成的最终 Checksum 就和其他玩家（使用官方版本）不同。当游戏开始同步数据时，由于 Checksum 不匹配，他会立即掉线（Desync）。
+
+### E. 第 5层：核心算法 (Core Calculation)
+**偏移地址**：`Game.dll + 39E5C0`
+**功能**：暴雪自定义的哈希计算函数（Hash Function），它的算法逻辑是：“异或（XOR）后左循环移位（ROL 3）”。
+```assembly
+6F39E5C0 | 56                        | push esi                                     |
+6F39E5C1 | 8BF2                      | mov esi,edx                                  |
+6F39E5C3 | C1EE 02                   | shr esi,2                                    |
+6F39E5C6 | 33C0                      | xor eax,eax                                  |
+6F39E5C8 | 83E2 03                   | and edx,3                                    |
+6F39E5CB | 85F6                      | test esi,esi                                 |
+6F39E5CD | 74 15                     | je game.6F39E5E4                             |
+6F39E5CF | 57                        | push edi                                     |
+6F39E5D0 | 8B39                      | mov edi,dword ptr ds:[ecx]                   |
+6F39E5D2 | 33F8                      | xor edi,eax                                  |
+6F39E5D4 | 83EE 01                   | sub esi,1                                    |
+6F39E5D7 | C1C7 03                   | rol edi,3                                    |
+6F39E5DA | 83C1 04                   | add ecx,4                                    |
+6F39E5DD | 85F6                      | test esi,esi                                 |
+6F39E5DF | 8BC7                      | mov eax,edi                                  |
+6F39E5E1 | 75 ED                     | jne game.6F39E5D0                            |
+6F39E5E3 | 5F                        | pop edi                                      |
+6F39E5E4 | 85D2                      | test edx,edx                                 |
+6F39E5E6 | 74 14                     | je game.6F39E5FC                             |
+6F39E5E8 | 0FB631                    | movzx esi,byte ptr ds:[ecx]                  |
+6F39E5EB | 33F0                      | xor esi,eax                                  |
+6F39E5ED | 83EA 01                   | sub edx,1                                    |
+6F39E5F0 | C1C6 03                   | rol esi,3                                    |
+6F39E5F3 | 83C1 01                   | add ecx,1                                    |
+6F39E5F6 | 85D2                      | test edx,edx                                 |
+6F39E5F8 | 8BC6                      | mov eax,esi                                  |
+6F39E5FA | 75 EC                     | jne game.6F39E5E8                            |
+6F39E5FC | 5E                        | pop esi                                      |
+6F39E5FD | C3                        | ret                                          |
+```
+
+**`6F39E5C0` 是一个自定义的哈希计算函数（Hash Function）。**
+它的算法逻辑是：**“异或（XOR）后左循环移位（ROL 3）”**。
+
+而 `3F1379E` 是暴雪硬编码的一个**Magic Number（魔法数/盐值）**，用来混合 `common.j` 和 `blizzard.j` 的哈希值，生成最终的**“游戏逻辑环境校验码”**。
 
 ---
+
+让我们一行行看这个哈希函数的实现：
+
+*   **输入**：
+    *   `ecx`：缓冲区的指针（例如 `common.j` 的文本内容）。
+    *   `edx`：缓冲区的长度（字节数）。
+*   **输出**：
+    *   `eax`：计算出的哈希值（Checksum）。
+
+**核心循环逻辑（每次处理 4 字节）：**
+```assembly
+6F39E5C3 | C1EE 02        | shr esi,2            | 把长度除以 4 (计算有多少个 DWORD)
+...
+6F39E5D0 | 8B39           | mov edi,[ecx]        | 读取 4 个字节
+6F39E5D2 | 33F8           | xor edi,eax          | 当前数据 XOR 上次的结果
+6F39E5D7 | C1C7 03        | rol edi,3            | 结果向左循环移位 3 位 (Rotate Left 3)
+6F39E5DF | 8BC7           | mov eax,edi          | 更新结果
+```
+**剩余字节处理（处理末尾不足 4 字节的部分）：**
+```assembly
+6F39E5E8 | 0FB631         | movzx esi,byte...    | 读取 1 个字节
+6F39E5EB | 33F0           | xor esi,eax          | XOR
+6F39E5F0 | C1C6 03        | rol esi,3            | ROL 3
+```
+
+**算法总结 (伪代码):**
+```cpp
+uint32_t BlizzardHash(char* buffer, int length) {
+    uint32_t hash = 0;
+    // 4字节一组处理
+    while (length >= 4) {
+        uint32_t data = *(uint32_t*)buffer;
+        hash = hash ^ data;
+        hash = _rotl(hash, 3); // 循环左移3位
+        buffer += 4;
+        length -= 4;
+    }
+    // 处理剩余字节
+    while (length > 0) {
+        uint32_t byteData = *buffer;
+        hash = hash ^ byteData;
+        hash = _rotl(hash, 3);
+        buffer++;
+        length--;
+    }
+    return hash;
+}
+```
+
+### 总结
+
+*   **`6F39E5C0` 的作用：** 这是一个**循环异或哈希函数 (Rotate-XOR Hash)**。专门用来计算 JASS 脚本文件的校验和。
+---
+
 
 ## 3. C++ 算法还原
 用于编写版本伪装器或改图工具的核心代码：
