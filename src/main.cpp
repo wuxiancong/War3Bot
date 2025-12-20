@@ -227,6 +227,12 @@ int main(int argc, char *argv[]) {
     }
 
     quint16 port = parser.value(portOption).toUShort();
+    if (port == 0) port = 6116;
+    int broadcastPort = configSettings.value("server/broadcast_port", 6112).toInt();
+
+    killProcessOnPort(port);
+    killProcessOnPort(broadcastPort);
+
     bool killExisting = parser.isSet(killOption);
     bool forceReuse = parser.isSet(forceOption);
 
