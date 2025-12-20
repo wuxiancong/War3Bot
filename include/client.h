@@ -155,11 +155,14 @@ public:
     // 设置登录凭据和协议
     void setCredentials(const QString &user, const QString &pass, LoginProtocol protocol = Protocol_SRP_0x53);
 
-    // 停止广播/取消房间
-    void stopGame();
+    // 停止广播
+    void stopAdv();
 
     // 进入聊天
     void enterChat();
+
+    // 取消游戏
+    void cancelGame();
 
     // 注册账号
     void createAccount();

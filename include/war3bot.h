@@ -13,8 +13,9 @@ public:
     explicit War3Bot(QObject *parent = nullptr);
     ~War3Bot();
 
-    void stopGame();
+    void stopAdv();
     void stopServer();
+    void cancelGame();
     bool isRunning() const;
     bool startServer(quint16 port, const QString &configFile);
     void setForcePortReuse(bool force) { m_forcePortReuse = force; }

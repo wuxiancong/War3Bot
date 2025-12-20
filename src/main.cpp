@@ -414,6 +414,35 @@ int main(int argc, char *argv[]) {
                 war3bot.createGame(gameName, gamePass, targetUser, targetUserPass);
             }
         }
+        else if (action == "cancel") {
+            QString targetUser = (parts.size() > 1) ? parts[1] : "";
+            QSettings settings(configFile, QSettings::IniFormat);
+            QString configUser = settings.value("bnet/username", "").toString();
+
+            if (configUser == "bot") {
+                const auto &bots = botManager.getAllBots();
+                int count = 0;
+                for (auto *bot : bots) {
+                    if (bot && bot->client && bot->client->isConnected()) {
+                        bool match = targetUser.isEmpty() || (bot->username.compare(targetUser, Qt::CaseInsensitive) == 0);
+
+                        // 只处理非 Idle 状态的机器人，或者强制处理
+                        if (match && bot->state != BotState::Idle) {
+                            bot->client->cancelGame(); // 发送 0x0A
+
+                            // ★ 重要：Cancel 后，机器人变回空闲状态，可以再次被 create 使用
+                            bot->state = BotState::Idle;
+
+                            count++;
+                            LOG_INFO(QString("❌ Bot-%1 (%2) 已执行 Cancel (房间销毁，状态重置为 Idle)").arg(bot->id).arg(bot->username));
+                        }
+                    }
+                }
+                if(count == 0) LOG_WARNING("未找到正在游戏/等待中的机器人执行 Cancel。");
+            } else {
+                war3bot.cancelGame();
+            }
+        }
         else if (action == "stop") {
             // 参数解析: stop [战网账号]
             QString targetUser = (parts.size() > 1) ? parts[1] : "";

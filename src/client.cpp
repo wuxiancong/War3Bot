@@ -877,7 +877,7 @@ void Client::enterChat() {
     sendPacket(SID_ENTERCHAT, enterChatPayload);
 }
 
-void Client::stopGame()
+void Client::stopAdv()
 {
     LOG_INFO("🛑 发送停止房间广播请求 (SID_STOPADV)...");
 
@@ -886,11 +886,17 @@ void Client::stopGame()
     sendPacket(SID_STOPADV, QByteArray());
 }
 
+void Client::cancelGame()
+{
+    LOG_INFO("❌ 发送取消游戏请求 (SID_ENTERCHAT) - 正在销毁房间并返回大厅...");
+    enterChat();
+}
+
 void Client::createGame(const QString &gameName, const QString &password, quint16 udpPort,
                         ProviderVersion providerVersion, ComboGameType comboGameType, SubGameType subGameType, LadderType ladderType)
 {
     // 1. 先发送停止广播，清理旧状态
-    stopGame();
+    stopAdv();
 
     // 2. 切换 UDP 端口
     if (m_udpSocket->localPort() != udpPort) {

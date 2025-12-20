@@ -146,7 +146,21 @@ void War3Bot::createGame(const QString &gameName, const QString &gamePassword,
     }
 }
 
-void War3Bot::stopGame()
+void War3Bot::cancelGame()
+{
+    // 彻底取消：清除挂起任务
+    m_pendingGameName.clear();
+    m_pendingGamePassword.clear();
+
+    if (m_client && m_client->isConnected()) {
+        LOG_INFO("❌ [单用户] 请求 Cancel (销毁房间)...");
+        m_client->cancelGame();
+    } else {
+        LOG_INFO("ℹ️ [单用户] 战网未连接，仅清除了本地挂起的创建任务。");
+    }
+}
+
+void War3Bot::stopAdv()
 {
     // 1. 无论当前是否连接，先清除所有待创建的挂起任务
     m_pendingGameName.clear();
@@ -155,7 +169,7 @@ void War3Bot::stopGame()
     // 2. 如果已连接，发送停止广播协议
     if (m_client && m_client->isConnected()) {
         LOG_INFO("🛑 [单用户] 正在请求停止游戏 (取消主机广播)...");
-        m_client->stopGame();
+        m_client->stopAdv();
     } else {
         LOG_INFO("ℹ️ [单用户] 战网未连接，仅清除了挂起的创建任务。");
     }
