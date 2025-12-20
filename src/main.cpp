@@ -13,6 +13,7 @@
 #include <QTextCodec>
 #include <QCoreApplication>
 #include <QCommandLineParser>
+#include <QRegularExpression>
 
 #ifdef Q_OS_WIN
 #include <windows.h>
@@ -296,7 +297,17 @@ int main(int argc, char *argv[]) {
     // === 处理控制台命令 ===
     Command command;
     QObject::connect(&command, &Command::inputReceived, &app, [&](QString cmd){
-        QStringList parts = cmd.split(' ', Qt::SkipEmptyParts);
+        QStringList parts;
+        QRegularExpression regex("(\"[^\"]*\"|[^\\s\"]+)");
+        QRegularExpressionMatchIterator i = regex.globalMatch(cmd);
+        while (i.hasNext()) {
+            QString arg = i.next().captured(0);
+            if (arg.startsWith('"') && arg.endsWith('"') && arg.length() >= 2) {
+                arg = arg.mid(1, arg.length() - 2);
+            }
+            parts.append(arg);
+        }
+
         if (parts.isEmpty()) return;
 
         QString action = parts[0].toLower();
@@ -316,7 +327,7 @@ int main(int argc, char *argv[]) {
         else if (action == "create") {
             // 参数解析: create <游戏名> [游戏密码] [战网账号] [战网密码]
             if (parts.size() < 2) {
-                LOG_WARNING("命令格式错误。用法: create <游戏名> [游戏密码] [战网账号] [战网密码]");
+                LOG_WARNING("命令格式错误。用法: create <游戏名> [密码] ... (如果名字有空格请用引号: \"Game Name\")");
                 return;
             }
             QString gameName = parts[1];
