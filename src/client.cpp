@@ -728,5 +728,5 @@ QString Client::getPrimaryIPv4() {
     return QString();
 }
 
-quint32 Client::ipToUint32(const QString &ipAddress) { return QHostAddress(ipAddress).toIPv4Address(); }
 quint32 Client::ipToUint32(const QHostAddress &address) { return address.toIPv4Address(); }
+quint32 Client::ipToUint32(const QString &ipAddress) { return QHostAddress(ipAddress).toIPv4Address(); }
