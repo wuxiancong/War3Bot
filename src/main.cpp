@@ -350,38 +350,44 @@ int main(int argc, char *argv[]) {
                 const auto &bots = botManager.getAllBots();
                 bool foundBot = false;
 
-                // 遍历机器人列表
                 for (auto *bot : bots) {
-                    // 基础检查：指针有效且已连接
-                    if (!bot || !bot->client || !bot->client->isConnected()) continue;
+                    if (!bot || !bot->client) continue; // 只检查指针有效性
 
                     // -------------------------------------------------
-                    // 情况 A-1: 指定了特定机器人账号
+                    // 情况 A-1: 指定了特定机器人账号 (优先匹配名字)
                     // -------------------------------------------------
                     if (!targetUser.isEmpty()) {
-                        // 匹配用户名 (不区分大小写)
+                        // 1. 先匹配名字
                         if (bot->username.compare(targetUser, Qt::CaseInsensitive) == 0) {
-                            LOG_INFO(QString("🤖 [Bot-%1] 指定调用 %2 创建游戏...").arg(bot->id).arg(bot->username));
 
-                            // 强制该机器人创建
-                            bot->client->createGame(
-                                gameName, gamePass, 6112,
-                                ProviderVersion::Provider_TFT_New,
-                                ComboGameType::Game_TFT_Custom,
-                                SubGameType::SubType_Internet,
-                                LadderType::Ladder_None
-                                );
+                            // 2. 名字匹配上了，再检查连接状态
+                            if (bot->client->isConnected()) {
+                                LOG_INFO(QString("🤖 [Bot-%1] 指定调用 %2 创建游戏...").arg(bot->id).arg(bot->username));
 
-                            bot->state = BotState::Creating; // 更新状态
-                            foundBot = true;
-                            break; // 找到指定机器人后退出
+                                bot->client->createGame(
+                                    gameName, gamePass, 6112,
+                                    ProviderVersion::Provider_TFT_New,
+                                    ComboGameType::Game_TFT_Custom,
+                                    SubGameType::SubType_Internet,
+                                    LadderType::Ladder_None
+                                    );
+                                bot->state = BotState::Creating;
+                                foundBot = true;
+                            } else {
+                                // 找到了机器人，但是没连接
+                                LOG_WARNING(QString("❌ 找到机器人 '%1' (ID: %2)，但它尚未连接战网(状态: %3)！")
+                                                .arg(targetUser).arg(bot->id).arg((int)bot->state));
+                                foundBot = true; // 标记为"找到了"(避免报"未找到"), 但不执行创建
+                            }
+                            break; // 只要名字匹配，无论是否连接都停止循环
                         }
                     }
                     // -------------------------------------------------
                     // 情况 A-2: 未指定账号，自动寻找空闲机器人
                     // -------------------------------------------------
                     else {
-                        if (bot->state == BotState::Idle) {
+                        // 这种情况下，必须要求已连接 + 空闲
+                        if (bot->client->isConnected() && bot->state == BotState::Idle) {
                             LOG_INFO(QString("🤖 [Bot-%1] 状态空闲，已被选中创建游戏: %2").arg(bot->id).arg(gameName));
 
                             bot->client->createGame(
@@ -394,14 +400,16 @@ int main(int argc, char *argv[]) {
 
                             bot->state = BotState::Creating;
                             foundBot = true;
-                            break; // 找到第一个空闲的就退出
+                            break;
                         }
                     }
                 }
 
+                // 错误处理
                 if (!foundBot) {
                     if (!targetUser.isEmpty()) {
-                        LOG_WARNING(QString("❌ 创建失败: 未找到名为 '%1' 的机器人或该机器人未连接").arg(targetUser));
+                        // 如果指定了名字，foundBot 为 false 意味着名字完全不存在
+                        LOG_WARNING(QString("❌ 创建失败: 机器人列表中不存在名为 '%1' 的账号").arg(targetUser));
                     } else {
                         LOG_WARNING(QString("❌ 创建失败: 当前没有空闲 (Idle) 的机器人 (总数: %1)").arg(bots.size()));
                     }
