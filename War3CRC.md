@@ -40,7 +40,7 @@ $CRC_{map}$
 调用层级：`HostGame (5C25C0)` / `LocalCheck (3AEF80)` -> `VersionCheck (39ED70)` -> `Wrapper (3B1BB0)` -> `CoreCalc (3B1A20)`。
 
 ### A. 第 1 层：建房初始化 (Host Game Entry)
-**偏移地址**：`6F5C25C0`
+**偏移地址**：`Game.dll + 5C25C0`
 **功能**：建房流程的高层入口。负责收集房间名、主机名、地图路径，并调用下层计算 CRC。
 ```assembly
 6F5C25C0 | B8 5C390000              | mov eax,395C                                 |
@@ -203,7 +203,7 @@ $CRC_{map}$
 6F5C2837 | C2 3400                  | ret 34                                       |
 ```
 ### B. 第 1.5 层：本地加载检查 (Local Map Check)
-**偏移地址**：`6F3AEF80`
+**偏移地址**：`Game.dll + 3AEF80`
 **功能**：本地选择地图或加入房间时的校验。确认 MPQ 完整性并计算 CRC 用于比对。
 #### 偏移：5C25C0
 ```assembly
@@ -335,7 +335,7 @@ $CRC_{map}$
 6F3AF138 | C2 1000                  | ret 10                                       |
 ```
 ### C. 第 2 层：版本分发与检查
-**偏移地址**：`6F39ED70`
+**偏移地址**：`Game.dll + 39ED70`
 **功能**：检查当前游戏版本号。1.26 版本 Build 为 6401 (> 6000/0x1770)，进入新逻辑。
 ```assembly
 6F39ED70 | 81EC 08010000            | sub esp,108                                  |
@@ -382,7 +382,7 @@ $CRC_{map}$
 ```
 
 ### D. 第 3 层：参数封装 (Wrapper)
-**偏移地址**：`6F3B1BB0`
+**偏移地址**：`Game.dll + 3B1BB0`
 **功能**：将 `common.j`, `blizzard.j`, `war3map.j` 的文件名字符串和内存指针压栈。
 ```assembly
 6F3B1BB0 | 83EC 08                  | sub esp,8                                    |
@@ -425,7 +425,7 @@ $CRC_{map}$
 ```
 
 ### E. 第 4 层：核心算法 (Core Calculation)
-**偏移地址**：`6F3B1A20`
+**偏移地址**：`Game.dll + 3B1A20`
 **功能**：执行具体的位运算混合逻辑。此处包含特征码 `0x03F1379E`。
 ```assembly
 6F3B1A20 | 83EC 0C                  | sub esp,C                                    |
