@@ -68,7 +68,7 @@
 
 ### D. 完整反汇编（v1.26）
 ## 偏移：3B1A20
-```
+```assembly
 6F3B1A20 | 83EC 0C                  | sub esp,C                                    |
 6F3B1A23 | 8B4424 1C                | mov eax,dword ptr ss:[esp+1C]                |
 6F3B1A27 | 8B4C24 20                | mov ecx,dword ptr ss:[esp+20]                |
