@@ -11,17 +11,17 @@ Checksum。这个值用于判定玩家是否与主机地图一致。
 
 ### 数学公式
 
-假设三个文件的 CRC 值分别为 $$CRC_{com}$$ $$CRC_{bliz}$$ $$CRC_{map}$$
+假设三个文件的 CRC 值分别为 $$CRC_{com}$$, $$CRC_{bliz}$$, $$CRC_{map}$$
 
 1. **第一阶段（混合环境包）**：
 
    
-   $$Val_{temp}$$ = \text{ROL}\Big( \text{ROL}( CRC_{bliz} \oplus CRC_{com}, \ 3 ) \oplus \text{0x03F1379E}, \ 3 \Big)
+   $$\textVal_{temp}$$ = {ROL}\Big( {ROL}( $$CRC_{bliz}$$ \oplus $$CRC_{com}$$, \ 3 ) \oplus {0x03F1379E}, \ 3 \Big)
    
 2. **第二阶段（混合地图脚本）**：
 
    
-   $$\text{Checksum}$$ = \text{ROL}\Big( CRC_{map} \oplus Val_{temp}, \ 3 \Big)
+   $$\text{Checksum}$$ = {ROL}( $$CRC_{map}$$ \oplus Val_$${temp}$$, \ 3 \Big)
    
 
 
