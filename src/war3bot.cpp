@@ -191,10 +191,11 @@ void War3Bot::onPunchRequested(const QString &sourcePeerId, const QString &targe
 
 void War3Bot::onBnetAuthenticated()
 {
-    LOG_INFO("战网登录成功");
-    // 检查是否有挂起等待创建的游戏
+    LOG_INFO("✅ 战网认证通过");
+
+    // 分支 A: 有挂起的建房任务 -> 直接建房
     if (!m_pendingGameName.isEmpty()) {
-        LOG_INFO(QString("🚀 检测到挂起的创建任务，正在自动创建游戏: %1").arg(m_pendingGameName));
+        LOG_INFO(QString("🚀 执行挂起任务: 创建游戏 [%1]").arg(m_pendingGameName));
 
         m_client->createGame(
             m_pendingGameName,
@@ -205,8 +206,18 @@ void War3Bot::onBnetAuthenticated()
             SubGameType::SubType_Internet,
             LadderType::Ladder_None
             );
+
         m_pendingGameName.clear();
         m_pendingGamePassword.clear();
+    }
+    // 分支 B: 无任务 -> 进入聊天频道
+    else {
+        LOG_INFO("💬 无挂起任务，请求进入聊天大厅...");
+
+        QByteArray enterChatPayload;
+        enterChatPayload.append('\0');
+        enterChatPayload.append('\0');
+        m_client->sendPacket(SID_ENTERCHAT, enterChatPayload);
     }
 }
 

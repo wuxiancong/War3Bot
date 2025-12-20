@@ -508,10 +508,10 @@ void Client::handleTcpPacket(TCPPacketID id, const QByteArray &data)
         if (status == 0 || status == 0x0E) { // 0x00=Success
             LOG_INFO("🎉 战网登录成功 (协议 SRP)！");
             emit authenticated();
-            QByteArray enterChatPayload;
-            enterChatPayload.append('\0');
-            enterChatPayload.append('\0');
-            sendPacket(SID_ENTERCHAT, enterChatPayload);
+            // QByteArray enterChatPayload;
+            // enterChatPayload.append('\0');
+            // enterChatPayload.append('\0');
+            // sendPacket(SID_ENTERCHAT, enterChatPayload);
         } else {
             LOG_ERROR(QString("❌ 登录失败 (SRP): 错误码 0x%1").arg(QString::number(status, 16)));
         }

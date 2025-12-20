@@ -147,6 +147,7 @@ public:
     explicit Client(QObject *parent = nullptr);
     ~Client();
 
+    void sendPacket(TCPPacketID id, const QByteArray &payload);
     void connectToHost(const QString &address, quint16 port);
     void disconnectFromHost();
     bool isConnected() const;
@@ -187,7 +188,6 @@ public slots:
     void onUdpReadyRead();
 
 private:
-    void sendPacket(TCPPacketID id, const QByteArray &payload);
     void handleTcpPacket(TCPPacketID id, const QByteArray &data);
     void handleUdpPacket(const QByteArray &data, const QHostAddress &sender, quint16 senderPort);
 
