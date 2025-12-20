@@ -261,7 +261,7 @@ int main(int argc, char *argv[]) {
                         if (bot->username.compare(targetUser, Qt::CaseInsensitive) == 0) {
                             if (bot->client->isConnected()) {
                                 LOG_INFO(QString("🤖 [Bot-%1] 指定调用 %2 创建游戏...").arg(bot->id).arg(bot->username));
-                                bot->client->createGame(gameName, gamePass, 6112, ProviderVersion::Provider_TFT_New, ComboGameType::Game_TFT_Custom, SubGameType::SubType_Internet, LadderType::Ladder_None);
+                                bot->client->createGame(gameName, gamePass, ProviderVersion::Provider_TFT_New, ComboGameType::Game_TFT_Custom, SubGameType::SubType_Internet, LadderType::Ladder_None);
                                 bot->state = BotState::Creating;
                                 foundBot = true;
                             } else {
@@ -275,7 +275,7 @@ int main(int argc, char *argv[]) {
                     else {
                         if (bot->client->isConnected() && bot->state == BotState::Idle) {
                             LOG_INFO(QString("🤖 [Bot-%1] 状态空闲，已被选中创建游戏: %2").arg(bot->id).arg(gameName));
-                            bot->client->createGame(gameName, gamePass, 6112, ProviderVersion::Provider_TFT_New, ComboGameType::Game_TFT_Custom, SubGameType::SubType_Internet, LadderType::Ladder_None);
+                            bot->client->createGame(gameName, gamePass, ProviderVersion::Provider_TFT_New, ComboGameType::Game_TFT_Custom, SubGameType::SubType_Internet, LadderType::Ladder_None);
                             bot->state = BotState::Creating;
                             foundBot = true;
                             break;

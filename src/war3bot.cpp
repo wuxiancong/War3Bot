@@ -122,7 +122,6 @@ void War3Bot::createGame(const QString &gameName, const QString &gamePassword,
         m_client->createGame(
             gameName,
             gamePassword,
-            6112,
             ProviderVersion::Provider_TFT_New,
             ComboGameType::Game_TFT_Custom,
             SubGameType::SubType_Internet,
@@ -214,7 +213,6 @@ void War3Bot::onBnetAuthenticated()
         m_client->createGame(
             m_pendingGameName,
             m_pendingGamePassword,
-            6112,
             ProviderVersion::Provider_TFT_New,
             ComboGameType::Game_TFT_Custom,
             SubGameType::SubType_Internet,

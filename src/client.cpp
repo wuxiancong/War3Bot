@@ -1,8 +1,9 @@
+#include "client.h"
+#include "logger.h"
 #include "bncsutil/checkrevision.h"
 #include "bnethash.h"
 #include "bnetsrp3.h"
-#include "client.h"
-#include "logger.h"
+
 #include <QDir>
 #include <QFileInfo>
 #include <QDateTime>
@@ -13,35 +14,38 @@
 #include <QNetworkInterface>
 #include <QCryptographicHash>
 
+// =========================================================
+// 1. 生命周期 (构造与析构)
+// =========================================================
+
 Client::Client(QObject *parent)
     : QObject(parent)
-    , m_loginProtocol(Protocol_Old_0x29)
+    , m_srp(nullptr)
     , m_tcpSocket(nullptr)
     , m_udpSocket(nullptr)
-    , m_srp(nullptr)
+    , m_loginProtocol(Protocol_Old_0x29)
 {
     m_tcpSocket = new QTcpSocket(this);
     m_udpSocket = new QUdpSocket(this);
 
+    // 信号槽连接
     connect(m_tcpSocket, &QTcpSocket::connected, this, &Client::onConnected);
     connect(m_tcpSocket, &QTcpSocket::readyRead, this, &Client::onTcpReadyRead);
-    connect(m_udpSocket, &QUdpSocket::readyRead, this, &Client::onUdpReadyRead);
     connect(m_tcpSocket, &QTcpSocket::disconnected, this, &Client::onDisconnected);
-
     connect(m_tcpSocket, &QTcpSocket::errorOccurred, this, [this](QAbstractSocket::SocketError){
         LOG_ERROR(QString("战网连接错误: %1").arg(m_tcpSocket->errorString()));
     });
+    connect(m_udpSocket, &QUdpSocket::readyRead, this, &Client::onUdpReadyRead);
 
-    if (m_udpSocket->bind(QHostAddress::AnyIPv4, 6112)) {
-        LOG_INFO("✅ UDP 监听启动成功: 0.0.0.0:6112");
-    } else {
-        LOG_ERROR(QString("❌ UDP 6112 绑定失败: %1").arg(m_udpSocket->errorString()));
+    // 初始化 UDP
+    if (!bindToRandomPort()) {
+        LOG_ERROR("UDP 绑定随机端口失败");
     }
 
+    // 初始化路径
     QString appDir = QCoreApplication::applicationDirPath();
     QDir dir(appDir);
 
-    // 路径处理逻辑
     if (dir.cd("war3files")) {
         m_war3ExePath = dir.absoluteFilePath("War3.exe");
         m_gameDllPath = dir.absoluteFilePath("Game.dll");
@@ -66,17 +70,19 @@ Client::~Client()
         delete m_srp;
         m_srp = nullptr;
     }
-    // 清理 TCP
     if (m_tcpSocket) {
         m_tcpSocket->close();
         delete m_tcpSocket;
     }
-    // 清理 UDP
     if (m_udpSocket) {
         m_udpSocket->close();
         delete m_udpSocket;
     }
 }
+
+// =========================================================
+// 2. 连接控制与配置
+// =========================================================
 
 void Client::setCredentials(const QString &user, const QString &pass, LoginProtocol protocol)
 {
@@ -100,6 +106,10 @@ void Client::connectToHost(const QString &address, quint16 port)
     m_tcpSocket->connectToHost(address, port);
 }
 
+void Client::disconnectFromHost() { m_tcpSocket->disconnectFromHost(); }
+bool Client::isConnected() const { return m_tcpSocket->state() == QAbstractSocket::ConnectedState; }
+void Client::onDisconnected() { LOG_WARNING("🔌 战网连接断开"); }
+
 void Client::onConnected()
 {
     LOG_INFO("✅ TCP 链路已建立，发送协议握手字节...");
@@ -107,6 +117,10 @@ void Client::onConnected()
     m_tcpSocket->write(&protocolByte, 1);
     sendAuthInfo();
 }
+
+// =========================================================
+// 3. TCP 核心处理 (收发包)
+// =========================================================
 
 void Client::sendPacket(TCPPacketID id, const QByteArray &payload)
 {
@@ -132,90 +146,6 @@ void Client::sendPacket(TCPPacketID id, const QByteArray &payload)
                  .arg(hexStr));
 }
 
-void Client::sendAuthInfo()
-{
-    QString localIpStr = getPrimaryIPv4();
-    quint32 localIp = localIpStr.isEmpty() ? 0 : ipToUint32(localIpStr);
-
-    QByteArray payload;
-    QDataStream out(&payload, QIODevice::WriteOnly);
-    out.setByteOrder(QDataStream::LittleEndian);
-
-    out << (quint32)0;
-    out.writeRawData("68XI", 4);
-    out.writeRawData("PX3W", 4);
-    out << (quint32)26;
-    out.writeRawData("SUne", 4);
-    out << localIp;
-    out << (quint32)0xFFFFFE20;
-    out << (quint32)2052;
-    out << (quint32)2052;
-    out.writeRawData("CHN", 3);
-    out.writeRawData("\0", 1);
-    out.writeRawData("China", 5);
-    out.writeRawData("\0", 1);
-
-    sendPacket(SID_AUTH_INFO, payload);
-}
-
-// === 核心哈希算法 (Broken SHA1, 返回 Big Endian) ===
-QByteArray Client::calculateBrokenSHA1(const QByteArray &data)
-{
-    t_hash hashOut;
-    bnet_hash(&hashOut, data.size(), data.constData());
-
-    QByteArray result;
-    QDataStream ds(&result, QIODevice::WriteOnly);
-    ds.setByteOrder(QDataStream::BigEndian);
-    for(int i = 0; i < 5; i++) {
-        ds << hashOut[i];
-    }
-    return result;
-}
-
-// === 双重哈希计算 (适用于 0x29 和 0x3A) ===
-QByteArray Client::calculateOldLogonProof(const QString &password, quint32 clientToken, quint32 serverToken)
-{
-    // 1. Broken SHA1 (Output: BE)
-    QByteArray passBytes = password.toLatin1();
-    QByteArray passHashBE = calculateBrokenSHA1(passBytes);
-
-    // 2. 准备外层输入
-    QByteArray buffer;
-    QDataStream ds(&buffer, QIODevice::WriteOnly);
-    ds.setByteOrder(QDataStream::LittleEndian);
-
-    ds << clientToken;
-    ds << serverToken;
-
-    // 写入 PassHash (转为 Little Endian 以匹配内存)
-    QDataStream dsReader(passHashBE);
-    dsReader.setByteOrder(QDataStream::BigEndian);
-    for(int i=0; i<5; i++) {
-        quint32 val;
-        dsReader >> val;
-        ds << val;
-    }
-
-    // 3. 外层哈希：Broken SHA1 (Output: BE)
-    QByteArray finalHashBE = calculateBrokenSHA1(buffer);
-
-    // 4. 转为 Little Endian 发送
-    QByteArray proofToSend;
-    QDataStream dsFinal(&proofToSend, QIODevice::WriteOnly);
-    dsFinal.setByteOrder(QDataStream::LittleEndian);
-    QDataStream dsFinalReader(finalHashBE);
-    dsFinalReader.setByteOrder(QDataStream::BigEndian);
-
-    for(int i=0; i<5; i++) {
-        quint32 val;
-        dsFinalReader >> val;
-        dsFinal << val;
-    }
-
-    return proofToSend;
-}
-
 void Client::onTcpReadyRead()
 {
     while (m_tcpSocket->bytesAvailable() > 0) {
@@ -223,7 +153,7 @@ void Client::onTcpReadyRead()
 
         QByteArray headerData = m_tcpSocket->peek(4);
         if ((quint8)headerData[0] != BNET_HEADER) {
-            m_tcpSocket->read(1); // 丢弃无效字节
+            m_tcpSocket->read(1);
             continue;
         }
 
@@ -240,218 +170,121 @@ void Client::onTcpReadyRead()
     }
 }
 
-void Client::onUdpReadyRead()
-{
-    while (m_udpSocket->hasPendingDatagrams()) {
-        QNetworkDatagram datagram = m_udpSocket->receiveDatagram();
-        QByteArray data = datagram.data();
-        handleUdpPacket(data, datagram.senderAddress(), datagram.senderPort());
-    }
-}
-
 void Client::handleTcpPacket(TCPPacketID id, const QByteArray &data)
 {
     LOG_INFO(QString("📥 收到包 ID: 0x%1").arg(QString::number(id, 16)));
 
     switch (id) {
     case SID_PING:
-    {
         sendPacket(SID_PING, data);
         break;
-    }
+
     case SID_ENTERCHAT:
-    {
         LOG_INFO("✅ 已成功进入聊天环境 (Unique Name Received)");
         queryChannelList();
         break;
-    }
+
     case SID_GETCHANNELLIST:
     {
         LOG_INFO("📦 收到频道列表包，正在解析...");
-
         m_channelList.clear();
         int offset = 0;
-
-        // 遍历 Payload，提取所有以 \0 结尾的字符串
         while (offset < data.size()) {
             int strEnd = data.indexOf('\0', offset);
-            if (strEnd == -1) break; // 防止数据不完整
-
+            if (strEnd == -1) break;
             QByteArray rawStr = data.mid(offset, strEnd - offset);
             QString channelName = QString::fromUtf8(rawStr);
-
-            // 列表通常以一个空字符串结尾，我们跳过空名
-            if (!channelName.isEmpty()) {
-                m_channelList.append(channelName);
-            }
-
-            offset = strEnd + 1; // 移动到下一个字符串开头
+            if (!channelName.isEmpty()) m_channelList.append(channelName);
+            offset = strEnd + 1;
         }
-
         if (m_channelList.isEmpty()) {
-            LOG_WARNING("⚠️ 服务器返回的频道列表为空！尝试加入默认频道 'Waiting Players'");
+            LOG_WARNING("⚠️ 频道列表为空！尝试加入 'Waiting Players'");
             joinChannel("Waiting Players");
         } else {
             LOG_INFO(QString("📋 获取到 %1 个频道: %2").arg(m_channelList.size()).arg(m_channelList.join(", ")));
-
-            // 默认进入第一个频道
-            QString targetChannel = m_channelList.first();
-            LOG_INFO(QString("自动加入第一个频道: %1").arg(targetChannel));
-            joinChannel(targetChannel);
+            joinChannel(m_channelList.first());
         }
-        break;
     }
+    break;
+
     case SID_CHATEVENT:
     {
         if (data.size() < 24) return;
-
         QDataStream in(data);
         in.setByteOrder(QDataStream::LittleEndian);
-
-        quint32 eventId;
-        quint32 flags;
-        quint32 ping;
-        quint32 ipAddress;
-        quint32 accountNum;
-        quint32 regAuthority;
-
-        // 1. 读取完整的头部 (24字节)
+        quint32 eventId, flags, ping, ipAddress, accountNum, regAuthority;
         in >> eventId >> flags >> ping >> ipAddress >> accountNum >> regAuthority;
 
-        // 2. 解析两个字符串：Username 和 Text
         int currentOffset = 24;
         auto readString = [&](int &offset) -> QString {
             if (offset >= data.size()) return QString();
             int end = data.indexOf('\0', offset);
-            if (end == -1) return QString(); // 数据包不完整
-
+            if (end == -1) return QString();
             QString s = QString::fromUtf8(data.mid(offset, end - offset));
-            offset = end + 1; // 移动到 \0 之后
+            offset = end + 1;
             return s;
         };
-
         QString username = readString(currentOffset);
         QString text = readString(currentOffset);
 
-        // 3. 根据 EventID 处理逻辑
         switch (eventId) {
-        case 0x01: // EID_SHOWUSER (进入频道时显示的已存在用户)
-            LOG_INFO(QString("👤 [频道用户] %1 (Ping: %2)").arg(username).arg(ping));
-            break;
-
-        case 0x02: // EID_JOIN (有人加入)
-            LOG_INFO(QString("➡️ %1 加入了频道").arg(username));
-            break;
-
-        case 0x03: // EID_LEAVE (有人离开)
-            LOG_INFO(QString("⬅️ %1 离开了频道").arg(username));
-            break;
-
-        case 0x04: // EID_WHISPER (收到私聊)
-            LOG_INFO(QString("📩 [%1] 悄悄对你说: %2").arg(username, text));
-            // TODO: 在这里处理 Bot 指令，例如 "admin: !host dota"
-            break;
-
-        case 0x05: // EID_TALK (公共聊天)
-            LOG_INFO(QString("💬 [%1]: %2").arg(username, text));
-            break;
-
-        case 0x06: // EID_BROADCAST (全服广播)
-            LOG_INFO(QString("📢 [广播]: %1").arg(text));
-            break;
-
-        case 0x07: // EID_CHANNEL (自己加入了某频道)
-            // 对于此事件，'text' 字段存储的是频道名称
-            LOG_INFO(QString("🏠 已加入频道: [%1]").arg(text));
-            // 创建房间
-            // createGame("fast 1k~2k", "", 6112,
-            //            ProviderVersion::Provider_TFT_New,
-            //            ComboGameType::Game_TFT_Custom,
-            //            SubGameType::SubType_Internet,
-            //            LadderType::Ladder_None);
-            break;
-
-        case 0x09: // EID_USERFLAGS (用户权限/图标变更)
-            LOG_INFO(QString("🔧 %1 更新了状态 (Flags: %2)").arg(username, QString::number(flags, 16)));
-            break;
-
-        case 0x0A: // EID_WHISPERSENT (自己发送的私聊确认)
-            LOG_INFO(QString("📤 你对 [%1] 说: %2").arg(username, text));
-            break;
-
-        case 0x0D: // EID_CHANNELFULL
-            LOG_WARNING("⚠️ 无法加入频道：频道已满");
-            break;
-
-        case 0x0E: // EID_CHANNELDOESNOTEXIST
-            LOG_WARNING("⚠️ 无法加入频道：频道不存在");
-            break;
-
-        case 0x0F: // EID_CHANNELRESTRICTED
-            LOG_WARNING("⚠️ 无法加入频道：权限受限 (需要更高权限)");
-            break;
-
-        case 0x12: // EID_INFO (系统信息)
-            LOG_INFO(QString("ℹ️ [系统]: %1").arg(text));
-            break;
-
-        case 0x13: // EID_ERROR (错误信息)
-            LOG_ERROR(QString("❌ [错误]: %1").arg(text));
-            break;
-
-        case 0x17: // EID_EMOTE (表情动作 /me)
-            LOG_INFO(QString("✨ %1 %2").arg(username, text));
-            break;
-
-        default:
-            LOG_INFO(QString("📦 未知聊天事件 ID: 0x%1 | User: %2 | Text: %3")
-                         .arg(QString::number(eventId, 16), username, text));
-            break;
+        case 0x01: LOG_INFO(QString("👤 [频道用户] %1 (Ping: %2)").arg(username).arg(ping)); break;
+        case 0x02: LOG_INFO(QString("➡️ %1 加入了频道").arg(username)); break;
+        case 0x03: LOG_INFO(QString("⬅️ %1 离开了频道").arg(username)); break;
+        case 0x04: LOG_INFO(QString("📩 [%1] 悄悄: %2").arg(username, text)); break;
+        case 0x05: LOG_INFO(QString("💬 [%1]: %2").arg(username, text)); break;
+        case 0x06: LOG_INFO(QString("📢 [广播]: %1").arg(text)); break;
+        case 0x07: LOG_INFO(QString("🏠 已加入频道: [%1]").arg(text)); break;
+        case 0x09: LOG_INFO(QString("🔧 %1 更新状态 (Flags: %2)").arg(username, QString::number(flags, 16))); break;
+        case 0x0A: LOG_INFO(QString("📤 你对 [%1] 说: %2").arg(username, text)); break;
+        case 0x0D: LOG_WARNING("⚠️ 频道已满"); break;
+        case 0x0E: LOG_WARNING("⚠️ 频道不存在"); break;
+        case 0x0F: LOG_WARNING("⚠️ 频道权限受限"); break;
+        case 0x12: LOG_INFO(QString("ℹ️ [系统]: %1").arg(text)); break;
+        case 0x13: LOG_ERROR(QString("❌ [错误]: %1").arg(text)); break;
+        case 0x17: LOG_INFO(QString("✨ %1 %2").arg(username, text)); break;
+        default:   LOG_INFO(QString("📦 未知聊天事件 ID: 0x%1").arg(QString::number(eventId, 16))); break;
         }
-        break;
     }
-    // === 0x29 登录响应 ===
-    case SID_LOGONRESPONSE:
+    break;
+
+    case SID_LOGONRESPONSE: // 0x29
     {
         if (data.size() < 4) return;
         quint32 result;
         QDataStream ds(data);
         ds.setByteOrder(QDataStream::LittleEndian);
         ds >> result;
-
         if (result == 1) {
-            LOG_INFO("🎉 战网登录成功 (协议 0x29)！");
+            LOG_INFO("🎉 登录成功 (0x29)！");
             emit authenticated();
         } else {
-            LOG_ERROR(QString("❌ 登录失败 (0x29): 错误码 0x%1").arg(QString::number(result, 16)));
+            LOG_ERROR(QString("❌ 登录失败 (0x29): 0x%1").arg(QString::number(result, 16)));
         }
-        break;
     }
+    break;
 
-    // === 0x3A 登录响应 ===
-    case SID_LOGONRESPONSE2:
+    case SID_LOGONRESPONSE2: // 0x3A
     {
         if (data.size() < 4) return;
         quint32 result;
         QDataStream ds(data);
         ds.setByteOrder(QDataStream::LittleEndian);
         ds >> result;
-
         if (result == 0) {
-            LOG_INFO("🎉 战网登录成功 (协议 0x3A)！");
+            LOG_INFO("🎉 登录成功 (0x3A)！");
             emit authenticated();
         } else {
-            LOG_ERROR(QString("❌ 登录失败 (0x3A): 错误码 0x%1").arg(QString::number(result, 16)));
+            LOG_ERROR(QString("❌ 登录失败 (0x3A): 0x%1").arg(QString::number(result, 16)));
         }
-        break;
     }
+    break;
 
     case SID_AUTH_INFO:
     case SID_AUTH_CHECK:
-    {
         if (data.size() > 16) handleAuthCheck(data);
         break;
-    }
+
     case SID_AUTH_ACCOUNTCREATE:
     {
         if (data.size() < 4) return;
@@ -459,36 +292,23 @@ void Client::handleTcpPacket(TCPPacketID id, const QByteArray &data)
         QDataStream ds(data);
         ds.setByteOrder(QDataStream::LittleEndian);
         ds >> status;
-
         if (status == 0) {
-            LOG_INFO("🎉 账号注册成功！");
+            LOG_INFO("🎉 账号注册成功！自动登录中...");
             emit accountCreated();
-            // 注册成功后，立即尝试登录
-            LOG_INFO("🔄 正在自动登录新注册的账号...");
             sendLoginRequest(Protocol_SRP_0x53);
-        }
-        else if (status == 0x04) {
-            LOG_WARNING("⚠️ 账号已存在 (Status: 0x04)");
-            // 如果账号已存在，尝试直接登录
-            LOG_INFO("🔄 尝试直接登录...");
+        } else if (status == 0x04) {
+            LOG_WARNING("⚠️ 账号已存在，尝试直接登录...");
             sendLoginRequest(Protocol_SRP_0x53);
+        } else {
+            LOG_ERROR(QString("❌ 注册失败: 0x%1").arg(QString::number(status, 16)));
         }
-        else {
-            // 其他错误码 (如包含非法字符等)
-            LOG_ERROR(QString("❌ 注册失败: 错误码 0x%1").arg(QString::number(status, 16)));
-        }
-        break;
     }
+    break;
 
-    // === SRP 步骤 1 响应 ===
     case SID_AUTH_ACCOUNTLOGON:
-    {
-        if (m_loginProtocol == Protocol_SRP_0x53) {
-            handleSRPLoginResponse(data);
-        }
+        if (m_loginProtocol == Protocol_SRP_0x53) handleSRPLoginResponse(data);
         break;
-    }
-    // === SRP 步骤 2 响应 (最终结果) ===
+
     case SID_AUTH_ACCOUNTLOGONPROOF:
     {
         if (data.size() < 4) return;
@@ -496,159 +316,117 @@ void Client::handleTcpPacket(TCPPacketID id, const QByteArray &data)
         QDataStream ds(data);
         ds.setByteOrder(QDataStream::LittleEndian);
         ds >> status;
-
-        if (status == 0 || status == 0x0E) { // 0x00=Success
-            LOG_INFO("🎉 战网登录成功 (协议 SRP)！");
+        if (status == 0 || status == 0x0E) {
+            LOG_INFO("🎉 登录成功 (SRP)！");
             emit authenticated();
         } else {
-            LOG_ERROR(QString("❌ 登录失败 (SRP): 错误码 0x%1").arg(QString::number(status, 16)));
+            LOG_ERROR(QString("❌ 登录失败 (SRP): 0x%1").arg(QString::number(status, 16)));
         }
-        break;
     }
+    break;
 
     case SID_STARTADVEX3:
-    {
         LOG_INFO("✅ 房间创建成功！");
         emit gameListRegistered();
         break;
+
+    default: break;
     }
-    default:
-        break;
+}
+
+// =========================================================
+// 4. UDP 核心处理
+// =========================================================
+
+void Client::onUdpReadyRead()
+{
+    while (m_udpSocket->hasPendingDatagrams()) {
+        QNetworkDatagram datagram = m_udpSocket->receiveDatagram();
+        handleUdpPacket(datagram.data(), datagram.senderAddress(), datagram.senderPort());
     }
 }
 
 void Client::handleUdpPacket(const QByteArray &data, const QHostAddress &sender, quint16 senderPort)
 {
-    // 1. 长度校验
     if (data.size() < 4) return;
-
     QDataStream in(data);
     in.setByteOrder(QDataStream::LittleEndian);
-
-    quint8 header;
-    quint8 msgId;
+    quint8 header, msgId;
     quint16 length;
-
     in >> header >> msgId >> length;
 
-    // 2. War3 UDP 头校验 (0xF7)
-    if (header != 0xF7) {
-        return;
-    }
+    if (header != 0xF7) return;
 
-    // 3. 打印详细 HEX 日志
     QString hexStr = data.toHex().toUpper();
     for(int i = 2; i < hexStr.length(); i += 3) hexStr.insert(i, " ");
-
     LOG_INFO(QString("📨 [UDP] 收到 %1 字节来自 %2:%3 | 内容: %4")
-                 .arg(data.size())
-                 .arg(sender.toString())
-                 .arg(senderPort)
-                 .arg(hexStr));
+                 .arg(data.size()).arg(sender.toString()).arg(senderPort).arg(hexStr));
 
-    // 4. 强制转换以便 switch 使用
-    UdpPacketID pid = (UdpPacketID)msgId;
-
-    switch (pid) {
-
-        // =================================================================
-        // 场景 A: 我是主机 (Host)
-        // =================================================================
-
+    switch ((UdpPacketID)msgId) {
     case W3GS_PING_FROM_OTHERS: // 0x35
     {
-        // 将 ID 改为 0x36 原样发回
         QByteArray pong = data;
         pong[1] = (char)W3GS_PONG_TO_OTHERS; // 0x35 -> 0x36
-
         m_udpSocket->writeDatagram(pong, sender, senderPort);
-
-        LOG_INFO(QString("⚡ [UDP] 收到 P2P Ping (0x35) -> 已回复 0x36 | 来自: %1:%2")
-                     .arg(sender.toString()).arg(senderPort));
-        break;
+        LOG_INFO("⚡ [UDP] 回复 P2P Ping (0x36)");
     }
-
+    break;
     case W3GS_REQJOIN: // 0x1E
-    {
-        // 收到加入请求 (通常包含玩家名字、密钥等，长度较大)
-        LOG_INFO(QString("🚪 [UDP] 收到加入请求 (0x1E) | 来自: %1:%2 | Size: %3")
-                     .arg(sender.toString()).arg(senderPort).arg(data.size()));
-
-        // 注意：如果你是主机，这里应该解析数据并回复 W3GS_SLOTINFO (0x09) 或 REJECT
-        // 但如果走战网 TCP 加入，UDP 这里的处理通常用于辅助 NAT 打洞。
+        LOG_INFO(QString("🚪 [UDP] 收到加入请求 (0x1E) Size: %1").arg(data.size()));
         break;
-    }
-
-        // =================================================================
-        // 场景 B: 我是玩家 (Client) 正在加入别人
-        // =================================================================
-
     case W3GS_PING_FROM_HOST: // 0x01
     {
-        // 主机来检查我是否还活着
-        LOG_INFO(QString("💓 [UDP] 收到主机 Ping (0x01) -> 正在回复 0x46"));
-
+        LOG_INFO("💓 [UDP] 收到主机 Ping (0x01) -> 回复 0x46");
         QByteArray pong = data;
         pong[1] = (char)W3GS_PONG_TO_HOST; // 0x01 -> 0x46
-
         m_udpSocket->writeDatagram(pong, sender, senderPort);
-        break;
     }
-
+    break;
     case W3GS_PONG_TO_OTHERS: // 0x36
-    {
-        // 我 Ping 别人 (0x35)，别人回复了我 (0x36)
-        LOG_INFO(QString("📶 [UDP] 收到 P2P Pong (0x36) | 延迟检测成功"));
+        LOG_INFO("📶 [UDP] 收到 P2P Pong (0x36) | 延迟检测成功");
         break;
-    }
-
-        // =================================================================
-        // 场景 C: 局域网探测 (LAN)
-        // =================================================================
-
     case W3GS_SEARCHGAME: // 0x2F
-    {
-        LOG_INFO(QString("🔍 [UDP] 收到局域网搜房请求 (0x2F)"));
+        LOG_INFO("🔍 [UDP] 收到局域网搜房请求 (0x2F)");
         break;
-    }
-
     case W3GS_GAMEINFO:     // 0x30
     case W3GS_REFRESHGAME:  // 0x32
-    {
         LOG_INFO(QString("🗺️ [UDP] 收到局域网房间广播 (0x%1)").arg(QString::number(msgId, 16)));
         break;
-    }
-
     default:
-    {
-        QString hexStr = data.toHex().toUpper();
-        LOG_INFO(QString("❓ [UDP] 未处理包 ID: 0x%1 | Size: %2 | Hex: %3")
-                     .arg(QString::number(msgId, 16))
-                     .arg(data.size())
-                     .arg(hexStr));
+        LOG_INFO(QString("❓ [UDP] 未处理包 ID: 0x%1").arg(QString::number(msgId, 16)));
         break;
     }
-    }
+}
+
+// =========================================================
+// 5. 认证与登录逻辑 (Hash, SRP, Register)
+// =========================================================
+
+void Client::sendAuthInfo()
+{
+    QString localIpStr = getPrimaryIPv4();
+    quint32 localIp = localIpStr.isEmpty() ? 0 : ipToUint32(localIpStr);
+    QByteArray payload;
+    QDataStream out(&payload, QIODevice::WriteOnly);
+    out.setByteOrder(QDataStream::LittleEndian);
+    out << (quint32)0;
+    out.writeRawData("68XI", 4); out.writeRawData("PX3W", 4);
+    out << (quint32)26; out.writeRawData("SUne", 4);
+    out << localIp << (quint32)0xFFFFFE20 << (quint32)2052 << (quint32)2052;
+    out.writeRawData("CHN", 3); out.writeRawData("\0", 1);
+    out.writeRawData("China", 5); out.writeRawData("\0", 1);
+    sendPacket(SID_AUTH_INFO, payload);
 }
 
 void Client::handleAuthCheck(const QByteArray &data)
 {
     LOG_INFO("🔍 解析 Auth Challenge (0x51)...");
-
     if (data.size() < 24) return;
-
     QDataStream in(data);
     in.setByteOrder(QDataStream::LittleEndian);
-
-    quint32 udpToken;
-    quint64 mpqFileTime;
-
+    quint32 udpToken; quint64 mpqFileTime;
     in >> m_logonType >> m_serverToken >> udpToken >> mpqFileTime;
-
     m_clientToken = QDateTime::currentMSecsSinceEpoch() & 0xFFFFFFFF;
-
-    LOG_INFO(QString("AuthParams -> Type:%1 ServerToken:0x%2 ClientToken:0x%3")
-                 .arg(QString::number(m_logonType), QString::number(m_serverToken, 16), QString::number(m_clientToken, 16)));
 
     int offset = 20;
     int strEnd = data.indexOf('\0', offset);
@@ -660,53 +438,33 @@ void Client::handleAuthCheck(const QByteArray &data)
 
     unsigned long checkSum = 0;
     if (QFile::exists(m_war3ExePath)) {
-        checkRevisionFlat(
-            formulaString.constData(),
-            m_war3ExePath.toUtf8().constData(),
-            m_stormDllPath.toUtf8().constData(),
-            m_gameDllPath.toUtf8().constData(),
-            mpqNumber,
-            &checkSum
-            );
+        checkRevisionFlat(formulaString.constData(), m_war3ExePath.toUtf8().constData(),
+                          m_stormDllPath.toUtf8().constData(), m_gameDllPath.toUtf8().constData(),
+                          mpqNumber, &checkSum);
     } else {
         LOG_ERROR("War3.exe 不存在，无法计算哈希");
         return;
     }
-
     LOG_INFO(QString("✅ 哈希: 0x%1").arg(QString::number(checkSum, 16).toUpper()));
 
     QByteArray response;
     QDataStream out(&response, QIODevice::WriteOnly);
     out.setByteOrder(QDataStream::LittleEndian);
-
-    quint32 exeVersion = 0x011a0001; // 1.26a
-
-    out << (quint32)m_clientToken;
-    out << (quint32)exeVersion;
-    out << (quint32)checkSum;
-    out << (quint32)1;
-    out << (quint32)0;
-
-    // CD-Key
+    quint32 exeVersion = 0x011a0001;
+    out << m_clientToken << exeVersion << (quint32)checkSum << (quint32)1 << (quint32)0;
     out << (quint32)20 << (quint32)18 << (quint32)0 << (quint32)0;
     out.writeRawData(QByteArray(20, 0).data(), 20);
 
-    // ExeInfo
     QFileInfo fileInfo(m_war3ExePath);
     if (fileInfo.exists()) {
-        const QString fileName = fileInfo.fileName();
-        const QString fileSize = QString::number(fileInfo.size());
-        const QString fileTime = fileInfo.lastModified().toString("MM/dd/yy HH:mm:ss");
-        const QString exeInfoString = QString("%1 %2 %3").arg(fileName, fileTime, fileSize);
+        QString exeInfoString = QString("%1 %2 %3").arg(fileInfo.fileName(), fileInfo.lastModified().toString("MM/dd/yy HH:mm:ss"), QString::number(fileInfo.size()));
         out.writeRawData(exeInfoString.toUtf8().constData(), exeInfoString.length());
         out << (quint8)0;
     } else {
         out.writeRawData("War3.exe 03/18/11 02:00:00 471040\0", 38);
     }
-
     out.writeRawData(m_user.toUtf8().constData(), m_user.toUtf8().size());
     out << (quint8)0;
-
     sendPacket(SID_AUTH_CHECK, response);
 
     LOG_INFO("发起登录请求...");
@@ -716,389 +474,246 @@ void Client::handleAuthCheck(const QByteArray &data)
 void Client::sendLoginRequest(LoginProtocol protocol)
 {
     if (protocol == Protocol_Old_0x29 || protocol == Protocol_Logon2_0x3A) {
-        // === 旧版/中期协议 (Double Hash) ===
-        LOG_INFO(QString("正在发送 DoubleHash 登录请求 (0x%1)...").arg(QString::number(protocol, 16)));
-
+        LOG_INFO(QString("发送 DoubleHash 登录 (0x%1)").arg(QString::number(protocol, 16)));
         QByteArray proof = calculateOldLogonProof(m_pass, m_clientToken, m_serverToken);
-
         QByteArray payload;
         QDataStream out(&payload, QIODevice::WriteOnly);
         out.setByteOrder(QDataStream::LittleEndian);
-
-        out << (quint32)m_clientToken;
-        out << (quint32)m_serverToken;
+        out << m_clientToken << m_serverToken;
         out.writeRawData(proof.data(), 20);
         out.writeRawData(m_user.toUtf8().constData(), m_user.toUtf8().size());
         out << (quint8)0;
-
         sendPacket(protocol == Protocol_Old_0x29 ? SID_LOGONRESPONSE : SID_LOGONRESPONSE2, payload);
     }
     else if (protocol == Protocol_SRP_0x53) {
-        // ============================================================
-        // [SRP 步骤 1] 客户端初始化 & 发送公钥 A
-        // ============================================================
-        LOG_INFO("正在发送 SRP 登录请求 (0x53)...");
-
+        LOG_INFO("发送 SRP 登录 (0x53) - 步骤1");
         if (m_srp) delete m_srp;
-
-        // 初始化 SRP 对象 (内部生成随机私钥 a)
         m_srp = new BnetSRP3(m_user, m_pass);
-
         QByteArray payload;
         QDataStream out(&payload, QIODevice::WriteOnly);
         out.setByteOrder(QDataStream::LittleEndian);
-
-        // --------------------------------------------------------------------------
-        // [SRP 步骤 1.1] 计算客户端公钥 A = g^a % N
-        // --------------------------------------------------------------------------
         BigInt A = m_srp->getClientSessionPublicKey();
-
-        // --------------------------------------------------------------------------
-        // [SRP 步骤 1.2] 转换为 32 字节的小端序字节流 (准备发送)
-        // --------------------------------------------------------------------------
         QByteArray A_bytes = A.toByteArray(32, 1, false);
-        LOG_INFO(QString("[登录调试] 客户端发送 A (原始数据/Raw): %1").arg(QString(A_bytes.toHex())));
-
         out.writeRawData(A_bytes.constData(), 32);
         out.writeRawData(m_user.trimmed().toUtf8().constData(), m_user.length());
         out << (quint8)0;
-
-        // --------------------------------------------------------------------------
-        // [SRP 步骤 1.3] 发送包 SID_AUTH_ACCOUNTLOGON
-        // --------------------------------------------------------------------------
         sendPacket(SID_AUTH_ACCOUNTLOGON, payload);
     }
 }
 
-// === SRP 0x53 响应处理 ===
 void Client::handleSRPLoginResponse(const QByteArray &data)
 {
-    // ============================================================
-    // [SRP 步骤 3] 接收服务端公钥 B & 发送证明 M1
-    // ============================================================
-    if (data.size() < 68) {
-        LOG_ERROR("[SRP 步骤 3] 响应数据不足 (SID_AUTH_ACCOUNTLOGON)");
-        return;
-    }
-
+    if (data.size() < 68) return;
     QDataStream in(data);
     in.setByteOrder(QDataStream::LittleEndian);
-
     quint32 status;
     QByteArray saltBytes(32, 0);
-    QByteArray serverKeyBytes(32, 0); // Key B
-
-    // 读取数据
+    QByteArray serverKeyBytes(32, 0);
     in >> status;
     in.readRawData(saltBytes.data(), 32);
     in.readRawData(serverKeyBytes.data(), 32);
 
     if (status != 0) {
         if (status == 0x01) {
-            // 0x01 = 账号不存在 (SERVER_LOGINREPLY_W3_MESSAGE_BADACCT)
-            LOG_WARNING(QString("⚠️ 账号 %1 不存在，正在自动发起注册...").arg(m_user));
-
-            // 触发注册流程 (0x52)
+            LOG_WARNING(QString("⚠️ 账号 %1 不存在，自动发起注册...").arg(m_user));
             createAccount();
-        }
-        else if (status == 0x05) {
-            // 0x05 = 密码错误 (SERVER_LOGINREPLY_W3_MESSAGE_BADPASS)
-            LOG_ERROR(QString("❌ 登录失败: 密码错误 (User: %1)").arg(m_user));
-        }
-        else {
-            // 其他错误 (如封禁等)
-            LOG_ERROR("[SRP 步骤 3.1] 被拒绝，状态码: 0x" + QString::number(status, 16));
+        } else if (status == 0x05) {
+            LOG_ERROR("❌ 密码错误");
+        } else {
+            LOG_ERROR("❌ 登录拒绝: 0x" + QString::number(status, 16));
         }
         return;
     }
 
-    LOG_INFO(QString("[登录调试] 收到服务端 Salt (原始数据/Raw): %1").arg(QString(saltBytes.toHex())));
-    LOG_INFO(QString("[登录调试] 收到服务端 B (原始数据/Raw):    %1").arg(QString(serverKeyBytes.toHex())));
-
-    if (!m_srp) {
-        LOG_ERROR("SRP 对象未初始化！");
-        return;
-    }
-
-    // === 计算 Proof (M1) ===
-
-    // --------------------------------------------------------------------------
-    // [SRP 步骤 3.2] 设置 Salt
-    // --------------------------------------------------------------------------
-    BigInt saltVal((const unsigned char*)saltBytes.constData(), 32, 4, false);
-    LOG_INFO(QString("[登录调试] Salt 转为 BigInt: %1").arg(saltVal.toHexString()));
-
-    m_srp->setSalt(saltVal);
-
-    // --------------------------------------------------------------------------
-    // [SRP 步骤 3.3] 转换服务端公钥 B
-    // --------------------------------------------------------------------------
+    if (!m_srp) return;
+    m_srp->setSalt(BigInt((const unsigned char*)saltBytes.constData(), 32, 4, false));
     BigInt B_val((const unsigned char*)serverKeyBytes.constData(), 32, 1, false);
-    LOG_INFO(QString("[登录调试] 服务端 B 转为 BigInt: %1").arg(B_val.toHexString()));
-
-    // --------------------------------------------------------------------------
-    // [SRP 步骤 3.4] 计算会话密钥 K = Hash(S)
-    // --------------------------------------------------------------------------
-    // 这一步内部会计算: x = H(s, H(P)), u = H(B), S = (B - g^x)^(a + ux)
     BigInt K = m_srp->getHashedClientSecret(B_val);
-    LOG_INFO(QString("[登录调试] 计算出的会话密钥 K: %1").arg(K.toHexString()));
-
-    // --------------------------------------------------------------------------
-    // [SRP 步骤 3.x] 获取本地公钥 A
-    // --------------------------------------------------------------------------
     BigInt A = m_srp->getClientSessionPublicKey();
-
-    // --------------------------------------------------------------------------
-    // [SRP 步骤 3.5] 计算客户端证明 M1 = H(I, H(U), s, A, B, K)
-    // --------------------------------------------------------------------------
     BigInt M1 = m_srp->getClientPasswordProof(A, B_val, K);
-    LOG_INFO(QString("[登录调试] 计算出的证明 M1:    %1").arg(M1.toHexString()));
-
-    // 将 Proof 转换为 20 字节的数据
     QByteArray proofBytes = M1.toByteArray(20, 1, false);
-    LOG_INFO(QString("[验证调试] 客户端发送 M1:      %1").arg(QString(proofBytes.toHex())));
 
-    // === 发送 SID_AUTH_ACCOUNTLOGONPROOF (0x54) ===
     QByteArray response;
     QDataStream out(&response, QIODevice::WriteOnly);
     out.setByteOrder(QDataStream::LittleEndian);
-
-    // [SRP 步骤 3.6] 发送 M1 给服务端进行验证
     out.writeRawData(proofBytes.constData(), 20);
-    out.writeRawData(QByteArray(20, 0).data(), 20); // M2 verification space
-
+    out.writeRawData(QByteArray(20, 0).data(), 20);
     sendPacket(SID_AUTH_ACCOUNTLOGONPROOF, response);
-}
-
-void Client::enterChat() {
-    QByteArray enterChatPayload;
-    enterChatPayload.append('\0');
-    enterChatPayload.append('\0');
-    sendPacket(SID_ENTERCHAT, enterChatPayload);
-}
-
-void Client::stopAdv()
-{
-    LOG_INFO("🛑 发送停止房间广播请求 (SID_STOPADV)...");
-
-    // SID_STOPADV 不需要 Payload，直接发送空字节数组即可
-    // 协议格式: FF 02 04 00 (Header + ID + Length)
-    sendPacket(SID_STOPADV, QByteArray());
-}
-
-void Client::cancelGame()
-{
-    LOG_INFO("❌ 发送取消游戏请求 (SID_ENTERCHAT) - 正在销毁房间并返回大厅...");
-    enterChat();
-}
-
-void Client::createGame(const QString &gameName, const QString &password, quint16 udpPort,
-                        ProviderVersion providerVersion, ComboGameType comboGameType, SubGameType subGameType, LadderType ladderType)
-{
-    // 切换 UDP 端口
-    bool needRebind = false;
-
-    // 检查当前状态
-    if (m_udpSocket->state() != QAbstractSocket::BoundState) {
-        needRebind = true;
-    } else {
-        if (m_udpSocket->localPort() != udpPort) {
-            needRebind = true;
-        }
-    }
-
-    if (needRebind) {
-        m_udpSocket->close();
-        if (m_udpSocket->bind(QHostAddress::AnyIPv4, udpPort, QUdpSocket::ShareAddress)) {
-            LOG_INFO(QString("✅ UDP 端口切换至 %1 成功").arg(udpPort));
-        } else {
-            LOG_ERROR(QString("❌ UDP 端口切换至 %1 失败！端口被占用。").arg(udpPort));
-            return;
-        }
-    } else {
-        LOG_INFO(QString("ℹ️ UDP 端口已经是 %1，无需切换").arg(udpPort));
-    }
-
-    LOG_INFO(QString("🚀 请求广播房间: [%1] (Port: %2)").arg(gameName).arg(udpPort));
-
-    if (m_war3Map.load(m_dota683dPath)) {
-        // 获取编码后的地图数据
-        QByteArray encodedData = m_war3Map.getEncodedStatString(m_user);
-
-        if (encodedData.isEmpty()) {
-            LOG_ERROR("❌ 无法创建房间：MapStatString 生成为空！");
-            return;
-        }
-
-        m_hostCounter++; // 自增计数器
-
-        // =========================================================
-        // 构造带明文头的 StatString
-        // 格式: "9" + "Counter反转" + [EncodedData]
-        // =========================================================
-
-        QByteArray finalStatString;
-
-        // A. 写入空闲槽位 (通常固定为 '9') - ASCII 0x39
-        finalStatString.append('9');
-
-        // B. 写入反转的 Host Counter Hex 字符串
-        QString hexCounter = QString("%1").arg(m_hostCounter, 8, 16, QChar('0'));
-        QString reverseHex;
-        for(int i = hexCounter.length() - 1; i >= 0; i--) {
-            reverseHex.append(hexCounter[i]);
-        }
-        finalStatString.append(reverseHex.toLatin1());
-
-        // C. 追加编码后的地图数据
-        finalStatString.append(encodedData);
-
-        QString finalHex, finalAscii;
-        for (char c : finalStatString) {
-            finalHex.append(QString("%1 ").arg((quint8)c, 2, 16, QChar('0')).toUpper());
-            finalAscii.append((c >= 32 && c <= 126) ? c : '.');
-        }
-        LOG_INFO(QString("🔧 最终 StatString (Size %1):").arg(finalStatString.size()));
-        LOG_INFO(QString("   HEAD: %1 (Counter: %2)").arg(QString(finalStatString.left(9))).arg(m_hostCounter));
-        LOG_INFO(QString("   HEX : %1").arg(finalHex));
-        LOG_INFO(QString("   ASC : %1").arg(finalAscii));
-
-        QByteArray payload;
-        QDataStream out(&payload, QIODevice::WriteOnly);
-        out.setByteOrder(QDataStream::LittleEndian);
-
-        // 1. (UINT32) Game State
-        quint32 state = 0x00000010;
-        if (!password.isEmpty()) {
-            state = 0x00000011;
-        }
-
-        LOG_INFO(QString("发送状态(C->S): 0x%1 (密码: %2)")
-                     .arg(QString::number(state, 16), !password.isEmpty() ? "有" : "无"));
-
-        out << state;
-
-        // 2. (UINT32) Game Elapsed Time
-        out << (quint32)0;
-
-        // 3. (UINT16) Game Type (0x2001)
-        out << (quint16)comboGameType;
-
-        // 4. (UINT16) Sub Game Type (0x49)
-        out << (quint16)subGameType;
-
-        // 5. (UINT32) Provider Version Constant
-        out << (quint32)providerVersion;
-
-        // 6. (UINT32) Ladder Type
-        out << (quint32)ladderType;
-
-        // 7. (STRING) Game Name
-        out.writeRawData(gameName.toUtf8().constData(), gameName.toUtf8().size());
-        out << (quint8)0;
-
-        // 8. (STRING) Game Password
-        out.writeRawData(password.toUtf8().constData(), password.toUtf8().size());
-        out << (quint8)0;
-
-        // 9. (STRING) Game Statstring
-        out.writeRawData(finalStatString.constData(), finalStatString.size());
-        out << (quint8)0;
-
-        // 发送包
-        sendPacket(SID_STARTADVEX3, payload);
-        LOG_INFO("📤 房间创建请求已发送，等待服务器响应...");
-
-    } else {
-        LOG_ERROR(QString("❌ 地图加载失败: %1").arg(m_dota683dPath));
-    }
 }
 
 void Client::createAccount()
 {
-    LOG_INFO("📝 正在发起账号注册 (Legacy Plaintext Mode 0x52)...");
+    LOG_INFO("📝 发起账号注册 (0x52)...");
+    if (m_user.isEmpty() || m_pass.isEmpty()) return;
+    QByteArray s_bytes(32, 0);
+    for (int i = 0; i < 32; ++i) s_bytes[i] = (char)(QRandomGenerator::global()->generate() & 0xFF);
+    QByteArray v_bytes(32, 0); // 明文密码模式
+    QByteArray passRaw = m_pass.toLatin1();
+    memcpy(v_bytes.data(), passRaw.constData(), qMin(passRaw.size(), 32));
 
-    if (m_user.isEmpty() || m_pass.isEmpty()) {
-        LOG_ERROR("注册失败: 用户名或密码为空");
-        return;
-    }
-
-    // ---------------------------------------------------------
-    // 1. 准备 Salt (32字节)
-    // ---------------------------------------------------------
-    // 在发送明文密码模式下，服务端会忽略客户端发来的 Salt，并自己重新生成。
-    // 但为了保持数据包格式正确，我们填充 32 字节的随机数。
-    QByteArray s_bytes;
-    s_bytes.resize(32);
-    for (int i = 0; i < 32; ++i) {
-        s_bytes[i] = (char)(QRandomGenerator::global()->generate() & 0xFF);
-    }
-
-    // ---------------------------------------------------------
-    // 2. 准备 Verifier 字段 (32字节，存放明文密码)
-    // ---------------------------------------------------------
-    // 官方客户端行为：直接把密码字符串拷贝进去，剩余补 0。
-    // 服务端检测到这是可打印字符后，会自动计算 SC Hash 和 SRP Verifier。
-    QByteArray v_bytes;
-    v_bytes.resize(32);
-    v_bytes.fill(0); // 必须初始化为 0，这很重要！
-
-    // 获取密码字节 (通常使用 Latin1 或 UTF8)
-    QByteArray passRaw = m_pass.toLatin1(); // 官方客户端通常使用非 Unicode 编码发送密码
-
-    // 截断密码以防溢出 (虽然密码很少超过 32 字符)
-    int copyLen = qMin(passRaw.size(), 32);
-
-    // 将密码复制到 buffer 头部
-    memcpy(v_bytes.data(), passRaw.constData(), copyLen);
-
-    LOG_INFO(QString("[Register] Salt (Random): %1").arg(QString(s_bytes.toHex())));
-    LOG_INFO(QString("[Register] Verifier (Plaintext): %1 (Hex: %2)").arg(m_pass, QString(v_bytes.toHex())));
-
-    // ---------------------------------------------------------
-    // 3. 构造数据包
-    // ---------------------------------------------------------
     QByteArray payload;
     QDataStream out(&payload, QIODevice::WriteOnly);
     out.setByteOrder(QDataStream::LittleEndian);
-
-    out.writeRawData(s_bytes.constData(), 32); // 发送随机 Salt
-    out.writeRawData(v_bytes.constData(), 32); // 发送明文密码
+    out.writeRawData(s_bytes.constData(), 32);
+    out.writeRawData(v_bytes.constData(), 32);
     out.writeRawData(m_user.toLower().trimmed().toLatin1().constData(), m_user.length());
-    out << (quint8)0; // 字符串结束符
-
-    // 4. 发送
+    out << (quint8)0;
     sendPacket(SID_AUTH_ACCOUNTCREATE, payload);
 }
 
-void Client::queryChannelList()
+QByteArray Client::calculateBrokenSHA1(const QByteArray &data)
 {
-    LOG_INFO("📜 正在请求服务器频道列表...");
+    t_hash hashOut;
+    bnet_hash(&hashOut, data.size(), data.constData());
+    QByteArray result;
+    QDataStream ds(&result, QIODevice::WriteOnly);
+    ds.setByteOrder(QDataStream::BigEndian);
+    for(int i = 0; i < 5; i++) ds << hashOut[i];
+    return result;
+}
+
+QByteArray Client::calculateOldLogonProof(const QString &password, quint32 clientToken, quint32 serverToken)
+{
+    QByteArray passHashBE = calculateBrokenSHA1(password.toLatin1());
+    QByteArray buffer;
+    QDataStream ds(&buffer, QIODevice::WriteOnly);
+    ds.setByteOrder(QDataStream::LittleEndian);
+    ds << clientToken << serverToken;
+    QDataStream dsReader(passHashBE);
+    dsReader.setByteOrder(QDataStream::BigEndian);
+    for(int i=0; i<5; i++) { quint32 val; dsReader >> val; ds << val; }
+
+    QByteArray finalHashBE = calculateBrokenSHA1(buffer);
+    QByteArray proofToSend;
+    QDataStream dsFinal(&proofToSend, QIODevice::WriteOnly);
+    dsFinal.setByteOrder(QDataStream::LittleEndian);
+    QDataStream dsFinalReader(finalHashBE);
+    dsFinalReader.setByteOrder(QDataStream::BigEndian);
+    for(int i=0; i<5; i++) { quint32 val; dsFinalReader >> val; dsFinal << val; }
+    return proofToSend;
+}
+
+// =========================================================
+// 6. 聊天与频道管理
+// =========================================================
+
+void Client::enterChat() {
+    sendPacket(SID_ENTERCHAT, QByteArray(2, '\0'));
+}
+
+void Client::queryChannelList() {
+    LOG_INFO("📜 请求频道列表...");
     QByteArray payload;
     QDataStream out(&payload, QIODevice::WriteOnly);
     out.setByteOrder(QDataStream::LittleEndian);
-
     out << (quint32)0;
-
     sendPacket(SID_GETCHANNELLIST, payload);
 }
 
-void Client::joinChannel(const QString &channelName)
-{
+void Client::joinChannel(const QString &channelName) {
     if (channelName.isEmpty()) return;
+    LOG_INFO(QString("💬 加入频道: %1").arg(channelName));
+    QByteArray payload;
+    QDataStream out(&payload, QIODevice::WriteOnly);
+    out.setByteOrder(QDataStream::LittleEndian);
+    out << (quint32)0x01; // First Join
+    out.writeRawData(channelName.toUtf8().constData(), channelName.toUtf8().size());
+    out << (quint8)0;
+    sendPacket(SID_JOINCHANNEL, payload);
+}
 
-    LOG_INFO(QString("💬 请求加入频道: %1").arg(channelName));
+// =========================================================
+// 7. 房间主机逻辑
+// =========================================================
+
+void Client::stopAdv() {
+    LOG_INFO("🛑 停止房间广播");
+    sendPacket(SID_STOPADV, QByteArray());
+}
+
+void Client::cancelGame() {
+    stopAdv();
+    enterChat();
+    LOG_INFO("❌ 取消游戏，返回大厅");
+}
+
+void Client::createGame(const QString &gameName, const QString &password, ProviderVersion providerVersion, ComboGameType comboGameType, SubGameType subGameType, LadderType ladderType)
+{
+    LOG_INFO(QString("🚀 广播房间: [%1]").arg(gameName));
+    if (!m_war3Map.load(m_dota683dPath)) {
+        LOG_ERROR("❌ 地图加载失败");
+        return;
+    }
+    QByteArray encodedData = m_war3Map.getEncodedStatString(m_user);
+    if (encodedData.isEmpty()) {
+        LOG_ERROR("❌ StatString 生成失败");
+        return;
+    }
+
+    m_hostCounter++;
+    QByteArray finalStatString;
+
+    // 1. 写入空闲槽位标识
+    finalStatString.append('9');
+
+    // 2. 写入反转的 Host Counter Hex 字符串
+    QString hexCounter = QString("%1").arg(m_hostCounter, 8, 16, QChar('0'));
+    for(int i = hexCounter.length() - 1; i >= 0; i--) {
+        finalStatString.append(hexCounter[i].toLatin1());
+    }
+
+    // 3. 追加编码后的地图数据
+    finalStatString.append(encodedData);
 
     QByteArray payload;
     QDataStream out(&payload, QIODevice::WriteOnly);
     out.setByteOrder(QDataStream::LittleEndian);
+    quint32 state = 0x00000010;
+    if (!password.isEmpty()) state = 0x00000011;
 
-    // Flags: 0x01 = First Join / Force Create
-    out << (quint32)0x01;
-    out.writeRawData(channelName.toUtf8().constData(), channelName.toUtf8().size());
-    out << (quint8)0; // 字符串结尾
+    out << state << (quint32)0 << (quint16)comboGameType << (quint16)subGameType
+        << (quint32)providerVersion << (quint32)ladderType;
+    out.writeRawData(gameName.toUtf8().constData(), gameName.toUtf8().size()); out << (quint8)0;
+    out.writeRawData(password.toUtf8().constData(), password.toUtf8().size()); out << (quint8)0;
+    out.writeRawData(finalStatString.constData(), finalStatString.size()); out << (quint8)0;
 
-    sendPacket(SID_JOINCHANNEL, payload);
+    sendPacket(SID_STARTADVEX3, payload);
+    LOG_INFO("📤 房间创建请求发送完毕");
+}
+
+// =========================================================
+// 8. 辅助工具函数
+// =========================================================
+
+bool Client::bindToRandomPort()
+{
+    if (m_udpSocket->state() != QAbstractSocket::UnconnectedState) m_udpSocket->close();
+
+    // 优先 6112-6119
+    for (quint16 p = 6112; p <= 6119; ++p) {
+        if (m_udpSocket->bind(QHostAddress::AnyIPv4, p)) {
+            LOG_INFO(QString("✅ UDP 绑定经典端口: %1").arg(p));
+            return true;
+        }
+    }
+    // 随机 49152-65535
+    for (int i = 0; i < 200; ++i) {
+        quint16 p = QRandomGenerator::global()->bounded(49152, 65536);
+        if (isBlackListedPort(p)) continue;
+        if (m_udpSocket->bind(QHostAddress::AnyIPv4, p)) {
+            LOG_INFO(QString("✅ UDP 绑定动态端口: %1").arg(p));
+            return true;
+        }
+    }
+    return false;
+}
+
+bool Client::isBlackListedPort(quint16 port)
+{
+    static const QSet<quint16> blacklist = {
+        22, 53, 3478, 53820, 57289, 57290, 80, 443, 8080, 8443, 3389, 5900, 3306, 5432, 6379, 27017
+    };
+    return blacklist.contains(port);
 }
 
 QString Client::getPrimaryIPv4() {
@@ -1113,12 +728,5 @@ QString Client::getPrimaryIPv4() {
     return QString();
 }
 
-quint32 Client::ipToUint32(const QString &ipAddress) {
-    return QHostAddress(ipAddress).toIPv4Address();
-}
-quint32 Client::ipToUint32(const QHostAddress &address) {
-    return address.toIPv4Address();
-}
-void Client::disconnectFromHost() { m_tcpSocket->disconnectFromHost(); }
-bool Client::isConnected() const { return m_tcpSocket->state() == QAbstractSocket::ConnectedState; }
-void Client::onDisconnected() { LOG_WARNING("🔌 战网连接断开"); }
+quint32 Client::ipToUint32(const QString &ipAddress) { return QHostAddress(ipAddress).toIPv4Address(); }
+quint32 Client::ipToUint32(const QHostAddress &address) { return address.toIPv4Address(); }
