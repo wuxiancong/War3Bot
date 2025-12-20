@@ -424,30 +424,34 @@ int main(int argc, char *argv[]) {
         }
         else if (action == "cancel") {
             QString targetUser = (parts.size() > 1) ? parts[1] : "";
+
             QSettings settings(configFile, QSettings::IniFormat);
             QString configUser = settings.value("bnet/username", "").toString();
 
+            // === 机器人模式 ===
             if (configUser == "bot") {
                 const auto &bots = botManager.getAllBots();
                 int count = 0;
+
+                if (targetUser.isEmpty()) LOG_INFO("❌ 正在 [销毁] 所有机器人的房间...");
+                else LOG_INFO(QString("❌ 正在销毁机器人 [%1] 的房间...").arg(targetUser));
+
                 for (auto *bot : bots) {
                     if (bot && bot->client && bot->client->isConnected()) {
                         bool match = targetUser.isEmpty() || (bot->username.compare(targetUser, Qt::CaseInsensitive) == 0);
-
-                        // 只处理非 Idle 状态的机器人，或者强制处理
-                        if (match && bot->state != BotState::Idle) {
-                            bot->client->cancelGame(); // 发送 0x0A
-
-                            // ★ 重要：Cancel 后，机器人变回空闲状态，可以再次被 create 使用
+                        if (match) {
+                            // 发送进入聊天请求 (即取消房间)
+                            bot->client->cancelGame();
                             bot->state = BotState::Idle;
-
                             count++;
-                            LOG_INFO(QString("❌ Bot-%1 (%2) 已执行 Cancel (房间销毁，状态重置为 Idle)").arg(bot->id).arg(bot->username));
+                            LOG_INFO(QString("✅ Bot-%1 (%2) 房间已销毁，状态重置为 Idle").arg(bot->id).arg(bot->username));
                         }
                     }
                 }
-                if(count == 0) LOG_WARNING("未找到正在游戏/等待中的机器人执行 Cancel。");
-            } else {
+                if(count == 0) LOG_WARNING("未找到匹配的机器人或机器人不在房间中。");
+            }
+            // === 单用户模式 ===
+            else {
                 war3bot.cancelGame();
             }
         }
@@ -483,12 +487,6 @@ int main(int argc, char *argv[]) {
                         if (shouldStop) {
                             // 发送停止协议
                             bot->client->stopAdv();
-
-                            // 手动重置机器人状态为空闲
-                            if (bot->state == BotState::Waiting || bot->state == BotState::Creating) {
-                                bot->state = BotState::Idle;
-                            }
-
                             stoppedCount++;
                             LOG_INFO(QString("✅ Bot-%1 (%2) 已执行 Unhost").arg(bot->id).arg(bot->username));
                         }
