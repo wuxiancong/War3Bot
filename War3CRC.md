@@ -9,7 +9,7 @@
 3.  **`war3map.j`** (当前地图脚本)
 
 ### 数学公式
-假设三个文件的 CRC 值分别为 $CRC_{com}$、$CRC_{bliz}$、$CRC_{map}$。
+假设三个文件的 CRC 值分别为 $CRC{com}$、$CRC{bliz}$、$CRC{map}$。
 
 1. **第一阶段（混合环境包）**：
 
