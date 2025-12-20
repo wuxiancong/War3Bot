@@ -213,11 +213,7 @@ void War3Bot::onBnetAuthenticated()
     // 分支 B: 无任务 -> 进入聊天频道
     else {
         LOG_INFO("💬 无挂起任务，请求进入聊天大厅...");
-
-        QByteArray enterChatPayload;
-        enterChatPayload.append('\0');
-        enterChatPayload.append('\0');
-        m_client->sendPacket(SID_ENTERCHAT, enterChatPayload);
+        m_client->enterChat();
     }
 }
 

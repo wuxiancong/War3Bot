@@ -158,6 +158,9 @@ public:
     // 停止广播/取消房间
     void stopGame();
 
+    // 进入聊天
+    void enterChat();
+
     // 注册账号
     void createAccount();
 

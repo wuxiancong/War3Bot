@@ -422,10 +422,6 @@ void Client::handleTcpPacket(TCPPacketID id, const QByteArray &data)
         if (result == 1) {
             LOG_INFO("🎉 战网登录成功 (协议 0x29)！");
             emit authenticated();
-            QByteArray enterChatPayload;
-            enterChatPayload.append('\0');
-            enterChatPayload.append('\0');
-            sendPacket(SID_ENTERCHAT, enterChatPayload);
         } else {
             LOG_ERROR(QString("❌ 登录失败 (0x29): 错误码 0x%1").arg(QString::number(result, 16)));
         }
@@ -444,10 +440,6 @@ void Client::handleTcpPacket(TCPPacketID id, const QByteArray &data)
         if (result == 0) {
             LOG_INFO("🎉 战网登录成功 (协议 0x3A)！");
             emit authenticated();
-            QByteArray enterChatPayload;
-            enterChatPayload.append('\0');
-            enterChatPayload.append('\0');
-            sendPacket(SID_ENTERCHAT, enterChatPayload);
         } else {
             LOG_ERROR(QString("❌ 登录失败 (0x3A): 错误码 0x%1").arg(QString::number(result, 16)));
         }
@@ -508,10 +500,6 @@ void Client::handleTcpPacket(TCPPacketID id, const QByteArray &data)
         if (status == 0 || status == 0x0E) { // 0x00=Success
             LOG_INFO("🎉 战网登录成功 (协议 SRP)！");
             emit authenticated();
-            // QByteArray enterChatPayload;
-            // enterChatPayload.append('\0');
-            // enterChatPayload.append('\0');
-            // sendPacket(SID_ENTERCHAT, enterChatPayload);
         } else {
             LOG_ERROR(QString("❌ 登录失败 (SRP): 错误码 0x%1").arg(QString::number(status, 16)));
         }
@@ -880,6 +868,13 @@ void Client::handleSRPLoginResponse(const QByteArray &data)
     out.writeRawData(QByteArray(20, 0).data(), 20); // M2 verification space
 
     sendPacket(SID_AUTH_ACCOUNTLOGONPROOF, response);
+}
+
+void Client::enterChat() {
+    QByteArray enterChatPayload;
+    enterChatPayload.append('\0');
+    enterChatPayload.append('\0');
+    sendPacket(SID_ENTERCHAT, enterChatPayload);
 }
 
 void Client::stopGame()
