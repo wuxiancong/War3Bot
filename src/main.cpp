@@ -20,9 +20,9 @@
 #include <tlhelp32.h>
 #endif
 
+// === 端口检查函数 ===
 bool isPortInUse(quint16 port) {
     QUdpSocket testSocket;
-    // 尝试绑定到端口
     bool bound = testSocket.bind(QHostAddress::AnyIPv4, port, QUdpSocket::ShareAddress);
     if (bound) {
         testSocket.close();
@@ -31,87 +31,38 @@ bool isPortInUse(quint16 port) {
     return true; // 端口被占用
 }
 
+// === 强制释放端口函数 ===
 bool killProcessOnPort(quint16 port) {
     LOG_INFO(QString("正在尝试释放端口 %1").arg(port));
 
 #ifdef Q_OS_WIN
     // Windows 方法
     QProcess process;
-    process.start("netstat", QStringList() << "-ano" << "-p" << "udp");
-
-    if (!process.waitForFinished(5000)) {
-        return false;
-    }
-
-    QString output = process.readAllStandardOutput();
-
-#if QT_VERSION < QT_VERSION_CHECK(5, 15, 0)
-    QStringList lines = output.split('\n', QString::SkipEmptyParts);
-#else
-    QStringList lines = output.split('\n', Qt::SkipEmptyParts);
-#endif
-
-    for (const QString &line : qAsConst(lines)) {
-        if (line.contains(QString(":%1").arg(port)) && line.contains("UDP")) {
-#if QT_VERSION < QT_VERSION_CHECK(5, 15, 0)
-            QStringList parts = line.split(' ', QString::SkipEmptyParts);
-#else
-            QStringList parts = line.split(' ', Qt::SkipEmptyParts);
-#endif
-            if (parts.size() >= 5) {
-                QString pidStr = parts.last();
-                bool ok;
-                int pid = pidStr.toInt(&ok);
-                if (ok && pid > 0) {
-                    LOG_WARNING(QString("正在终止占用端口 %2 的进程 %1").arg(pid).arg(port));
-
-                    HANDLE hProcess = OpenProcess(PROCESS_TERMINATE, FALSE, pid);
-                    if (hProcess != NULL) {
-                        TerminateProcess(hProcess, 0);
-                        CloseHandle(hProcess);
-                        QThread::msleep(1000); // 等待进程结束
-                        return true;
-                    }
-                }
-            }
-        }
-    }
+    process.start("cmd", QStringList() << "/c" << QString("for /f \"tokens=5\" %a in ('netstat -aon ^| findstr :%1') do taskkill /f /pid %a").arg(port));
+    process.waitForFinished(5000);
+    return true;
 #else
     // Linux 方法
     QProcess process;
-    process.start("sh", QStringList() << "-c"
-                                      << QString("lsof -i udp:%1 -t 2>/dev/null").arg(port));
-
+    // 尝试 fuser (更强力)
+    process.start("sh", QStringList() << "-c" << QString("fuser -k -9 %1/udp; fuser -k -9 %1/tcp").arg(port));
     if (!process.waitForFinished(3000)) {
-        return false;
+        // 尝试 lsof (备用)
+        process.start("sh", QStringList() << "-c" << QString("lsof -t -i:%1 | xargs kill -9").arg(port));
+        process.waitForFinished(3000);
     }
-
-    QString output = process.readAllStandardOutput().trimmed();
-    if (!output.isEmpty()) {
-        QStringList pids = output.split('\n', Qt::SkipEmptyParts);
-        for (const QString &pidStr : pids) {
-            bool ok;
-            int pid = pidStr.toInt(&ok);
-            if (ok && pid > 0) {
-                LOG_WARNING(QString("正在终止占用端口 %2 的进程 %1").arg(pid).arg(port));
-                QProcess::execute("kill", QStringList() << "-9" << QString::number(pid));
-            }
-        }
-        QThread::msleep(1000); // 等待进程结束
-        return true;
-    }
+    QThread::msleep(500); // 等待系统回收
+    return true;
 #endif
-
-    return false;
 }
 
 bool forceFreePort(quint16 port) {
     LOG_INFO(QString("正在强制释放端口 %1").arg(port));
     if (killProcessOnPort(port)) {
-        QThread::msleep(2000); // 等待更长时间
+        QThread::msleep(2000);
         return !isPortInUse(port);
     }
-    return true; // 让 War3Bot 自己处理
+    return true;
 }
 
 int main(int argc, char *argv[]) {
@@ -120,7 +71,6 @@ int main(int argc, char *argv[]) {
     QTextCodec::setCodecForLocale(codec);
 
     QCoreApplication app(argc, argv);
-
     QCoreApplication::setApplicationName("War3Bot");
     QCoreApplication::setApplicationVersion("3.0");
 
@@ -129,13 +79,10 @@ int main(int argc, char *argv[]) {
     parser.addHelpOption();
     parser.addVersionOption();
 
-    QCommandLineOption botCountOption({"b", "bot-count"}, "启动的机器人数量", "count", "0");
-    parser.addOption(botCountOption);
-
-    QCommandLineOption portOption({"p", "port"}, "监听端口 (默认: 6116])", "port", "6116");
+    QCommandLineOption portOption({"p", "port"}, "监听端口 (默认: 6116)", "port", "6116");
     parser.addOption(portOption);
 
-    QCommandLineOption logLevelOption({"l", "log-level"}, "日志级别 (debug, info, warning, error, critical)", "level", "info");
+    QCommandLineOption logLevelOption({"l", "log-level"}, "日志级别", "level", "info");
     parser.addOption(logLevelOption);
 
     QCommandLineOption configOption({"c", "config"}, "配置文件路径", "config", "war3bot.ini");
@@ -149,47 +96,24 @@ int main(int argc, char *argv[]) {
 
     parser.process(app);
 
-    // === 先加载配置文件来设置日志 ===
+    // === 1. 加载配置与日志初始化 ===
     QString configFile = parser.value(configOption);
-
-    // 检查配置文件是否存在，如果不存在则使用默认值
     QFileInfo configFileInfo(configFile);
+
+    // 如果配置文件不存在，尝试查找或创建默认配置
     if (!configFileInfo.exists()) {
-        // 尝试在可执行文件目录查找
         QString exeDir = QCoreApplication::applicationDirPath();
         QString alternativeConfig = exeDir + "/config/" + configFile;
         if (QFileInfo::exists(alternativeConfig)) {
             configFile = alternativeConfig;
         } else {
-            // 如果都不存在，创建默认配置文件
             QString defaultConfigPath = exeDir + "/config/war3bot.ini";
             QFile defaultConfig(defaultConfigPath);
             if (defaultConfig.open(QIODevice::WriteOnly | QIODevice::Text)) {
                 QTextStream out(&defaultConfig);
-
-                // [server] 节点
-                out << "[server]\n";
-                out << "broadcast_port=6112\n";
-                out << "enable_broadcast=false\n";
-                out << "peer_timeout=300000\n";
-                out << "cleanup_interval=60000\n";
-                out << "broadcast_interval=30000\n";
-
-                // [log] 节点
-                out << "\n[log]\n";
-                out << "level=info\n";
-                out << "enable_console=true\n";
-                out << "log_file=/var/log/war3bot/war3bot.log\n";
-                out << "max_size=10485760\n";
-                out << "backup_count=5\n";
-
-                // [bnet] 战网配置节点
-                out << "\n[bnet]\n";
-                out << "server=139.155.155.166\n";
-                out << "port=6112\n";
-                out << "username=bot\n";
-                out << "password=wxc123\n";
-
+                out << "[server]\nbroadcast_port=6112\nenable_broadcast=false\npeer_timeout=300000\ncleanup_interval=60000\nbroadcast_interval=30000\n";
+                out << "\n[log]\nlevel=info\nenable_console=true\nlog_file=/var/log/war3bot/war3bot.log\nmax_size=10485760\nbackup_count=5\n";
+                out << "\n[bnet]\nserver=139.155.155.166\nport=6112\nusername=bot\npassword=wxc123\n";
                 defaultConfig.close();
                 configFile = defaultConfigPath;
                 LOG_INFO(QString("已创建默认配置文件: %1").arg(configFile));
@@ -199,37 +123,32 @@ int main(int argc, char *argv[]) {
 
     QSettings configSettings(configFile, QSettings::IniFormat);
 
-    // 从配置文件获取日志设置
+    // 初始化日志
     QString configLogLevel = configSettings.value("log/level", "info").toString().toLower();
     bool enableConsole = configSettings.value("log/enable_console", true).toBool();
     QString logFilePath = configSettings.value("log/log_file", "/var/log/war3bot/war3bot.log").toString();
     qint64 maxLogSize = configSettings.value("log/max_size", 10 * 1024 * 1024).toLongLong();
     int backupCount = configSettings.value("log/backup_count", 5).toInt();
 
-    // 确保日志目录存在
     QFileInfo logFileInfo(logFilePath);
-    QDir logDir = logFileInfo.dir();
-    if (!logDir.exists()) {
-        logDir.mkpath(".");
-    }
+    if (!logFileInfo.dir().exists()) logFileInfo.dir().mkpath(".");
 
-    // 初始化日志系统
     Logger::instance()->setLogLevel(Logger::logLevelFromString(configLogLevel));
     Logger::instance()->enableConsoleOutput(enableConsole);
     Logger::instance()->setLogFile(logFilePath);
     Logger::instance()->setMaxFileSize(maxLogSize);
     Logger::instance()->setBackupCount(backupCount);
 
-    // 命令行参数覆盖配置文件设置
-    QString logLevel = parser.value(logLevelOption).toLower();
     if (parser.isSet(logLevelOption)) {
-        Logger::instance()->setLogLevel(Logger::logLevelFromString(logLevel));
+        Logger::instance()->setLogLevel(Logger::logLevelFromString(parser.value(logLevelOption).toLower()));
     }
 
+    // === 2. 端口检查与清理 ===
     quint16 port = parser.value(portOption).toUShort();
     if (port == 0) port = 6116;
     int broadcastPort = configSettings.value("server/broadcast_port", 6112).toInt();
 
+    // 启动前强制清理端口
     killProcessOnPort(port);
     killProcessOnPort(broadcastPort);
 
@@ -240,22 +159,15 @@ int main(int argc, char *argv[]) {
     LOG_INFO(QString("版本: %1").arg(app.applicationVersion()));
     LOG_INFO(QString("端口: %1").arg(port));
     LOG_INFO(QString("配置文件: %1").arg(configFile));
-    LOG_INFO(QString("日志级别: %1").arg(Logger::instance()->logLevelToString()));
-    LOG_INFO(QString("日志文件: %1").arg(logFilePath));
 
-    // 检查端口是否被占用
     if (port != 0) {
         bool portInUse = isPortInUse(port);
         if (portInUse) {
             LOG_WARNING(QString("端口 %1 已被占用").arg(port));
-            if (killExisting) {
-                LOG_INFO("正在尝试终止占用端口的现有进程...");
-                if (forceFreePort(port)) {
-                    LOG_INFO("端口现在应该已释放，正在重试...");
-                    portInUse = isPortInUse(port);
-                }
+            if (killExisting && forceFreePort(port)) {
+                LOG_INFO("端口已释放，正在重试...");
+                portInUse = isPortInUse(port);
             }
-
             if (portInUse && !forceReuse) {
                 LOG_INFO("正在尝试其他端口...");
                 bool foundPort = false;
@@ -275,6 +187,7 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    // === 3. 启动核心服务 ===
     War3Bot war3bot;
     if (!war3bot.startServer(port, configFile)) {
         LOG_CRITICAL("启动 War3Bot 服务器失败");
@@ -284,23 +197,7 @@ int main(int argc, char *argv[]) {
     LOG_INFO("War3Bot 服务器正在运行。按 Ctrl+C 停止。");
     LOG_INFO("=== 服务器启动完成，开始监听 ===");
 
-    // 2. 启动 BotManager (战网机器人客户端)
-    int botCount = parser.value(botCountOption).toInt();
-
-    BotManager botManager;
-    if (botCount > 0) {
-        LOG_INFO(QString("正在启动 %1 个战网机器人...").arg(botCount));
-
-        // 初始化机器人 (从 configFile 读取 username/password)
-        botManager.initializeBots(botCount, configFile);
-
-        // 开始连接
-        botManager.startAll();
-    } else {
-        LOG_INFO("未指定机器人数量，仅运行 P2P 服务器模式。");
-    }
-
-    // === 处理控制台命令 ===
+    // === 4. 控制台命令处理 ===
     Command command;
     QObject::connect(&command, &Command::inputReceived, &app, [&](QString cmd){
         QStringList parts;
@@ -315,25 +212,36 @@ int main(int argc, char *argv[]) {
         }
 
         if (parts.isEmpty()) return;
-
         QString action = parts[0].toLower();
+
+        // 获取真实的 BotManager (从 War3Bot 实例中获取)
+        BotManager* activeBotManager = war3bot.getBotManager();
+        if (!activeBotManager) {
+            LOG_ERROR("无法获取 BotManager 实例");
+            return;
+        }
+
+        // 读取配置以判断模式
+        QSettings settings(configFile, QSettings::IniFormat);
+        QString configUser = settings.value("bnet/username", "").toString();
+        bool isBotMode = (configUser == "bot");
+
         // ---------------------------------------------------------
         // 命令: connect <地址> <端口> <用户名> <密码>
         // ---------------------------------------------------------
         if (action == "connect") {
             QString server = (parts.size() > 1) ? parts[1] : "";
-            int port       = (parts.size() > 2) ? parts[2].toInt() : 0;
+            int p          = (parts.size() > 2) ? parts[2].toInt() : 0;
             QString user   = (parts.size() > 3) ? parts[3] : "";
             QString pass   = (parts.size() > 4) ? parts[4] : "";
-            war3bot.connectToBattleNet(server, port, user, pass);
+            war3bot.connectToBattleNet(server, p, user, pass);
         }
         // ---------------------------------------------------------
-        // 命令: create <游戏名> <密码>
+        // 命令: create <游戏名> [密码] [指定Bot账号]
         // ---------------------------------------------------------
         else if (action == "create") {
-            // 参数解析: create <游戏名> [游戏密码] [战网账号] [战网密码]
             if (parts.size() < 2) {
-                LOG_WARNING("命令格式错误。用法: create <游戏名> [密码] ... (如果名字有空格请用引号: \"Game Name\")");
+                LOG_WARNING("命令格式错误。用法: create <游戏名> [密码] [Bot账号] [Bot密码]");
                 return;
             }
             QString gameName = parts[1];
@@ -341,63 +249,33 @@ int main(int argc, char *argv[]) {
             QString targetUser = (parts.size() > 3) ? parts[3] : "";
             QString targetUserPass = (parts.size() > 4) ? parts[4] : "";
 
-            // 读取配置文件中的 username 判断模式
-            QSettings settings(configFile, QSettings::IniFormat);
-            QString configUser = settings.value("bnet/username", "").toString();
-
-            // === 场景 A: 机器人集群模式 (配置为 bot) ===
-            if (configUser == "bot") {
-                const auto &bots = botManager.getAllBots();
+            if (isBotMode) {
+                const auto &bots = activeBotManager->getAllBots(); // 使用正确的 Manager
                 bool foundBot = false;
 
                 for (auto *bot : bots) {
-                    if (!bot || !bot->client) continue; // 只检查指针有效性
+                    if (!bot || !bot->client) continue;
 
-                    // -------------------------------------------------
-                    // 情况 A-1: 指定了特定机器人账号 (优先匹配名字)
-                    // -------------------------------------------------
+                    // 场景 A-1: 指定了机器人
                     if (!targetUser.isEmpty()) {
-                        // 1. 先匹配名字
                         if (bot->username.compare(targetUser, Qt::CaseInsensitive) == 0) {
-
-                            // 2. 名字匹配上了，再检查连接状态
                             if (bot->client->isConnected()) {
                                 LOG_INFO(QString("🤖 [Bot-%1] 指定调用 %2 创建游戏...").arg(bot->id).arg(bot->username));
-
-                                bot->client->createGame(
-                                    gameName, gamePass, 6112,
-                                    ProviderVersion::Provider_TFT_New,
-                                    ComboGameType::Game_TFT_Custom,
-                                    SubGameType::SubType_Internet,
-                                    LadderType::Ladder_None
-                                    );
+                                bot->client->createGame(gameName, gamePass, 6112, ProviderVersion::Provider_TFT_New, ComboGameType::Game_TFT_Custom, SubGameType::SubType_Internet, LadderType::Ladder_None);
                                 bot->state = BotState::Creating;
                                 foundBot = true;
                             } else {
-                                // 找到了机器人，但是没连接
-                                LOG_WARNING(QString("❌ 找到机器人 '%1' (ID: %2)，但它尚未连接战网(状态: %3)！")
-                                                .arg(targetUser).arg(bot->id).arg((int)bot->state));
-                                foundBot = true; // 标记为"找到了"(避免报"未找到"), 但不执行创建
+                                LOG_WARNING(QString("❌ 找到机器人 '%1' 但未连接战网").arg(targetUser));
+                                foundBot = true; // 标记找到了，虽然没成功
                             }
-                            break; // 只要名字匹配，无论是否连接都停止循环
+                            break;
                         }
                     }
-                    // -------------------------------------------------
-                    // 情况 A-2: 未指定账号，自动寻找空闲机器人
-                    // -------------------------------------------------
+                    // 场景 A-2: 自动寻找空闲机器人
                     else {
-                        // 这种情况下，必须要求已连接 + 空闲
                         if (bot->client->isConnected() && bot->state == BotState::Idle) {
                             LOG_INFO(QString("🤖 [Bot-%1] 状态空闲，已被选中创建游戏: %2").arg(bot->id).arg(gameName));
-
-                            bot->client->createGame(
-                                gameName, gamePass, 6112,
-                                ProviderVersion::Provider_TFT_New,
-                                ComboGameType::Game_TFT_Custom,
-                                SubGameType::SubType_Internet,
-                                LadderType::Ladder_None
-                                );
-
+                            bot->client->createGame(gameName, gamePass, 6112, ProviderVersion::Provider_TFT_New, ComboGameType::Game_TFT_Custom, SubGameType::SubType_Internet, LadderType::Ladder_None);
                             bot->state = BotState::Creating;
                             foundBot = true;
                             break;
@@ -405,32 +283,23 @@ int main(int argc, char *argv[]) {
                     }
                 }
 
-                // 错误处理
                 if (!foundBot) {
-                    if (!targetUser.isEmpty()) {
-                        // 如果指定了名字，foundBot 为 false 意味着名字完全不存在
-                        LOG_WARNING(QString("❌ 创建失败: 机器人列表中不存在名为 '%1' 的账号").arg(targetUser));
-                    } else {
-                        LOG_WARNING(QString("❌ 创建失败: 当前没有空闲 (Idle) 的机器人 (总数: %1)").arg(bots.size()));
-                    }
+                    if (!targetUser.isEmpty()) LOG_WARNING(QString("❌ 未找到名为 '%1' 的机器人").arg(targetUser));
+                    else LOG_WARNING(QString("❌ 创建失败: 当前没有空闲 (Idle) 的机器人 (总数: %1)").arg(bots.size()));
                 }
-            }
-            // === 场景 B: 单用户模式 ===
-            else {
-                // 如果 targetUser 为空，War3Bot 内部会使用配置文件或当前连接
-                // 如果 targetUser 不为空，War3Bot 会尝试使用新凭据重连(依赖上一轮修改的逻辑)
+            } else {
+                // 单用户模式
                 war3bot.createGame(gameName, gamePass, targetUser, targetUserPass);
             }
         }
+        // ---------------------------------------------------------
+        // 命令: cancel [Bot账号]
+        // ---------------------------------------------------------
         else if (action == "cancel") {
             QString targetUser = (parts.size() > 1) ? parts[1] : "";
 
-            QSettings settings(configFile, QSettings::IniFormat);
-            QString configUser = settings.value("bnet/username", "").toString();
-
-            // === 机器人模式 ===
-            if (configUser == "bot") {
-                const auto &bots = botManager.getAllBots();
+            if (isBotMode) {
+                const auto &bots = activeBotManager->getAllBots();
                 int count = 0;
 
                 if (targetUser.isEmpty()) LOG_INFO("❌ 正在 [销毁] 所有机器人的房间...");
@@ -440,110 +309,78 @@ int main(int argc, char *argv[]) {
                     if (bot && bot->client && bot->client->isConnected()) {
                         bool match = targetUser.isEmpty() || (bot->username.compare(targetUser, Qt::CaseInsensitive) == 0);
                         if (match) {
-                            // 发送进入聊天请求 (即取消房间)
                             bot->client->cancelGame();
-                            bot->state = BotState::Idle;
+                            bot->state = BotState::Idle; // ★ 关键：重置为空闲
                             count++;
                             LOG_INFO(QString("✅ Bot-%1 (%2) 房间已销毁，状态重置为 Idle").arg(bot->id).arg(bot->username));
                         }
                     }
                 }
-                if(count == 0) LOG_WARNING("未找到匹配的机器人或机器人不在房间中。");
-            }
-            // === 单用户模式 ===
-            else {
+                if (count == 0) LOG_WARNING("未找到匹配的机器人。");
+            } else {
                 war3bot.cancelGame();
             }
         }
+        // ---------------------------------------------------------
+        // 命令: stop [Bot账号] (停止广播)
+        // ---------------------------------------------------------
         else if (action == "stop") {
-            // 参数解析: stop [战网账号]
             QString targetUser = (parts.size() > 1) ? parts[1] : "";
 
-            // 读取配置判断模式
-            QSettings settings(configFile, QSettings::IniFormat);
-            QString configUser = settings.value("bnet/username", "").toString();
+            if (isBotMode) {
+                const auto &bots = activeBotManager->getAllBots();
+                int count = 0;
 
-            // === 场景 A: 机器人集群模式 (配置为 bot) ===
-            if (configUser == "bot") {
-                const auto &bots = botManager.getAllBots();
-                int stoppedCount = 0;
-
-                if (targetUser.isEmpty()) {
-                    LOG_INFO("🛑 正在向 [所有] 活动的机器人发送停止指令...");
-                } else {
-                    LOG_INFO(QString("🛑 正在向机器人 [%1] 发送停止指令...").arg(targetUser));
-                }
+                if (targetUser.isEmpty()) LOG_INFO("🛑 正在停止所有机器人的广播...");
+                else LOG_INFO(QString("🛑 正在停止机器人 [%1] 的广播...").arg(targetUser));
 
                 for (auto *bot : bots) {
-                    // 只有已连接的机器人需要处理
                     if (bot && bot->client && bot->client->isConnected()) {
-
-                        // 筛选逻辑:
-                        // 1. 如果 targetUser 为空，匹配所有
-                        // 2. 如果 targetUser 不为空，匹配特定用户名
-                        bool shouldStop = targetUser.isEmpty() ||
-                                          (bot->username.compare(targetUser, Qt::CaseInsensitive) == 0);
-
-                        if (shouldStop) {
-                            // 发送停止协议
+                        bool match = targetUser.isEmpty() || (bot->username.compare(targetUser, Qt::CaseInsensitive) == 0);
+                        if (match) {
                             bot->client->stopAdv();
-                            stoppedCount++;
-                            LOG_INFO(QString("✅ Bot-%1 (%2) 已执行 Unhost").arg(bot->id).arg(bot->username));
+                            // 注意：stop 不重置状态
+                            count++;
+                            LOG_INFO(QString("✅ Bot-%1 (%2) 已停止广播").arg(bot->id).arg(bot->username));
                         }
                     }
                 }
-
-                if (stoppedCount == 0) {
-                    if (!targetUser.isEmpty()) LOG_WARNING("未找到匹配的目标机器人或机器人未连接。");
-                    else LOG_WARNING("没有活动的机器人可停止。");
-                }
-            }
-            // === 场景 B: 单用户模式 ===
-            else {
+                if (count == 0) LOG_WARNING("未找到匹配的机器人。");
+            } else {
                 war3bot.stopAdv();
             }
         }
         else {
-            LOG_INFO("未知命令。可用命令: create, stop");
+            LOG_INFO("未知命令。可用命令: connect, create, cancel, stop");
         }
     });
 
-    // 启动输入监听线程
+    // 启动监听
     command.start();
 
-    // 添加定时状态报告
+    // === 5. 定时状态报告 ===
     QTimer *statusTimer = new QTimer(&app);
-    QObject::connect(statusTimer, &QTimer::timeout, &app, [&war3bot, &botManager, startTime = QDateTime::currentDateTime()]() {
+    QObject::connect(statusTimer, &QTimer::timeout, &app, [&war3bot, startTime = QDateTime::currentDateTime()]() {
         qint64 uptimeSeconds = startTime.secsTo(QDateTime::currentDateTime());
-        qint64 days = uptimeSeconds / (24 * 3600);
-        qint64 hours = (uptimeSeconds % (24 * 3600)) / 3600;
-        qint64 minutes = (uptimeSeconds % 3600) / 60;
-        qint64 seconds = uptimeSeconds % 60;
+        // 简单计算时间...
+        QString uptimeStr = QString("运行 %1秒").arg(uptimeSeconds);
 
-        QString uptimeStr;
-        if (days > 0) uptimeStr = QString("运行 %1天%2小时%3分钟%4秒").arg(days).arg(hours).arg(minutes).arg(seconds);
-        else if (hours > 0) uptimeStr = QString("运行 %1小时%2分钟%3秒").arg(hours).arg(minutes).arg(seconds);
-        else if (minutes > 0) uptimeStr = QString("运行 %1分钟%2秒").arg(minutes).arg(seconds);
-        else uptimeStr = QString("运行 %1秒").arg(seconds);
-
-        // 统计机器人状态
-        int connectedBots = 0;
-        int waitingBots = 0;
-        const auto& bots = botManager.getAllBots();
-        for(const auto* b : bots) {
-            if (b->state == BotState::Idle) connectedBots++;
-            if (b->state == BotState::Waiting) waitingBots++;
+        // 获取真实状态
+        BotManager* bm = war3bot.getBotManager();
+        int online = 0, idle = 0;
+        if (bm) {
+            const auto& bots = bm->getAllBots();
+            for(auto* b : bots) {
+                if (b->client && b->client->isConnected()) online++;
+                if (b->state == BotState::Idle) idle++;
+            }
         }
 
-        QString botStatus = "";
-        if (!bots.isEmpty()) {
-            botStatus = QString(" | Bots: %1/%2 在线 (%3 房间中)").arg(connectedBots).arg(bots.size()).arg(waitingBots);
-        }
-
-        LOG_INFO(QString("🔄 服务器状态 - %1 - 运行中: %2").arg(uptimeStr, war3bot.isRunning() ? "是" : "否"));
+        LOG_INFO(QString("🔄 服务器状态 - %1 - 在线Bot: %2 (空闲: %3)").arg(uptimeStr).arg(online).arg(idle));
     });
-    statusTimer->start(30000); // 每30秒报告一次
+    statusTimer->start(30000);
 
+    // === 6. 退出清理 ===
     QObject::connect(&app, &QCoreApplication::aboutToQuit, &war3bot, [&war3bot]() {
         LOG_INFO("正在关闭 War3Bot 服务器...");
         war3bot.stopServer();
