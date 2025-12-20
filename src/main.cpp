@@ -234,7 +234,40 @@ int main(int argc, char *argv[]) {
             QString pass   = (parts.size() > 2) ? parts[2] : "";
             QString server = (parts.size() > 3) ? parts[3] : "";
             int port       = (parts.size() > 4) ? parts[4].toInt() : 0;
-            war3bot.connectToBattleNet(server, port, user, pass);
+
+            // 如果是 Bot 模式 (多机器人)
+            if (isBotMode) {
+                const auto &bots = activeBotManager->getAllBots();
+                bool foundBot = false;
+
+                if (user.isEmpty()) {
+                    LOG_INFO("🤖 未指定用户，正在尝试启动所有机器人...");
+                    activeBotManager->startAll();
+                    return;
+                }
+
+                for (auto *bot : bots) {
+                    if (!bot || !bot->client) continue;
+                    if (bot->username.compare(user, Qt::CaseInsensitive) == 0) {
+                        foundBot = true;
+                        LOG_INFO(QString("🤖 [Bot-%1] 收到手动连接指令: %2").arg(bot->id).arg(bot->username));
+                        if (!pass.isEmpty()) bot->password = pass;
+                        QString targetServer = server.isEmpty() ? "127.0.0.1" : server;
+                        int targetPort = (port == 0) ? 6112 : port;
+                        bot->client->setCredentials(bot->username, bot->password, Protocol_SRP_0x53);
+                        bot->client->connectToHost(targetServer, targetPort);
+                        bot->state = BotState::Unregistered;
+                        break;
+                    }
+                }
+
+                if (!foundBot) {
+                    LOG_WARNING(QString("❌ 未找到名为 '%1' 的机器人，无法执行连接").arg(user));
+                }
+            }
+            else {
+                war3bot.connectToBattleNet(server, port, user, pass);
+            }
         }
         // ---------------------------------------------------------
         // 命令: create <游戏名称> [用户账号] [用户密码] [游戏密码]
@@ -310,7 +343,7 @@ int main(int argc, char *argv[]) {
                         bool match = targetUser.isEmpty() || (bot->username.compare(targetUser, Qt::CaseInsensitive) == 0);
                         if (match) {
                             bot->client->cancelGame();
-                            bot->state = BotState::Idle; // ★ 关键：重置为空闲
+                            bot->state = BotState::Idle;
                             count++;
                             LOG_INFO(QString("✅ Bot-%1 (%2) 房间已销毁，状态重置为 Idle").arg(bot->id).arg(bot->username));
                         }
