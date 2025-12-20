@@ -895,10 +895,7 @@ void Client::cancelGame()
 void Client::createGame(const QString &gameName, const QString &password, quint16 udpPort,
                         ProviderVersion providerVersion, ComboGameType comboGameType, SubGameType subGameType, LadderType ladderType)
 {
-    // 1. 先发送停止广播，清理旧状态
-    stopAdv();
-
-    // 2. 切换 UDP 端口
+    // 切换 UDP 端口
     if (m_udpSocket->localPort() != udpPort) {
         m_udpSocket->close();
         if (m_udpSocket->bind(QHostAddress::AnyIPv4, udpPort)) {
@@ -911,7 +908,7 @@ void Client::createGame(const QString &gameName, const QString &password, quint1
     LOG_INFO(QString("🚀 请求广播房间: [%1] (Port: %2)").arg(gameName).arg(udpPort));
 
     if (m_war3Map.load(m_dota683dPath)) {
-        // 1. 获取编码后的地图数据
+        // 获取编码后的地图数据
         QByteArray encodedData = m_war3Map.getEncodedStatString(m_user);
 
         if (encodedData.isEmpty()) {
@@ -922,7 +919,7 @@ void Client::createGame(const QString &gameName, const QString &password, quint1
         m_hostCounter++; // 自增计数器
 
         // =========================================================
-        // 3. 构造带明文头的 StatString
+        // 构造带明文头的 StatString
         // 格式: "9" + "Counter反转" + [EncodedData]
         // =========================================================
 
