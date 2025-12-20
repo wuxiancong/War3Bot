@@ -13,11 +13,13 @@ public:
     explicit War3Bot(QObject *parent = nullptr);
     ~War3Bot();
 
+    void stopGame();
     void stopServer();
     bool isRunning() const;
     bool startServer(quint16 port, const QString &configFile);
     void setForcePortReuse(bool force) { m_forcePortReuse = force; }
-    void connectToBattleNet(const QString &hostname, quint16 port, const QString &user, const QString &pass);
+    void connectToBattleNet(QString hostname = "", quint16 port = 0, QString user = "", QString pass = "");
+    void createGame(const QString &gameName, const QString &gamePassword, const QString &userName = "", const QString &userPassword = "");
 
 private slots:
     void onBnetAuthenticated();
@@ -27,10 +29,13 @@ private slots:
     void onPunchRequested(const QString &sourcePeerId, const QString &targetPeerId);
 
 private:
+    QString m_pendingGamePassword;
+    QString m_pendingGameName;
     bool m_forcePortReuse = false;
-    P2PServer *m_p2pServer;
-    Client *m_client;
     BotManager *m_botManager;
+    P2PServer *m_p2pServer;
+    QString m_configPath;
+    Client *m_client;
 };
 
 #endif // WAR3BOT_H

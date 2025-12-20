@@ -38,7 +38,7 @@ void BotManager::initializeBots(int count, const QString& configPath)
         bot->client = new Client(this);
 
         // 设置凭据 (默认使用 SRP 0x53)
-        bot->client->setCredentials(fullUsername, password, Client::Protocol_SRP_0x53);
+        bot->client->setCredentials(fullUsername, password, Protocol_SRP_0x53);
 
         // === 绑定信号槽 ===
 

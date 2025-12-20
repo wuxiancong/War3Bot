@@ -4,9 +4,9 @@
 War3Bot::War3Bot(QObject *parent)
     : QObject(parent)
     , m_forcePortReuse(false)
+    , m_botManager(nullptr)
     , m_p2pServer(nullptr)
     , m_client(nullptr)
-    , m_botManager(nullptr)
 {
     m_client = new Client(this);
     m_botManager = new BotManager(this);
@@ -27,6 +27,10 @@ War3Bot::~War3Bot()
 
 bool War3Bot::startServer(quint16 port, const QString &configFile)
 {
+    m_configPath = configFile;
+    if (m_configPath.isEmpty()) {
+        m_configPath = "config/war3bot.ini";
+    }
     if (m_p2pServer && m_p2pServer->isRunning()) {
         LOG_WARNING("服务器已在运行中");
         return true;
@@ -53,39 +57,19 @@ bool War3Bot::startServer(quint16 port, const QString &configFile)
     bool success = m_p2pServer->startServer(port, configFile);
     if (success) {
         LOG_INFO("War3Bot 服务器启动成功");
-        // 1. 检查配置文件路径
-        QString configPath = configFile;
-        if (configPath.isEmpty()) {
-            configPath = "config/war3bot.ini"; // 默认路径
-        }
-
-        if (QFile::exists(configPath)) {
-            QSettings settings(configPath, QSettings::IniFormat);
-
-            // 读取 [bnet] 节点下的数据
-            QString bnetHost = settings.value("bnet/server", "139.155.155.166").toString();
-            int bnetPort     = settings.value("bnet/port", 6112).toInt();
+        if (QFile::exists(m_configPath)) {
+            QSettings settings(m_configPath, QSettings::IniFormat);
             QString bnetUser = settings.value("bnet/username", "").toString();
-            QString bnetPass = settings.value("bnet/password", "").toString();
 
-            if (bnetUser.isEmpty()) {
-                LOG_WARNING("INI 配置文件中未找到 [bnet] 用户名，跳过自动连接。");
+            if (bnetUser == "bot") {
+                LOG_INFO("检测到配置用户名为 'bot'，正在初始化基础机器人集群...");
+                m_botManager->initializeBots(9, m_configPath);
+                m_botManager->startAll();
             } else {
-                // =========================================================
-                // 判断是否启用基础机器人集群 (bot1 ~ bot9)
-                // =========================================================
-                if (bnetUser == "bot") {
-                    LOG_INFO("检测到配置用户名为 'bot'，正在初始化基础机器人集群 (bot1 ~ bot9)...");
-                    m_botManager->initializeBots(9, configPath);
-                    m_botManager->startAll();
-
-                } else {
-                    LOG_INFO(QString("读取配置成功，准备连接战网: %1 (单用户: %2)").arg(bnetHost, bnetUser));
-                    connectToBattleNet(bnetHost, bnetPort, bnetUser, bnetPass);
-                }
+                LOG_INFO("单用户模式就绪。等待 'connect' 命令连接战网。");
             }
         } else {
-            LOG_WARNING(QString("找不到配置文件: %1，无法读取战网信息").arg(configPath));
+            LOG_WARNING(QString("找不到配置文件: %1，无法读取战网信息").arg(m_configPath));
         }
     } else {
         LOG_ERROR("启动 War3Bot 服务器失败");
@@ -94,14 +78,87 @@ bool War3Bot::startServer(quint16 port, const QString &configFile)
     return success;
 }
 
-void War3Bot::connectToBattleNet(const QString &hostname, quint16 port, const QString &user, const QString &pass)
+void War3Bot::connectToBattleNet(QString hostname, quint16 port, QString user, QString pass)
 {
     if (!m_client) return;
 
-    LOG_INFO(QString("正在配置战网账号信息: 用户[%1]").arg(user));
+    // 1. 如果参数为空，尝试从配置文件读取默认值
+    if (hostname.isEmpty() || port == 0 || user.isEmpty() || pass.isEmpty()) {
+        if (QFile::exists(m_configPath)) {
+            QSettings settings(m_configPath, QSettings::IniFormat);
+
+            if (hostname.isEmpty()) hostname = settings.value("bnet/server", "139.155.155.166").toString();
+            if (port == 0)          port     = settings.value("bnet/port", 6112).toInt();
+            if (user.isEmpty())     user     = settings.value("bnet/username", "").toString();
+            if (pass.isEmpty())     pass     = settings.value("bnet/password", "").toString();
+
+            LOG_INFO("已从配置文件补全缺失的连接参数。");
+        } else {
+            LOG_WARNING("配置文件不存在，无法补全参数。");
+        }
+    }
+
+    // 2. 检查最终参数是否有效
+    if (user.isEmpty()) {
+        LOG_ERROR("❌ 连接失败：用户名为空（未在参数或配置中找到）。");
+        return;
+    }
+
+    LOG_INFO(QString("正在连接战网: %1@%2:%3").arg(user, hostname).arg(port));
 
     m_client->setCredentials(user, pass);
     m_client->connectToHost(hostname, port);
+}
+
+void War3Bot::createGame(const QString &gameName, const QString &gamePassword,
+                         const QString &username, const QString &userPassword)
+{
+    if (!m_client) return;
+
+    // 1. 如果已经连接且已认证，直接创建
+    if (m_client->isConnected()) {
+        LOG_INFO(QString("🎮 [单用户] 正在请求创建游戏: %1").arg(gameName));
+
+        m_client->createGame(
+            gameName,
+            gamePassword,
+            6112,
+            ProviderVersion::Provider_TFT_New,
+            ComboGameType::Game_TFT_Custom,
+            SubGameType::SubType_Internet,
+            LadderType::Ladder_None
+            );
+
+        // 清空可能残留的挂起任务
+        m_pendingGameName.clear();
+        m_pendingGamePassword.clear();
+    }
+    // 2. 如果未连接，先保存意图，然后发起连接
+    else {
+        LOG_INFO(QString("⏳ [单用户] 战网未连接，正在尝试连接并排队创建游戏: %1").arg(gameName));
+
+        // A. 暂存游戏信息
+        m_pendingGameName = gameName;
+        m_pendingGamePassword = gamePassword;
+
+        // B. 发起连接
+        connectToBattleNet("", 0, username, userPassword);
+    }
+}
+
+void War3Bot::stopGame()
+{
+    // 1. 无论当前是否连接，先清除所有待创建的挂起任务
+    m_pendingGameName.clear();
+    m_pendingGamePassword.clear();
+
+    // 2. 如果已连接，发送停止广播协议
+    if (m_client && m_client->isConnected()) {
+        LOG_INFO("🛑 [单用户] 正在请求停止游戏 (取消主机广播)...");
+        m_client->stopGame();
+    } else {
+        LOG_INFO("ℹ️ [单用户] 战网未连接，仅清除了挂起的创建任务。");
+    }
 }
 
 void War3Bot::stopServer()
@@ -135,8 +192,22 @@ void War3Bot::onPunchRequested(const QString &sourcePeerId, const QString &targe
 void War3Bot::onBnetAuthenticated()
 {
     LOG_INFO("战网登录成功");
-    // 示例：自动创建一个 DotA 房间
-    // m_client->createGameOnLadder("DotA v6.83d -ap", QByteArray(), 6112);
+    // 检查是否有挂起等待创建的游戏
+    if (!m_pendingGameName.isEmpty()) {
+        LOG_INFO(QString("🚀 检测到挂起的创建任务，正在自动创建游戏: %1").arg(m_pendingGameName));
+
+        m_client->createGame(
+            m_pendingGameName,
+            m_pendingGamePassword,
+            6112,
+            ProviderVersion::Provider_TFT_New,
+            ComboGameType::Game_TFT_Custom,
+            SubGameType::SubType_Internet,
+            LadderType::Ladder_None
+            );
+        m_pendingGameName.clear();
+        m_pendingGamePassword.clear();
+    }
 }
 
 void War3Bot::onGameListRegistered()

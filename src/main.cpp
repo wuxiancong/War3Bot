@@ -1,5 +1,7 @@
 #include "logger.h"
+#include "client.h"
 #include "war3bot.h"
+#include "command.h"
 #include "botmanager.h"
 
 #include <QDir>
@@ -17,7 +19,6 @@
 #include <tlhelp32.h>
 #endif
 
-// 改进的端口检查函数
 bool isPortInUse(quint16 port) {
     QUdpSocket testSocket;
     // 尝试绑定到端口
@@ -29,7 +30,6 @@ bool isPortInUse(quint16 port) {
     return true; // 端口被占用
 }
 
-// 改进的进程杀死函数
 bool killProcessOnPort(quint16 port) {
     LOG_INFO(QString("正在尝试释放端口 %1").arg(port));
 
@@ -104,7 +104,6 @@ bool killProcessOnPort(quint16 port) {
     return false;
 }
 
-// 强制释放端口的函数
 bool forceFreePort(quint16 port) {
     LOG_INFO(QString("正在强制释放端口 %1").arg(port));
     if (killProcessOnPort(port)) {
@@ -293,6 +292,172 @@ int main(int argc, char *argv[]) {
     } else {
         LOG_INFO("未指定机器人数量，仅运行 P2P 服务器模式。");
     }
+
+    // === 处理控制台命令 ===
+    Command command;
+    QObject::connect(&command, &Command::inputReceived, &app, [&](QString cmd){
+        QStringList parts = cmd.split(' ', Qt::SkipEmptyParts);
+        if (parts.isEmpty()) return;
+
+        QString action = parts[0].toLower();
+        // ---------------------------------------------------------
+        // 命令: connect <地址> <端口> <用户名> <密码>
+        // ---------------------------------------------------------
+        if (action == "connect") {
+            QString server = (parts.size() > 1) ? parts[1] : "";
+            int port       = (parts.size() > 2) ? parts[2].toInt() : 0;
+            QString user   = (parts.size() > 3) ? parts[3] : "";
+            QString pass   = (parts.size() > 4) ? parts[4] : "";
+            war3bot.connectToBattleNet(server, port, user, pass);
+        }
+        // ---------------------------------------------------------
+        // 命令: create <游戏名> <密码>
+        // ---------------------------------------------------------
+        else if (action == "create") {
+            // 参数解析: create <游戏名> [游戏密码] [战网账号] [战网密码]
+            if (parts.size() < 2) {
+                LOG_WARNING("命令格式错误。用法: create <游戏名> [游戏密码] [战网账号] [战网密码]");
+                return;
+            }
+            QString gameName = parts[1];
+            QString gamePass = (parts.size() > 2) ? parts[2] : "";
+            QString targetUser = (parts.size() > 3) ? parts[3] : "";
+            QString targetUserPass = (parts.size() > 4) ? parts[4] : "";
+
+            // 读取配置文件中的 username 判断模式
+            QSettings settings(configFile, QSettings::IniFormat);
+            QString configUser = settings.value("bnet/username", "").toString();
+
+            // === 场景 A: 机器人集群模式 (配置为 bot) ===
+            if (configUser == "bot") {
+                const auto &bots = botManager.getAllBots();
+                bool foundBot = false;
+
+                // 遍历机器人列表
+                for (auto *bot : bots) {
+                    // 基础检查：指针有效且已连接
+                    if (!bot || !bot->client || !bot->client->isConnected()) continue;
+
+                    // -------------------------------------------------
+                    // 情况 A-1: 指定了特定机器人账号
+                    // -------------------------------------------------
+                    if (!targetUser.isEmpty()) {
+                        // 匹配用户名 (不区分大小写)
+                        if (bot->username.compare(targetUser, Qt::CaseInsensitive) == 0) {
+                            LOG_INFO(QString("🤖 [Bot-%1] 指定调用 %2 创建游戏...").arg(bot->id).arg(bot->username));
+
+                            // 强制该机器人创建
+                            bot->client->createGame(
+                                gameName, gamePass, 6112,
+                                ProviderVersion::Provider_TFT_New,
+                                ComboGameType::Game_TFT_Custom,
+                                SubGameType::SubType_Internet,
+                                LadderType::Ladder_None
+                                );
+
+                            bot->state = BotState::Creating; // 更新状态
+                            foundBot = true;
+                            break; // 找到指定机器人后退出
+                        }
+                    }
+                    // -------------------------------------------------
+                    // 情况 A-2: 未指定账号，自动寻找空闲机器人
+                    // -------------------------------------------------
+                    else {
+                        if (bot->state == BotState::Idle) {
+                            LOG_INFO(QString("🤖 [Bot-%1] 状态空闲，已被选中创建游戏: %2").arg(bot->id).arg(gameName));
+
+                            bot->client->createGame(
+                                gameName, gamePass, 6112,
+                                ProviderVersion::Provider_TFT_New,
+                                ComboGameType::Game_TFT_Custom,
+                                SubGameType::SubType_Internet,
+                                LadderType::Ladder_None
+                                );
+
+                            bot->state = BotState::Creating;
+                            foundBot = true;
+                            break; // 找到第一个空闲的就退出
+                        }
+                    }
+                }
+
+                if (!foundBot) {
+                    if (!targetUser.isEmpty()) {
+                        LOG_WARNING(QString("❌ 创建失败: 未找到名为 '%1' 的机器人或该机器人未连接").arg(targetUser));
+                    } else {
+                        LOG_WARNING(QString("❌ 创建失败: 当前没有空闲 (Idle) 的机器人 (总数: %1)").arg(bots.size()));
+                    }
+                }
+            }
+            // === 场景 B: 单用户模式 ===
+            else {
+                // 如果 targetUser 为空，War3Bot 内部会使用配置文件或当前连接
+                // 如果 targetUser 不为空，War3Bot 会尝试使用新凭据重连(依赖上一轮修改的逻辑)
+                war3bot.createGame(gameName, gamePass, targetUser, targetUserPass);
+            }
+        }
+        else if (action == "stop") {
+            // 参数解析: stop [战网账号]
+            QString targetUser = (parts.size() > 1) ? parts[1] : "";
+
+            // 读取配置判断模式
+            QSettings settings(configFile, QSettings::IniFormat);
+            QString configUser = settings.value("bnet/username", "").toString();
+
+            // === 场景 A: 机器人集群模式 (配置为 bot) ===
+            if (configUser == "bot") {
+                const auto &bots = botManager.getAllBots();
+                int stoppedCount = 0;
+
+                if (targetUser.isEmpty()) {
+                    LOG_INFO("🛑 正在向 [所有] 活动的机器人发送停止指令...");
+                } else {
+                    LOG_INFO(QString("🛑 正在向机器人 [%1] 发送停止指令...").arg(targetUser));
+                }
+
+                for (auto *bot : bots) {
+                    // 只有已连接的机器人需要处理
+                    if (bot && bot->client && bot->client->isConnected()) {
+
+                        // 筛选逻辑:
+                        // 1. 如果 targetUser 为空，匹配所有
+                        // 2. 如果 targetUser 不为空，匹配特定用户名
+                        bool shouldStop = targetUser.isEmpty() ||
+                                          (bot->username.compare(targetUser, Qt::CaseInsensitive) == 0);
+
+                        if (shouldStop) {
+                            // 发送停止协议
+                            bot->client->stopGame();
+
+                            // 手动重置机器人状态为空闲
+                            if (bot->state == BotState::Waiting || bot->state == BotState::Creating) {
+                                bot->state = BotState::Idle;
+                            }
+
+                            stoppedCount++;
+                            LOG_INFO(QString("✅ Bot-%1 (%2) 已执行 Unhost").arg(bot->id).arg(bot->username));
+                        }
+                    }
+                }
+
+                if (stoppedCount == 0) {
+                    if (!targetUser.isEmpty()) LOG_WARNING("未找到匹配的目标机器人或机器人未连接。");
+                    else LOG_WARNING("没有活动的机器人可停止。");
+                }
+            }
+            // === 场景 B: 单用户模式 ===
+            else {
+                war3bot.stopGame();
+            }
+        }
+        else {
+            LOG_INFO("未知命令。可用命令: create, stop");
+        }
+    });
+
+    // 启动输入监听线程
+    command.start();
 
     // 添加定时状态报告
     QTimer *statusTimer = new QTimer(&app);
