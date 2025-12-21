@@ -752,3 +752,214 @@ uint32_t MixCheckSum(uint32_t h_common, uint32_t h_blizzard, uint32_t h_map) {
     *   **挂钩点**: `Storm.dll` 的 `SFileReadFile` 或 Ordinal #279。
     *   **操作**: 当游戏引擎请求读取 `war3map.j` 时，重定向到原始的正版脚本，或者在计算 Hash 时返回预先计算好的正版 Hash。
     *   **缺点**: 需要处理文件指针和缓冲区，逻辑较复杂。
+	
+
+## 7. 进阶分析：第三阶段 - 地图组件校验
+**函数地址**：`Game.dll + 6F39EC00`
+
+### 7.1 逻辑概述
+`Final Checksum : DD81EDDA` 仅仅是 **脚本层面的校验和** (Script Checksum)。
+游戏为了防止玩家修改地形、穿墙、修改单位属性等数据，还会对 MPQ 包内的二进制数据文件进行校验。
+
+最终的 **Map Checksum** (`3AEBCEF3`) 计算公式为：
+
+$$Val_{final} = \text{ROL}( Val_{script} \oplus H_{component}, 3 )$$
+
+该公式会对下列文件按**固定顺序**递归执行。如果 MPQ 中不存在某个文件，则直接跳过（不混入 0）。
+
+### 7.2 校验文件列表 (按顺序)
+1.  `war3map.w3e` (Environment / 地形高度、纹理)
+2.  `war3map.wpm` (Pathing / 路径阻挡)
+3.  `war3map.doo` (Doodads / 树木、装饰物布局)
+4.  `war3map.w3u` (Units / 自定义单位数据)
+5.  `war3map.w3b` (Destructables / 可破坏物布局)
+6.  `war3map.w3d` (Doodad Defs / 装饰物定义)
+7.  `war3map.w3a` (Abilities / 自定义技能数据)
+8.  `war3map.w3q` (Upgrades / 自定义科技数据)
+
+### 7.3 关键汇编分析
+
+#### A. 组件遍历驱动 (6F39EC00)
+负责按顺序加载文件，如果存在则调用混合函数。
+```assembly
+6F39EC00 | 56                        | push esi                                     |
+6F39EC01 | 8BF1                      | mov esi,ecx                                  | <--- ESI = 当前的总 Checksum 指针
+6F39EC03 | 57                        | push edi                                     |
+6F39EC04 | 8BFA                      | mov edi,edx                                  |
+6F39EC06 | 8BD6                      | mov edx,esi                                  |
+6F39EC08 | B9 2C6A876F               | mov ecx,game.6F876A2C                        | <--- ".w3e"
+6F39EC0D | E8 5EFFFFFF               | call game.6F39EB70                           |
+6F39EC12 | 8BD6                      | mov edx,esi                                  |
+6F39EC14 | B9 246A876F               | mov ecx,game.6F876A24                        | <--- ".wpm"
+6F39EC19 | E8 52FFFFFF               | call game.6F39EB70                           |
+6F39EC1E | 8BD6                      | mov edx,esi                                  |
+6F39EC20 | B9 2819946F               | mov ecx,game.6F941928                        | <--- ".doo"
+6F39EC25 | E8 46FFFFFF               | call game.6F39EB70                           |
+6F39EC2A | 8BD6                      | mov edx,esi                                  |
+6F39EC2C | B9 60C5926F               | mov ecx,game.6F92C560                        | <--- ".w3u"
+6F39EC31 | E8 3AFFFFFF               | call game.6F39EB70                           |
+6F39EC36 | 85FF                      | test edi,edi                                 |
+6F39EC38 | 74 32                     | je game.6F39EC6C                             |
+6F39EC3A | 8BD6                      | mov edx,esi                                  |
+6F39EC3C | B9 50C6926F               | mov ecx,game.6F92C650                        | <--- ".w3b"
+6F39EC41 | E8 2AFFFFFF               | call game.6F39EB70                           |
+6F39EC46 | 8BD6                      | mov edx,esi                                  |
+6F39EC48 | B9 80C6926F               | mov ecx,game.6F92C680                        | <--- ".w3d"
+6F39EC4D | E8 1EFFFFFF               | call game.6F39EB70                           |
+6F39EC52 | 8BD6                      | mov edx,esi                                  |
+6F39EC54 | B9 C0C5926F               | mov ecx,game.6F92C5C0                        | <--- ".w3a"
+6F39EC59 | E8 12FFFFFF               | call game.6F39EB70                           |
+6F39EC5E | 5F                        | pop edi                                      |
+6F39EC5F | 8BD6                      | mov edx,esi                                  
+6F39EC61 | B9 20C6926F               | mov ecx,game.6F92C620                        | <--- ".w3q"
+6F39EC66 | 5E                        | pop esi                                      |
+6F39EC67 | E9 04FFFFFF               | jmp game.6F39EB70                            |
+6F39EC6C | 5F                        | pop edi                                      |
+6F39EC6D | 5E                        | pop esi                                      |
+6F39EC6E | C3                        | ret                                          |
+```
+
+```assembly
+#### B. 组件混合逻辑 (6F39EB70)
+负责提取文件、计算 Hash 并混入总值。
+6F39EB70 | 81EC 10010000             | sub esp,110                                  |
+6F39EB76 | A1 40E1AA6F               | mov eax,dword ptr ds:[6FAAE140]              |
+6F39EB7B | 33C4                      | xor eax,esp                                  |
+6F39EB7D | 898424 0C010000           | mov dword ptr ss:[esp+10C],eax               |
+6F39EB84 | 56                        | push esi                                     |
+6F39EB85 | 51                        | push ecx                                     |
+6F39EB86 | 68 CC50876F               | push game.6F8750CC                           |
+6F39EB8B | 68 F0C6926F               | push game.6F92C6F0                           |
+6F39EB90 | 8D4424 18                 | lea eax,dword ptr ss:[esp+18]                |
+6F39EB94 | 68 04010000               | push 104                                     |
+6F39EB99 | 50                        | push eax                                     |
+6F39EB9A | 8BF2                      | mov esi,edx                                  |
+6F39EB9C | E8 05CA3400               | call <JMP.&Ordinal#578>                      |
+6F39EBA1 | 83C4 14                   | add esp,14                                   |
+6F39EBA4 | 6A 01                     | push 1                                       |
+6F39EBA6 | 8D4C24 0C                 | lea ecx,dword ptr ss:[esp+C]                 |
+6F39EBAA | 51                        | push ecx                                     |
+6F39EBAB | 8D5424 0C                 | lea edx,dword ptr ss:[esp+C]                 |
+6F39EBAF | 8D4C24 14                 | lea ecx,dword ptr ss:[esp+14]                |
+6F39EBB3 | C74424 0C 00000000        | mov dword ptr ss:[esp+C],0                   |
+6F39EBBB | E8 90291200               | call game.6F4C1550                           |
+6F39EBC0 | 85C0                      | test eax,eax                                 | <--- 检查文件是否存在/大小是否为0
+6F39EBC2 | 74 24                     | je game.6F39EBE8                             | <--- 不存在则直接返回，不改变 Checksum
+6F39EBC4 | 8B5424 08                 | mov edx,dword ptr ss:[esp+8]                 |
+6F39EBC8 | 57                        | push edi                                     |
+6F39EBC9 | 8B7C24 08                 | mov edi,dword ptr ss:[esp+8]                 |
+6F39EBCD | 8BCF                      | mov ecx,edi                                  |
+6F39EBCF | E8 ECF9FFFF               | call game.6F39E5C0                           | <--- Calculate BlizzardHash(FileContent)
+6F39EBD4 | 3306                      | xor eax,dword ptr ds:[esi]                   | <--- EAX = FileHash ^ CurrentChecksum
+6F39EBD6 | BA 01000000               | mov edx,1                                    |
+6F39EBDB | C1C0 03                   | rol eax,3                                    | <--- EAX = ROL(EAX, 3)
+6F39EBDE | 8BCF                      | mov ecx,edi                                  |
+6F39EBE0 | 8906                      | mov dword ptr ds:[esi],eax                   | <--- 更新 Checksum
+6F39EBE2 | E8 C9DA1100               | call game.6F4BC6B0                           |
+6F39EBE7 | 5F                        | pop edi                                      |
+6F39EBE8 | 8B8C24 10010000           | mov ecx,dword ptr ss:[esp+110]               |
+6F39EBEF | 5E                        | pop esi                                      |
+6F39EBF0 | 33CC                      | xor ecx,esp                                  |
+6F39EBF2 | E8 62244400               | call game.6F7E1059                           |
+6F39EBF7 | 81C4 10010000             | add esp,110                                  |
+6F39EBFD | C3                        | ret                                          |
+```
+
+---
+
+## 8. 完整的 C++ 算法实现 (最终版)
+
+这是包含脚本校验和组件校验的完整逻辑。
+
+```cpp
+#include <vector>
+#include <string>
+#include <iostream>
+
+// 循环左移 (ROL)
+inline uint32_t RotateLeft(uint32_t value, int shift) {
+    return (value << shift) | (value >> (32 - shift));
+}
+
+// 暴雪自定义哈希 (6F39E5C0)
+uint32_t BlizzardHash(const std::vector<uint8_t>& data) {
+    uint32_t hash = 0;
+    const uint8_t* ptr = data.data();
+    size_t length = data.size();
+    
+    size_t dwords = length / 4;
+    for (size_t i = 0; i < dwords; ++i) {
+        uint32_t chunk = *reinterpret_cast<const uint32_t*>(ptr);
+        hash = hash ^ chunk;
+        hash = RotateLeft(hash, 3);
+        ptr += 4;
+        length -= 4;
+    }
+    while (length > 0) {
+        uint32_t byteVal = *ptr;
+        hash = hash ^ byteVal;
+        hash = RotateLeft(hash, 3);
+        ptr++;
+        length--;
+    }
+    return hash;
+}
+
+// 模拟从 MPQ 读取文件 (需自行实现 MPQ 库调用)
+std::vector<uint8_t> GetFileFromMPQ(const std::string& filename) {
+    // TODO: 调用 StormLib SFileOpenFileEx / SFileReadFile
+    // 如果文件不存在，返回空 vector
+    return {}; 
+}
+
+/**
+ * 计算 War3 1.26 最终地图校验和
+ */
+uint32_t CalculateFinalChecksum() {
+    // --- 第一阶段：脚本校验 ---
+    std::vector<uint8_t> common = GetFileFromMPQ("common.j");
+    std::vector<uint8_t> blizzard = GetFileFromMPQ("blizzard.j");
+    std::vector<uint8_t> war3map = GetFileFromMPQ("war3map.j"); // 或 war3map.lua
+
+    uint32_t h_com = BlizzardHash(common);
+    uint32_t h_bliz = BlizzardHash(blizzard);
+    uint32_t h_map = BlizzardHash(war3map);
+
+    // Mix Environment
+    uint32_t val = h_bliz ^ h_com;
+    val = RotateLeft(val, 3);
+    val = val ^ 0x03F1379E; // Magic Salt
+    val = RotateLeft(val, 3);
+
+    // Mix Script
+    val = h_map ^ val;
+    val = RotateLeft(val, 3);
+    
+    // 此时 val = Script Checksum (例如 DD81EDDA)
+
+    // --- 第二阶段：组件校验 (6F39EC00) ---
+    const char* componentFiles[] = {
+        "war3map.w3e", "war3map.wpm", "war3map.doo", "war3map.w3u",
+        "war3map.w3b", "war3map.w3d", "war3map.w3a", "war3map.w3q"
+    };
+
+    for (const char* filename : componentFiles) {
+        std::vector<uint8_t> fileData = GetFileFromMPQ(filename);
+        
+        // [关键] 如果文件不存在或为空，直接跳过 (je 6F39EBE8)
+        if (fileData.empty()) continue;
+
+        uint32_t fileHash = BlizzardHash(fileData);
+
+        // Mix Component
+        // 6F39EBD4 | xor eax, [esi]
+        val = val ^ fileHash; 
+        
+        // 6F39EBDB | rol eax, 3
+        val = RotateLeft(val, 3);
+    }
+
+    // 此时 val = Final Map Checksum (例如 3AEBCEF3)
+    return val;
+}
+```
