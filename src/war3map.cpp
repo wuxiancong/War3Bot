@@ -166,27 +166,34 @@ bool War3Map::load(const QString &mapPath)
     if (dataMapScript.isEmpty()) dataMapScript = readMpqFile("scripts\\war3map.j");
     if (dataMapScript.isEmpty()) dataMapScript = readMpqFile("war3map.lua");
 
-    if (dataCommon.isEmpty() || dataBlizzard.isEmpty()) {
-        LOG_WARNING("[War3Map] ⚠️ 警告: 缺少 common.j 或 blizzard.j，CRC 结果将不正确！");
+    if (dataCommon.isEmpty()) {
+        LOG_ERROR("[War3Map] ❌ 严重错误: 无法读取 common.j (路径: war3files/common.j)");
+    }
+    if (dataBlizzard.isEmpty()) {
+        LOG_ERROR("[War3Map] ❌ 严重错误: 无法读取 blizzard.j (路径: war3files/blizzard.j)");
     }
     if (dataMapScript.isEmpty()) {
-        LOG_WARNING("[War3Map] ⚠️ 警告: 无法在地图中找到 war3map.j/lua");
+        LOG_ERROR("[War3Map] ❌ 严重错误: 无法在地图中找到脚本文件");
     }
 
     quint32 hCommon = calcBlizzardHash(dataCommon);
     quint32 hBlizzard = calcBlizzardHash(dataBlizzard);
     quint32 hMapScript = calcBlizzardHash(dataMapScript);
 
+    LOG_INFO(QString("🔹 Common.j Hash:   %1 (Size: %2)").arg(QString::number(hCommon, 16).toUpper()).arg(dataCommon.size()));
+    LOG_INFO(QString("🔹 Blizzard.j Hash: %1 (Size: %2)").arg(QString::number(hBlizzard, 16).toUpper()).arg(dataBlizzard.size()));
+    LOG_INFO(QString("🔹 War3Map.j Hash:  %1 (Size: %2)").arg(QString::number(hMapScript, 16).toUpper()).arg(dataMapScript.size()));
+
     // --- Step 2: 脚本环境混合 (Stage 1) ---
     // 公式: ROL(ROL(Bliz ^ Com, 3) ^ Magic, 3) ^ MapScript
     quint32 val = 0;
 
     val = hBlizzard ^ hCommon;      // Xor
-    val = rotateLeft(val, 3);             // Rol 1
+    val = rotateLeft(val, 3);       // Rol 1
     val = val ^ 0x03F1379E;         // Salt
-    val = rotateLeft(val, 3);             // Rol 2
+    val = rotateLeft(val, 3);       // Rol 2
     val = hMapScript ^ val;         // Mix Map
-    val = rotateLeft(val, 3);             // Rol 3
+    val = rotateLeft(val, 3);       // Rol 3
 
     LOG_INFO(QString("[War3Map] Stage 1 Checksum: %1").arg(QString::number(val, 16).toUpper()));
 
@@ -200,7 +207,7 @@ bool War3Map::load(const QString &mapPath)
     for (const char *compName : componentFiles) {
         QByteArray compData = readMpqFile(compName);
 
-        // 关键逻辑: 文件不存在或为空则跳过 (不混入0)
+        // 文件不存在或为空则跳过 (不混入0)
         if (compData.isEmpty()) continue;
 
         quint32 hComp = calcBlizzardHash(compData);
