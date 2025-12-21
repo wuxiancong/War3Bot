@@ -352,7 +352,7 @@ $$\text{Checksum} = \text{ROL}\left( H_{map} \oplus Val_{temp}, 3 \right)$$
 **函数地址**：`Game.dll + 39ED70`
 **功能**：检查游戏 Build 版本。
 *   如果版本号小于 6000 (1.21 及以前)，使用旧算法。
-*   如果版本号大于等于 6000 (1.22+)，使用新算法（本报告分析的逻辑）。
+*   如果版本号大于等于 6000 (1.22+)，使用新算法。
 *   1.26 的内部版本号为 `6059` (0x17AB)，因此走新逻辑。
 
 <details open>
@@ -459,6 +459,7 @@ $$\text{Checksum} = \text{ROL}\left( H_{map} \oplus Val_{temp}, 3 \right)$$
 
 <details open>
 <summary><strong>[展开汇编] D. 核心混合逻辑</strong></summary>
+
 ```assembly
 6F3B1A20 | 83EC 0C                  | sub esp,C                                    |
 6F3B1A23 | 8B4424 1C                | mov eax,dword ptr ss:[esp+1C]                |
