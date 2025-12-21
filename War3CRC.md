@@ -33,6 +33,11 @@ $$Val_{temp} = \text{ROL}\left( \text{ROL}\left( H_{bliz} \oplus H_{com}, 3 \rig
 
 $$\text{Checksum} = \text{ROL}\left( H_{map} \oplus Val_{temp}, 3 \right)$$
 
+### 第三阶段 - 地图组件校验 (Component Mixing)
+将地图组件哈希混入校验和中。
+
+$$Val_{final} = \text{ROL}( Val_{script} \oplus H_{component}, 3 )$$
+
 > **符号说明**：
 > *   $\oplus$ : **异或运算 (XOR)**
 > *   $\text{ROL}(x, n)$ : **循环左移 (Rotate Left)**，将 $x$ 的二进制位向左循环移动 $n$ 位。
