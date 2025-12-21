@@ -1,47 +1,61 @@
-# Warcraft III (1.26) 地图校验和计算逻辑总结
-
-## 1. 核心算法流程
-游戏在建立房间或玩家加入时，会按顺序读取三个核心脚本文件，计算其基础 CRC32 值，然后通过特定的位运算混合生成最终的 
-Checksum。这个值用于判定玩家是否与主机地图一致。
-
-### 涉及文件
-1.  **`common.j`** (基础 JASS 库)
-2.  **`blizzard.j`** (暴雪扩展库)
-3.  **`war3map.j`** (当前地图脚本)
-
-### 数学公式
-
-假设三个文件的 CRC 值分别为
-
-$CRC_{com}$
-
-$CRC_{bliz}$
-
-$CRC_{map}$
-
-1. **第一阶段（混合环境包）**：
-
-
-   $Val_{temp}$ = ROL ( ROL( $CRC_{bliz}$ $\oplus$ $CRC_{com}$ , 3 ) $\oplus$ 0x03F1379E, 3 )
-
-
-2. **第二阶段（混合地图脚本）**：
-
-
-   Checksum = ROL ( $CRC_{map}$ $\oplus$ $Val_{temp}$ , 3 )
-
-   
-> **注**：`ROL` 表示 **循环左移 (Rotate Left)**，`XOR` ($\oplus$) 表示 **异或**。`0x03F1379E` 是 1.26 版本的特征码。
+这是一份经过整理、结构化优化和逻辑订正的 Markdown 文档。我修复了部分术语混用（如明确区分“标准CRC”与“暴雪自定义哈希”），并使用了折叠标签来优化长汇编代码的阅读体验。
 
 ---
 
-## 2. 关键反汇编代码分析 (Top-Down)
+# Warcraft III (1.26) 地图校验和计算机制逆向分析报告
 
-调用层级：`HostGame (5C25C0)` / `LocalCheck (3AEF80)` -> `VersionCheck (39ED70)` -> `Wrapper (3B1BB0)` -> `CoreCalc (3B1A20)`。
+**版本**: 1.26 (Build 6059)  
+**目标**: 解析游戏在建立主机（Host Game）及本地加载（Local Check）时的地图一致性校验逻辑。
 
-### A. 第 1 层：建房初始化 (Host Game Entry)
-**偏移地址**：`Game.dll + 5C25C0`
-**功能**：建房流程的高层入口。负责收集房间名、主机名、地图路径，并调用下层计算 CRC。
+---
+
+## 1. 核心算法流程概述
+
+游戏在创建房间或玩家加入时，为了防止作弊（如修改地图脚本去迷雾、修改数据），会计算一个环境指纹（Checksum）。该计算涉及三个核心文件：
+
+1.  **`common.j`**: JASS 语言的原生函数库（Native Functions）。
+2.  **`blizzard.j`**: 暴雪提供的辅助函数库（BJ Functions）。
+3.  **`war3map.j`**: 当前地图的脚本文件。
+
+**关键结论**：Warcraft III 1.26 **并没有**使用标准的 CRC32 算法，而是使用了一套**“自定义 ROL-XOR 哈希算法”**，并在最终混合阶段引入了一个**魔法数（Magic Number）** `0x03F1379E` 作为盐值。
+
+---
+
+## 2. 数学原理
+
+假设三个文件经过**暴雪自定义哈希函数**（见下文 4.2 节）计算后的值分别为 $H_{com}$、$H_{bliz}$、$H_{map}$。
+
+最终的 **Map Checksum** 计算公式如下：
+
+### 第一阶段：环境混合 (Environment Mixing)
+计算基础环境的哈希值，引入魔法数防止篡改。
+
+$$Val_{temp} = \text{ROL}\left( \text{ROL}\left( H_{bliz} \oplus H_{com}, 3 \right) \oplus \text{0x03F1379E}, 3 \right)$$
+
+### 第二阶段：地图混合 (Map Mixing)
+将地图脚本哈希混入环境哈希中。
+
+$$\text{Checksum} = \text{ROL}\left( H_{map} \oplus Val_{temp}, 3 \right)$$
+
+> **符号说明**：
+> *   $\oplus$ : **异或运算 (XOR)**
+> *   $\text{ROL}(x, n)$ : **循环左移 (Rotate Left)**，将 $x$ 的二进制位向左循环移动 $n$ 位。
+> *   `0x03F1379E` : 1.26 版本的特定特征码（盐）。
+
+---
+
+## 3. 逆向工程分析 (Top-Down)
+
+**调用调用链**：
+`HostGame` / `LocalCheck` $\rightarrow$ `VersionCheck` $\rightarrow$ `Wrapper` $\rightarrow$ `CoreCalc` $\rightarrow$ `HashAlgo`
+
+### 3.1 入口层：建房与加载
+游戏在两个主要位置触发校验计算。
+
+<details>
+<summary><strong>[展开汇编] A. 建房初始化 (HostGame Entry) - <code>Game.dll + 5C25C0</code></strong></summary>
+
+功能：建房流程的高层入口。负责收集房间名、主机名、地图路径，并调用下层计算 CRC。
 ```assembly
 6F5C25C0 | B8 5C390000              | mov eax,395C                                 |
 6F5C25C5 | E8 C6EB2100              | call game.6F7E1190                           |
@@ -83,7 +97,7 @@ $CRC_{map}$
 6F5C2653 | 6A 01                    | push 1                                       |
 6F5C2655 | 8D9424 5C390000          | lea edx,dword ptr ss:[esp+395C]              |
 6F5C265C | 8BCE                     | mov ecx,esi                                  |
-6F5C265E | E8 ADC7DDFF              | call game.6F39EE10                           |
+6F5C265E | E8 ADC7DDFF              | call game.6F39EE10                           | <--- 执行 Config 配置
 6F5C2663 | 8D8C24 D4000000          | lea ecx,dword ptr ss:[esp+D4]                |
 6F5C266A | E8 B1F7A4FF              | call game.6F011E20                           |
 6F5C266F | 8D4424 28                | lea eax,dword ptr ss:[esp+28]                |
@@ -92,7 +106,7 @@ $CRC_{map}$
 6F5C2675 | 53                       | push ebx                                     |
 6F5C2676 | 8D9424 E0000000          | lea edx,dword ptr ss:[esp+E0]                |
 6F5C267D | 8BCE                     | mov ecx,esi                                  |
-6F5C267F | E8 1CB3A5FF              | call game.6F01D9A0                           |
+6F5C267F | E8 1CB3A5FF              | call game.6F01D9A0                           | <--- 获取/广播 GameInfo
 6F5C2684 | 395C24 28                | cmp dword ptr ss:[esp+28],ebx                |
 6F5C2688 | 8B8C24 E0040000          | mov ecx,dword ptr ss:[esp+4E0]               |
 6F5C268F | 8BAC24 DC040000          | mov ebp,dword ptr ss:[esp+4DC]               |
@@ -202,10 +216,12 @@ $CRC_{map}$
 6F5C2831 | 81C4 5C390000            | add esp,395C                                 |
 6F5C2837 | C2 3400                  | ret 34                                       |
 ```
-### B. 第 1.5 层：本地加载检查 (Local Map Check)
-**偏移地址**：`Game.dll + 3AEF80`
-**功能**：本地选择地图或加入房间时的校验。确认 MPQ 完整性并计算 CRC 用于比对。
-#### 偏移：5C25C0
+</details>
+
+<details>
+<summary><strong>[展开汇编] B. 本地加载检查 (Local Map Check) - <code>Game.dll + 3AEF80</code></strong></summary>
+
+功能：本地选择地图或加入房间时的校验。确认 MPQ 完整性并计算 CRC 用于比对。
 ```assembly
 6F3AEF80 | B8 A4390000              | mov eax,39A4                                 |
 6F3AEF85 | E8 06224300              | call game.6F7E1190                           |
@@ -237,14 +253,14 @@ $CRC_{map}$
 6F3AEFDF | 8D9424 B0380000          | lea edx,dword ptr ss:[esp+38B0]              |
 6F3AEFE6 | 8BCF                     | mov ecx,edi                                  |
 6F3AEFE8 | C74424 14 00000000       | mov dword ptr ss:[esp+14],0                  |
-6F3AEFF0 | E8 7B2DC6FF              | call game.6F011D70                           |
+6F3AEFF0 | E8 7B2DC6FF              | call game.6F011D70                           | <--- 获取游戏目录
 6F3AEFF5 | 85C0                     | test eax,eax                                 |
 6F3AEFF7 | 0F84 21010000            | je game.6F3AF11E                             |
 6F3AEFFD | 6A 00                    | push 0                                       |
 6F3AEFFF | 6A 01                    | push 1                                       |
 6F3AF001 | 8D5424 18                | lea edx,dword ptr ss:[esp+18]                |
 6F3AF005 | 8BCF                     | mov ecx,edi                                  |
-6F3AF007 | E8 64FDFEFF              | call game.6F39ED70                           | <--- [关键调用] 进入版本检查与CRC计算
+6F3AF007 | E8 64FDFEFF              | call game.6F39ED70                           | <--- 进入版本检查与CRC计算
 6F3AF00C | 6A 00                    | push 0                                       |
 6F3AF00E | 6A 01                    | push 1                                       |
 6F3AF010 | 8D9424 A0380000          | lea edx,dword ptr ss:[esp+38A0]              |
@@ -334,9 +350,17 @@ $CRC_{map}$
 6F3AF132 | 81C4 A4390000            | add esp,39A4                                 |
 6F3AF138 | C2 1000                  | ret 10                                       |
 ```
-### C. 第 2 层：版本分发与检查
-**偏移地址**：`Game.dll + 39ED70`
-**功能**：检查当前游戏版本号。1.26 版本 Build 为 6401 (> 6000/0x1770)，进入新逻辑。
+</details>
+
+### 3.2 中间层：版本分发
+**函数地址**：`Game.dll + 39ED70`
+**功能**：检查游戏 Build 版本。
+*   如果版本号小于 6000 (1.21 及以前)，使用旧算法。
+*   如果版本号大于等于 6000 (1.22+)，使用新算法（本报告分析的逻辑）。
+*   1.26 的内部版本号为 `6059` (0x17AB)，因此走新逻辑。
+
+<details>
+<summary><strong>[展开汇编] C. 版本检查逻辑</strong></summary>
 ```assembly
 6F39ED70 | 81EC 08010000            | sub esp,108                                  |
 6F39ED76 | A1 40E1AA6F              | mov eax,dword ptr ds:[6FAAE140]              |
@@ -380,10 +404,15 @@ $CRC_{map}$
 6F39EDFD | 81C4 08010000            | add esp,108                                  |
 6F39EE03 | C2 0800                  | ret 8                                        |
 ```
+</details>
 
-### D. 第 3 层：参数封装 (Wrapper)
-**偏移地址**：`Game.dll + 3B1BB0`
-**功能**：将 `common.j`, `blizzard.j`, `war3map.j` 的文件名字符串和内存指针压栈。
+### 3.3 参数封装层 (Wrapper Layer)
+**函数地址**：`Game.dll + 3B1BB0`
+**功能**：这是核心计算逻辑的“外壳”。它负责准备环境，将 `common.j`、`blizzard.j` 和 `war3map.j` 的文件名及内存指针压入堆栈，调用核心计算函数，最后**负责清理内存**（即处理 `test ecx, ecx` 的逻辑）。
+
+<details>
+<summary><strong>[展开汇编] D. Wrapper 层实现</strong></summary>
+
 ```assembly
 6F3B1BB0 | 83EC 08                  | sub esp,8                                    |
 6F3B1BB3 | 8B4424 10                | mov eax,dword ptr ss:[esp+10]                |
@@ -405,28 +434,33 @@ $CRC_{map}$
 6F3B1BE0 | 85C0                     | test eax,eax                                 |
 6F3B1BE2 | 74 36                    | je game.6F3B1C1A                             |
 6F3B1BE4 | 8B4C24 10                | mov ecx,dword ptr ss:[esp+10]                |
-6F3B1BE8 | 85C9                     | test ecx,ecx                                 |
+6F3B1BE8 | 85C9                     | test ecx,ecx                                 | <--- 检查指针是否为空
 6F3B1BEA | 74 0A                    | je game.6F3B1BF6                             |
 6F3B1BEC | BA 01000000              | mov edx,1                                    |
-6F3B1BF1 | E8 BAAA1000              | call game.6F4BC6B0                           |
+6F3B1BF1 | E8 BAAA1000              | call game.6F4BC6B0                           | <--- FreeMemory()
 6F3B1BF6 | 8B4C24 0C                | mov ecx,dword ptr ss:[esp+C]                 |
-6F3B1BFA | 85C9                     | test ecx,ecx                                 |
+6F3B1BFA | 85C9                     | test ecx,ecx                                 | <--- 检查指针是否为空
 6F3B1BFC | 74 0A                    | je game.6F3B1C08                             |
 6F3B1BFE | BA 01000000              | mov edx,1                                    |
-6F3B1C03 | E8 A8AA1000              | call game.6F4BC6B0                           |
+6F3B1C03 | E8 A8AA1000              | call game.6F4BC6B0                           | <--- FreeMemory()
 6F3B1C08 | 8B4C24 04                | mov ecx,dword ptr ss:[esp+4]                 |
-6F3B1C0C | 85C9                     | test ecx,ecx                                 |
+6F3B1C0C | 85C9                     | test ecx,ecx                                 | <--- 检查指针是否为空
 6F3B1C0E | 74 0A                    | je game.6F3B1C1A                             |
 6F3B1C10 | BA 01000000              | mov edx,1                                    |
-6F3B1C15 | E8 96AA1000              | call game.6F4BC6B0                           |
+6F3B1C15 | E8 96AA1000              | call game.6F4BC6B0                           | <--- FreeMemory()
 6F3B1C1A | 8B0424                   | mov eax,dword ptr ss:[esp]                   |
 6F3B1C1D | 83C4 08                  | add esp,8                                    |
 6F3B1C20 | C2 0800                  | ret 8                                        |
 ```
 
-### E. 第 4 层：核心算法 (Core Calculation)
-**偏移地址**：`Game.dll + 3B1A20`
+### 3.4 核心层：逻辑混合 (Core Calculation)
+**函数地址**：`Game.dll + 3B1A20`
 **功能**：执行具体的位运算混合逻辑。
+
+此函数按顺序调用哈希函数计算三个文件的 Hash，然后按照第 2 节的数学公式进行混合。
+
+<details>
+<summary><strong>[展开汇编] D. 核心混合逻辑</strong></summary>
 ```assembly
 6F3B1A20 | 83EC 0C                  | sub esp,C                                    |
 6F3B1A23 | 8B4424 1C                | mov eax,dword ptr ss:[esp+1C]                |
@@ -468,8 +502,9 @@ $CRC_{map}$
 6F3B1A94 | 0F84 A3000000            | je game.6F3B1B3D                             |
 6F3B1A9A | 8B5424 10                | mov edx,dword ptr ss:[esp+10]                |
 6F3B1A9E | 8BC8                     | mov ecx,eax                                  |
-6F3B1AA0 | E8 1BCBFEFF              | call game.6F39E5C0                           | 获取 common.j CRC
-6F3B1AA5 | 8BE8                     | mov ebp,eax                                  |
+; --- 1. 计算 Common.j Hash ---
+6F3B1AA0 | E8 1BCBFEFF              | call game.6F39E5C0             			   | GetHash(common.j)
+6F3B1AA5 | 8BE8                     | mov ebp,eax                                  | EBP = Hash_Com
 6F3B1AA7 | EB 06                    | jmp game.6F3B1AAF                            |
 6F3B1AA9 | 8B5424 30                | mov edx,dword ptr ss:[esp+30]                |
 6F3B1AAD | 892A                     | mov dword ptr ds:[edx],ebp                   |
@@ -485,14 +520,16 @@ $CRC_{map}$
 6F3B1AD4 | 74 67                    | je game.6F3B1B3D                             |
 6F3B1AD6 | 8B5424 10                | mov edx,dword ptr ss:[esp+10]                |
 6F3B1ADA | 8BC8                     | mov ecx,eax                                  |
-6F3B1ADC | E8 DFCAFEFF              | call game.6F39E5C0                           | 获取 blizzard.j CRC
-6F3B1AE1 | 8BD8                     | mov ebx,eax                                  |
+; --- 2. 计算 Blizzard.j Hash ---
+6F3B1ADC | E8 DFCAFEFF              | call game.6F39E5C0                           | GetHash(blizzard.j)
+6F3B1AE1 | 8BD8                     | mov ebx,eax                                  | EBX = Hash_Bliz
 6F3B1AE3 | 8B5424 30                | mov edx,dword ptr ss:[esp+30]                |
 6F3B1AE7 | 8B7424 20                | mov esi,dword ptr ss:[esp+20]                |
-6F3B1AEB | 33DD                     | xor ebx,ebp                                  | CRC(bliz) ^ CRC(com)
-6F3B1AED | C1C3 03                  | rol ebx,3                                    | ROL(..., 3)
-6F3B1AF0 | 81F3 9E37F103            | xor ebx,3F1379E                              | ^ 0x3F1379E
-6F3B1AF6 | C1C3 03                  | rol ebx,3                                    | ROL(..., 3)
+; --- 3. 混合环境 (Environment Mix) ---
+6F3B1AEB | 33DD                     | xor ebx,ebp                                  | EBX = Hash_Bliz ^ Hash_Com
+6F3B1AED | C1C3 03                  | rol ebx,3                                    | EBX = ROL(EBX, 3)
+6F3B1AF0 | 81F3 9E37F103            | xor ebx,3F1379E                              | EBX = EBX ^ MagicNumber
+6F3B1AF6 | C1C3 03                  | rol ebx,3                                    | EBX = ROL(EBX, 3)
 6F3B1AF9 | 8D7C24 10                | lea edi,dword ptr ss:[esp+10]                |
 6F3B1AFD | 891A                     | mov dword ptr ds:[edx],ebx                   |
 6F3B1AFF | C74424 10 00000000       | mov dword ptr ss:[esp+10],0                  |
@@ -503,13 +540,15 @@ $CRC_{map}$
 6F3B1B14 | 74 27                    | je game.6F3B1B3D                             |
 6F3B1B16 | 8B5424 10                | mov edx,dword ptr ss:[esp+10]                |
 6F3B1B1A | 8BC8                     | mov ecx,eax                                  |
-6F3B1B1C | E8 9FCAFEFF              | call game.6F39E5C0                           | 获取 war3map.j CRC
-6F3B1B21 | 8BD0                     | mov edx,eax                                  |
+; --- 4. 计算 War3map.j Hash ---
+6F3B1B1C | E8 9FCAFEFF              | call game.6F39E5C0             		       | GetHash(war3map.j)
+6F3B1B21 | 8BD0                     | mov edx,eax                    		       | EDX = Hash_Map
 6F3B1B23 | 8B4424 30                | mov eax,dword ptr ss:[esp+30]                |
-6F3B1B27 | 3310                     | xor edx,dword ptr ds:[eax]                   | CRC(map) ^ Temp
+; --- 5. 最终混合 (Final Mix) ---
+6F3B1B27 | 3310                     | xor edx,dword ptr ds:[eax]     		       | EDX = Hash_Map ^ EnvironmentHash
 6F3B1B29 | 5F                       | pop edi                                      |
 6F3B1B2A | 5E                       | pop esi                                      |
-6F3B1B2B | C1C2 03                  | rol edx,3                                    | ROL(..., 3)
+6F3B1B2B | C1C2 03                  | rol edx,3                      			   | EDX = ROL(EDX, 3)
 6F3B1B2E | 5D                       | pop ebp                                      |
 6F3B1B2F | 8910                     | mov dword ptr ds:[eax],edx                   | 写入最终结果 (断点位置)
 6F3B1B31 | B8 01000000              | mov eax,1                                    |
@@ -547,191 +586,168 @@ $CRC_{map}$
 6F3B1B9B | 83C4 0C                  | add esp,C                                    |
 6F3B1B9E | C2 2000                  | ret 20                                       |
 ```
-## 魔法数 `3F1379E` 的作用：环境指纹
+</details>
 
-`3F1379E` 是暴雪硬编码的一个Magic Number（魔法数/盐值），用来混合 common.j 和 blizzard.j 的哈希值，生成最终的**“游戏逻辑环境校验码”**。
+### 3.5 基础算法层 (Blizzard Hash Algorithm)
+**函数地址**：`Game.dll + 39E5C0`
+**功能**：暴雪自定义的哈希计算函数。
+**逻辑**：它不是 CRC32，也不是 MD5。它是一个简单的 **Rotate-XOR** 算法。它遍历缓冲区，每 4 字节进行一次异或并左移 3 位。
 
-现在回到调用者函数 `6F3B1A20`，看看它是如何使用这个哈希结果的。
+<details>
+<summary><strong>[展开汇编] F. 自定义 Hash 算法实现</strong></summary>
 
-这段逻辑是在计算**JASS 基础环境的指纹**。Warcraft III 的游戏逻辑依赖于两个核心文件：
-1.  **`common.j`**: 原生函数定义（Native）。
-2.  **`blizzard.j`**: 暴雪标准库函数（BJ 函数）。
-
-如果这两个文件被篡改（例如修改了 `common.j` 来实现开图），游戏的逻辑就会改变。
-
-**代码逻辑还原：**
-
-1.  **计算 `common.j` 的哈希：**
-    ```assembly
-    6F3B1AA0 | call game.6F39E5C0 | 计算 common.j 的 Hash
-    6F3B1AA5 | mov ebp,eax        | 保存到 ebp
-    ```
-
-2.  **计算 `blizzard.j` 的哈希：**
-    ```assembly
-    6F3B1ADC | call game.6F39E5C0 | 计算 blizzard.j 的 Hash
-    6F3B1AE1 | mov ebx,eax        | 保存到 ebx
-    ```
-
-3.  **混合哈希（关键点）：**
-    ```assembly
-    6F3B1AEB | 33DD             | xor ebx,ebp      | Hash(Blizzard) ^ Hash(Common)
-    6F3B1AED | C1C3 03          | rol ebx,3        | 左移 3 位
-    6F3B1AF0 | 81F3 9E37F103    | xor ebx,3F1379E  | 【关键】XOR 魔法数 0x03F1379E
-    6F3B1AF6 | C1C3 03          | rol ebx,3        | 再左移 3 位
-    ```
-
-4.  **最终用途（混合地图脚本）：**
-    在代码的后面 (`6F3B1B27`)，这个计算出来的“环境哈希”还会去和 `war3map.j`（地图脚本）的哈希进行 XOR。
-
-## 总结
-*   **`3F1379E` 的作用：** 这是一个**盐（Salt）**。它的存在是为了防止有人仅仅通过修改地图脚本来伪造校验值。它确保了最终生成的校验码（Net Checksum）不仅包含了地图的信息，还强制包含了当前游戏版本的基础库（`common.j`/`blizzard.j`）的信息。
-
-**游戏反作弊意义：**
-如果一名玩家修改了本地的 `common.j`（比如去除了迷雾函数的限制），他的 `ebp` 值就会改变，经过这一系列运算后，他生成的最终 Checksum 就和其他玩家（使用官方版本）不同。当游戏开始同步数据时，由于 Checksum 不匹配，他会立即掉线（Desync）。
-
-### E. 第 5层：核心算法 (Core Calculation)
-**偏移地址**：`Game.dll + 39E5C0`
-**功能**：暴雪自定义的哈希计算函数（Hash Function）。
 ```assembly
 6F39E5C0 | 56                        | push esi                                     |
-6F39E5C1 | 8BF2                      | mov esi,edx                                  |
-6F39E5C3 | C1EE 02                   | shr esi,2                                    |
-6F39E5C6 | 33C0                      | xor eax,eax                                  |
-6F39E5C8 | 83E2 03                   | and edx,3                                    |
+6F39E5C1 | 8BF2                      | mov esi,edx                                  | len
+6F39E5C3 | C1EE 02                   | shr esi,2                                    | len / 4 (按 DWORD 处理)
+6F39E5C6 | 33C0                      | xor eax,eax                                  | Init Hash = 0
+6F39E5C8 | 83E2 03                   | and edx,3                                    | 计算剩余字节数 (len % 4)
 6F39E5CB | 85F6                      | test esi,esi                                 |
 6F39E5CD | 74 15                     | je game.6F39E5E4                             |
 6F39E5CF | 57                        | push edi                                     |
-6F39E5D0 | 8B39                      | mov edi,dword ptr ds:[ecx]                   |
-6F39E5D2 | 33F8                      | xor edi,eax                                  |
+; --- 主循环 (4字节一组) ---
+6F39E5D0 | 8B39                      | mov edi,dword ptr ds:[ecx]                   | 读取 4 Bytes
+6F39E5D2 | 33F8                      | xor edi,eax                                  | XOR CurrentHash
 6F39E5D4 | 83EE 01                   | sub esi,1                                    |
-6F39E5D7 | C1C7 03                   | rol edi,3                                    |
-6F39E5DA | 83C1 04                   | add ecx,4                                    |
+6F39E5D7 | C1C7 03                   | rol edi,3                                    | ROL 3
+6F39E5DA | 83C1 04                   | add ecx,4                                    | 指针 +4
 6F39E5DD | 85F6                      | test esi,esi                                 |
-6F39E5DF | 8BC7                      | mov eax,edi                                  |
-6F39E5E1 | 75 ED                     | jne game.6F39E5D0                            |
+6F39E5DF | 8BC7                      | mov eax,edi                                  | 更新 Hash
+6F39E5E1 | 75 ED                     | jne game.6F39E5D0                            | 循环
 6F39E5E3 | 5F                        | pop edi                                      |
 6F39E5E4 | 85D2                      | test edx,edx                                 |
 6F39E5E6 | 74 14                     | je game.6F39E5FC                             |
-6F39E5E8 | 0FB631                    | movzx esi,byte ptr ds:[ecx]                  |
-6F39E5EB | 33F0                      | xor esi,eax                                  |
+; --- 尾部处理 (剩余 1-3 字节) ---
+6F39E5E8 | 0FB631                    | movzx esi,byte ptr ds:[ecx]                  | 读取 1 Byte
+6F39E5EB | 33F0                      | xor esi,eax                                  | XOR
 6F39E5ED | 83EA 01                   | sub edx,1                                    |
-6F39E5F0 | C1C6 03                   | rol esi,3                                    |
-6F39E5F3 | 83C1 01                   | add ecx,1                                    |
+6F39E5F0 | C1C6 03                   | rol esi,3                                    | ROL 3
+6F39E5F3 | 83C1 01                   | add ecx,1                                    | 指针 +1
 6F39E5F6 | 85D2                      | test edx,edx                                 |
 6F39E5F8 | 8BC6                      | mov eax,esi                                  |
-6F39E5FA | 75 EC                     | jne game.6F39E5E8                            |
+6F39E5FA | 75 EC                     | jne game.6F39E5E8                            | 循环
 6F39E5FC | 5E                        | pop esi                                      |
 6F39E5FD | C3                        | ret                                          |
 ```
 
-**`6F39E5C0` 是一个自定义的哈希计算函数（Hash Function）。**
+---
 
-它的算法逻辑是：**“异或（XOR）后左循环移位（ROL 3）”**。
+## 4. 关键机制详解
 
-让我们一行行看这个哈希函数的实现：
+### 4.1 魔法数 (Magic Number)
+*   **数值**: `0x03F1379E`
+*   **作用**: **环境指纹盐值**。
+    *   它强制校验和必须包含 `common.j` 和 `blizzard.j` 的信息。
+    *   防止攻击者仅通过修改地图脚本来伪造一个合法的校验和。
+    *   如果玩家修改了本地的 `common.j`（例如移除迷雾限制），会导致中间计算结果 `EBX` 改变，最终 Checksum 不匹配，从而引发掉线（Desync）。
 
-*   **输入**：
-    *   `ecx`：缓冲区的指针（例如 `common.j` 的文本内容）。
-    *   `edx`：缓冲区的长度（字节数）。
-*   **输出**：
-    *   `eax`：计算出的哈希值（Checksum）。
+### 4.2 暴雪自定义哈希函数 (Blizzard Hash)
+**函数地址**：`Game.dll + 39E5C0`
+**算法**：`Rotate-XOR Hash`
+**注意**：这不是 CRC32，不要混淆。
 
-**核心循环逻辑（每次处理 4 字节）：**
+<details>
+<summary><strong>[展开汇编] E. 自定义哈希函数实现</strong></summary>
+
 ```assembly
-6F39E5C3 | C1EE 02        | shr esi,2            | 把长度除以 4 (计算有多少个 DWORD)
+; 核心循环 (处理 4 字节块)
+6F39E5C3 | C1EE 02        | shr esi,2            | 长度 / 4
 ...
-6F39E5D0 | 8B39           | mov edi,[ecx]        | 读取 4 个字节
-6F39E5D2 | 33F8           | xor edi,eax          | 当前数据 XOR 上次的结果
-6F39E5D7 | C1C7 03        | rol edi,3            | 结果向左循环移位 3 位 (Rotate Left 3)
-6F39E5DF | 8BC7           | mov eax,edi          | 更新结果
-```
-**剩余字节处理（处理末尾不足 4 字节的部分）：**
-```assembly
-6F39E5E8 | 0FB631         | movzx esi,byte...    | 读取 1 个字节
+6F39E5D0 | 8B39           | mov edi,[ecx]        | 读取 4 字节
+6F39E5D2 | 33F8           | xor edi,eax          | XOR 上次结果
+6F39E5D7 | C1C7 03        | rol edi,3            | ROL 3
+6F39E5DF | 8BC7           | mov eax,edi          | 保存结果
+...
+; 尾部处理 (处理剩余 1-3 字节)
+6F39E5E8 | 0FB631         | movzx esi,byte...    | 读取 1 字节
 6F39E5EB | 33F0           | xor esi,eax          | XOR
 6F39E5F0 | C1C6 03        | rol esi,3            | ROL 3
 ```
+</details>
 
-**算法总结 (伪代码):**
+---
+
+## 5. 代码还原 (C++ Implementation)
+
+以下代码可用于编写版本伪装器、改图工具或私有服务器的校验逻辑。
+
 ```cpp
-uint32_t BlizzardHash(char* buffer, int length) {
+#include <cstdint>
+#include <vector>
+
+// 循环左移 (对应汇编 ROL)
+inline uint32_t RotateLeft(uint32_t value, int shift) {
+    return (value << shift) | (value >> (32 - shift));
+}
+
+// 暴雪自定义哈希算法 (Game.dll + 39E5C0)
+uint32_t BlizzardHash(const uint8_t* data, size_t length) {
     uint32_t hash = 0;
-    // 4字节一组处理
-    while (length >= 4) {
-        uint32_t data = *(uint32_t*)buffer;
-        hash = hash ^ data;
-        hash = _rotl(hash, 3); // 循环左移3位
-        buffer += 4;
+    const uint8_t* ptr = data;
+    
+    // 处理 4 字节块
+    size_t dwords = length / 4;
+    for (size_t i = 0; i < dwords; ++i) {
+        uint32_t chunk = *reinterpret_cast<const uint32_t*>(ptr);
+        hash = hash ^ chunk;
+        hash = RotateLeft(hash, 3);
+        ptr += 4;
         length -= 4;
     }
+    
     // 处理剩余字节
     while (length > 0) {
-        uint32_t byteData = *buffer;
-        hash = hash ^ byteData;
-        hash = _rotl(hash, 3);
-        buffer++;
+        uint32_t byteVal = *ptr;
+        hash = hash ^ byteVal;
+        hash = RotateLeft(hash, 3);
+        ptr++;
         length--;
     }
     return hash;
 }
-```
-
-## 总结
-
-*   **`6F39E5C0` 的作用：** 这是一个**循环异或哈希函数 (Rotate-XOR Hash)**。专门用来计算 JASS 脚本文件的校验和。
----
-
-
-## 3. C++ 算法还原
-用于编写版本伪装器或改图工具的核心代码：
-
-```cpp
-#include <cstdint>
-#include <cstdlib>
-
-// 循环左移函数 (对应汇编 ROL)
-uint32_t RotateLeft(uint32_t value, int shift) {
-    return (value << shift) | (value >> (32 - shift));
-}
 
 /**
- * 计算 War3 1.26 地图校验和
- * @param crc_common   common.j 的原始 CRC32
- * @param crc_blizzard blizzard.j 的原始 CRC32
- * @param crc_war3map  war3map.j 的原始 CRC32
- * @return 最终的房间校验和 (Map Checksum)
+ * 计算 War3 1.26 地图校验和 (Game.dll + 3B1A20)
+ * @param h_common   common.j 的 BlizzardHash
+ * @param h_blizzard blizzard.j 的 BlizzardHash
+ * @param h_map      war3map.j 的 BlizzardHash
+ * @return 最终的 Checksum
  */
-uint32_t CalculateWarcraftChecksum(uint32_t crc_common, uint32_t crc_blizzard, uint32_t crc_war3map) {
+uint32_t MixCheckSum(uint32_t h_common, uint32_t h_blizzard, uint32_t h_map) {
     // 1. 混合 Common 和 Blizzard
-    uint32_t result = crc_blizzard ^ crc_common;
+    uint32_t val = h_blizzard ^ h_common;
     
     // 2. 变换 1
-    result = RotateLeft(result, 3);
+    val = RotateLeft(val, 3);
     
     // 3. 异或魔数 (特征码 0x03F1379E)
-    result = result ^ 0x03F1379E;
+    val = val ^ 0x03F1379E;
     
     // 4. 变换 2
-    result = RotateLeft(result, 3);
+    val = RotateLeft(val, 3);
     
     // 5. 混合地图脚本
-    result = crc_war3map ^ result;
+    val = h_map ^ val;
     
     // 6. 最终变换
-    result = RotateLeft(result, 3);
+    val = RotateLeft(val, 3);
     
-    return result;
+    return val;
 }
 ```
 
-## 4. 逆向结论与利用
-1.  **特征码**：`0x03F1379E` 是 War3 1.26 版本特有的 XOR Key。此值用于在 1.22 (Build 6000) 及以上版本中进行“环境校验”。
-2.  **过检测思路**：
-    *   **方法一 (底层强杀 - 推荐)**：
-        *   Hook 地址：`6F3B1B2F` (CoreCalc 函数末尾)。
-        *   操作：在指令 `mov [eax], edx` 执行前，将 `EDX` 寄存器修改为正版地图的 Checksum。
-        *   优点：同时通过建房检查（`6F5C25C0`）和加房检查（`6F3AEF80`），因为它们都调用这个底层函数。
-    *   **方法二 (Storm Hook)**：
-        *   Hook `Storm.dll` 的文件读取或 CRC 函数 (Ordinal #279)。
-        *   操作：当请求 `war3map.j` 时，欺骗游戏返回原始文件的 CRC。
+---
+
+## 6. 利用与绕过 (Exploitation)
+
+对于外挂开发或改图过检测，主要有两种思路：
+
+1.  **底层强杀 (Memory Hook)** - **推荐**
+    *   **挂钩点**: `Game.dll + 3B1B2F` (CoreCalc 函数末尾)。
+    *   **操作**: 在指令 `mov [eax], edx` 执行前，将寄存器 `EDX` 的值强行修改为**正版地图的 Checksum**。
+    *   **优点**: 一劳永逸。无论是自己建房（HostGame）还是加入别人的房间（LocalCheck），底层计算都会被劫持，完美通过校验。
+
+2.  **文件欺骗 (Storm Hook)**
+    *   **挂钩点**: `Storm.dll` 的 `SFileReadFile` 或 Ordinal #279。
+    *   **操作**: 当游戏引擎请求读取 `war3map.j` 时，重定向到原始的正版脚本，或者在计算 Hash 时返回预先计算好的正版 Hash。
+    *   **缺点**: 需要处理文件指针和缓冲区，逻辑较复杂。
