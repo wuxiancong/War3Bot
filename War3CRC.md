@@ -630,8 +630,7 @@ $$\text{Checksum} = \text{ROL}\left( H_{map} \oplus Val_{temp}, 3 \right)$$
 6F39E5FC | 5E                        | pop esi                                      |
 6F39E5FD | C3                        | ret                                          |
 ```
-
----
+</details>
 
 ## 4. 关键机制详解
 
@@ -757,6 +756,8 @@ uint32_t MixCheckSum(uint32_t h_common, uint32_t h_blizzard, uint32_t h_map) {
 ## 7. 进阶分析：第三阶段 - 地图组件校验
 **函数地址**：`Game.dll + 6F39EC00`
 
+---
+
 ### 7.1 逻辑概述
 `Final Checksum : DD81EDDA` 仅仅是 **脚本层面的校验和** (Script Checksum)。
 游戏为了防止玩家修改地形、穿墙、修改单位属性等数据，还会对 MPQ 包内的二进制数据文件进行校验。
@@ -780,7 +781,10 @@ $$Val_{final} = \text{ROL}( Val_{script} \oplus H_{component}, 3 )$$
 ### 7.3 关键汇编分析
 
 #### A. 组件遍历驱动 (6F39EC00)
-负责按顺序加载文件，如果存在则调用混合函数。
+
+<details open>
+<summary><strong>[展开汇编] A. 负责按顺序加载文件，如果存在则调用混合函数。</strong></summary>
+
 ```assembly
 6F39EC00 | 56                        | push esi                                     |
 6F39EC01 | 8BF1                      | mov esi,ecx                                  | <--- ESI = 当前的总 Checksum 指针
@@ -818,10 +822,14 @@ $$Val_{final} = \text{ROL}( Val_{script} \oplus H_{component}, 3 )$$
 6F39EC6D | 5E                        | pop esi                                      |
 6F39EC6E | C3                        | ret                                          |
 ```
+</details>
+
+#### B. 组件混合逻辑 (6F39EB70)
+
+<details open>
+<summary><strong>[展开汇编] B. 负责提取文件、计算 Hash 并混入总值。</strong></summary>
 
 ```assembly
-#### B. 组件混合逻辑 (6F39EB70)
-负责提取文件、计算 Hash 并混入总值。
 6F39EB70 | 81EC 10010000             | sub esp,110                                  |
 6F39EB76 | A1 40E1AA6F               | mov eax,dword ptr ds:[6FAAE140]              |
 6F39EB7B | 33C4                      | xor eax,esp                                  |
@@ -864,6 +872,7 @@ $$Val_{final} = \text{ROL}( Val_{script} \oplus H_{component}, 3 )$$
 6F39EBF7 | 81C4 10010000             | add esp,110                                  |
 6F39EBFD | C3                        | ret                                          |
 ```
+</details>
 
 ---
 
