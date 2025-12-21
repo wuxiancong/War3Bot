@@ -52,7 +52,7 @@ $$\text{Checksum} = \text{ROL}\left( H_{map} \oplus Val_{temp}, 3 \right)$$
 ### 3.1 入口层：建房与加载
 游戏在两个主要位置触发校验计算。
 
-<details>
+<details open>
 <summary><strong>[展开汇编] A. 建房初始化 (HostGame Entry) - <code>Game.dll + 5C25C0</code></strong></summary>
 
 功能：建房流程的高层入口。负责收集房间名、主机名、地图路径，并调用下层计算 CRC。
@@ -218,7 +218,7 @@ $$\text{Checksum} = \text{ROL}\left( H_{map} \oplus Val_{temp}, 3 \right)$$
 ```
 </details>
 
-<details>
+<details open>
 <summary><strong>[展开汇编] B. 本地加载检查 (Local Map Check) - <code>Game.dll + 3AEF80</code></strong></summary>
 
 功能：本地选择地图或加入房间时的校验。确认 MPQ 完整性并计算 CRC 用于比对。
@@ -359,7 +359,7 @@ $$\text{Checksum} = \text{ROL}\left( H_{map} \oplus Val_{temp}, 3 \right)$$
 *   如果版本号大于等于 6000 (1.22+)，使用新算法（本报告分析的逻辑）。
 *   1.26 的内部版本号为 `6059` (0x17AB)，因此走新逻辑。
 
-<details>
+<details open>
 <summary><strong>[展开汇编] C. 版本检查逻辑</strong></summary>
 ```assembly
 6F39ED70 | 81EC 08010000            | sub esp,108                                  |
@@ -410,7 +410,7 @@ $$\text{Checksum} = \text{ROL}\left( H_{map} \oplus Val_{temp}, 3 \right)$$
 **函数地址**：`Game.dll + 3B1BB0`
 **功能**：这是核心计算逻辑的“外壳”。它负责准备环境，将 `common.j`、`blizzard.j` 和 `war3map.j` 的文件名及内存指针压入堆栈，调用核心计算函数，最后**负责清理内存**（即处理 `test ecx, ecx` 的逻辑）。
 
-<details>
+<details open>
 <summary><strong>[展开汇编] D. Wrapper 层实现</strong></summary>
 
 ```assembly
@@ -452,6 +452,7 @@ $$\text{Checksum} = \text{ROL}\left( H_{map} \oplus Val_{temp}, 3 \right)$$
 6F3B1C1D | 83C4 08                  | add esp,8                                    |
 6F3B1C20 | C2 0800                  | ret 8                                        |
 ```
+</details>
 
 ### 3.4 核心层：逻辑混合 (Core Calculation)
 **函数地址**：`Game.dll + 3B1A20`
@@ -459,7 +460,7 @@ $$\text{Checksum} = \text{ROL}\left( H_{map} \oplus Val_{temp}, 3 \right)$$
 
 此函数按顺序调用哈希函数计算三个文件的 Hash，然后按照第 2 节的数学公式进行混合。
 
-<details>
+<details open>
 <summary><strong>[展开汇编] D. 核心混合逻辑</strong></summary>
 ```assembly
 6F3B1A20 | 83EC 0C                  | sub esp,C                                    |
@@ -593,7 +594,7 @@ $$\text{Checksum} = \text{ROL}\left( H_{map} \oplus Val_{temp}, 3 \right)$$
 **功能**：暴雪自定义的哈希计算函数。
 **逻辑**：它不是 CRC32，也不是 MD5。它是一个简单的 **Rotate-XOR** 算法。它遍历缓冲区，每 4 字节进行一次异或并左移 3 位。
 
-<details>
+<details open>
 <summary><strong>[展开汇编] F. 自定义 Hash 算法实现</strong></summary>
 
 ```assembly
@@ -646,7 +647,7 @@ $$\text{Checksum} = \text{ROL}\left( H_{map} \oplus Val_{temp}, 3 \right)$$
 **算法**：`Rotate-XOR Hash`
 **注意**：这不是 CRC32，不要混淆。
 
-<details>
+<details open>
 <summary><strong>[展开汇编] E. 自定义哈希函数实现</strong></summary>
 
 ```assembly
