@@ -57,9 +57,7 @@ enum UdpPacketID {
 
 // 游戏类型枚举
 enum BaseGameType {
-    Type_Unknown                = 0x00,
-    Type_D2_ClosedBN            = 0x00,
-    Type_D2_OpenBN              = 0x04,
+    Type_All                    = 0x00,
     Type_Melee                  = 0x02,
     Type_FFA                    = 0x03,
     Type_1v1                    = 0x04,
@@ -85,7 +83,7 @@ enum GameTypeFlags {
 };
 
 enum ComboGameType {
-    Game_TFT_Custom             = 0x2001,
+    Game_TFT_Custom             = 0x0001,
     Game_TFT_Official           = 0xC009,
     Game_RoC_Custom             = 0x0001
 };
