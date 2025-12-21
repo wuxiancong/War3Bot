@@ -357,6 +357,7 @@ $$\text{Checksum} = \text{ROL}\left( H_{map} \oplus Val_{temp}, 3 \right)$$
 
 <details open>
 <summary><strong>[展开汇编] C. 版本检查逻辑</strong></summary>
+
 ```assembly
 6F39ED70 | 81EC 08010000            | sub esp,108                                  |
 6F39ED76 | A1 40E1AA6F              | mov eax,dword ptr ds:[6FAAE140]              |
