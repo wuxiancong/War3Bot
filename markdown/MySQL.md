@@ -131,3 +131,13 @@ TRUNCATE TABLE pvpgn_friend;
 TRUNCATE TABLE pvpgn_clan;
 TRUNCATE TABLE pvpgn_clanmember;
 TRUNCATE TABLE pvpgn_arrangedteam;
+
+-- 删除所有表
+DROP TABLE IF EXISTS pvpgn_BNET;
+DROP TABLE IF EXISTS pvpgn_Record;
+DROP TABLE IF EXISTS pvpgn_WOL;
+DROP TABLE IF EXISTS pvpgn_profile;
+DROP TABLE IF EXISTS pvpgn_friend;
+DROP TABLE IF EXISTS pvpgn_clan;
+DROP TABLE IF EXISTS pvpgn_clanmember;
+DROP TABLE IF EXISTS pvpgn_arrangedteam;
