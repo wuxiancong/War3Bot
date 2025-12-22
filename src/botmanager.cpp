@@ -111,9 +111,8 @@ const QVector<Bot*>& BotManager::getAllBots() const
 
 void BotManager::onBotAuthenticated(int botId)
 {
-    // ID 是从 1 开始的，数组索引是 ID-1
-    if (botId > -1 && botId <= m_bots.size()) {
-        Bot *bot = m_bots[botId - 1];
+    if (botId >= 0 && botId < m_bots.size()) {
+        Bot *bot = m_bots[botId];
         bot->state = BotState::Idle;
         LOG_INFO(QString("[BotManager] 🤖 %1 登录成功，当前状态: 空闲").arg(bot->username));
         emit botStateChanged(bot->id, bot->username, bot->state);
@@ -122,8 +121,8 @@ void BotManager::onBotAuthenticated(int botId)
 
 void BotManager::onBotAccountCreated(int botId)
 {
-    if (botId > 0 && botId <= m_bots.size()) {
-        Bot *bot = m_bots[botId - 1];
+    if (botId >= 0 && botId < m_bots.size()) {
+        Bot *bot = m_bots[botId];
         bot->state = BotState::Unregistered;
         LOG_INFO(QString("[BotManager] 🆕 %1 账号注册成功").arg(bot->username));
         emit botStateChanged(bot->id, bot->username, bot->state);
@@ -132,8 +131,8 @@ void BotManager::onBotAccountCreated(int botId)
 
 void BotManager::onBotGameCreated(int botId)
 {
-    if (botId > 0 && botId <= m_bots.size()) {
-        Bot *bot = m_bots[botId - 1];
+    if (botId >= 0 && botId < m_bots.size()) {
+        Bot *bot = m_bots[botId];
         bot->state = BotState::Waiting;
         LOG_INFO(QString("[BotManager] 🎮 %1 房间已创建，等待玩家...").arg(bot->username));
         emit botStateChanged(bot->id, bot->username, bot->state);
@@ -142,8 +141,8 @@ void BotManager::onBotGameCreated(int botId)
 
 void BotManager::onBotError(int botId, QString error)
 {
-    if (botId > 0 && botId <= m_bots.size()) {
-        Bot *bot = m_bots[botId - 1];
+    if (botId >= 0 && botId < m_bots.size()) {
+        Bot *bot = m_bots[botId];
         bot->state = BotState::Disconnected;
         LOG_WARNING(QString("[BotManager] ❌ %1 连接错误/断开: %2").arg(bot->username, error));
         emit botStateChanged(bot->id, bot->username, bot->state);
@@ -152,8 +151,8 @@ void BotManager::onBotError(int botId, QString error)
 
 void BotManager::onBotDisconnected(int botId)
 {
-    if (botId > 0 && botId <= m_bots.size()) {
-        Bot *bot = m_bots[botId - 1];
+    if (botId >= 0 && botId < m_bots.size()) {
+        Bot *bot = m_bots[botId];
         bot->state = BotState::Disconnected;
         emit botStateChanged(bot->id, bot->username, bot->state);
     }
