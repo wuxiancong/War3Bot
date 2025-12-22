@@ -83,7 +83,7 @@ enum GameTypeFlags {
 };
 
 enum ComboGameType {
-    Game_TFT_Custom             = 0x0001,
+    Game_TFT_Custom             = 0x2001,
     Game_TFT_Official           = 0xC009,
     Game_RoC_Custom             = 0x0001
 };
