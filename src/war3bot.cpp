@@ -63,7 +63,7 @@ bool War3Bot::startServer(quint16 port, const QString &configFile)
 
             if (bnetUser == "bot") {
                 LOG_INFO("检测到配置用户名为 'bot'，正在初始化基础机器人集群...");
-                m_botManager->initializeBots(9, m_configPath);
+                m_botManager->initializeBots(10, m_configPath);
                 m_botManager->startAll();
             } else {
                 LOG_INFO("单用户模式就绪。等待 'connect' 命令连接战网。");
