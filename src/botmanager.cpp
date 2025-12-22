@@ -112,7 +112,7 @@ const QVector<Bot*>& BotManager::getAllBots() const
 void BotManager::onBotAuthenticated(int botId)
 {
     // ID 是从 1 开始的，数组索引是 ID-1
-    if (botId > 0 && botId <= m_bots.size()) {
+    if (botId > -1 && botId <= m_bots.size()) {
         Bot *bot = m_bots[botId - 1];
         bot->state = BotState::Idle;
         LOG_INFO(QString("[BotManager] 🤖 %1 登录成功，当前状态: 空闲").arg(bot->username));
