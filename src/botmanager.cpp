@@ -78,7 +78,7 @@ void BotManager::initializeBots(int count, const QString& configPath)
 void BotManager::startAll()
 {
     int delay = 0;
-    const int interval = 200;
+    const int interval = 1000;
 
     for (Bot *bot : qAsConst(m_bots)) {
         if (!bot->client) continue;
@@ -137,12 +137,21 @@ void BotManager::onBotGameCreated(Bot* bot)
 void BotManager::onBotError(Bot* bot, QString error)
 {
     if (!bot) return;
-    bot->state = BotState::Disconnected;
+
     LOG_WARNING(QString("❌ [%1] 错误: %2").arg(bot->username, error));
+    bot->state = BotState::Disconnected;
     emit botStateChanged(bot->id, bot->username, bot->state);
 
-    // 如果服务器拒绝 (ConnectionRefused)，通常是因为连接太快
-    // 这里不需要立即重连，否则会死循环
+    // 简单的自动重连逻辑
+    if (bot->client && !bot->client->isConnected()) {
+        int retryDelay = 5000 + (bot->id * 1000);
+        LOG_INFO(QString("🔄 [%1] 将在 %2 毫秒后尝试重连...").arg(bot->username).arg(retryDelay));
+        QTimer::singleShot(retryDelay, this, [this, bot]() {
+            if (m_bots.contains(bot) && bot->client && !bot->client->isConnected()) {
+                bot->client->connectToHost(m_targetServer, m_targetPort);
+            }
+        });
+    }
 }
 
 void BotManager::onBotDisconnected(Bot* bot)

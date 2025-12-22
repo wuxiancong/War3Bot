@@ -240,33 +240,51 @@ int main(int argc, char *argv[]) {
                 const auto &bots = activeBotManager->getAllBots();
                 bool foundBot = false;
 
+                // 场景 A: 批量启动
                 if (user.isEmpty()) {
-                    LOG_INFO("🤖 未指定用户，正在尝试启动所有机器人...");
+                    LOG_INFO("🤖 收到批量启动指令，正在启动所有机器人...");
+                    // startAll 内部已经包含了状态检查和错峰逻辑 (前提是你修改了 BotManager)
                     activeBotManager->startAll();
                     return;
                 }
 
+                // 场景 B: 指定机器人启动
                 for (auto *bot : bots) {
                     if (!bot || !bot->client) continue;
                     if (bot->username.compare(user, Qt::CaseInsensitive) == 0) {
                         foundBot = true;
-                        LOG_INFO(QString("🤖 [Bot-%1] 收到手动连接指令: %2").arg(bot->id).arg(bot->username));
-                        if (!pass.isEmpty()) bot->password = pass;
+
+                        // 检查 1: 防止重复连接
+                        if (bot->client->isConnected()) {
+                            LOG_WARNING(QString("⚠️ 机器人 %1 已经在线 (状态: %2)，请先执行 disconnect/stop 断开").arg(user).arg((int)bot->state));
+                            break;
+                        }
+
+                        LOG_INFO(QString("🤖 [Bot-%1] 正在连接: %2").arg(bot->id).arg(bot->username));
+
+                        // 更新密码 (如果命令行提供了)
+                        if (!pass.isEmpty()) {
+                            bot->password = pass;
+                        }
+
                         QString targetServer = server.isEmpty() ? "127.0.0.1" : server;
                         int targetPort = (port == 0) ? 6112 : port;
+
+                        // 重新设置凭据 (防止之前被修改)
                         bot->client->setCredentials(bot->username, bot->password, Protocol_SRP_0x53);
+
+                        // 发起连接
                         bot->client->connectToHost(targetServer, targetPort);
-                        bot->state = BotState::Unregistered;
+
+                        // 让 Client 的信号去更新 state，不要在这里手动 set state，除非是为了 UI 立即反馈
+                        // bot->state = BotState::Unregistered;
                         break;
                     }
                 }
 
                 if (!foundBot) {
-                    LOG_WARNING(QString("❌ 未找到名为 '%1' 的机器人，无法执行连接").arg(user));
+                    LOG_WARNING(QString("❌ 未找到名为 '%1' 的机器人。请检查 config.ini 中的前缀或数量。").arg(user));
                 }
-            }
-            else {
-                war3bot.connectToBattleNet(server, port, user, pass);
             }
         }
         // ---------------------------------------------------------
