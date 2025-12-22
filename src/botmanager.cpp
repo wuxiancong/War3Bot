@@ -28,9 +28,9 @@ void BotManager::initializeBots(int count, const QString& configPath)
                  .arg(m_targetServer).arg(m_targetPort).arg(userPrefix).arg(count));
 
     // 2. 批量创建机器人
-    for (int i = 1; i <= count; ++i) {
+    for (int i = 0; i <= count; ++i) {
         // 生成用户名：前缀 + ID (例如 bot1, bot2)
-        QString fullUsername = QString("%1%2").arg(userPrefix).arg(i);
+        QString fullUsername = (i == 0) ? QString("%1").arg(userPrefix) : QString("%1%2").arg(userPrefix).arg(i);
 
         Bot *bot = new Bot(i, fullUsername, password);
 
