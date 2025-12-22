@@ -26,6 +26,8 @@ struct Bot {
 
     Bot(int _id, QString _user, QString _pass)
         : id(_id), username(_user), password(_pass), state(BotState::Disconnected), client(nullptr) {}
+
+    ~Bot() { if (client) client->deleteLater(); }
 };
 
 // === 3. 机器人管理器 ===
@@ -58,11 +60,11 @@ signals:
 
 private slots:
     // 内部槽函数：处理单个机器人的信号
-    void onBotAuthenticated(int botId);
-    void onBotAccountCreated(int botId);
-    void onBotGameCreated(int botId);
-    void onBotDisconnected(int botId);
-    void onBotError(int botId, QString error);
+    void onBotAuthenticated(Bot *bot);
+    void onBotAccountCreated(Bot *bot);
+    void onBotGameCreated(Bot *bot);
+    void onBotDisconnected(Bot *bot);
+    void onBotError(Bot *bot, QString error);
 
 private:
     // 容器存储所有机器人指针

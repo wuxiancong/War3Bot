@@ -15,7 +15,12 @@ BotManager::~BotManager()
 
 void BotManager::initializeBots(int count, const QString& configPath)
 {
-    // 1. 读取配置文件
+    // 1. 清理旧数据
+    stopAll();
+    qDeleteAll(m_bots);
+    m_bots.clear();
+
+    // 2. 读取配置文件
     QSettings settings(configPath, QSettings::IniFormat);
 
     // 读取 [bnet] 节点
@@ -27,8 +32,8 @@ void BotManager::initializeBots(int count, const QString& configPath)
     LOG_INFO(QString("[BotManager] 初始化配置 - 服务器: %1:%2, 前缀: %3, 数量: %4")
                  .arg(m_targetServer).arg(m_targetPort).arg(userPrefix).arg(count));
 
-    // 2. 批量创建机器人
-    for (int i = 0; i <= count; ++i) {
+    // 3. 批量创建机器人
+    for (int i = 0; i < count; ++i) {
         // 生成用户名：前缀 + ID (例如 bot1, bot2)
         QString fullUsername = (i == 0) ? QString("%1").arg(userPrefix) : QString("%1%2").arg(userPrefix).arg(i);
 
@@ -46,48 +51,46 @@ void BotManager::initializeBots(int count, const QString& configPath)
         // === 绑定信号槽 ===
 
         // 1. 连接成功/登录成功
-        connect(bot->client, &Client::authenticated, this, [this, i]() {
-            this->onBotAuthenticated(i);
+        connect(bot->client, &Client::authenticated, this, [this, bot]() {
+            this->onBotAuthenticated(bot);
         });
 
         // 2. 注册成功
-        connect(bot->client, &Client::accountCreated, this, [this, i]() {
-            this->onBotAccountCreated(i);
+        connect(bot->client, &Client::accountCreated, this, [this, bot]() {
+            this->onBotAccountCreated(bot);
         });
 
         // 3. 房间创建成功
-        connect(bot->client, &Client::gameListRegistered, this, [this, i]() {
-            this->onBotGameCreated(i);
+        connect(bot->client, &Client::gameListRegistered, this, [this, bot]() {
+            this->onBotGameCreated(bot);
         });
 
-        // 4. 断开连接
-        // 假设 Client 有 disconnected 信号，如果没有请自行添加或使用 socket 的 disconnected
-        // 这里假设你在 Client 中定义了 onDisconnected 槽并也许发出了信号
-        // 如果 Client 没有直接暴露 disconnected 信号，可以通过 socketError 捕获或者添加一个
-        // 这里演示用 socketError 模拟断开/错误
-        connect(bot->client, &Client::socketError, this, [this, i](QString err) {
-            this->onBotError(i, err);
+        // 4. 错误处理
+        connect(bot->client, &Client::socketError, this, [this, bot](QString err) {
+            this->onBotError(bot, err);
         });
 
         m_bots.append(bot);
     }
+    LOG_INFO(QString("初始化完成，共创建 %1 个机器人对象").arg(m_bots.size()));
 }
 
 void BotManager::startAll()
 {
-    LOG_INFO("[BotManager] 开始启动所有机器人...");
+    int delay = 0;
+    const int interval = 200;
+
     for (Bot *bot : qAsConst(m_bots)) {
-        if (bot->client) {
-            // 更新状态
-            bot->state = BotState::Unregistered; // 初始连接视为未注册/连接中
+        if (!bot->client) continue;
+        QTimer::singleShot(delay, this, [this, bot]() {
+            if (m_bots.contains(bot) && bot->client) {
+                bot->state = BotState::Unregistered;
+                LOG_INFO(QString("[%1] 发起连接...").arg(bot->username));
+                bot->client->connectToHost(m_targetServer, m_targetPort);
+            }
+        });
 
-            // 连接服务器
-            // 注意：Client::connectToHost 内部会处理连接和随后的 AuthCheck/Login/Register 流程
-            bot->client->connectToHost(m_targetServer, m_targetPort);
-
-            // 稍微错开连接时间，避免瞬间并发过高
-            QThread::msleep(100);
-        }
+        delay += interval;
     }
 }
 
@@ -109,51 +112,43 @@ const QVector<Bot*>& BotManager::getAllBots() const
 
 // === 槽函数实现 ===
 
-void BotManager::onBotAuthenticated(int botId)
+void BotManager::onBotAuthenticated(Bot* bot)
 {
-    if (botId >= 0 && botId < m_bots.size()) {
-        Bot *bot = m_bots[botId];
-        bot->state = BotState::Idle;
-        LOG_INFO(QString("[BotManager] 🤖 %1 登录成功，当前状态: 空闲").arg(bot->username));
-        emit botStateChanged(bot->id, bot->username, bot->state);
-    }
+    if (!bot) return;
+    bot->state = BotState::Idle;
+    LOG_INFO(QString("✅ [%1] 登录成功").arg(bot->username));
+    emit botStateChanged(bot->id, bot->username, bot->state);
 }
 
-void BotManager::onBotAccountCreated(int botId)
+void BotManager::onBotAccountCreated(Bot* bot)
 {
-    if (botId >= 0 && botId < m_bots.size()) {
-        Bot *bot = m_bots[botId];
-        bot->state = BotState::Unregistered;
-        LOG_INFO(QString("[BotManager] 🆕 %1 账号注册成功").arg(bot->username));
-        emit botStateChanged(bot->id, bot->username, bot->state);
-    }
+    if (!bot) return;
+    LOG_INFO(QString("🆕 [%1] 账号注册成功，正在尝试登录...").arg(bot->username));
 }
 
-void BotManager::onBotGameCreated(int botId)
+void BotManager::onBotGameCreated(Bot* bot)
 {
-    if (botId >= 0 && botId < m_bots.size()) {
-        Bot *bot = m_bots[botId];
-        bot->state = BotState::Waiting;
-        LOG_INFO(QString("[BotManager] 🎮 %1 房间已创建，等待玩家...").arg(bot->username));
-        emit botStateChanged(bot->id, bot->username, bot->state);
-    }
+    if (!bot) return;
+    bot->state = BotState::Waiting;
+    LOG_INFO(QString("🎮 [%1] 房间创建成功").arg(bot->username));
+    emit botStateChanged(bot->id, bot->username, bot->state);
 }
 
-void BotManager::onBotError(int botId, QString error)
+void BotManager::onBotError(Bot* bot, QString error)
 {
-    if (botId >= 0 && botId < m_bots.size()) {
-        Bot *bot = m_bots[botId];
-        bot->state = BotState::Disconnected;
-        LOG_WARNING(QString("[BotManager] ❌ %1 连接错误/断开: %2").arg(bot->username, error));
-        emit botStateChanged(bot->id, bot->username, bot->state);
-    }
+    if (!bot) return;
+    bot->state = BotState::Disconnected;
+    LOG_WARNING(QString("❌ [%1] 错误: %2").arg(bot->username, error));
+    emit botStateChanged(bot->id, bot->username, bot->state);
+
+    // 如果服务器拒绝 (ConnectionRefused)，通常是因为连接太快
+    // 这里不需要立即重连，否则会死循环
 }
 
-void BotManager::onBotDisconnected(int botId)
+void BotManager::onBotDisconnected(Bot* bot)
 {
-    if (botId >= 0 && botId < m_bots.size()) {
-        Bot *bot = m_bots[botId];
-        bot->state = BotState::Disconnected;
-        emit botStateChanged(bot->id, bot->username, bot->state);
-    }
+    if (!bot) return;
+    bot->state = BotState::Disconnected;
+    LOG_INFO(QString("🔌 [%1] 断开连接").arg(bot->username));
+    emit botStateChanged(bot->id, bot->username, bot->state);
 }
