@@ -62,3 +62,9 @@
 6F575F13 | C3                       | ret                                                      |
 6F575E80 | sub esp, 204
 ```
+#### 获取房间名指针的函数
+
+```assembly
+6F613EA0 | 8B81 E4010000            | mov eax,dword ptr ds:[ecx+1E4]                           |
+6F613EA6 | C3                       | ret                                                      |
+```
