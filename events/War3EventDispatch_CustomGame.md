@@ -1,8 +1,8 @@
 # War3 自定义游戏界面事件分发逻辑 (Custom Game Event Dispatch)
 
-**模块**: `Game.dll`
-**功能**: 处理自定义游戏列表界面（Custom Game / Standard Game List）的用户交互事件。
-**机制**: 使用跳转表（Jump Table）根据输入的 Event ID (`ECX`) 分发到具体的处理函数。
+- **模块**: `Game.dll`
+- **功能**: 处理自定义游戏列表界面（Custom Game / Standard Game List）的用户交互事件。
+- **机制**: 使用跳转表（Jump Table）根据输入的 Event ID (`ECX`) 分发到具体的处理函数。
 
 ## 1. 核心分发逻辑
 
