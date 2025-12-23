@@ -78,7 +78,7 @@ void BotManager::initializeBots(int count, const QString& configPath)
 void BotManager::startAll()
 {
     int delay = 0;
-    const int interval = 1000;
+    const int interval = 200;
 
     for (Bot *bot : qAsConst(m_bots)) {
         if (!bot->client) continue;
