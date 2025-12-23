@@ -161,9 +161,6 @@ public:
     void cancelGame();                              // 取消游戏/解散
     void stopAdv();                                 // 停止广播
 
-    // --- 机器人设置 ---
-    void setHostCounter(int id);
-
     // --- 工具与状态 ---
     QString getPrimaryIPv4();
     bool bindToRandomPort();                        // 绑定 UDP 随机端口
@@ -220,9 +217,6 @@ private:
     War3Map m_war3Map;
     QStringList m_channelList;
     quint32 m_hostCounter = 1;
-    quint32 m_counterBase = 0;
-    quint32 m_counterLimit = 0;
-    const quint32 ID_RANGE = 1000;
 
     // 路径
     QString m_war3ExePath;

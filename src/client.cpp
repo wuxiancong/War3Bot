@@ -665,11 +665,6 @@ void Client::createGame(const QString &gameName, const QString &password, Provid
     }
 
     m_hostCounter++;
-    if (m_hostCounter >= m_counterLimit) {
-        LOG_WARNING(QString("⚠️ HostCounter 达到上限 (%1)，重置回 (%2)")
-                        .arg(m_hostCounter).arg(m_counterBase));
-        m_hostCounter = m_counterBase;
-    }
 
     QByteArray finalStatString;
 
@@ -702,18 +697,7 @@ void Client::createGame(const QString &gameName, const QString &password, Provid
 }
 
 // =========================================================
-// 8. 机器人设置
-// =========================================================
-void Client::setHostCounter(int id)
-{
-    m_counterLimit  = (quint32)(id + 1) * ID_RANGE;
-    m_counterBase  = (quint32)id * ID_RANGE;
-    m_hostCounter = m_counterBase;
-    LOG_INFO(QString("🤖 已设置 Bot ID: %1 (ID范围: %2 ~ %3)").arg(id).arg(m_counterBase).arg(m_counterLimit - 1));
-}
-
-// =========================================================
-// 9. 辅助工具函数
+// 8. 辅助工具函数
 // =========================================================
 
 bool Client::bindToRandomPort()
