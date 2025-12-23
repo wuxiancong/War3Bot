@@ -1,6 +1,6 @@
 # War3 机器人主机创建房间后地图信息空白调试日志
 
-
+![x64dbg调试截图](https://github.com/wuxiancong/War3Bot/raw/main/debug/images/War3Dialog1.PNG)
 
 ## 问题描述 (Issue Description)
 
