@@ -17,7 +17,7 @@
 
 ---
 
-### "You must specify a game to join"
+### ·´»ã±à´úÂë
 
 ```assembly
 6F575E80 | 81EC 04020000            | sub esp,204                                              |
