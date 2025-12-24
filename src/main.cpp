@@ -236,56 +236,54 @@ int main(int argc, char *argv[]) {
             int port       = (parts.size() > 4) ? parts[4].toInt() : 0;
 
             // 如果是 Bot 模式 (多机器人)
-            if(!user.isEmpty()) {
-                if (isBotMode && user.startsWith("bot")) {
-                    const auto &bots = activeBotManager->getAllBots();
-                    bool foundBot = false;
+            if (isBotMode) {
+                const auto &bots = activeBotManager->getAllBots();
+                bool foundBot = false;
 
-                    // 场景 A: 批量启动
-                    if (user.isEmpty()) {
-                        LOG_INFO("🤖 收到批量启动指令，正在启动所有机器人...");
-                        // startAll 内部已经包含了状态检查和错峰逻辑 (前提是你修改了 BotManager)
-                        activeBotManager->startAll();
-                        return;
-                    }
+                // 场景 A: 批量启动
+                if (user.isEmpty()) {
+                    LOG_INFO("🤖 收到批量启动指令，正在启动所有机器人...");
+                    // startAll 内部已经包含了状态检查和错峰逻辑 (前提是你修改了 BotManager)
+                    activeBotManager->startAll();
+                    return;
+                }
 
-                    // 场景 B: 指定机器人启动
-                    for (auto *bot : bots) {
-                        if (!bot || !bot->client) continue;
-                        if (bot->username.compare(user, Qt::CaseInsensitive) == 0) {
-                            foundBot = true;
+                // 场景 B: 指定机器人启动
+                for (auto *bot : bots) {
+                    if (!bot || !bot->client) continue;
+                    if (bot->username.compare(user, Qt::CaseInsensitive) == 0) {
+                        foundBot = true;
 
-                            // 检查 1: 防止重复连接
-                            if (bot->client->isConnected()) {
-                                LOG_WARNING(QString("⚠️ 机器人 %1 已经在线 (状态: %2)，请先执行 disconnect/stop 断开").arg(user).arg((int)bot->state));
-                                break;
-                            }
-
-                            LOG_INFO(QString("🤖 [Bot-%1] 正在连接: %2").arg(bot->id).arg(bot->username));
-
-                            // 更新密码 (如果命令行提供了)
-                            if (!pass.isEmpty()) {
-                                bot->password = pass;
-                            }
-
-                            QString targetServer = server.isEmpty() ? "127.0.0.1" : server;
-                            int targetPort = (port == 0) ? 6112 : port;
-
-                            // 重新设置凭据 (防止之前被修改)
-                            bot->client->setCredentials(bot->username, bot->password, Protocol_SRP_0x53);
-
-                            // 发起连接
-                            bot->client->connectToHost(targetServer, targetPort);
-
-                            // 让 Client 的信号去更新 state，不要在这里手动 set state，除非是为了 UI 立即反馈
-                            // bot->state = BotState::Unregistered;
+                        // 检查 1: 防止重复连接
+                        if (bot->client->isConnected()) {
+                            LOG_WARNING(QString("⚠️ 机器人 %1 已经在线 (状态: %2)，请先执行 disconnect/stop 断开").arg(user).arg((int)bot->state));
                             break;
                         }
-                    }
 
-                    if (!foundBot) {
-                        LOG_WARNING(QString("❌ 未找到名为 '%1' 的机器人。请检查 config.ini 中的前缀或数量。").arg(user));
+                        LOG_INFO(QString("🤖 [Bot-%1] 正在连接: %2").arg(bot->id).arg(bot->username));
+
+                        // 更新密码 (如果命令行提供了)
+                        if (!pass.isEmpty()) {
+                            bot->password = pass;
+                        }
+
+                        QString targetServer = server.isEmpty() ? "127.0.0.1" : server;
+                        int targetPort = (port == 0) ? 6112 : port;
+
+                        // 重新设置凭据 (防止之前被修改)
+                        bot->client->setCredentials(bot->username, bot->password, Protocol_SRP_0x53);
+
+                        // 发起连接
+                        bot->client->connectToHost(targetServer, targetPort);
+
+                        // 让 Client 的信号去更新 state，不要在这里手动 set state，除非是为了 UI 立即反馈
+                        // bot->state = BotState::Unregistered;
+                        break;
                     }
+                }
+
+                if (!foundBot) {
+                    LOG_WARNING(QString("❌ 未找到名为 '%1' 的机器人。请检查 config.ini 中的前缀或数量。").arg(user));
                 }
             }
         }
@@ -301,49 +299,47 @@ int main(int argc, char *argv[]) {
             QString targetUser = (parts.size() > 2) ? parts[2] : "";
             QString targetUserPass = (parts.size() > 3) ? parts[3] : "";
             QString gameEnterRoomPass = (parts.size() > 4) ? parts[4] : "";
-            if(!targetUser.isEmpty()){
-                if (isBotMode && targetUser.startsWith("bot")) {
-                    const auto &bots = activeBotManager->getAllBots(); // 使用正确的 Manager
-                    bool foundBot = false;
+            if (isBotMode) {
+                const auto &bots = activeBotManager->getAllBots(); // 使用正确的 Manager
+                bool foundBot = false;
 
-                    for (auto *bot : bots) {
-                        if (!bot || !bot->client) continue;
+                for (auto *bot : bots) {
+                    if (!bot || !bot->client) continue;
 
-                        // 场景 A-1: 指定了机器人
-                        if (!targetUser.isEmpty()) {
-                            if (bot->username.compare(targetUser, Qt::CaseInsensitive) == 0) {
-                                if (bot->client->isConnected()) {
-                                    LOG_INFO(QString("🤖 [Bot-%1] 指定调用 %2 创建游戏...").arg(bot->id).arg(bot->username));
-                                    bot->client->createGame(gameName, gameEnterRoomPass, ProviderVersion::Provider_TFT_New, ComboGameType::Game_TFT_Custom, SubGameType::SubType_Internet, LadderType::Ladder_None);
-                                    bot->state = BotState::Creating;
-                                    foundBot = true;
-                                } else {
-                                    LOG_WARNING(QString("❌ 找到机器人 '%1' 但未连接战网").arg(targetUser));
-                                    foundBot = true; // 标记找到了，虽然没成功
-                                }
-                                break;
-                            }
-                        }
-                        // 场景 A-2: 自动寻找空闲机器人
-                        else {
-                            if (bot->client->isConnected() && bot->state == BotState::Idle) {
-                                LOG_INFO(QString("🤖 [Bot-%1] 状态空闲，已被选中创建游戏: %2").arg(bot->id).arg(gameName));
+                    // 场景 A-1: 指定了机器人
+                    if (!targetUser.isEmpty()) {
+                        if (bot->username.compare(targetUser, Qt::CaseInsensitive) == 0) {
+                            if (bot->client->isConnected()) {
+                                LOG_INFO(QString("🤖 [Bot-%1] 指定调用 %2 创建游戏...").arg(bot->id).arg(bot->username));
                                 bot->client->createGame(gameName, gameEnterRoomPass, ProviderVersion::Provider_TFT_New, ComboGameType::Game_TFT_Custom, SubGameType::SubType_Internet, LadderType::Ladder_None);
                                 bot->state = BotState::Creating;
                                 foundBot = true;
-                                break;
+                            } else {
+                                LOG_WARNING(QString("❌ 找到机器人 '%1' 但未连接战网").arg(targetUser));
+                                foundBot = true; // 标记找到了，虽然没成功
                             }
+                            break;
                         }
                     }
-
-                    if (!foundBot) {
-                        if (!targetUser.isEmpty()) LOG_WARNING(QString("❌ 未找到名为 '%1' 的机器人").arg(targetUser));
-                        else LOG_WARNING(QString("❌ 创建失败: 当前没有空闲 (Idle) 的机器人 (总数: %1)").arg(bots.size()));
+                    // 场景 A-2: 自动寻找空闲机器人
+                    else {
+                        if (bot->client->isConnected() && bot->state == BotState::Idle) {
+                            LOG_INFO(QString("🤖 [Bot-%1] 状态空闲，已被选中创建游戏: %2").arg(bot->id).arg(gameName));
+                            bot->client->createGame(gameName, gameEnterRoomPass, ProviderVersion::Provider_TFT_New, ComboGameType::Game_TFT_Custom, SubGameType::SubType_Internet, LadderType::Ladder_None);
+                            bot->state = BotState::Creating;
+                            foundBot = true;
+                            break;
+                        }
                     }
-                } else {
-                    // 单用户模式
-                    war3bot.createGame(gameName, gameEnterRoomPass, targetUser, targetUserPass);
                 }
+
+                if (!foundBot) {
+                    if (!targetUser.isEmpty()) LOG_WARNING(QString("❌ 未找到名为 '%1' 的机器人").arg(targetUser));
+                    else LOG_WARNING(QString("❌ 创建失败: 当前没有空闲 (Idle) 的机器人 (总数: %1)").arg(bots.size()));
+                }
+            } else {
+                // 单用户模式
+                war3bot.createGame(gameName, gameEnterRoomPass, targetUser, targetUserPass);
             }
         }
         // ---------------------------------------------------------
@@ -352,29 +348,27 @@ int main(int argc, char *argv[]) {
         else if (action == "cancel") {
             QString targetUser = (parts.size() > 1) ? parts[1] : "";
 
-            if(!targetUser.isEmpty()) {
-                if (isBotMode && targetUser.startsWith("bot")) {
-                    const auto &bots = activeBotManager->getAllBots();
-                    int count = 0;
+            if (isBotMode) {
+                const auto &bots = activeBotManager->getAllBots();
+                int count = 0;
 
-                    if (targetUser.isEmpty()) LOG_INFO("❌ 正在 [销毁] 所有机器人的房间...");
-                    else LOG_INFO(QString("❌ 正在销毁机器人 [%1] 的房间...").arg(targetUser));
+                if (targetUser.isEmpty()) LOG_INFO("❌ 正在 [销毁] 所有机器人的房间...");
+                else LOG_INFO(QString("❌ 正在销毁机器人 [%1] 的房间...").arg(targetUser));
 
-                    for (auto *bot : bots) {
-                        if (bot && bot->client && bot->client->isConnected()) {
-                            bool match = targetUser.isEmpty() || (bot->username.compare(targetUser, Qt::CaseInsensitive) == 0);
-                            if (match) {
-                                bot->client->cancelGame();
-                                bot->state = BotState::Idle;
-                                count++;
-                                LOG_INFO(QString("✅ Bot-%1 (%2) 房间已销毁，状态重置为 Idle").arg(bot->id).arg(bot->username));
-                            }
+                for (auto *bot : bots) {
+                    if (bot && bot->client && bot->client->isConnected()) {
+                        bool match = targetUser.isEmpty() || (bot->username.compare(targetUser, Qt::CaseInsensitive) == 0);
+                        if (match) {
+                            bot->client->cancelGame();
+                            bot->state = BotState::Idle;
+                            count++;
+                            LOG_INFO(QString("✅ Bot-%1 (%2) 房间已销毁，状态重置为 Idle").arg(bot->id).arg(bot->username));
                         }
                     }
-                    if (count == 0) LOG_WARNING("未找到匹配的机器人。");
-                } else {
-                    war3bot.cancelGame();
                 }
+                if (count == 0) LOG_WARNING("未找到匹配的机器人。");
+            } else {
+                war3bot.cancelGame();
             }
         }
         // ---------------------------------------------------------
@@ -383,7 +377,7 @@ int main(int argc, char *argv[]) {
         else if (action == "stop") {
             QString targetUser = (parts.size() > 1) ? parts[1] : "";
 
-            if (isBotMode && targetUser.startsWith("bot")) {
+            if (isBotMode) {
                 const auto &bots = activeBotManager->getAllBots();
                 int count = 0;
 
