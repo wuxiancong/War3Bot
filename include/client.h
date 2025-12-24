@@ -163,6 +163,7 @@ public:
     void stopAdv();                                                                     // 停止广播
 
     // --- 工具与状态 ---
+    void sendPingLoop();
     QString getPrimaryIPv4();
     bool bindToRandomPort();                                                            // 绑定 UDP 随机端口
     bool isBlackListedPort(quint16 port);                                               // 端口黑名单检查

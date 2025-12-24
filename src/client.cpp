@@ -233,6 +233,67 @@ void Client::onNewConnection()
                     // 4. 发送
                     tcpSocket->write(packet);
                     LOG_INFO(QString("✅ 发送 0x04 (SLOTINFOJOIN), Size: %1, PID: %2").arg(packet.size()).arg(assignedPid));
+
+                    // --- 构造 0x06 (Host Info) ---
+                    // 告诉客户端：PID=1 的人是主机，名字叫 "War3Bot"
+                    QByteArray hostInfo;
+                    QDataStream pOut(&hostInfo, QIODevice::WriteOnly);
+                    pOut.setByteOrder(QDataStream::LittleEndian);
+
+                    pOut << (quint8)0xF7 << (quint8)0x06; // Header
+                    pOut << (quint16)0; // 长度占位
+
+                    pOut << (quint32)1; // Host PID (通常主机是 1)
+                    pOut << (quint8)1;  // Player Type (1=Host/Player)
+                    pOut << (quint8)0;  // Team (0=Sentinel/Team 1)
+
+                    QByteArray hostName = "War3Bot"; // 主机名字
+                    pOut.writeRawData(hostName.data(), hostName.length());
+                    pOut << (quint8)0;  // 字符串结束符
+
+                    pOut << (quint16)1; // External Port (随便填，不重要)
+                    pOut << (quint32)1; // External IP (随便填，不重要)
+                    pOut << (quint32)0; // Internal IP (0)
+                    pOut << (quint32)0; // Internal IP (0)
+
+                    // 回填长度
+                    QDataStream pLenOut(&hostInfo, QIODevice::ReadWrite);
+                    pLenOut.setByteOrder(QDataStream::LittleEndian);
+                    pLenOut.skipRawData(2);
+                    pLenOut << (quint16)hostInfo.size();
+
+                    tcpSocket->write(hostInfo);
+                    LOG_INFO("👤 发送主机信息 (0x06)");
+
+                    // --- 构造 0x3D (Map Check) ---
+                    QByteArray mapCheck;
+                    QDataStream mOut(&mapCheck, QIODevice::WriteOnly);
+                    mOut.setByteOrder(QDataStream::LittleEndian);
+
+                    mOut << (quint8)0xF7 << (quint8)0x3D; // Header
+                    mOut << (quint16)0; // 长度占位
+
+                    mOut << (quint32)1; // Unknown (1)
+
+                    // 地图路径 (必须和客户端本地路径匹配，或者相对路径)
+                    // 标准 DotA 路径示例
+                    QByteArray mapPath = "Maps\\Download\\DotA v6.83d.w3x";
+                    mOut.writeRawData(mapPath.data(), mapPath.length());
+                    mOut << (quint8)0; // 字符串结束符
+
+                    mOut << (quint32)0; // Map Size (如果你知道真实大小最好填对，不知道填0也行，但这会影响下载逻辑)
+                    mOut << (quint32)0; // Map Info (CRC32等) - 这里填0通常会让客户端显示"未知地图"但能进
+                    mOut << (quint32)0; // Map CRC
+                    mOut << (quint32)0; // Map SHA1 (部分私服协议需要)
+
+                    // 回填长度
+                    QDataStream mLenOut(&mapCheck, QIODevice::ReadWrite);
+                    mLenOut.setByteOrder(QDataStream::LittleEndian);
+                    mLenOut.skipRawData(2);
+                    mLenOut << (quint16)mapCheck.size();
+
+                    tcpSocket->write(mapCheck);
+                    LOG_INFO("🗺️ 发送地图验证请求 (0x3D)");
                 }
                 break;
 
@@ -936,6 +997,21 @@ bool Client::isBlackListedPort(quint16 port)
         22, 53, 3478, 53820, 57289, 57290, 80, 443, 8080, 8443, 3389, 5900, 3306, 5432, 6379, 27017
     };
     return blacklist.contains(port);
+}
+
+void Client::sendPingLoop()
+{
+    // 构造 0x01 Ping 包
+    // F7 01 08 00 [Timestamp(4)]
+    QByteArray pingPacket;
+    QDataStream out(&pingPacket, QIODevice::WriteOnly);
+    out.setByteOrder(QDataStream::LittleEndian);
+    out << (quint8)0xF7 << (quint8)0x01 << (quint16)8;
+    out << (quint32)QDateTime::currentMSecsSinceEpoch();
+
+    for (auto socket : m_tcpSockets) {
+        socket->write(pingPacket);
+    }
 }
 
 QString Client::getPrimaryIPv4() {
