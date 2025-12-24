@@ -1,6 +1,6 @@
 # War3 机器人主机创建房间后地图信息空白调试日志
 
-![x64dbg调试截图](https://github.com/wuxiancong/War3Bot/raw/main/debug/images/War3Dialog1.PNG)
+![x64dbg调试截图](https://github.com/wuxiancong/War3Bot/raw/main/debug/images/War3Dialog_NETERROR_NOGAMESPECIFIED.PNG)
 
 
 ## 问题描述 (Issue Description)
@@ -26,7 +26,7 @@
 
 **断点位置:** `6F575E80` (加入游戏按钮处理函数)
 
-当我们点击加入按钮时，触发了错误弹窗 "You must specify a game to join"。通过反汇编分析，发现是因为获取到的**房间名指针指向了空数据**。
+当我们点击加入按钮时，触发了错误弹窗 "You must specify a game to join."。通过反汇编分析，发现是因为获取到的**房间名指针指向了空数据**。
 
 ```assembly
 6F575E80 | 81EC 04020000            | sub esp,204                                              |

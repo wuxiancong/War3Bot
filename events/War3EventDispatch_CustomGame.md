@@ -79,29 +79,29 @@
 6F5BABF7 | 8B48 08                  | mov ecx,dword ptr ds:[eax+8]                             |
 6F5BABFA | 83F9 17                  | cmp ecx,17                                               |
 6F5BABFD | 0F87 B2010000            | ja game.6F5BADB5                                         |
-6F5BAC03 | FF248D BCAD5B6F          | jmp dword ptr ds:[ecx*4+6F5BADBC]                        | <- 处理分支
+6F5BAC03 | FF248D BCAD5B6F          | jmp dword ptr ds:[ecx*4+6F5BADBC]                        | <--- 处理分支
 6F5BAC0A | 8BCE                     | mov ecx,esi                                              |
-6F5BAC0C | E8 8F70FDFF              | call game.6F591CA0                                       | <- 选择列表
+6F5BAC0C | E8 8F70FDFF              | call game.6F591CA0                                       | <--- 选择列表
 6F5BAC11 | 5E                       | pop esi                                                  |
 6F5BAC12 | C2 0400                  | ret 4                                                    |
-6F5BAC15 | 8BCE                     | mov ecx,esi                                              | <- 键盘输入
+6F5BAC15 | 8BCE                     | mov ecx,esi                                              | <--- 键盘输入
 6F5BAC17 | E8 A472FDFF              | call game.6F591EC0                                       |
 6F5BAC1C | 5E                       | pop esi                                                  |
 6F5BAC1D | C2 0400                  | ret 4                                                    |
-6F5BAC20 | 8BCE                     | mov ecx,esi                                              | <- 创建游戏
+6F5BAC20 | 8BCE                     | mov ecx,esi                                              | <--- 创建游戏
 6F5BAC22 | E8 19D0FDFF              | call game.6F597C40                                       |
 6F5BAC27 | 5E                       | pop esi                                                  |
 6F5BAC28 | C2 0400                  | ret 4                                                    |
-6F5BAC2B | 8BCE                     | mov ecx,esi                                              | <- 装载游戏
+6F5BAC2B | 8BCE                     | mov ecx,esi                                              | <--- 装载游戏
 6F5BAC2D | E8 FECFFDFF              | call game.6F597C30                                       |
 6F5BAC32 | 5E                       | pop esi                                                  |
 6F5BAC33 | C2 0400                  | ret 4                                                    |
-6F5BAC36 | 6A 00                    | push 0                                                   | <- 加入游戏
+6F5BAC36 | 6A 00                    | push 0                                                   | <--- 加入游戏
 6F5BAC38 | 8BCE                     | mov ecx,esi                                              |
 6F5BAC3A | E8 71A3FFFF              | call game.6F5B4FB0                                       |
 6F5BAC3F | 5E                       | pop esi                                                  |
 6F5BAC40 | C2 0400                  | ret 4                                                    |
-6F5BAC43 | 8BCE                     | mov ecx,esi                                              | <- 返回大厅
+6F5BAC43 | 8BCE                     | mov ecx,esi                                              | <--- 返回大厅
 6F5BAC45 | E8 06D0FDFF              | call game.6F597C50                                       |
 6F5BAC4A | 5E                       | pop esi                                                  |
 6F5BAC4B | C2 0400                  | ret 4                                                    |
@@ -109,27 +109,27 @@
 6F5BAC50 | E8 9B40FEFF              | call game.6F59ECF0                                       |
 6F5BAC55 | 5E                       | pop esi                                                  |
 6F5BAC56 | C2 0400                  | ret 4                                                    |
-6F5BAC59 | 8BCE                     | mov ecx,esi                                              | <- 必须选择一个游戏加入
+6F5BAC59 | 8BCE                     | mov ecx,esi                                              | <--- 必须选择一个游戏加入
 6F5BAC5B | E8 30B0FBFF              | call game.6F575C90                                       |
 6F5BAC60 | 5E                       | pop esi                                                  |
 6F5BAC61 | C2 0400                  | ret 4                                                    |
-6F5BAC64 | 8BCE                     | mov ecx,esi                                              | <- 设置过滤
+6F5BAC64 | 8BCE                     | mov ecx,esi                                              | <--- 设置过滤
 6F5BAC66 | E8 35B5FCFF              | call game.6F5861A0                                       |
 6F5BAC6B | 5E                       | pop esi                                                  |
 6F5BAC6C | C2 0400                  | ret 4                                                    |
-6F5BAC6F | 8BCE                     | mov ecx,esi                                              | <- 刷新列表开始
+6F5BAC6F | 8BCE                     | mov ecx,esi                                              | <--- 刷新列表开始
 6F5BAC71 | E8 0A70FDFF              | call game.6F591C80                                       |
 6F5BAC76 | 5E                       | pop esi                                                  |
 6F5BAC77 | C2 0400                  | ret 4                                                    |
-6F5BAC7A | 8BCE                     | mov ecx,esi                                              | <- 设置过滤确认
+6F5BAC7A | 8BCE                     | mov ecx,esi                                              | <--- 设置过滤确认
 6F5BAC7C | E8 DF6FFDFF              | call game.6F591C60                                       |
 6F5BAC81 | 5E                       | pop esi                                                  |
 6F5BAC82 | C2 0400                  | ret 4                                                    |
-6F5BAC85 | 8BCE                     | mov ecx,esi                                              | <- 设置过滤取消
+6F5BAC85 | 8BCE                     | mov ecx,esi                                              | <--- 设置过滤取消
 6F5BAC87 | E8 B4B4FCFF              | call game.6F586140                                       |
 6F5BAC8C | 5E                       | pop esi                                                  |
 6F5BAC8D | C2 0400                  | ret 4                                                    |
-6F5BAC90 | 8BCE                     | mov ecx,esi                                              | <- 搜索游戏名
+6F5BAC90 | 8BCE                     | mov ecx,esi                                              | <--- 搜索游戏名
 6F5BAC92 | E8 B9AFFBFF              | call game.6F575C50                                       |
 6F5BAC97 | 5E                       | pop esi                                                  |
 6F5BAC98 | C2 0400                  | ret 4                                                    |
@@ -138,12 +138,12 @@
 6F5BAC9E | E8 7DE8FFFF              | call game.6F5B9520                                       |
 6F5BACA3 | 5E                       | pop esi                                                  |
 6F5BACA4 | C2 0400                  | ret 4                                                    |
-6F5BACA7 | 50                       | push eax                                                 | <- 获取列表结束 循环填入数据
+6F5BACA7 | 50                       | push eax                                                 | <--- 获取列表结束 循环填入数据
 6F5BACA8 | 8BCE                     | mov ecx,esi                                              |
 6F5BACAA | E8 01B5FCFF              | call game.6F5861B0                                       |
 6F5BACAF | 5E                       | pop esi                                                  |
 6F5BACB0 | C2 0400                  | ret 4                                                    |
-6F5BACB3 | 50                       | push eax                                                 | <- 刷新列表完毕
+6F5BACB3 | 50                       | push eax                                                 | <--- 刷新列表完毕
 6F5BACB4 | 8BCE                     | mov ecx,esi                                              |
 6F5BACB6 | E8 85CEFDFF              | call game.6F597B40                                       |
 6F5BACBB | 5E                       | pop esi                                                  |
@@ -153,17 +153,17 @@
 6F5BACC2 | E8 3972FDFF              | call game.6F591F00                                       |
 6F5BACC7 | 5E                       | pop esi                                                  |
 6F5BACC8 | C2 0400                  | ret 4                                                    |
-6F5BACCB | 50                       | push eax                                                 |
+6F5BACCB | 50                       | push eax                                                 | <--- 弹出对话框 游戏找不到
 6F5BACCC | 8BCE                     | mov ecx,esi                                              |
 6F5BACCE | E8 FDA4FFFF              | call game.6F5B51D0                                       |
 6F5BACD3 | 5E                       | pop esi                                                  |
 6F5BACD4 | C2 0400                  | ret 4                                                    |
-6F5BACD7 | 50                       | push eax                                                 | <- 搜索游戏不存在
+6F5BACD7 | 50                       | push eax                                                 | <--- 搜索游戏不存在
 6F5BACD8 | 8BCE                     | mov ecx,esi                                              |
 6F5BACDA | E8 61A0FFFF              | call game.6F5B4D40                                       |
 6F5BACDF | 5E                       | pop esi                                                  |
 6F5BACE0 | C2 0400                  | ret 4                                                    |
-6F5BACE3 | 8B06                     | mov eax,dword ptr ds:[esi]                               | <- 进入自定义游戏
+6F5BACE3 | 8B06                     | mov eax,dword ptr ds:[esi]                               | <--- 进入自定义游戏
 6F5BACE5 | 8B90 D4000000            | mov edx,dword ptr ds:[eax+D4]                            |
 6F5BACEB | 8BCE                     | mov ecx,esi                                              |
 6F5BACED | FFD2                     | call edx                                                 |
@@ -181,7 +181,7 @@
 6F5BAD13 | B8 01000000              | mov eax,1                                                |
 6F5BAD18 | 5E                       | pop esi                                                  |
 6F5BAD19 | C2 0400                  | ret 4                                                    |
-6F5BAD1C | 6A 01                    | push 1                                                   | <- 获取列表开始 发起网络请求
+6F5BAD1C | 6A 01                    | push 1                                                   | <--- 获取列表开始 发起网络请求
 6F5BAD1E | 8BCE                     | mov ecx,esi                                              |
 6F5BAD20 | E8 4B6EFDFF              | call game.6F591B70                                       |
 6F5BAD25 | 8B8E 04020000            | mov ecx,dword ptr ds:[esi+204]                           |
@@ -193,7 +193,7 @@
 6F5BAD3D | B8 01000000              | mov eax,1                                                |
 6F5BAD42 | 5E                       | pop esi                                                  |
 6F5BAD43 | C2 0400                  | ret 4                                                    |
-6F5BAD46 | 8B06                     | mov eax,dword ptr ds:[esi]                               | <- 画面切换开始
+6F5BAD46 | 8B06                     | mov eax,dword ptr ds:[esi]                               | <--- 画面切换开始
 6F5BAD48 | 8B90 D0000000            | mov edx,dword ptr ds:[eax+D0]                            |
 6F5BAD4E | 8BCE                     | mov ecx,esi                                              |
 6F5BAD50 | FFD2                     | call edx                                                 |
@@ -202,7 +202,7 @@
 6F5BAD59 | B8 01000000              | mov eax,1                                                |
 6F5BAD5E | 5E                       | pop esi                                                  |
 6F5BAD5F | C2 0400                  | ret 4                                                    |
-6F5BAD62 | 830D 18A4A96F 01         | or dword ptr ds:[6FA9A418],1                             | <- 画面切换完毕
+6F5BAD62 | 830D 18A4A96F 01         | or dword ptr ds:[6FA9A418],1                             | <--- 画面切换完毕
 6F5BAD69 | 8B86 44020000            | mov eax,dword ptr ds:[esi+244]                           |
 6F5BAD6F | 83F8 FE                  | cmp eax,FFFFFFFE                                         |
 6F5BAD72 | 8B8E 68010000            | mov ecx,dword ptr ds:[esi+168]                           |
