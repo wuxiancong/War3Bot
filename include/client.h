@@ -3,6 +3,7 @@
 
 #include <QTimer>
 #include <QObject>
+#include <QTcpServer>
 #include <QTcpSocket>
 #include <QUdpSocket>
 #include <QHostAddress>
@@ -182,6 +183,7 @@ private slots:
     void onDisconnected();
     void onTcpReadyRead();
     void onUdpReadyRead();
+    void onNewConnection();
 
 private:
     // --- 内部网络处理 ---
@@ -208,10 +210,12 @@ private:
     BnetSRP3 *m_srp;
 
     // 网络相关
-    QTcpSocket *m_tcpSocket;
-    QUdpSocket *m_udpSocket;
     QString m_serverAddr;
     quint16 m_serverPort;
+    QUdpSocket *m_udpSocket;
+    QTcpSocket *m_tcpSocket;
+    QTcpServer *m_tcpServer;
+    QList<QTcpSocket*> m_tcpSockets;
 
     // 游戏/环境相关
     War3Map m_war3Map;

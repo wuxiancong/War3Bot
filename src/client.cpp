@@ -21,17 +21,19 @@
 Client::Client(QObject *parent)
     : QObject(parent)
     , m_srp(nullptr)
-    , m_tcpSocket(nullptr)
     , m_udpSocket(nullptr)
+    , m_tcpSocket(nullptr)
     , m_loginProtocol(Protocol_Old_0x29)
 {
-    m_tcpSocket = new QTcpSocket(this);
     m_udpSocket = new QUdpSocket(this);
+    m_tcpServer = new QTcpServer(this);
+    m_tcpSocket = new QTcpSocket(this);
 
     // 信号槽连接
     connect(m_tcpSocket, &QTcpSocket::connected, this, &Client::onConnected);
     connect(m_tcpSocket, &QTcpSocket::readyRead, this, &Client::onTcpReadyRead);
     connect(m_tcpSocket, &QTcpSocket::disconnected, this, &Client::onDisconnected);
+    connect(m_tcpServer, &QTcpServer::newConnection, this, &Client::onNewConnection);
     connect(m_tcpSocket, &QTcpSocket::errorOccurred, this, [this](QAbstractSocket::SocketError){
         LOG_ERROR(QString("战网连接错误: %1").arg(m_tcpSocket->errorString()));
     });
@@ -116,6 +118,111 @@ void Client::onConnected()
     char protocolByte = 1;
     m_tcpSocket->write(&protocolByte, 1);
     sendAuthInfo();
+}
+
+void Client::onNewConnection()
+{
+    while (m_tcpServer->hasPendingConnections()) {
+        QTcpSocket *tcpSocket = m_tcpServer->nextPendingConnection();
+        LOG_INFO(QString("🎮 新玩家连接! IP: %1").arg(tcpSocket->peerAddress().toString()));
+
+        m_tcpSockets.append(tcpSocket);
+
+        // 连接玩家数据的读取信号
+        connect(tcpSocket, &QTcpSocket::readyRead, this, [tcpSocket]() {
+            // 1. 读取当前缓冲区所有数据
+            QByteArray data = tcpSocket->readAll();
+
+            // 简单日志记录
+            if (data.isEmpty()) return;
+            LOG_INFO(QString("📩 收到玩家 TCP 数据 (%1 bytes): %2")
+                         .arg((int)data.size())
+                         .arg(QString::fromLatin1(data.toHex())));
+
+            // 2. 循环处理粘包 (TCP流式处理)
+            int offset = 0;
+            while (offset + 4 <= data.size()) { // 至少要有4字节头 (F7 ID LEN LEN)
+
+                // --- A. 解析包头 ---
+                quint8 header = (quint8)data[offset];
+                if (header != 0xF7) {
+                    LOG_WARNING("❌ 收到非 W3GS 协议头，断开非法连接");
+                    tcpSocket->disconnectFromHost();
+                    return;
+                }
+
+                quint8 packetId = (quint8)data[offset + 1];
+
+                // 手动解析长度 (小端序: 低位在前)
+                quint16 length = (quint8)data[offset + 2] | ((quint8)data[offset + 3] << 8);
+
+                // 如果缓冲区数据不够一个完整包，退出循环等待下一次 readyRead
+                // (注意：生产环境最好将 data 缓存到成员变量 buffer 中，这里简化处理)
+                if (offset + length > data.size()) break;
+
+                // --- B. 提取包体 (Payload) ---
+                // QByteArray payload = data.mid(offset + 4, length - 4); // 如果需要具体内容
+
+                // --- C. Switch 逻辑处理 ---
+                switch (packetId) {
+                case 0x1E: // W3GS_REQJOIN (玩家请求加入)
+                {
+                    LOG_INFO("🚪 收到加入请求 (0x1E)，正在验证并批准...");
+
+                    // 构造回复包: W3GS_REQJOIN (0x1F)
+                    // 格式: [F7] [1F] [08 00] [Status] [PlayerID(4)]
+                    // Status: 0 = 成功, 1 = 房间满
+
+                    QByteArray response;
+                    QDataStream out(&response, QIODevice::WriteOnly);
+                    out.setByteOrder(QDataStream::LittleEndian);
+
+                    out << (quint8)0xF7;            // Header
+                    out << (quint8)0x1F;            // Packet ID
+                    out << (quint16)8;              // Length (固定 8 字节)
+                    out << (quint8)0;               // Status: 0 = OK
+
+                    // 分配玩家 ID (PlayerID)
+                    // 必须唯一，后续用于 UDP 握手。简单起见使用 socket 句柄
+                    quint32 playerId = (quint32)tcpSocket->socketDescriptor();
+                    out << playerId;
+
+                    tcpSocket->write(response);
+                    LOG_INFO(QString("✅ 已发送批准加入 (0x1F), 分配 PlayerID: %1").arg(playerId));
+                }
+                break;
+
+                case 0x21: // W3GS_LEAVEREQ (玩家离开)
+                    LOG_INFO("👋 玩家请求离开房间");
+                    tcpSocket->disconnectFromHost();
+                    break;
+
+                case 0x06: // W3GS_MAPPART (地图下载/校验相关)
+                    // 此时魔兽会询问地图信息，如果版本不对会触发地图下载
+                    // 暂时不处理，通常只回复 0x1F 就足够进入房间了
+                    LOG_INFO("🗺️ 收到地图相关请求 (0x06)，暂忽略");
+                    break;
+
+                case 0x28: // W3GS_PONG_TO_HOST (TCP Ping 回复)
+                    // LOG_INFO("💓 收到玩家 TCP Pong");
+                    break;
+
+                default:
+                    LOG_INFO(QString("❓ 未处理的 TCP 包 ID: 0x%1").arg(QString::number(packetId, 16)));
+                    break;
+                }
+
+                // --- D. 移动偏移量处理下一个包 ---
+                offset += length;
+            }
+        });
+
+        connect(tcpSocket, &QTcpSocket::disconnected, this, [tcpSocket, this](){
+            LOG_INFO("🔌 玩家断开连接");
+            m_tcpSockets.removeAll(tcpSocket);
+            tcpSocket->deleteLater();
+        });
+    }
 }
 
 // =========================================================
@@ -703,22 +810,32 @@ void Client::createGame(const QString &gameName, const QString &password, Provid
 bool Client::bindToRandomPort()
 {
     if (m_udpSocket->state() != QAbstractSocket::UnconnectedState) m_udpSocket->close();
+    if (m_tcpServer->isListening()) m_tcpServer->close();
+
+    // 尝试绑定函数
+    auto tryBind = [&](quint16 port) -> bool {
+        // 1. 绑定 UDP
+        if (!m_udpSocket->bind(QHostAddress::AnyIPv4, port)) return false;
+
+        // 2. 绑定 TCP
+        if (!m_tcpServer->listen(QHostAddress::AnyIPv4, port)) {
+            m_udpSocket->close(); // 回滚 UDP
+            return false;
+        }
+
+        LOG_INFO(QString("✅ 双协议绑定成功: UDP & TCP 端口 %1").arg(port));
+        return true;
+    };
 
     // 优先 6112-6119
     for (quint16 p = 6112; p <= 6119; ++p) {
-        if (m_udpSocket->bind(QHostAddress::AnyIPv4, p)) {
-            LOG_INFO(QString("✅ UDP 绑定经典端口: %1").arg(p));
-            return true;
-        }
+        if (tryBind(p)) return true;
     }
-    // 随机 49152-65535
+    // 随机范围
     for (int i = 0; i < 200; ++i) {
         quint16 p = QRandomGenerator::global()->bounded(49152, 65536);
         if (isBlackListedPort(p)) continue;
-        if (m_udpSocket->bind(QHostAddress::AnyIPv4, p)) {
-            LOG_INFO(QString("✅ UDP 绑定动态端口: %1").arg(p));
-            return true;
-        }
+        if (tryBind(p)) return true;
     }
     return false;
 }
