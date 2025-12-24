@@ -1,6 +1,5 @@
 # Game.dll + 591CA0 - 房间列表项选中处理函数 (Select Room List Item)
 
-**文件**: `Gamedll_591CA0_Select_Room_List_Item.md`
 **功能**: 当用户在自定义游戏列表（ListBox）中点击选中某个房间时触发。该函数负责读取选中项的关联数据，解析 StatString，并刷新右侧的详细信息面板（地图预览、创建者、时长等）。
 
 ## 1. 核心逻辑流程

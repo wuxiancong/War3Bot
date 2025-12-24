@@ -229,6 +229,7 @@
 6F591EAF | 81C4 60010000            | add esp,160                                              |
 6F591EB5 | C3                       | ret                                                      |
 ```
+关于此函数的详细信息请跳转到 [Gamedll_591CA0_Select_Room_List_Item.md](https://github.com/wuxiancong/War3Bot/blob/main/details/1.26/Gamedll_591CA0_Select_Room_List_Item.md)
 
 **被跳过的 UI 更新逻辑 (因为跳转导致未执行):**
 
