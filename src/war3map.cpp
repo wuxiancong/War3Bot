@@ -310,6 +310,7 @@ QByteArray War3Map::getEncodedStatString(const QString &hostName, const QString 
     QDataStream out(&rawData, QIODevice::WriteOnly);
     out.setByteOrder(QDataStream::LittleEndian);
 
+    // 1. Map Flags
     QByteArray gameFlagsBytes = getMapGameFlags();
     quint32 gameFlagsInt;
     QDataStream ds(gameFlagsBytes);
@@ -324,14 +325,23 @@ QByteArray War3Map::getEncodedStatString(const QString &hostName, const QString 
     out.writeRawData(m_mapHeight.constData(), 2);
     out.writeRawData(m_mapCRC.constData(), 4);
 
+    // 2. Map Path
     QString finalPath = netPathOverride.isEmpty() ?
                             "Maps\\Download\\" + QFileInfo(m_mapPath).fileName() : netPathOverride;
     finalPath = finalPath.replace("/", "\\");
 
     out.writeRawData(finalPath.toLocal8Bit().constData(), finalPath.toLocal8Bit().size());
-    out << (quint8)0;
+    out << (quint8)0; // Map Path Terminator
+
+    // 3. Host Name
     out.writeRawData(hostName.toUtf8().constData(), hostName.toUtf8().size());
+    out << (quint8)0; // Host Name Terminator
+
+    // 4. Map Unknown
+    // 根据协议：(UINT8) Map unknown (possibly a STRING with just the null terminator)
     out << (quint8)0;
+
+    // 5. Map SHA1
     out.writeRawData(m_mapSHA1.constData(), 20);
 
     QByteArray encoded = encodeStatString(rawData);
