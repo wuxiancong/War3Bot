@@ -1,5 +1,7 @@
 # Game.dll + 591CA0 - 房间列表项选中处理函数 (Select Room List Item)
 
+![x64dbg调试截图](https://github.com/wuxiancong/War3Bot/blob/main/details/images/BattleNetCustomJoinPanel.PNG)
+
 **功能**: 当用户在自定义游戏列表（ListBox）中点击选中某个房间时触发。该函数负责读取选中项的关联数据，解析 StatString，并刷新右侧的详细信息面板（地图预览、创建者、时长等）。
 
 ## 1. 核心逻辑流程
