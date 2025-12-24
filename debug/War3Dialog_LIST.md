@@ -254,6 +254,8 @@
 
 **断点位置:** `6F5BE710` (解析 Game State String 的函数)
 
+### 3.2 解析函数入口 (`6F5BE710`)
+
 ```assembly
 6F5BE710 | 56                       | push esi                                                 |
 6F5BE711 | 8BF1                     | mov esi,ecx                                              |
@@ -274,7 +276,7 @@
 6F5BE737 | C3                       | ret                                                      |
 ```
 
-### 3.1 解析函数入口 (`6F654510`)
+### 3.2 主要解析函数 (`6F654510`)
 
 这个函数接收一个指向 StatString 数据的指针，并尝试提取出地图路径、创建者、游戏设置等信息。
 
@@ -440,3 +442,54 @@
 **逻辑含义：**
 > "我已经读完了所有定义的字段（地图名、创建者、参数等），现在的读取指针**必须**正好停在缓冲区的末尾。如果还有剩余数据没读，或者读过头了，说明数据格式错误！"
 
+### 4 故障根本原因 (Root Cause Analysis)
+
+在地址 `6F654672` 处，游戏进行了一次**数据流完整性检查 (Stream Integrity Check)**。
+逻辑是：`CurrentReadPointer == EndOfStreamPointer`。
+
+**现象:**
+调试发现，在 Bot 创建的房间中，`CurrentReadPointer` 比 `EndOfStreamPointer` **少了一个字节** (或者由于编码错位导致指针未对齐)。
+
+**数据包对比分析:**
+通过对比正常数据包 (Block A) 和异常数据包 (Block B) 的 HEX 数据：
+
+*   **Block A (正常):** `... [HostName] [00] [00] [SHA1] ...`
+*   **Block B (异常):** `... [HostName] [00] [SHA1] ...`
+
+**缺失的字节:**
+协议规定在 `Host Name` 的结束符 `00` 之后，必须跟随一个 `(UINT8) Map Unknown` 字段（通常为 `00`，作为分隔符）。
+由于我们的代码中缺失了这个字节：
+1.  **原始数据层:** 少了一个 `00`。
+2.  **编码层 (StatString):** 魔兽的编码算法会压缩连续的 `00`。由于缺失该字节，导致编码后的掩码字节 (Mask Byte) 发生变化（`01` 变为 `2F`），进而导致整个后续数据（SHA1及之后的乱码）**前移错位**。
+3.  **解码层 (Game.dll):** 游戏解码后，读取完所有定义字段，发现**读取指针没有走到预期的末尾**（或者读取错位），触发 `jne` 错误跳转，判定数据包非法。
+
+---
+
+## 5. 解决方案 (Solution)
+
+在生成 StatString 的代码中，于主机名（HostName）写入之后、SHA1 哈希写入之前，补上缺失的 `Map Unknown` 分隔符字节。
+
+**修正后的 C++ 代码:**
+
+```cpp
+QByteArray War3Map::getEncodedStatString(const QString &hostName, const QString &netPathOverride)
+{
+    // ... (前序代码: Flags, Width, Height, CRC, MapPath)
+
+    // 写入主机名
+    out.writeRawData(hostName.toUtf8().constData(), hostName.toUtf8().size());
+    out << (quint8)0; // Host Name Terminator (字符串结束符)
+
+    // 【修复】添加协议要求的额外分隔符 (Map Unknown / Second Null Byte)
+    out << (quint8)0; // <--- 补齐缺失的字节
+
+    // 写入 SHA1
+    out.writeRawData(m_mapSHA1.constData(), 20);
+
+    QByteArray encoded = encodeStatString(rawData);
+    return encoded;
+}
+```
+
+**修复结果:**
+添加该字节后，StatString 长度增加，内部编码对齐恢复。`6F5BE710` 校验通过，右侧面板成功显示地图信息，"加入游戏"功能恢复正常。
