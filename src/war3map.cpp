@@ -332,6 +332,7 @@ QByteArray War3Map::getEncodedStatString(const QString &hostName, const QString 
     out << (quint8)0;
     out.writeRawData(hostName.toUtf8().constData(), hostName.toUtf8().size());
     out << (quint8)0;
+    out << (quint8)0;
     out.writeRawData(m_mapSHA1.constData(), 20);
 
     QByteArray encoded = encodeStatString(rawData);
