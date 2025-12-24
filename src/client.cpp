@@ -664,22 +664,6 @@ void Client::createGame(const QString &gameName, const QString &password, Provid
         return;
     }
 
-    m_hostCounter++;
-
-    QByteArray finalStatString;
-
-    // 1. 写入空闲槽位标识
-    finalStatString.append('9');
-
-    // 2. 写入反转的 Host Counter Hex 字符串
-    QString hexCounter = QString("%1").arg(m_hostCounter, 8, 16, QChar('0'));
-    for(int i = hexCounter.length() - 1; i >= 0; i--) {
-        finalStatString.append(hexCounter[i].toLatin1());
-    }
-
-    // 3. 追加编码后的地图数据
-    finalStatString.append(encodedData);
-
     QByteArray payload;
     QDataStream out(&payload, QIODevice::WriteOnly);
     out.setByteOrder(QDataStream::LittleEndian);
@@ -690,7 +674,7 @@ void Client::createGame(const QString &gameName, const QString &password, Provid
         << (quint32)providerVersion << (quint32)ladderType;
     out.writeRawData(gameName.toUtf8().constData(), gameName.toUtf8().size()); out << (quint8)0;
     out.writeRawData(password.toUtf8().constData(), password.toUtf8().size()); out << (quint8)0;
-    out.writeRawData(finalStatString.constData(), finalStatString.size()); out << (quint8)0;
+    out.writeRawData(encodedData.constData(), encodedData.size()); out << (quint8)0;
 
     sendPacket(SID_STARTADVEX3, payload);
     LOG_INFO("📤 房间创建请求发送完毕");
