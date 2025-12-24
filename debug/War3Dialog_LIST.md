@@ -1,31 +1,31 @@
-# War3 »úÆ÷ÈËÖ÷»ú´´½¨·¿¼äºóµØÍ¼ÐÅÏ¢¿Õ°×µ÷ÊÔÈÕÖ¾
-# You must specify a game to join
-![x64dbgµ÷ÊÔ½ØÍ¼](https://github.com/wuxiancong/War3Bot/raw/main/debug/images/War3Dialog1.PNG)
+# War3 æœºå™¨äººä¸»æœºåˆ›å»ºæˆ¿é—´åŽåœ°å›¾ä¿¡æ¯ç©ºç™½è°ƒè¯•æ—¥å¿—
 
-## ÎÊÌâÃèÊö (Issue Description)
+![x64dbgè°ƒè¯•æˆªå›¾](https://github.com/wuxiancong/War3Bot/raw/main/debug/images/War3Dialog1.PNG)
 
-ÔÚÊ¹ÓÃ×Ô¶¨Òå»úÆ÷ÈË£¨»òÍ¨¹ý Bot ´úÀíµÄÕæÈËÍæ¼Ò£©ÔÚ PVPGN ·þÎñ¶Ë´´½¨·¿¼äÊ±£º
-1.  ·¿¼ä¿ÉÒÔÕý³£ÏÔÊ¾ÔÚÓÎÏ·ÁÐ±íÖÐ¡£
-2.  **ÓÒ²àÃæ°å£¨µØÍ¼ÐÅÏ¢/Mappanel£©ÏÔÊ¾Îª¿Õ°×¡£**
-3.  ³¢ÊÔµã»÷¡°¼ÓÈëÓÎÏ·¡±Ê±£¬¿Í»§¶Ëµ¯³ö´íÎóÌáÊ¾£º**"You must specify a game to join."** (Äã±ØÐëÖ¸¶¨Ò»¸öÒª¼ÓÈëµÄÓÎÏ·)¡£
+## é—®é¢˜æè¿° (Issue Description)
 
-**»·¾³ (Environment):**
-- **¿Í»§¶Ë:** Warcraft III (1.26a / Game.dll)
-- **·þÎñ¶Ë:** PVPGN (C++)
-- **µ÷ÊÔ¹¤¾ß:** x64dbg
-- **»ùµØÖ·:** 6F000000
-- **¹Ø¼üº¯ÊýµØÖ·:** 
-    - ¼ÓÈë°´Å¥Âß¼­: `Game.dll + 575E80`
-    - ÁÐ±íÑ¡ÖÐÂß¼­: `Game.dll + 591CA0`
-    - ×´Ì¬½âÎöÂß¼­: `Game.dll + 5BE710`
+åœ¨ä½¿ç”¨è‡ªå®šä¹‰æœºå™¨äººï¼ˆæˆ–é€šè¿‡ Bot ä»£ç†çš„çœŸäººçŽ©å®¶ï¼‰åœ¨ PVPGN æœåŠ¡ç«¯åˆ›å»ºæˆ¿é—´æ—¶ï¼š
+1.  æˆ¿é—´å¯ä»¥æ­£å¸¸æ˜¾ç¤ºåœ¨æ¸¸æˆåˆ—è¡¨ä¸­ã€‚
+2.  **å³ä¾§é¢æ¿ï¼ˆåœ°å›¾ä¿¡æ¯/Mappanelï¼‰æ˜¾ç¤ºä¸ºç©ºç™½ã€‚**
+3.  å°è¯•ç‚¹å‡»â€œåŠ å…¥æ¸¸æˆâ€æ—¶ï¼Œå®¢æˆ·ç«¯å¼¹å‡ºé”™è¯¯æç¤ºï¼š**"You must specify a game to join."** (ä½ å¿…é¡»æŒ‡å®šä¸€ä¸ªè¦åŠ å…¥çš„æ¸¸æˆ)ã€‚
+
+**çŽ¯å¢ƒ (Environment):**
+- **å®¢æˆ·ç«¯:** Warcraft III (1.26a / Game.dll)
+- **æœåŠ¡ç«¯:** PVPGN (C++)
+- **è°ƒè¯•å·¥å…·:** x64dbg
+- **åŸºåœ°å€:** 6F000000
+- **å…³é”®å‡½æ•°åœ°å€:** 
+    - åŠ å…¥æŒ‰é’®é€»è¾‘: `Game.dll + 575E80`
+    - åˆ—è¡¨é€‰ä¸­é€»è¾‘: `Game.dll + 591CA0`
+    - çŠ¶æ€è§£æžé€»è¾‘: `Game.dll + 5BE710`
 
 ---
 
-## 1. ÄæÏò·ÖÎö£ºÎªºÎµã»÷¡°¼ÓÈëÓÎÏ·¡±±¨´í£¿
+## 1. é€†å‘åˆ†æžï¼šä¸ºä½•ç‚¹å‡»â€œåŠ å…¥æ¸¸æˆâ€æŠ¥é”™ï¼Ÿ
 
-**¶ÏµãÎ»ÖÃ:** `6F575E80` (¼ÓÈëÓÎÏ·°´Å¥´¦Àíº¯Êý)
+**æ–­ç‚¹ä½ç½®:** `6F575E80` (åŠ å…¥æ¸¸æˆæŒ‰é’®å¤„ç†å‡½æ•°)
 
-µ±ÎÒÃÇµã»÷¼ÓÈë°´Å¥Ê±£¬´¥·¢ÁË´íÎóµ¯´° "You must specify a game to join"¡£Í¨¹ý·´»ã±à·ÖÎö£¬·¢ÏÖÊÇÒòÎª»ñÈ¡µ½µÄ**·¿¼äÃûÖ¸ÕëÖ¸ÏòÁË¿ÕÊý¾Ý**¡£
+å½“æˆ‘ä»¬ç‚¹å‡»åŠ å…¥æŒ‰é’®æ—¶ï¼Œè§¦å‘äº†é”™è¯¯å¼¹çª— "You must specify a game to join"ã€‚é€šè¿‡åæ±‡ç¼–åˆ†æžï¼Œå‘çŽ°æ˜¯å› ä¸ºèŽ·å–åˆ°çš„**æˆ¿é—´åæŒ‡é’ˆæŒ‡å‘äº†ç©ºæ•°æ®**ã€‚
 
 ```assembly
 6F575E80 | 81EC 04020000            | sub esp,204                                              |
@@ -35,11 +35,11 @@
 6F575E94 | 56                       | push esi                                                 |
 6F575E95 | 8BF1                     | mov esi,ecx                                              |
 6F575E97 | 8B8E 04020000            | mov ecx,dword ptr ds:[esi+204]                           |
-6F575E9D | E8 FEDF0900              | call game.6F613EA0                                       | <--- GetSelectedGameName() - ³¢ÊÔ»ñÈ¡Ñ¡ÖÐ·¿¼äµÄÐÅÏ¢
-6F575EA2 | 85C0                     | test eax,eax                                             | <--- ¼ì²é·µ»ØµÄÖ¸ÕëÊÇ·ñÎª NULL
-6F575EA4 | 74 20                    | je game.6F575EC6                                         | <--- Èç¹ûÎª NULL£¬Ìø×ªµ½´íÎó´¦Àí
-6F575EA6 | 8038 00                  | cmp byte ptr ds:[eax],0                                  | <--- ¼ì²é×Ö·û´®³¤¶È¡£´Ë´¦ EAX Ö¸Ïò 00 (¿Õ×Ö·û´®)
-6F575EA9 | 74 1B                    | je game.6F575EC6                                         | <--- ÅÐ¶¨Îª¿Õ£¬Ìø×ªµ½±¨´íÂß¼­
+6F575E9D | E8 FEDF0900              | call game.6F613EA0                                       | <--- GetSelectedGameName() - å°è¯•èŽ·å–é€‰ä¸­æˆ¿é—´çš„ä¿¡æ¯
+6F575EA2 | 85C0                     | test eax,eax                                             | <--- æ£€æŸ¥è¿”å›žçš„æŒ‡é’ˆæ˜¯å¦ä¸º NULL
+6F575EA4 | 74 20                    | je game.6F575EC6                                         | <--- å¦‚æžœä¸º NULLï¼Œè·³è½¬åˆ°é”™è¯¯å¤„ç†
+6F575EA6 | 8038 00                  | cmp byte ptr ds:[eax],0                                  | <--- æ£€æŸ¥å­—ç¬¦ä¸²é•¿åº¦ã€‚æ­¤å¤„ EAX æŒ‡å‘ 00 (ç©ºå­—ç¬¦ä¸²)
+6F575EA9 | 74 1B                    | je game.6F575EC6                                         | <--- åˆ¤å®šä¸ºç©ºï¼Œè·³è½¬åˆ°æŠ¥é”™é€»è¾‘
 6F575EAB | B8 01000000              | mov eax,1                                                |
 6F575EB0 | 5E                       | pop esi                                                  |
 6F575EB1 | 8B8C24 00020000          | mov ecx,dword ptr ss:[esp+200]                           |
@@ -49,8 +49,8 @@
 6F575EC5 | C3                       | ret                                                      |
 6F575EC6 | 68 00020000              | push 200                                                 |
 6F575ECB | 8D5424 08                | lea edx,dword ptr ss:[esp+8]                             |
-6F575ECF | B9 2814966F              | mov ecx,game.6F961428                                    | <--- ¼ÓÔØ´íÎó´úÂë "NETERROR_NOGAMESPECIFIED"
-6F575ED4 | E8 77370500              | call game.6F5C9650                                       | <--- ×ª»»ÎªÎÄ±¾ "You must specify a game to join"
+6F575ECF | B9 2814966F              | mov ecx,game.6F961428                                    | <--- åŠ è½½é”™è¯¯ä»£ç  "NETERROR_NOGAMESPECIFIED"
+6F575ED4 | E8 77370500              | call game.6F5C9650                                       | <--- è½¬æ¢ä¸ºæ–‡æœ¬ "You must specify a game to join"
 6F575ED9 | 6A 01                    | push 1                                                   |
 6F575EDB | 6A 04                    | push 4                                                   |
 6F575EDD | 6A 00                    | push 0                                                   |
@@ -58,7 +58,7 @@
 6F575EE0 | 6A 09                    | push 9                                                   |
 6F575EE2 | 8D5424 18                | lea edx,dword ptr ss:[esp+18]                            |
 6F575EE6 | B9 01000000              | mov ecx,1                                                |
-6F575EEB | E8 C06FFEFF              | call game.6F55CEB0                                       | <--- µ¯³ö MessageBox
+6F575EEB | E8 C06FFEFF              | call game.6F55CEB0                                       | <--- å¼¹å‡º MessageBox
 6F575EF0 | 8B86 04020000            | mov eax,dword ptr ds:[esi+204]                           |
 6F575EF6 | 8B8C24 04020000          | mov ecx,dword ptr ss:[esp+204]                           |
 6F575EFD | 8986 FC010000            | mov dword ptr ds:[esi+1FC],eax                           |
@@ -71,21 +71,21 @@
 6F575E80 | sub esp, 204
 ```
 
-**»ñÈ¡·¿¼äÃûÖ¸ÕëµÄµ×²ãº¯Êý:**
+**èŽ·å–æˆ¿é—´åæŒ‡é’ˆçš„åº•å±‚å‡½æ•°:**
 ```assembly
-6F613EA0 | 8B81 E4010000            | mov eax,dword ptr ds:[ecx+1E4]                           | <--- ·µ»Ø±£´æµÄ·¿¼äÃûÖ¸Õë
+6F613EA0 | 8B81 E4010000            | mov eax,dword ptr ds:[ecx+1E4]                           | <--- è¿”å›žä¿å­˜çš„æˆ¿é—´åæŒ‡é’ˆ
 6F613EA6 | C3                       | ret                                                      |
 ```
-**·ÖÎö½áÂÛ:** 
-ËäÈ» UI ÁÐ±íÉÏ»­³öÁË "bot" ÕâÐÐ×Ö£¬µ«Æä±³ºóµÄÂß¼­Êý¾Ý£¨GameInfo£©²¢Ã»ÓÐ±»ÕýÈ·¹ØÁª¡£`6F613EA0` ·µ»ØÁËÒ»¸öÖ¸Ïò `00` µÄÎÞÐ§Ö¸Õë£¬µ¼ÖÂ¿Í»§¶ËÈÏÎªÓÃ»§Ã»ÓÐÑ¡ÔñÈÎºÎÓÐÐ§µÄÓÎÏ·¡£
+**åˆ†æžç»“è®º:** 
+è™½ç„¶ UI åˆ—è¡¨ä¸Šç”»å‡ºäº† "bot" è¿™è¡Œå­—ï¼Œä½†å…¶èƒŒåŽçš„é€»è¾‘æ•°æ®ï¼ˆGameInfoï¼‰å¹¶æ²¡æœ‰è¢«æ­£ç¡®å…³è”ã€‚`6F613EA0` è¿”å›žäº†ä¸€ä¸ªæŒ‡å‘ `00` çš„æ— æ•ˆæŒ‡é’ˆï¼Œå¯¼è‡´å®¢æˆ·ç«¯è®¤ä¸ºç”¨æˆ·æ²¡æœ‰é€‰æ‹©ä»»ä½•æœ‰æ•ˆçš„æ¸¸æˆã€‚
 
 ---
 
-## 2. ÄæÏò·ÖÎö£ºÎªºÎÓÒ²àÃæ°å¿Õ°×£¿(UI Ë¢ÐÂÂß¼­)
+## 2. é€†å‘åˆ†æžï¼šä¸ºä½•å³ä¾§é¢æ¿ç©ºç™½ï¼Ÿ(UI åˆ·æ–°é€»è¾‘)
 
-**¶ÏµãÎ»ÖÃ:** `6F591CA0` (ÁÐ±íÏîÑ¡ÖÐ/Ë¢ÐÂ´¦Àíº¯Êý)
+**æ–­ç‚¹ä½ç½®:** `6F591CA0` (åˆ—è¡¨é¡¹é€‰ä¸­/åˆ·æ–°å¤„ç†å‡½æ•°)
 
-ÎªÁË¸ãÇå³þÎªºÎÊý¾ÝÊÇ¿ÕµÄ£¬ÎÒÃÇ×·×ÙÁË**µ±Ñ¡ÖÐÁÐ±íÏîÊ±**µÄÂß¼­¡£ÕâÀï½ÒÊ¾ÁËÎªºÎ **[test] (ÕæÈË)** ÄÜÏÔÊ¾£¬¶ø **[bot] (»úÆ÷ÈË)** ²»ÏÔÊ¾¡£
+ä¸ºäº†æžæ¸…æ¥šä¸ºä½•æ•°æ®æ˜¯ç©ºçš„ï¼Œæˆ‘ä»¬è¿½è¸ªäº†**å½“é€‰ä¸­åˆ—è¡¨é¡¹æ—¶**çš„é€»è¾‘ã€‚è¿™é‡Œæ­ç¤ºäº†ä¸ºä½• **[test] (çœŸäºº)** èƒ½æ˜¾ç¤ºï¼Œè€Œ **[bot] (æœºå™¨äºº)** ä¸æ˜¾ç¤ºã€‚
 
 ```assembly
 6F591CA0 | 81EC 60010000            | sub esp,160                                              |
@@ -104,19 +104,19 @@
 6F591CCC | 8BCE                     | mov ecx,esi                                              |
 6F591CCE | E8 9D45FFFF              | call game.6F586270                                       |
 6F591CD3 | 8B8E 08020000            | mov ecx,dword ptr ds:[esi+208]                           |
-6F591CD9 | E8 22C0FCFF              | call game.6F55DD00                                       | <--- GetItemData() »ñÈ¡Ñ¡ÖÐÏî¹ØÁªµÄ Struct
-6F591CDE | 8BF8                     | mov edi,eax                                              | <--- EDI = ·¿¼äÊý¾ÝÖ¸Õë
+6F591CD9 | E8 22C0FCFF              | call game.6F55DD00                                       | <--- GetItemData() èŽ·å–é€‰ä¸­é¡¹å…³è”çš„ Struct
+6F591CDE | 8BF8                     | mov edi,eax                                              | <--- EDI = æˆ¿é—´æ•°æ®æŒ‡é’ˆ
 6F591CE0 | 3BFB                     | cmp edi,ebx                                              |
 6F591CE2 | 0F84 B1010000            | je game.6F591E99                                         |
-6F591CE8 | 8D57 0C                  | lea edx,dword ptr ds:[edi+C]                             | <--- EDX = Ö¸Ïò·¿¼äÃû "bot"
-6F591CEB | 8D4C24 24                | lea ecx,dword ptr ss:[esp+24]                            | <--- ECX = Õ»ÉÏµÄÁÙÊ±»º³åÇø
+6F591CE8 | 8D57 0C                  | lea edx,dword ptr ds:[edi+C]                             | <--- EDX = æŒ‡å‘æˆ¿é—´å "bot"
+6F591CEB | 8D4C24 24                | lea ecx,dword ptr ss:[esp+24]                            | <--- ECX = æ ˆä¸Šçš„ä¸´æ—¶ç¼“å†²åŒº
 6F591CEF | 885C24 24                | mov byte ptr ss:[esp+24],bl                              |
 6F591CF3 | 885C24 44                | mov byte ptr ss:[esp+44],bl                              |
 6F591CF7 | 885C24 78                | mov byte ptr ss:[esp+78],bl                              |
 6F591CFB | 889C24 AE000000          | mov byte ptr ss:[esp+AE],bl                              |
-6F591D02 | E8 09CA0200              | call game.6F5BE710                                       | <--- ParseStatString() ½âÎöµØÍ¼ÐÅÏ¢
-6F591D07 | 85C0                     | test eax,eax                                             | <--- ¼ì²é½âÎö½á¹û (1=³É¹¦, 0=Ê§°Ü)
-6F591D09 | 0F84 8A010000            | je game.6F591E99                                         | <--- Èç¹û½âÎöÊ§°Ü£¬Ö±½ÓÌø¹ýÏÂ·½ËùÓÐ UI ¸üÐÂ´úÂë£¡
+6F591D02 | E8 09CA0200              | call game.6F5BE710                                       | <--- ParseStatString() è§£æžåœ°å›¾ä¿¡æ¯
+6F591D07 | 85C0                     | test eax,eax                                             | <--- æ£€æŸ¥è§£æžç»“æžœ (1=æˆåŠŸ, 0=å¤±è´¥)
+6F591D09 | 0F84 8A010000            | je game.6F591E99                                         | <--- å¦‚æžœè§£æžå¤±è´¥ï¼Œç›´æŽ¥è·³è¿‡ä¸‹æ–¹æ‰€æœ‰ UI æ›´æ–°ä»£ç ï¼
 6F591D0F | 8B8E 04020000            | mov ecx,dword ptr ds:[esi+204]                           |
 6F591D15 | 53                       | push ebx                                                 |
 6F591D16 | 8D4424 28                | lea eax,dword ptr ss:[esp+28]                            |
@@ -231,35 +231,35 @@
 6F591EAF | 81C4 60010000            | add esp,160                                              |
 6F591EB5 | C3                       | ret                                                      |
 ```
-¹ØÓÚ´Ëº¯ÊýµÄÏêÏ¸ÐÅÏ¢ÇëÌø×ªµ½ [Gamedll_591CA0_Select_Room_List_Item.md](https://github.com/wuxiancong/War3Bot/blob/main/details/1.26/Gamedll_591CA0_Select_Room_List_Item.md)
+å…³äºŽæ­¤å‡½æ•°çš„è¯¦ç»†ä¿¡æ¯è¯·è·³è½¬åˆ° [Gamedll_591CA0_Select_Room_List_Item.md](https://github.com/wuxiancong/War3Bot/blob/main/details/1.26/Gamedll_591CA0_Select_Room_List_Item.md)
 
-**±»Ìø¹ýµÄ UI ¸üÐÂÂß¼­ (ÒòÎªÌø×ªµ¼ÖÂÎ´Ö´ÐÐ):**
+**è¢«è·³è¿‡çš„ UI æ›´æ–°é€»è¾‘ (å› ä¸ºè·³è½¬å¯¼è‡´æœªæ‰§è¡Œ):**
 
 ```assembly
-; --- ÒÔÏÂ´úÂëÔÚ [bot] ·¿¼äÑ¡ÖÐÊ±¾ùÎ´Ö´ÐÐ ---
-6F591D1B | call game.6F615B50       | <--- ¸üÐÂÓÎÏ·Ãû±à¼­¿ò
-6F591D35 | call eax                 | <--- ¸üÐÂ¡°´´½¨Õß¡±±êÇ©
-6F591E4A | call game.6F611D40       | <--- ¸üÐÂ¡°ÓÎÏ·Ê±³¤¡±
-6F591E55 | call game.6F728200       | <--- ¼ì²éµØÍ¼ÎÄ¼þÊÇ·ñ´æÔÚ
-6F591E69 | call game.6F57E440       | <--- ¼ÓÔØµØÍ¼Ô¤ÀÀÍ¼ (LoadMapImage)
+; --- ä»¥ä¸‹ä»£ç åœ¨ [bot] æˆ¿é—´é€‰ä¸­æ—¶å‡æœªæ‰§è¡Œ ---
+6F591D1B | call game.6F615B50       | <--- æ›´æ–°æ¸¸æˆåç¼–è¾‘æ¡†
+6F591D35 | call eax                 | <--- æ›´æ–°â€œåˆ›å»ºè€…â€æ ‡ç­¾
+6F591E4A | call game.6F611D40       | <--- æ›´æ–°â€œæ¸¸æˆæ—¶é•¿â€
+6F591E55 | call game.6F728200       | <--- æ£€æŸ¥åœ°å›¾æ–‡ä»¶æ˜¯å¦å­˜åœ¨
+6F591E69 | call game.6F57E440       | <--- åŠ è½½åœ°å›¾é¢„è§ˆå›¾ (LoadMapImage)
 ```
 
-**¶Ô±È·ÖÎö:**
-*   **[test] ·¿¼ä:** StatString Îª `"91..."` (ASCII)¡£ËäÈ»¸ñÊ½´íÎó£¬µ«½ÄÐÒÍ¨¹ýÁË `6F5BE710` µÄÐ£Ñé¡£`je` ²»Ìø×ª£¬ÓÒ²àÃæ°å±»ÌîÈëÊý¾Ý¡£
-*   **[bot] ·¿¼ä:** StatString Îª `"99..."` (ASCII)¡£`6F5BE710` Ð£ÑéÊ§°Ü£¨·µ»Ø 0£©¡£`je` Ìø×ª´¥·¢£¬Ö±½ÓÌø¹ýÁËËùÓÐ UI »æÖÆ´úÂë¡£µ¼ÖÂÃæ°å¿Õ°×£¬ÇÒÎ´Éú³ÉÓÐÐ§µÄ GameInfo ¹©ºóÐø¡°¼ÓÈëÓÎÏ·¡±Ê¹ÓÃ¡£
+**å¯¹æ¯”åˆ†æž:**
+*   **[test] æˆ¿é—´:** StatString ä¸º `"91..."` (ASCII)ã€‚è™½ç„¶æ ¼å¼é”™è¯¯ï¼Œä½†ä¾¥å¹¸é€šè¿‡äº† `6F5BE710` çš„æ ¡éªŒã€‚`je` ä¸è·³è½¬ï¼Œå³ä¾§é¢æ¿è¢«å¡«å…¥æ•°æ®ã€‚
+*   **[bot] æˆ¿é—´:** StatString ä¸º `"99..."` (ASCII)ã€‚`6F5BE710` æ ¡éªŒå¤±è´¥ï¼ˆè¿”å›ž 0ï¼‰ã€‚`je` è·³è½¬è§¦å‘ï¼Œç›´æŽ¥è·³è¿‡äº†æ‰€æœ‰ UI ç»˜åˆ¶ä»£ç ã€‚å¯¼è‡´é¢æ¿ç©ºç™½ï¼Œä¸”æœªç”Ÿæˆæœ‰æ•ˆçš„ GameInfo ä¾›åŽç»­â€œåŠ å…¥æ¸¸æˆâ€ä½¿ç”¨ã€‚
 
 ---
 
-## 3. ÄæÏò·ÖÎö£ºÎªºÎ Game State String ½âÎöÊ§°Ü£¿
+## 3. é€†å‘åˆ†æžï¼šä¸ºä½• Game State String è§£æžå¤±è´¥ï¼Ÿ
 
-**¶ÏµãÎ»ÖÃ:** `6F5BE710` (½âÎö Game State String µÄº¯Êý)
+**æ–­ç‚¹ä½ç½®:** `6F5BE710` (è§£æž Game State String çš„å‡½æ•°)
 
-### 3.2 ½âÎöº¯ÊýÈë¿Ú (`6F5BE710`)
+### 3.2 è§£æžå‡½æ•°å…¥å£ (`6F5BE710`)
 
 ```assembly
 6F5BE710 | 56                       | push esi                                                 |
 6F5BE711 | 8BF1                     | mov esi,ecx                                              |
-6F5BE713 | E8 F85D0900              | call game.6F654510                                       | <--- Ö÷Òªº¯Êý
+6F5BE713 | E8 F85D0900              | call game.6F654510                                       | <--- ä¸»è¦å‡½æ•°
 6F5BE718 | 85C0                     | test eax,eax                                             |
 6F5BE71A | 75 04                    | jne game.6F5BE720                                        |
 6F5BE71C | 33C0                     | xor eax,eax                                              |
@@ -276,9 +276,9 @@
 6F5BE737 | C3                       | ret                                                      |
 ```
 
-### 3.2 Ö÷Òª½âÎöº¯Êý (`6F654510`)
+### 3.2 ä¸»è¦è§£æžå‡½æ•° (`6F654510`)
 
-Õâ¸öº¯Êý½ÓÊÕÒ»¸öÖ¸Ïò StatString Êý¾ÝµÄÖ¸Õë£¬²¢³¢ÊÔÌáÈ¡³öµØÍ¼Â·¾¶¡¢´´½¨Õß¡¢ÓÎÏ·ÉèÖÃµÈÐÅÏ¢¡£
+è¿™ä¸ªå‡½æ•°æŽ¥æ”¶ä¸€ä¸ªæŒ‡å‘ StatString æ•°æ®çš„æŒ‡é’ˆï¼Œå¹¶å°è¯•æå–å‡ºåœ°å›¾è·¯å¾„ã€åˆ›å»ºè€…ã€æ¸¸æˆè®¾ç½®ç­‰ä¿¡æ¯ã€‚
 
 ```assembly
 6F654510 | 6A FF                    | push FFFFFFFF                                            |
@@ -299,7 +299,7 @@
 6F65453E | 8D8424 A0000000          | lea eax,dword ptr ss:[esp+A0]                            |
 6F654545 | 64:A3 00000000           | mov dword ptr fs:[0],eax                                 |
 6F65454B | 8BE9                     | mov ebp,ecx                                              |
-6F65454D | 8BDA                     | mov ebx,edx                                              | <--- EBX Ö¸Ïò "test" »òÕß "bot"
+6F65454D | 8BDA                     | mov ebx,edx                                              | <--- EBX æŒ‡å‘ "test" æˆ–è€… "bot"
 6F65454F | B9 08000000              | mov ecx,8                                                |
 6F654554 | 8BF3                     | mov esi,ebx                                              |
 6F654556 | 8BFD                     | mov edi,ebp                                              |
@@ -312,23 +312,23 @@
 6F65456B | 8D4C24 1C                | lea ecx,dword ptr ss:[esp+1C]                            |
 6F65456F | E8 1CFCFFFF              | call game.6F654190                                       |
 6F654574 | C74424 14 800E976F       | mov dword ptr ss:[esp+14],game.6F970E80                  |
-6F65457C | 8D4B 30                  | lea ecx,dword ptr ds:[ebx+30]                            | <--- ECX Ö¸Ïò StatString µÄÆðÊ¼Î»ÖÃ
+6F65457C | 8D4B 30                  | lea ecx,dword ptr ds:[ebx+30]                            | <--- ECX æŒ‡å‘ StatString çš„èµ·å§‹ä½ç½®
 6F65457F | 51                       | push ecx                                                 |
 6F654580 | 33F6                     | xor esi,esi                                              |
 6F654582 | 8D4C24 18                | lea ecx,dword ptr ss:[esp+18]                            |
 6F654586 | 89B424 AC000000          | mov dword ptr ss:[esp+AC],esi                            |
 6F65458D | E8 8EC2FFFF              | call game.6F650820                                       | <--- call DecodeStatString()
-6F654592 | 85C0                     | test eax,eax                                             | <--- ¼ì²é½âÂëÊÇ·ñ³É¹¦ (1=³É¹¦)
+6F654592 | 85C0                     | test eax,eax                                             | <--- æ£€æŸ¥è§£ç æ˜¯å¦æˆåŠŸ (1=æˆåŠŸ)
 6F654594 | 8D4C24 14                | lea ecx,dword ptr ss:[esp+14]                            |
 6F654598 | 0F84 2F010000            | je game.6F6546CD                                         |
-6F65459E | 8D55 31                  | lea edx,dword ptr ss:[ebp+31]                            | <--- Ö¸ÏòÊä³ö»º³åÇø
+6F65459E | 8D55 31                  | lea edx,dword ptr ss:[ebp+31]                            | <--- æŒ‡å‘è¾“å‡ºç¼“å†²åŒº
 6F6545A1 | 52                       | push edx                                                 |
 6F6545A2 | 897424 2C                | mov dword ptr ss:[esp+2C],esi                            |
-6F6545A6 | E8 65E6E6FF              | call game.6F4C2C10                                       | <--- ReadByte() ¶ÁÈ¡ Flags
-6F6545AB | 8D45 34                  | lea eax,dword ptr ss:[ebp+34]                            | <--- Ö¸ÏòÊä³ö»º³åÇø (µØÍ¼Â·¾¶)
+6F6545A6 | E8 65E6E6FF              | call game.6F4C2C10                                       | <--- ReadByte() è¯»å– Flags
+6F6545AB | 8D45 34                  | lea eax,dword ptr ss:[ebp+34]                            | <--- æŒ‡å‘è¾“å‡ºç¼“å†²åŒº (åœ°å›¾è·¯å¾„)
 6F6545AE | 50                       | push eax                                                 |
 6F6545AF | 8D4C24 18                | lea ecx,dword ptr ss:[esp+18]                            |
-6F6545B3 | E8 78E7E6FF              | call game.6F4C2D30                                       | <--- ReadString() ¶ÁÈ¡µØÍ¼Â·¾¶
+6F6545B3 | E8 78E7E6FF              | call game.6F4C2D30                                       | <--- ReadString() è¯»å–åœ°å›¾è·¯å¾„
 6F6545B8 | 8D4D 38                  | lea ecx,dword ptr ss:[ebp+38]                            |
 6F6545BB | 51                       | push ecx                                                 |
 6F6545BC | 8D4C24 18                | lea ecx,dword ptr ss:[esp+18]                            |
@@ -336,11 +336,11 @@
 6F6545C5 | 8D55 3A                  | lea edx,dword ptr ss:[ebp+3A]                            |
 6F6545C8 | 52                       | push edx                                                 |
 6F6545C9 | 8D4C24 18                | lea ecx,dword ptr ss:[esp+18]                            |
-6F6545CD | E8 9EE6E6FF              | call game.6F4C2C70                                       | <--- Ö¸ÏòÊä³ö»º³åÇø (´´½¨Õß)
+6F6545CD | E8 9EE6E6FF              | call game.6F4C2C70                                       | <--- æŒ‡å‘è¾“å‡ºç¼“å†²åŒº (åˆ›å»ºè€…)
 6F6545D2 | 8D45 3C                  | lea eax,dword ptr ss:[ebp+3C]                            |
 6F6545D5 | 50                       | push eax                                                 |
 6F6545D6 | 8D4C24 18                | lea ecx,dword ptr ss:[esp+18]                            |
-6F6545DA | E8 51E7E6FF              | call game.6F4C2D30                                       | <--- ReadString() ¶ÁÈ¡´´½¨ÕßÃû×Ö
+6F6545DA | E8 51E7E6FF              | call game.6F4C2D30                                       | <--- ReadString() è¯»å–åˆ›å»ºè€…åå­—
 6F6545DF | 6A 36                    | push 36                                                  |
 6F6545E1 | 8D75 54                  | lea esi,dword ptr ss:[ebp+54]                            |
 6F6545E4 | 56                       | push esi                                                 |
@@ -380,9 +380,9 @@
 6F65465F | 8955 4C                  | mov dword ptr ss:[ebp+4C],edx                            |
 6F654662 | A1 480E976F              | mov eax,dword ptr ds:[6F970E48]                          |
 6F654667 | 8945 50                  | mov dword ptr ss:[ebp+50],eax                            |
-6F65466A | 8B4C24 24                | mov ecx,dword ptr ss:[esp+24]                            | <--- ECX = »º³åÇø½áÊøÖ¸Õë (End Pointer)
-6F65466E | 394C24 28                | cmp dword ptr ss:[esp+28],ecx                            | <--- ±È½Ï»º³åÇøµ±Ç°Ö¸Õë (Current Pointer)
-6F654672 | 75 55                    | jne game.6F6546C9                                        | <--- ´íÎó·¢ÉúÔÚÕâÀï
+6F65466A | 8B4C24 24                | mov ecx,dword ptr ss:[esp+24]                            | <--- ECX = ç¼“å†²åŒºç»“æŸæŒ‡é’ˆ (End Pointer)
+6F65466E | 394C24 28                | cmp dword ptr ss:[esp+28],ecx                            | <--- æ¯”è¾ƒç¼“å†²åŒºå½“å‰æŒ‡é’ˆ (Current Pointer)
+6F654672 | 75 55                    | jne game.6F6546C9                                        | <--- é”™è¯¯å‘ç”Ÿåœ¨è¿™é‡Œ
 6F654674 | 8B53 20                  | mov edx,dword ptr ds:[ebx+20]                            |
 6F654677 | 8955 20                  | mov dword ptr ss:[ebp+20],edx                            |
 6F65467A | 8B43 24                  | mov eax,dword ptr ds:[ebx+24]                            |
@@ -422,68 +422,68 @@
 6F654706 | C3                       | ret                                                      |
 ```
 ---
-### ºËÐÄ¹ÊÕÏµã·ÖÎö
+### æ ¸å¿ƒæ•…éšœç‚¹åˆ†æž
 
-Çë¿´Õâ¶Î´úÂë£º
+è¯·çœ‹è¿™æ®µä»£ç ï¼š
 
 ```assembly
-6F65466A | 8B4C24 24     | mov ecx,dword ptr ss:[esp+24]  ; ECX = »º³åÇø½áÊøÖ¸Õë (End Pointer)
-6F65466E | 394C24 28     | cmp dword ptr ss:[esp+28],ecx  ; ±È½Ï»º³åÇøµ±Ç°Ö¸Õë (Current Pointer)
-6F654672 | 75 55         | jne game.6F6546C9              ; <--- ËÀÔÚÕâÀïÈç¹û²»ÏàµÈ£¬Ìø×ª±¨´í
+6F65466A | 8B4C24 24     | mov ecx,dword ptr ss:[esp+24]  ; ECX = ç¼“å†²åŒºç»“æŸæŒ‡é’ˆ (End Pointer)
+6F65466E | 394C24 28     | cmp dword ptr ss:[esp+28],ecx  ; æ¯”è¾ƒç¼“å†²åŒºå½“å‰æŒ‡é’ˆ (Current Pointer)
+6F654672 | 75 55         | jne game.6F6546C9              ; <--- æ­»åœ¨è¿™é‡Œå¦‚æžœä¸ç›¸ç­‰ï¼Œè·³è½¬æŠ¥é”™
 ```
 
-#### ÕâÊÇÊ²Ã´¼ì²é£¿
-ÕâÊÇÒ»¸ö **¡°Êý¾ÝÁ÷ÍêÕûÐÔ¼ì²é¡± (Stream Integrity / EOF Check)**¡£
+#### è¿™æ˜¯ä»€ä¹ˆæ£€æŸ¥ï¼Ÿ
+è¿™æ˜¯ä¸€ä¸ª **â€œæ•°æ®æµå®Œæ•´æ€§æ£€æŸ¥â€ (Stream Integrity / EOF Check)**ã€‚
 
-*   War3 ÔÚ½âÎö StatString Ê±£¬»áÏñ¶ÁÈ¡ÎÄ¼þÁ÷Ò»Ñù£¬¶ÁÒ»¸ö×Ö½Ú¡¢¶ÁÒ»¸ö×Ö·û´®¡¢¶ÁÒ»¸öÊý×é¡­¡­Ö¸Õë»á²»¶ÏÏòºóÒÆ¶¯¡£
-*   `[esp+24]`£ºÊÇÕâ¶Î StatString Êý¾ÝµÄ**×Ü³¤¶È/½áÊøÎ»ÖÃ**¡£
-*   `[esp+28]`£ºÊÇ½âÎöÆ÷µ±Ç°**¶Áµ½ÁËÄÄÀï**¡£
+*   War3 åœ¨è§£æž StatString æ—¶ï¼Œä¼šåƒè¯»å–æ–‡ä»¶æµä¸€æ ·ï¼Œè¯»ä¸€ä¸ªå­—èŠ‚ã€è¯»ä¸€ä¸ªå­—ç¬¦ä¸²ã€è¯»ä¸€ä¸ªæ•°ç»„â€¦â€¦æŒ‡é’ˆä¼šä¸æ–­å‘åŽç§»åŠ¨ã€‚
+*   `[esp+24]`ï¼šæ˜¯è¿™æ®µ StatString æ•°æ®çš„**æ€»é•¿åº¦/ç»“æŸä½ç½®**ã€‚
+*   `[esp+28]`ï¼šæ˜¯è§£æžå™¨å½“å‰**è¯»åˆ°äº†å“ªé‡Œ**ã€‚
 
-**Âß¼­º¬Òå£º**
-> "ÎÒÒÑ¾­¶ÁÍêÁËËùÓÐ¶¨ÒåµÄ×Ö¶Î£¨µØÍ¼Ãû¡¢´´½¨Õß¡¢²ÎÊýµÈ£©£¬ÏÖÔÚµÄ¶ÁÈ¡Ö¸Õë**±ØÐë**ÕýºÃÍ£ÔÚ»º³åÇøµÄÄ©Î²¡£Èç¹û»¹ÓÐÊ£ÓàÊý¾ÝÃ»¶Á£¬»òÕß¶Á¹ýÍ·ÁË£¬ËµÃ÷Êý¾Ý¸ñÊ½´íÎó£¡"
+**é€»è¾‘å«ä¹‰ï¼š**
+> "æˆ‘å·²ç»è¯»å®Œäº†æ‰€æœ‰å®šä¹‰çš„å­—æ®µï¼ˆåœ°å›¾åã€åˆ›å»ºè€…ã€å‚æ•°ç­‰ï¼‰ï¼ŒçŽ°åœ¨çš„è¯»å–æŒ‡é’ˆ**å¿…é¡»**æ­£å¥½åœåœ¨ç¼“å†²åŒºçš„æœ«å°¾ã€‚å¦‚æžœè¿˜æœ‰å‰©ä½™æ•°æ®æ²¡è¯»ï¼Œæˆ–è€…è¯»è¿‡å¤´äº†ï¼Œè¯´æ˜Žæ•°æ®æ ¼å¼é”™è¯¯ï¼"
 
-### 4 ¹ÊÕÏ¸ù±¾Ô­Òò (Root Cause Analysis)
+### 4 æ•…éšœæ ¹æœ¬åŽŸå›  (Root Cause Analysis)
 
-ÔÚµØÖ· `6F654672` ´¦£¬ÓÎÏ·½øÐÐÁËÒ»´Î**Êý¾ÝÁ÷ÍêÕûÐÔ¼ì²é (Stream Integrity Check)**¡£
-Âß¼­ÊÇ£º`CurrentReadPointer == EndOfStreamPointer`¡£
+åœ¨åœ°å€ `6F654672` å¤„ï¼Œæ¸¸æˆè¿›è¡Œäº†ä¸€æ¬¡**æ•°æ®æµå®Œæ•´æ€§æ£€æŸ¥ (Stream Integrity Check)**ã€‚
+é€»è¾‘æ˜¯ï¼š`CurrentReadPointer == EndOfStreamPointer`ã€‚
 
-**ÏÖÏó:**
-µ÷ÊÔ·¢ÏÖ£¬ÔÚ Bot ´´½¨µÄ·¿¼äÖÐ£¬`CurrentReadPointer` ±È `EndOfStreamPointer` **ÉÙÁËÒ»¸ö×Ö½Ú** (»òÕßÓÉÓÚ±àÂë´íÎ»µ¼ÖÂÖ¸ÕëÎ´¶ÔÆë)¡£
+**çŽ°è±¡:**
+è°ƒè¯•å‘çŽ°ï¼Œåœ¨ Bot åˆ›å»ºçš„æˆ¿é—´ä¸­ï¼Œ`CurrentReadPointer` æ¯” `EndOfStreamPointer` **å°‘äº†ä¸€ä¸ªå­—èŠ‚** (æˆ–è€…ç”±äºŽç¼–ç é”™ä½å¯¼è‡´æŒ‡é’ˆæœªå¯¹é½)ã€‚
 
-**Êý¾Ý°ü¶Ô±È·ÖÎö:**
-Í¨¹ý¶Ô±ÈÕý³£Êý¾Ý°ü (Block A) ºÍÒì³£Êý¾Ý°ü (Block B) µÄ HEX Êý¾Ý£º
+**æ•°æ®åŒ…å¯¹æ¯”åˆ†æž:**
+é€šè¿‡å¯¹æ¯”æ­£å¸¸æ•°æ®åŒ… (Block A) å’Œå¼‚å¸¸æ•°æ®åŒ… (Block B) çš„ HEX æ•°æ®ï¼š
 
-*   **Block A (Õý³£):** `... [HostName] [00] [00] [SHA1] ...`
-*   **Block B (Òì³£):** `... [HostName] [00] [SHA1] ...`
+*   **Block A (æ­£å¸¸):** `... [HostName] [00] [00] [SHA1] ...`
+*   **Block B (å¼‚å¸¸):** `... [HostName] [00] [SHA1] ...`
 
-**È±Ê§µÄ×Ö½Ú:**
-Ð­Òé¹æ¶¨ÔÚ `Host Name` µÄ½áÊø·û `00` Ö®ºó£¬±ØÐë¸úËæÒ»¸ö `(UINT8) Map Unknown` ×Ö¶Î£¨Í¨³£Îª `00`£¬×÷Îª·Ö¸ô·û£©¡£
-ÓÉÓÚÎÒÃÇµÄ´úÂëÖÐÈ±Ê§ÁËÕâ¸ö×Ö½Ú£º
-1.  **Ô­Ê¼Êý¾Ý²ã:** ÉÙÁËÒ»¸ö `00`¡£
-2.  **±àÂë²ã (StatString):** Ä§ÊÞµÄ±àÂëËã·¨»áÑ¹ËõÁ¬ÐøµÄ `00`¡£ÓÉÓÚÈ±Ê§¸Ã×Ö½Ú£¬µ¼ÖÂ±àÂëºóµÄÑÚÂë×Ö½Ú (Mask Byte) ·¢Éú±ä»¯£¨`01` ±äÎª `2F`£©£¬½ø¶øµ¼ÖÂÕû¸öºóÐøÊý¾Ý£¨SHA1¼°Ö®ºóµÄÂÒÂë£©**Ç°ÒÆ´íÎ»**¡£
-3.  **½âÂë²ã (Game.dll):** ÓÎÏ·½âÂëºó£¬¶ÁÈ¡ÍêËùÓÐ¶¨Òå×Ö¶Î£¬·¢ÏÖ**¶ÁÈ¡Ö¸ÕëÃ»ÓÐ×ßµ½Ô¤ÆÚµÄÄ©Î²**£¨»òÕß¶ÁÈ¡´íÎ»£©£¬´¥·¢ `jne` ´íÎóÌø×ª£¬ÅÐ¶¨Êý¾Ý°ü·Ç·¨¡£
+**ç¼ºå¤±çš„å­—èŠ‚:**
+åè®®è§„å®šåœ¨ `Host Name` çš„ç»“æŸç¬¦ `00` ä¹‹åŽï¼Œå¿…é¡»è·Ÿéšä¸€ä¸ª `(UINT8) Map Unknown` å­—æ®µï¼ˆé€šå¸¸ä¸º `00`ï¼Œä½œä¸ºåˆ†éš”ç¬¦ï¼‰ã€‚
+ç”±äºŽæˆ‘ä»¬çš„ä»£ç ä¸­ç¼ºå¤±äº†è¿™ä¸ªå­—èŠ‚ï¼š
+1.  **åŽŸå§‹æ•°æ®å±‚:** å°‘äº†ä¸€ä¸ª `00`ã€‚
+2.  **ç¼–ç å±‚ (StatString):** é­”å…½çš„ç¼–ç ç®—æ³•ä¼šåŽ‹ç¼©è¿žç»­çš„ `00`ã€‚ç”±äºŽç¼ºå¤±è¯¥å­—èŠ‚ï¼Œå¯¼è‡´ç¼–ç åŽçš„æŽ©ç å­—èŠ‚ (Mask Byte) å‘ç”Ÿå˜åŒ–ï¼ˆ`01` å˜ä¸º `2F`ï¼‰ï¼Œè¿›è€Œå¯¼è‡´æ•´ä¸ªåŽç»­æ•°æ®ï¼ˆSHA1åŠä¹‹åŽçš„ä¹±ç ï¼‰**å‰ç§»é”™ä½**ã€‚
+3.  **è§£ç å±‚ (Game.dll):** æ¸¸æˆè§£ç åŽï¼Œè¯»å–å®Œæ‰€æœ‰å®šä¹‰å­—æ®µï¼Œå‘çŽ°**è¯»å–æŒ‡é’ˆæ²¡æœ‰èµ°åˆ°é¢„æœŸçš„æœ«å°¾**ï¼ˆæˆ–è€…è¯»å–é”™ä½ï¼‰ï¼Œè§¦å‘ `jne` é”™è¯¯è·³è½¬ï¼Œåˆ¤å®šæ•°æ®åŒ…éžæ³•ã€‚
 
 ---
 
-## 5. ½â¾ö·½°¸ (Solution)
+## 5. è§£å†³æ–¹æ¡ˆ (Solution)
 
-ÔÚÉú³É StatString µÄ´úÂëÖÐ£¬ÓÚÖ÷»úÃû£¨HostName£©Ð´ÈëÖ®ºó¡¢SHA1 ¹þÏ£Ð´ÈëÖ®Ç°£¬²¹ÉÏÈ±Ê§µÄ `Map Unknown` ·Ö¸ô·û×Ö½Ú¡£
+åœ¨ç”Ÿæˆ StatString çš„ä»£ç ä¸­ï¼ŒäºŽä¸»æœºåï¼ˆHostNameï¼‰å†™å…¥ä¹‹åŽã€SHA1 å“ˆå¸Œå†™å…¥ä¹‹å‰ï¼Œè¡¥ä¸Šç¼ºå¤±çš„ `Map Unknown` åˆ†éš”ç¬¦å­—èŠ‚ã€‚
 
-**ÐÞÕýºóµÄ C++ ´úÂë:**
+**ä¿®æ­£åŽçš„ C++ ä»£ç :**
 
 ```cpp
 QByteArray War3Map::getEncodedStatString(const QString &hostName, const QString &netPathOverride)
 {
-    // ... (Ç°Ðò´úÂë: Flags, Width, Height, CRC, MapPath)
+    // ... (å‰åºä»£ç : Flags, Width, Height, CRC, MapPath)
 
-    // Ð´ÈëÖ÷»úÃû
+    // å†™å…¥ä¸»æœºå
     out.writeRawData(hostName.toUtf8().constData(), hostName.toUtf8().size());
-    out << (quint8)0; // Host Name Terminator (×Ö·û´®½áÊø·û)
+    out << (quint8)0; // Host Name Terminator (å­—ç¬¦ä¸²ç»“æŸç¬¦)
 
-    // ¡¾ÐÞ¸´¡¿Ìí¼ÓÐ­ÒéÒªÇóµÄ¶îÍâ·Ö¸ô·û (Map Unknown / Second Null Byte)
-    out << (quint8)0; // <--- ²¹ÆëÈ±Ê§µÄ×Ö½Ú
+    // ã€ä¿®å¤ã€‘æ·»åŠ åè®®è¦æ±‚çš„é¢å¤–åˆ†éš”ç¬¦ (Map Unknown / Second Null Byte)
+    out << (quint8)0; // <--- è¡¥é½ç¼ºå¤±çš„å­—èŠ‚
 
-    // Ð´Èë SHA1
+    // å†™å…¥ SHA1
     out.writeRawData(m_mapSHA1.constData(), 20);
 
     QByteArray encoded = encodeStatString(rawData);
@@ -491,5 +491,5 @@ QByteArray War3Map::getEncodedStatString(const QString &hostName, const QString 
 }
 ```
 
-**ÐÞ¸´½á¹û:**
-Ìí¼Ó¸Ã×Ö½Úºó£¬StatString ³¤¶ÈÔö¼Ó£¬ÄÚ²¿±àÂë¶ÔÆë»Ö¸´¡£`6F5BE710` Ð£ÑéÍ¨¹ý£¬ÓÒ²àÃæ°å³É¹¦ÏÔÊ¾µØÍ¼ÐÅÏ¢£¬"¼ÓÈëÓÎÏ·"¹¦ÄÜ»Ö¸´Õý³£¡£
+**ä¿®å¤ç»“æžœ:**
+æ·»åŠ è¯¥å­—èŠ‚åŽï¼ŒStatString é•¿åº¦å¢žåŠ ï¼Œå†…éƒ¨ç¼–ç å¯¹é½æ¢å¤ã€‚`6F5BE710` æ ¡éªŒé€šè¿‡ï¼Œå³ä¾§é¢æ¿æˆåŠŸæ˜¾ç¤ºåœ°å›¾ä¿¡æ¯ï¼Œ"åŠ å…¥æ¸¸æˆ"åŠŸèƒ½æ¢å¤æ­£å¸¸ã€‚
