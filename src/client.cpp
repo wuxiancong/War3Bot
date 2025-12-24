@@ -797,7 +797,7 @@ void Client::createGame(const QString &gameName, const QString &password, Provid
     LOG_INFO("📤 房间创建请求发送完毕");
 }
 
-QByteArray createSlot()
+QByteArray Client::createSlot()
 {
     QByteArray slotsInfo;
     QDataStream ds(&slotsInfo, QIODevice::WriteOnly);
