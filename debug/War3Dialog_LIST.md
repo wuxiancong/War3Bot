@@ -1,5 +1,5 @@
 # War3 »úÆ÷ÈËÖ÷»ú´´½¨·¿¼äºóµØÍ¼ÐÅÏ¢¿Õ°×µ÷ÊÔÈÕÖ¾
-
+# You must specify a game to join
 ![x64dbgµ÷ÊÔ½ØÍ¼](https://github.com/wuxiancong/War3Bot/raw/main/debug/images/War3Dialog1.PNG)
 
 ## ÎÊÌâÃèÊö (Issue Description)
@@ -13,9 +13,11 @@
 - **¿Í»§¶Ë:** Warcraft III (1.26a / Game.dll)
 - **·þÎñ¶Ë:** PVPGN (C++)
 - **µ÷ÊÔ¹¤¾ß:** x64dbg
+- **»ùµØÖ·:** 6F000000
 - **¹Ø¼üº¯ÊýµØÖ·:** 
     - ¼ÓÈë°´Å¥Âß¼­: `Game.dll + 575E80`
     - ÁÐ±íÑ¡ÖÐÂß¼­: `Game.dll + 591CA0`
+    - ×´Ì¬½âÎöÂß¼­: `Game.dll + 5BE710`
 
 ---
 
@@ -33,11 +35,11 @@
 6F575E94 | 56                       | push esi                                                 |
 6F575E95 | 8BF1                     | mov esi,ecx                                              |
 6F575E97 | 8B8E 04020000            | mov ecx,dword ptr ds:[esi+204]                           |
-6F575E9D | E8 FEDF0900              | call game.6F613EA0                                       | <- GetSelectedGameName() - ³¢ÊÔ»ñÈ¡Ñ¡ÖÐ·¿¼äµÄÐÅÏ¢
-6F575EA2 | 85C0                     | test eax,eax                                             | <- ¼ì²é·µ»ØµÄÖ¸ÕëÊÇ·ñÎª NULL
-6F575EA4 | 74 20                    | je game.6F575EC6                                         | <- Èç¹ûÎª NULL£¬Ìø×ªµ½´íÎó´¦Àí
-6F575EA6 | 8038 00                  | cmp byte ptr ds:[eax],0                                  | <- ¼ì²é×Ö·û´®³¤¶È¡£´Ë´¦ EAX Ö¸Ïò 00 (¿Õ×Ö·û´®)
-6F575EA9 | 74 1B                    | je game.6F575EC6                                         | <- ÅÐ¶¨Îª¿Õ£¬Ìø×ªµ½±¨´íÂß¼­
+6F575E9D | E8 FEDF0900              | call game.6F613EA0                                       | <--- GetSelectedGameName() - ³¢ÊÔ»ñÈ¡Ñ¡ÖÐ·¿¼äµÄÐÅÏ¢
+6F575EA2 | 85C0                     | test eax,eax                                             | <--- ¼ì²é·µ»ØµÄÖ¸ÕëÊÇ·ñÎª NULL
+6F575EA4 | 74 20                    | je game.6F575EC6                                         | <--- Èç¹ûÎª NULL£¬Ìø×ªµ½´íÎó´¦Àí
+6F575EA6 | 8038 00                  | cmp byte ptr ds:[eax],0                                  | <--- ¼ì²é×Ö·û´®³¤¶È¡£´Ë´¦ EAX Ö¸Ïò 00 (¿Õ×Ö·û´®)
+6F575EA9 | 74 1B                    | je game.6F575EC6                                         | <--- ÅÐ¶¨Îª¿Õ£¬Ìø×ªµ½±¨´íÂß¼­
 6F575EAB | B8 01000000              | mov eax,1                                                |
 6F575EB0 | 5E                       | pop esi                                                  |
 6F575EB1 | 8B8C24 00020000          | mov ecx,dword ptr ss:[esp+200]                           |
@@ -47,8 +49,8 @@
 6F575EC5 | C3                       | ret                                                      |
 6F575EC6 | 68 00020000              | push 200                                                 |
 6F575ECB | 8D5424 08                | lea edx,dword ptr ss:[esp+8]                             |
-6F575ECF | B9 2814966F              | mov ecx,game.6F961428                                    | <- ¼ÓÔØ´íÎó´úÂë "NETERROR_NOGAMESPECIFIED"
-6F575ED4 | E8 77370500              | call game.6F5C9650                                       | <- ×ª»»ÎªÎÄ±¾ "You must specify a game to join"
+6F575ECF | B9 2814966F              | mov ecx,game.6F961428                                    | <--- ¼ÓÔØ´íÎó´úÂë "NETERROR_NOGAMESPECIFIED"
+6F575ED4 | E8 77370500              | call game.6F5C9650                                       | <--- ×ª»»ÎªÎÄ±¾ "You must specify a game to join"
 6F575ED9 | 6A 01                    | push 1                                                   |
 6F575EDB | 6A 04                    | push 4                                                   |
 6F575EDD | 6A 00                    | push 0                                                   |
@@ -56,7 +58,7 @@
 6F575EE0 | 6A 09                    | push 9                                                   |
 6F575EE2 | 8D5424 18                | lea edx,dword ptr ss:[esp+18]                            |
 6F575EE6 | B9 01000000              | mov ecx,1                                                |
-6F575EEB | E8 C06FFEFF              | call game.6F55CEB0                                       | <- µ¯³ö MessageBox
+6F575EEB | E8 C06FFEFF              | call game.6F55CEB0                                       | <--- µ¯³ö MessageBox
 6F575EF0 | 8B86 04020000            | mov eax,dword ptr ds:[esi+204]                           |
 6F575EF6 | 8B8C24 04020000          | mov ecx,dword ptr ss:[esp+204]                           |
 6F575EFD | 8986 FC010000            | mov dword ptr ds:[esi+1FC],eax                           |
@@ -71,7 +73,7 @@
 
 **»ñÈ¡·¿¼äÃûÖ¸ÕëµÄµ×²ãº¯Êý:**
 ```assembly
-6F613EA0 | 8B81 E4010000            | mov eax,dword ptr ds:[ecx+1E4]                           | <- ·µ»Ø±£´æµÄ·¿¼äÃûÖ¸Õë
+6F613EA0 | 8B81 E4010000            | mov eax,dword ptr ds:[ecx+1E4]                           | <--- ·µ»Ø±£´æµÄ·¿¼äÃûÖ¸Õë
 6F613EA6 | C3                       | ret                                                      |
 ```
 **·ÖÎö½áÂÛ:** 
@@ -102,19 +104,19 @@
 6F591CCC | 8BCE                     | mov ecx,esi                                              |
 6F591CCE | E8 9D45FFFF              | call game.6F586270                                       |
 6F591CD3 | 8B8E 08020000            | mov ecx,dword ptr ds:[esi+208]                           |
-6F591CD9 | E8 22C0FCFF              | call game.6F55DD00                                       | <- GetItemData() »ñÈ¡Ñ¡ÖÐÏî¹ØÁªµÄ Struct
-6F591CDE | 8BF8                     | mov edi,eax                                              | <- EDI = ·¿¼äÊý¾ÝÖ¸Õë
+6F591CD9 | E8 22C0FCFF              | call game.6F55DD00                                       | <--- GetItemData() »ñÈ¡Ñ¡ÖÐÏî¹ØÁªµÄ Struct
+6F591CDE | 8BF8                     | mov edi,eax                                              | <--- EDI = ·¿¼äÊý¾ÝÖ¸Õë
 6F591CE0 | 3BFB                     | cmp edi,ebx                                              |
 6F591CE2 | 0F84 B1010000            | je game.6F591E99                                         |
-6F591CE8 | 8D57 0C                  | lea edx,dword ptr ds:[edi+C]                             | <- EDX = Ö¸Ïò·¿¼äÃû "bot"
-6F591CEB | 8D4C24 24                | lea ecx,dword ptr ss:[esp+24]                            | <- ECX = Õ»ÉÏµÄÁÙÊ±»º³åÇø
+6F591CE8 | 8D57 0C                  | lea edx,dword ptr ds:[edi+C]                             | <--- EDX = Ö¸Ïò·¿¼äÃû "bot"
+6F591CEB | 8D4C24 24                | lea ecx,dword ptr ss:[esp+24]                            | <--- ECX = Õ»ÉÏµÄÁÙÊ±»º³åÇø
 6F591CEF | 885C24 24                | mov byte ptr ss:[esp+24],bl                              |
 6F591CF3 | 885C24 44                | mov byte ptr ss:[esp+44],bl                              |
 6F591CF7 | 885C24 78                | mov byte ptr ss:[esp+78],bl                              |
 6F591CFB | 889C24 AE000000          | mov byte ptr ss:[esp+AE],bl                              |
-6F591D02 | E8 09CA0200              | call game.6F5BE710                                       | <- ParseStatString() ½âÎöµØÍ¼ÐÅÏ¢
-6F591D07 | 85C0                     | test eax,eax                                             | <- ¼ì²é½âÎö½á¹û (1=³É¹¦, 0=Ê§°Ü)
-6F591D09 | 0F84 8A010000            | je game.6F591E99                                         | <- Èç¹û½âÎöÊ§°Ü£¬Ö±½ÓÌø¹ýÏÂ·½ËùÓÐ UI ¸üÐÂ´úÂë£¡
+6F591D02 | E8 09CA0200              | call game.6F5BE710                                       | <--- ParseStatString() ½âÎöµØÍ¼ÐÅÏ¢
+6F591D07 | 85C0                     | test eax,eax                                             | <--- ¼ì²é½âÎö½á¹û (1=³É¹¦, 0=Ê§°Ü)
+6F591D09 | 0F84 8A010000            | je game.6F591E99                                         | <--- Èç¹û½âÎöÊ§°Ü£¬Ö±½ÓÌø¹ýÏÂ·½ËùÓÐ UI ¸üÐÂ´úÂë£¡
 6F591D0F | 8B8E 04020000            | mov ecx,dword ptr ds:[esi+204]                           |
 6F591D15 | 53                       | push ebx                                                 |
 6F591D16 | 8D4424 28                | lea eax,dword ptr ss:[esp+28]                            |
@@ -235,11 +237,11 @@
 
 ```assembly
 ; --- ÒÔÏÂ´úÂëÔÚ [bot] ·¿¼äÑ¡ÖÐÊ±¾ùÎ´Ö´ÐÐ ---
-6F591D1B | call game.6F615B50       | <- ¸üÐÂÓÎÏ·Ãû±à¼­¿ò
-6F591D35 | call eax                 | <- ¸üÐÂ¡°´´½¨Õß¡±±êÇ©
-6F591E4A | call game.6F611D40       | <- ¸üÐÂ¡°ÓÎÏ·Ê±³¤¡±
-6F591E55 | call game.6F728200       | <- ¼ì²éµØÍ¼ÎÄ¼þÊÇ·ñ´æÔÚ
-6F591E69 | call game.6F57E440       | <- ¼ÓÔØµØÍ¼Ô¤ÀÀÍ¼ (LoadMapImage)
+6F591D1B | call game.6F615B50       | <--- ¸üÐÂÓÎÏ·Ãû±à¼­¿ò
+6F591D35 | call eax                 | <--- ¸üÐÂ¡°´´½¨Õß¡±±êÇ©
+6F591E4A | call game.6F611D40       | <--- ¸üÐÂ¡°ÓÎÏ·Ê±³¤¡±
+6F591E55 | call game.6F728200       | <--- ¼ì²éµØÍ¼ÎÄ¼þÊÇ·ñ´æÔÚ
+6F591E69 | call game.6F57E440       | <--- ¼ÓÔØµØÍ¼Ô¤ÀÀÍ¼ (LoadMapImage)
 ```
 
 **¶Ô±È·ÖÎö:**
@@ -248,7 +250,240 @@
 
 ---
 
-## 3. ¸ù±¾Ô­Òò (Root Cause)
+## 3. ÄæÏò·ÖÎö£ºÎªºÎ Game State String ½âÎöÊ§°Ü£¿
+
+**¶ÏµãÎ»ÖÃ:** `6F5BE710` (½âÎö Game State String µÄº¯Êý)
+
+```assembly
+6F5BE710 | 56                       | push esi                                                 |
+6F5BE711 | 8BF1                     | mov esi,ecx                                              |
+6F5BE713 | E8 F85D0900              | call game.6F654510                                       | <--- Ö÷Òªº¯Êý
+6F5BE718 | 85C0                     | test eax,eax                                             |
+6F5BE71A | 75 04                    | jne game.6F5BE720                                        |
+6F5BE71C | 33C0                     | xor eax,eax                                              |
+6F5BE71E | 5E                       | pop esi                                                  |
+6F5BE71F | C3                       | ret                                                      |
+6F5BE720 | 807E 31 02               | cmp byte ptr ds:[esi+31],2                               |
+6F5BE724 | 77 F6                    | ja game.6F5BE71C                                         |
+6F5BE726 | 33C0                     | xor eax,eax                                              |
+6F5BE728 | 3846 54                  | cmp byte ptr ds:[esi+54],al                              |
+6F5BE72B | 74 09                    | je game.6F5BE736                                         |
+6F5BE72D | 3886 8A000000            | cmp byte ptr ds:[esi+8A],al                              |
+6F5BE733 | 0F95C0                   | setne al                                                 |
+6F5BE736 | 5E                       | pop esi                                                  |
+6F5BE737 | C3                       | ret                                                      |
+```
+
+### 3.1 ½âÎöº¯ÊýÈë¿Ú (`6F654510`)
+
+Õâ¸öº¯Êý½ÓÊÕÒ»¸öÖ¸Ïò StatString Êý¾ÝµÄÖ¸Õë£¬²¢³¢ÊÔÌáÈ¡³öµØÍ¼Â·¾¶¡¢´´½¨Õß¡¢ÓÎÏ·ÉèÖÃµÈÐÅÏ¢¡£
+
+```assembly
+6F654510 | 6A FF                    | push FFFFFFFF                                            |
+6F654512 | 68 DB12846F              | push game.6F8412DB                                       |
+6F654517 | 64:A1 00000000           | mov eax,dword ptr fs:[0]                                 |
+6F65451D | 50                       | push eax                                                 |
+6F65451E | 81EC 8C000000            | sub esp,8C                                               |
+6F654524 | A1 40E1AA6F              | mov eax,dword ptr ds:[6FAAE140]                          |
+6F654529 | 33C4                     | xor eax,esp                                              |
+6F65452B | 898424 88000000          | mov dword ptr ss:[esp+88],eax                            |
+6F654532 | 53                       | push ebx                                                 |
+6F654533 | 55                       | push ebp                                                 |
+6F654534 | 56                       | push esi                                                 |
+6F654535 | 57                       | push edi                                                 |
+6F654536 | A1 40E1AA6F              | mov eax,dword ptr ds:[6FAAE140]                          |
+6F65453B | 33C4                     | xor eax,esp                                              |
+6F65453D | 50                       | push eax                                                 |
+6F65453E | 8D8424 A0000000          | lea eax,dword ptr ss:[esp+A0]                            |
+6F654545 | 64:A3 00000000           | mov dword ptr fs:[0],eax                                 |
+6F65454B | 8BE9                     | mov ebp,ecx                                              |
+6F65454D | 8BDA                     | mov ebx,edx                                              | <--- EBX Ö¸Ïò "test" »òÕß "bot"
+6F65454F | B9 08000000              | mov ecx,8                                                |
+6F654554 | 8BF3                     | mov esi,ebx                                              |
+6F654556 | 8BFD                     | mov edi,ebp                                              |
+6F654558 | F3:A5                    | rep movsd                                                |
+6F65455A | 807D 00 00               | cmp byte ptr ss:[ebp],0                                  |
+6F65455E | 0F84 79010000            | je game.6F6546DD                                         |
+6F654564 | 6A 68                    | push 68                                                  |
+6F654566 | 8D4424 38                | lea eax,dword ptr ss:[esp+38]                            |
+6F65456A | 50                       | push eax                                                 |
+6F65456B | 8D4C24 1C                | lea ecx,dword ptr ss:[esp+1C]                            |
+6F65456F | E8 1CFCFFFF              | call game.6F654190                                       |
+6F654574 | C74424 14 800E976F       | mov dword ptr ss:[esp+14],game.6F970E80                  |
+6F65457C | 8D4B 30                  | lea ecx,dword ptr ds:[ebx+30]                            | <--- ECX Ö¸Ïò StatString µÄÆðÊ¼Î»ÖÃ
+6F65457F | 51                       | push ecx                                                 |
+6F654580 | 33F6                     | xor esi,esi                                              |
+6F654582 | 8D4C24 18                | lea ecx,dword ptr ss:[esp+18]                            |
+6F654586 | 89B424 AC000000          | mov dword ptr ss:[esp+AC],esi                            |
+6F65458D | E8 8EC2FFFF              | call game.6F650820                                       | <--- call DecodeStatString()
+6F654592 | 85C0                     | test eax,eax                                             | <--- ¼ì²é½âÂëÊÇ·ñ³É¹¦ (1=³É¹¦)
+6F654594 | 8D4C24 14                | lea ecx,dword ptr ss:[esp+14]                            |
+6F654598 | 0F84 2F010000            | je game.6F6546CD                                         |
+6F65459E | 8D55 31                  | lea edx,dword ptr ss:[ebp+31]                            | <--- Ö¸ÏòÊä³ö»º³åÇø
+6F6545A1 | 52                       | push edx                                                 |
+6F6545A2 | 897424 2C                | mov dword ptr ss:[esp+2C],esi                            |
+6F6545A6 | E8 65E6E6FF              | call game.6F4C2C10                                       | <--- ReadByte() ¶ÁÈ¡ Flags
+6F6545AB | 8D45 34                  | lea eax,dword ptr ss:[ebp+34]                            | <--- Ö¸ÏòÊä³ö»º³åÇø (µØÍ¼Â·¾¶)
+6F6545AE | 50                       | push eax                                                 |
+6F6545AF | 8D4C24 18                | lea ecx,dword ptr ss:[esp+18]                            |
+6F6545B3 | E8 78E7E6FF              | call game.6F4C2D30                                       | <--- ReadString() ¶ÁÈ¡µØÍ¼Â·¾¶
+6F6545B8 | 8D4D 38                  | lea ecx,dword ptr ss:[ebp+38]                            |
+6F6545BB | 51                       | push ecx                                                 |
+6F6545BC | 8D4C24 18                | lea ecx,dword ptr ss:[esp+18]                            |
+6F6545C0 | E8 ABE6E6FF              | call game.6F4C2C70                                       |
+6F6545C5 | 8D55 3A                  | lea edx,dword ptr ss:[ebp+3A]                            |
+6F6545C8 | 52                       | push edx                                                 |
+6F6545C9 | 8D4C24 18                | lea ecx,dword ptr ss:[esp+18]                            |
+6F6545CD | E8 9EE6E6FF              | call game.6F4C2C70                                       | <--- Ö¸ÏòÊä³ö»º³åÇø (´´½¨Õß)
+6F6545D2 | 8D45 3C                  | lea eax,dword ptr ss:[ebp+3C]                            |
+6F6545D5 | 50                       | push eax                                                 |
+6F6545D6 | 8D4C24 18                | lea ecx,dword ptr ss:[esp+18]                            |
+6F6545DA | E8 51E7E6FF              | call game.6F4C2D30                                       | <--- ReadString() ¶ÁÈ¡´´½¨ÕßÃû×Ö
+6F6545DF | 6A 36                    | push 36                                                  |
+6F6545E1 | 8D75 54                  | lea esi,dword ptr ss:[ebp+54]                            |
+6F6545E4 | 56                       | push esi                                                 |
+6F6545E5 | 8D4C24 1C                | lea ecx,dword ptr ss:[esp+1C]                            |
+6F6545E9 | E8 22E8E6FF              | call game.6F4C2E10                                       |
+6F6545EE | 8B4C24 28                | mov ecx,dword ptr ss:[esp+28]                            |
+6F6545F2 | 3B4C24 24                | cmp ecx,dword ptr ss:[esp+24]                            |
+6F6545F6 | 76 03                    | jbe game.6F6545FB                                        |
+6F6545F8 | C606 00                  | mov byte ptr ds:[esi],0                                  |
+6F6545FB | 6A 10                    | push 10                                                  |
+6F6545FD | 8DB5 8A000000            | lea esi,dword ptr ss:[ebp+8A]                            |
+6F654603 | 56                       | push esi                                                 |
+6F654604 | 8D4C24 1C                | lea ecx,dword ptr ss:[esp+1C]                            |
+6F654608 | E8 03E8E6FF              | call game.6F4C2E10                                       |
+6F65460D | 8B5424 28                | mov edx,dword ptr ss:[esp+28]                            |
+6F654611 | 3B5424 24                | cmp edx,dword ptr ss:[esp+24]                            |
+6F654615 | 76 03                    | jbe game.6F65461A                                        |
+6F654617 | C606 00                  | mov byte ptr ds:[esi],0                                  |
+6F65461A | 8D45 30                  | lea eax,dword ptr ss:[ebp+30]                            |
+6F65461D | 50                       | push eax                                                 |
+6F65461E | 8D4C24 18                | lea ecx,dword ptr ss:[esp+18]                            |
+6F654622 | E8 E9E5E6FF              | call game.6F4C2C10                                       |
+6F654627 | 8B4C24 28                | mov ecx,dword ptr ss:[esp+28]                            |
+6F65462B | 3B4C24 24                | cmp ecx,dword ptr ss:[esp+24]                            |
+6F65462F | 74 0E                    | je game.6F65463F                                         |
+6F654631 | 8D55 40                  | lea edx,dword ptr ss:[ebp+40]                            |
+6F654634 | 8D4C24 14                | lea ecx,dword ptr ss:[esp+14]                            |
+6F654638 | E8 33C1FFFF              | call game.6F650770                                       |
+6F65463D | EB 2B                    | jmp game.6F65466A                                        |
+6F65463F | 8B15 380E976F            | mov edx,dword ptr ds:[6F970E38]                          |
+6F654645 | 8955 40                  | mov dword ptr ss:[ebp+40],edx                            |
+6F654648 | A1 3C0E976F              | mov eax,dword ptr ds:[6F970E3C]                          |
+6F65464D | 8945 44                  | mov dword ptr ss:[ebp+44],eax                            |
+6F654650 | 8B0D 400E976F            | mov ecx,dword ptr ds:[6F970E40]                          |
+6F654656 | 894D 48                  | mov dword ptr ss:[ebp+48],ecx                            |
+6F654659 | 8B15 440E976F            | mov edx,dword ptr ds:[6F970E44]                          |
+6F65465F | 8955 4C                  | mov dword ptr ss:[ebp+4C],edx                            |
+6F654662 | A1 480E976F              | mov eax,dword ptr ds:[6F970E48]                          |
+6F654667 | 8945 50                  | mov dword ptr ss:[ebp+50],eax                            |
+6F65466A | 8B4C24 24                | mov ecx,dword ptr ss:[esp+24]                            | <--- ECX = »º³åÇø½áÊøÖ¸Õë (End Pointer)
+6F65466E | 394C24 28                | cmp dword ptr ss:[esp+28],ecx                            | <--- ±È½Ï»º³åÇøµ±Ç°Ö¸Õë (Current Pointer)
+6F654672 | 75 55                    | jne game.6F6546C9                                        |
+6F654674 | 8B53 20                  | mov edx,dword ptr ds:[ebx+20]                            |
+6F654677 | 8955 20                  | mov dword ptr ss:[ebp+20],edx                            |
+6F65467A | 8B43 24                  | mov eax,dword ptr ds:[ebx+24]                            |
+6F65467D | 8945 24                  | mov dword ptr ss:[ebp+24],eax                            |
+6F654680 | 8B4B 28                  | mov ecx,dword ptr ds:[ebx+28]                            |
+6F654683 | 894D 28                  | mov dword ptr ss:[ebp+28],ecx                            |
+6F654686 | 8B53 2C                  | mov edx,dword ptr ds:[ebx+2C]                            |
+6F654689 | 8955 2C                  | mov dword ptr ss:[ebp+2C],edx                            |
+6F65468C | 8B83 B0000000            | mov eax,dword ptr ds:[ebx+B0]                            |
+6F654692 | 83F8 01                  | cmp eax,1                                                |
+6F654695 | 8985 9C000000            | mov dword ptr ss:[ebp+9C],eax                            |
+6F65469B | 72 2C                    | jb game.6F6546C9                                         |
+6F65469D | 83F8 10                  | cmp eax,10                                               |
+6F6546A0 | 77 27                    | ja game.6F6546C9                                         |
+6F6546A2 | 8B83 B4000000            | mov eax,dword ptr ds:[ebx+B4]                            |
+6F6546A8 | 8D4C24 14                | lea ecx,dword ptr ss:[esp+14]                            |
+6F6546AC | 8985 A0000000            | mov dword ptr ss:[ebp+A0],eax                            |
+6F6546B2 | C78424 A8000000 FFFFFFFF | mov dword ptr ss:[esp+A8],FFFFFFFF                       |
+6F6546BD | E8 AEFBFFFF              | call game.6F654270                                       |
+6F6546C2 | B8 01000000              | mov eax,1                                                |
+6F6546C7 | EB 16                    | jmp game.6F6546DF                                        |
+6F6546C9 | 8D4C24 14                | lea ecx,dword ptr ss:[esp+14]                            |
+6F6546CD | C78424 A8000000 FFFFFFFF | mov dword ptr ss:[esp+A8],FFFFFFFF                       |
+6F6546D8 | E8 93FBFFFF              | call game.6F654270                                       |
+6F6546DD | 33C0                     | xor eax,eax                                              |
+6F6546DF | 8B8C24 A0000000          | mov ecx,dword ptr ss:[esp+A0]                            |
+6F6546E6 | 64:890D 00000000         | mov dword ptr fs:[0],ecx                                 |
+6F6546ED | 59                       | pop ecx                                                  |
+6F6546EE | 5F                       | pop edi                                                  |
+6F6546EF | 5E                       | pop esi                                                  |
+6F6546F0 | 5D                       | pop ebp                                                  |
+6F6546F1 | 5B                       | pop ebx                                                  |
+6F6546F2 | 8B8C24 88000000          | mov ecx,dword ptr ss:[esp+88]                            |
+6F6546F9 | 33CC                     | xor ecx,esp                                              |
+6F6546FB | E8 59C91800              | call game.6F7E1059                                       |
+6F654700 | 81C4 98000000            | add esp,98                                               |
+6F654706 | C3                       | ret                                                      |
+```
+---
+### ºËÐÄ¹ÊÕÏµã·ÖÎö
+
+Çë¿´Õâ¶Î´úÂë£º
+
+```assembly
+6F65466A | 8B4C24 24     | mov ecx,dword ptr ss:[esp+24]  ; ECX = »º³åÇø½áÊøÖ¸Õë (End Pointer)
+6F65466E | 394C24 28     | cmp dword ptr ss:[esp+28],ecx  ; ±È½Ï»º³åÇøµ±Ç°Ö¸Õë (Current Pointer)
+6F654672 | 75 55         | jne game.6F6546C9              ; <--- ËÀÔÚÕâÀïÈç¹û²»ÏàµÈ£¬Ìø×ª±¨´í
+```
+
+#### 1. ÕâÊÇÊ²Ã´¼ì²é£¿
+ÕâÊÇÒ»¸ö **¡°Êý¾ÝÁ÷ÍêÕûÐÔ¼ì²é¡± (Stream Integrity / EOF Check)**¡£
+
+*   War3 ÔÚ½âÎö StatString Ê±£¬»áÏñ¶ÁÈ¡ÎÄ¼þÁ÷Ò»Ñù£¬¶ÁÒ»¸ö×Ö½Ú¡¢¶ÁÒ»¸ö×Ö·û´®¡¢¶ÁÒ»¸öÊý×é¡­¡­Ö¸Õë»á²»¶ÏÏòºóÒÆ¶¯¡£
+*   `[esp+24]`£ºÊÇÕâ¶Î StatString Êý¾ÝµÄ**×Ü³¤¶È/½áÊøÎ»ÖÃ**¡£
+*   `[esp+28]`£ºÊÇ½âÎöÆ÷µ±Ç°**¶Áµ½ÁËÄÄÀï**¡£
+
+**Âß¼­º¬Òå£º**
+> "ÎÒÒÑ¾­¶ÁÍêÁËËùÓÐ¶¨ÒåµÄ×Ö¶Î£¨µØÍ¼Ãû¡¢´´½¨Õß¡¢²ÎÊýµÈ£©£¬ÏÖÔÚµÄ¶ÁÈ¡Ö¸Õë**±ØÐë**ÕýºÃÍ£ÔÚ»º³åÇøµÄÄ©Î²¡£Èç¹û»¹ÓÐÊ£ÓàÊý¾ÝÃ»¶Á£¬»òÕß¶Á¹ýÍ·ÁË£¬ËµÃ÷Êý¾Ý¸ñÊ½´íÎó£¡"
+
+#### 2. ÎªÊ²Ã´ [test] ÄÜ¹ý£¬¶ø [bot] ¹ÒÁË£¿
+
+*   **[test] (ÕæÈË)**£º
+    *   ·þÎñ¶Ë·¢µÄÊÇ ASCII `"91..."`¡£
+    *   ËäÈ»ÊÇ ASCII£¬µ«Ëü±»½âÎöÆ÷¶ÁÈ¡Ê±£¬×Ö·û´®µÄ `\0` ½áÊø·ûÎ»ÖÃ¡¢Êý×éµÄ³¤¶È£¬Ç¡ºÃÈÃÖ¸Õë×îºó**¶ÔÆë**ÁË¡£ÕâÒÀÈ»ÊÇÒ»¸ö¸ÅÂÊ¼«Ð¡µÄÇÉºÏ£¨ÐÒ´æÕßÆ«²î£©¡£
+
+*   **[bot] (»úÆ÷ÈË)**£º
+    *   ·þÎñ¶Ë·¢µÄÊÇ ASCII Hex String£¨ÀýÈç³¤¶È 200 ×Ö½Ú£©¡£
+    *   µ«Ô­±¾µÄ Binary Êý¾ÝÖ»ÓÐ 100 ×Ö½Ú¡£
+    *   **½âÂëÆ÷**£º°ÑÕâ 200 ×Ö½Ú ASCII µ±×÷¶þ½øÖÆ½âÃÜÁË¡£
+    *   **½âÎöÆ÷**£º
+        *   µ÷ÓÃ `ReadString` ¶ÁÈ¡µØÍ¼Ãû -> ¶Áµ½Ä³¸öÅ¼È»µÄ `00` Í£ÏÂ¡£
+        *   µ÷ÓÃ `ReadString` ¶ÁÈ¡´´½¨Õß -> ¶Áµ½ÁíÒ»¸ö `00` Í£ÏÂ¡£
+        *   ... Ò»Â·¶ÁÍê¡£
+    *   **×îÖÕ¼ì²é**£º
+        *   ½âÎöÆ÷¾õµÃ£º¡°°´ÕÕ¹æÔò£¬ÎÒ¶ÁÍêÁËËùÓÐ×Ö¶Î£¬ÎÒ×ßÁË **80 ¸ö²½³¤**¡±¡£
+        *   µ«ÊÇ»º³åÇø×Ü³¤¶ÈÊÇ **200 ¸ö²½³¤**£¨ÒòÎª·¢µÄÊÇ Hex String£¬³¤¶È·­±¶ÁË£©¡£
+        *   **±È½Ï**£º`80 != 200`¡£
+        *   **ÅÐ¶¨**£ºÊý¾ÝÁ÷Î´ºÄ¾¡£¨Data Leftover£©£¬Êý¾Ý°ü½á¹¹´íÂÒ¡£
+        *   **½á¹û**£º`jne` Ìø×ª£¬·µ»Ø `0` (False)¡£
+
+### ÐÞÕýºóµÄÍêÕûÂß¼­Á´
+
+1.  **ÊÕ°ü**£ºÊÕµ½´íÎóµÄ ASCII Hex String¡£
+2.  **½âÂë (`6F650820`)**£º
+    *   **ÁîÈËÒâÍâµØ**·µ»ØÁË `1` (True)¡£ËµÃ÷Í·²¿Ð£Ñé±È½Ï¿íËÉ£¬»òÕßÔËÆøºÃ¡£
+3.  **½âÎö (`6F654510`)**£º
+    *   ³ÌÐò°´²¿¾Í°àµØ¶ÁÈ¡ÁËµØÍ¼Ãû¡¢´´½¨ÕßµÈÐÅÏ¢£¨´ËÊ±ÄÚ´æÀïÒÑ¾­ÌîÈëÁËÕâÐ©ÂÒÂëÊý¾Ý£©¡£
+4.  **ÍêÕûÐÔÐ£Ñé (`6F654672`)**£º
+    *   ¼ì²é `CurrentPtr == EndPtr`¡£
+    *   ÓÉÓÚ Hex String ³¤¶ÈÍ¨³£ÊÇ Binary µÄ **2±¶**£¬½âÎöÆ÷¶ÁÍêÕý³£Âß¼­ËùÐèµÄ×Ö½Úºó£¬**»º³åÇøÀï»¹Ê£ÏÂÒ»´ó°ëÊý¾ÝÃ»¶Á**¡£
+    *   **Ð£ÑéÊ§°Ü£¡**
+5.  **»Ø¹ö/¶ªÆú**£º
+    *   º¯Êý·µ»Ø `0`¡£
+    *   ÉÏ²ãº¯Êý£¨UIË¢ÐÂº¯Êý£©¿´µ½·µ»Ø `0`£¬ÈÏÎªÊý¾ÝÎÞÐ§£¬**¶ªÆú**ÁË¸Õ¸Õ¶ÁÈ¡µÄËùÓÐÐÅÏ¢¡£
+    *   **ÏÖÏó**£ºÓÒ²àÃæ°å¿Õ°×¡£
+
+### ½áÂÛ
+
+ÄãµÄÕâ´Î·´»ã±à·ÖÎö·Ç³£¹Ø¼ü£¡ËüÖ¤Ã÷ÁË£º
+
+**bot ·¿¼ä¹Òµô£¬²»ÊÇÒòÎª¡°½âÃÜÊ§°Ü¡±£¬¶øÊÇÒòÎª¡°³¤¶È²»Æ¥Åä£¨Parsing Mismatch£©¡±¡£**
+
+## 4. ¸ù±¾Ô­Òò (Root Cause)
 
 ÎÊÌâµÄ¸ùÔ´ÔÚÓÚ PVPGN ·þÎñ¶Ë·¢ËÍ `StatString` (µØÍ¼/Ö÷»úÐÅÏ¢) µÄÊý¾Ý¸ñÊ½´íÎó¡£
 
@@ -259,7 +494,7 @@ War3 µÄ½âÂëËã·¨£¨»ùÓÚ XOR/Î»ÒÆ£©ÔÚ´¦Àí ASCII ×Ö·û `0x39 ('9')` Ê±£¬½âÃÜ³öµÄÊý¾ÝÍ
 
 ---
 
-## 4. ÐÞ¸´·½°¸ (Fix)
+## 5. ÐÞ¸´·½°¸ (Fix)
 
 ÐÞ¸Ä·þÎñ¶Ë´úÂë£¬½« Hex String ×ª»»»Ø Binary ÔÙ·¢ËÍ¡£
 
