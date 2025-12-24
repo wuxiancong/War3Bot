@@ -5,10 +5,11 @@
 
 ## 问题描述 (Issue Description)
 
-在使用自定义机器人（或通过 Bot 代理的真人玩家）在 PVPGN 服务端创建房间时：
-1.  房间可以正常显示在游戏列表中。
-2.  **当点击列表选项时显示网络错误的对话框。**
-3.  尝试点击“加入游戏”时，客户端弹出错误提示：**"The game you attempted to join could not be found./n/nYou may have entered the name incorrectly or the game creator may have canceled the game."** (您尝试加入的游戏未找到。/n/您输入的名称可能不正确，或者游戏创建者可能已取消了该游戏。)。
+**现象:**
+在使用自定义 C++ 编写的 War3Bot 创建房间后：
+1.  **列表可见**: 房间可以正常显示在魔兽争霸 III 的局域网游戏列表中（说明 UDP 广播正常）。
+2.  **加入失败**: 当点击列表中的游戏尝试加入时，客户端立刻弹出错误提示。
+3.  **错误文本**: 尝试点击“加入游戏”时，客户端弹出错误提示：**"The game you attempted to join could not be found./n/nYou may have entered the name incorrectly or the game creator may have canceled the game."** (您尝试加入的游戏未找到。/n/您输入的名称可能不正确，或者游戏创建者可能已取消了该游戏。)。
 
 **环境 (Environment):**
 - **客户端:** Warcraft III (1.26a / Game.dll)
@@ -22,13 +23,16 @@
 
 ---
 
-## 1. 逆向分析：为何点击“加入游戏”报错？
+## 2. 逆向分析过程 (Reverse Engineering)
 
-**断点位置:** `02A79650` (弹出对话框)
+### 2.1 字符处理：追踪处理字符的函数
+通过搜索字符串 "The game you attempted to join could not be found"，定位到 `Storm.dll` 中的字符处理函数。
 
-当我们点击加入按钮时，触发了错误弹窗 "The game you attempted to join could not be found./n/nYou may have entered the name incorrectly or the game creator may have canceled the game."。通过反汇编分析，发现是因为**网络连接返回错误码**。
+**地址**: `02A79650` (字符处理逻辑)
+**偏移**: `game.dll + 6B9650`
+**关键发现**: 命中 Storm.dll Ordinal#501 导入表序号，由此追踪上一级函数。
 
-### game.dll + 62A5D0
+
 ```assembly
 02A79650 | 53                       | push ebx                                   |
 02A79651 | 56                       | push esi                                   |
@@ -76,7 +80,12 @@
 02A796B2 | C2 0400                  | ret 4                                      |
 ```
 
-### game.dll + 5BABF0
+### 2.2 错误分发：定位错误弹窗来源
+
+**地址**: `02A651D0` (错误分发逻辑)
+**偏移**: `game.dll + 62A5D0`
+**关键发现**: 程序根据错误代码（Error ID）查表跳转。本案中的错误码导致跳转到 `NETERROR_JOINGAMENOTFOUND`。
+
 ```assembly
 02A651D0 | 81EC 04020000            | sub esp,204                                |
 02A651D6 | A1 40E1F502              | mov eax,dword ptr ds:[2F5E140]             |
@@ -198,8 +207,13 @@
 02A6535B | 0A0A                     | or cl,byte ptr ds:[edx]                    |
 02A6535D | 0A09                     | or cl,byte ptr ds:[ecx]                    |
 ```
+### 2.3 逻辑层：追溯加入流程
+通过分析点击“加入”按钮后的调用栈，找到发起连接的入口。
 
-### game.dll + 5B51D0
+**地址**: `029DABF0` (UI 事件处理)
+**偏移**: `game.dll + 5BABF0`
+这里处理了用户的键盘输入、创建游戏、刷新列表以及**加入游戏**的请求。
+
 ```assembly
 029DABF0 | 8B4424 04                | mov eax,dword ptr ss:[esp+4]               |
 029DABF4 | 56                       | push esi                                   |
@@ -402,7 +416,8 @@
 029DAE1A | 9D                       | popfd                                      |
 029DAE1B | 02CC                     | add cl,ah                                  |
 ```
-### game.dll + 5C9650
+
+下面的函数 02B7A6FB 在调用上面子函数，此父函数处于事件循环中，所以不在这里断点。
 ```assembly
 02B7A5D0 | 6A FF                    | push FFFFFFFF                              |
 02B7A5D2 | 68 880AD902              | push game.2D90A88                          |
@@ -559,10 +574,12 @@
 02B7A790 | C2 0800                  | ret 8                                      |
 ```
 
-## 1. 逆向分析：为何网络连接返回错误码？
-- **NETERROR_JOINGAMENOTFOUND**
+### 2.3 网络层：定位连接失败原因
+深入底层网络调用，发现 `WSARecv` 返回异常，或在连接建立后未能读取到握手数据。
 
-- 在 **02C2A9F7** 处断点
+**地址**: `02C2A990` (网络接收封装函数)
+**地址**: `game.dll + 5C9650`
+**关键发现**: `WSARecv` 被调用，但没有收到有效数据，导致上层判定连接无效。
 
 ```assembly
 02C2A990 | 83EC 10                  | sub esp,10                                 |
@@ -603,12 +620,12 @@
 02C2A9F1 | 52                       | push edx                                   |
 02C2A9F2 | 50                       | push eax                                   |
 02C2A9F3 | 895C24 30                | mov dword ptr ss:[esp+30],ebx              |
-02C2A9F7 | FFD7                     | call edi                                   | <--- 根据实际情况设置暂停条件([0EE9FEA0]!=1&&[0F11FEA0]!=1&&[144FFEA0]!=1&&[1796FEA0]!=1&&[1782FEA0]!=1)
-02C2A9F9 | 83F8 FF                  | cmp eax,FFFFFFFF                           | <--- 返回-1 表示有错误
+02C2A9F7 | FFD7                     | call edi                                   | <--- 调用 WSARecv 根据实际情况设置暂停条件([0EE9FEA0]!=1&&[0F11FEA0]!=1&&[144FFEA0]!=1&&[1796FEA0]!=1&&[1782FEA0]!=1)
+02C2A9F9 | 83F8 FF                  | cmp eax,FFFFFFFF                           | <--- 检查返回值 (-1 表示 SOCKET_ERROR)
 02C2A9FC | 5B                       | pop ebx                                    |
 02C2A9FD | 75 0D                    | jne game.2C2AA0C                           |
-02C2A9FF | FF15 9CD8DB02            | call dword ptr ds:[<Ordinal#111>]          |
-02C2AA05 | 3D E5030000              | cmp eax,3E5                                |
+02C2A9FF | FF15 9CD8DB02            | call dword ptr ds:[<Ordinal#111>]          | <--- 获取 WSAGetLastError
+02C2AA05 | 3D E5030000              | cmp eax,3E5                                | <--- 检查是否为 WSA_IO_PENDING (997)
 02C2AA0A | 75 30                    | jne game.2C2AA3C                           |
 02C2AA0C | 5F                       | pop edi                                    |
 02C2AA0D | 5E                       | pop esi                                    |
@@ -640,4 +657,63 @@
 02C2AA4D | 5E                       | pop esi                                    |
 02C2AA4E | 83C4 10                  | add esp,10                                 |
 02C2AA51 | FFE0                     | jmp eax                                    |
+```
+
+**调试结论**:
+1.  客户端发起了 `connect`。
+2.  客户端调用 `WSARecv` 等待服务端的握手包（协议头 `F7`）。
+3.  **结果**: 接收超时或连接被立即重置（RST），导致进入 `NETERROR_JOINGAMENOTFOUND` 分支。
+
+---
+
+## 3. 根因分析 (Root Cause)
+
+经过对 Bot 源代码的审查，发现**服务端（Bot）代码缺失了 TCP 监听逻辑**。
+
+**错误代码逻辑 (Client.cpp):**
+```cpp
+// 只有 UDP 用于广播，没有 TCP Server
+m_udpSocket->bind(QHostAddress::AnyIPv4, port); 
+// 告诉魔兽我的游戏端口是 port，但实际上这个端口只绑定了 UDP，没绑定 TCP
+sendPacket(SID_NETGAMEPORT, port); 
+```
+
+**问题链:**
+1.  **UDP 广播正常**: 魔兽客户端收到了 UDP 广播，解析出 IP 和端口，将房间显示在列表里。
+2.  **TCP 连接失败**: 当玩家点击“加入”时，魔兽客户端向该端口发起 **TCP 连接**。
+3.  **操作系统拒绝**: 由于 Bot 此时只在端口上运行了 `QUdpSocket`，没有 `QTcpServer` 进行 `listen`，操作系统内核直接回复 **RST (Reset)** 包拒绝连接。
+4.  **客户端报错**: 魔兽客户端收到连接拒绝或超时，判定游戏不存在。
+
+---
+
+## 4. 解决方案 (Solution)
+
+在 Bot 代码中引入 `QTcpServer`，并确保与 UDP 绑定在同一端口。
+
+**修复后的代码片段:**
+
+```cpp
+// 1. 在头文件添加 TCP Server
+QTcpServer *m_gameServer;
+
+// 2. 在绑定端口时同时启动 UDP 和 TCP
+bool Client::bindToRandomPort() {
+    // ...
+    // 绑定 UDP
+    m_udpSocket->bind(QHostAddress::AnyIPv4, port);
+    
+    // [修复] 同时监听 TCP
+    m_gameServer = new QTcpServer(this);
+    if (!m_gameServer->listen(QHostAddress::AnyIPv4, port)) {
+        return false; // 如果 TCP 监听失败，则该端口不可用
+    }
+    // ...
+}
+
+// 3. 处理玩家进入 (W3GS 握手)
+connect(m_gameServer, &QTcpServer::newConnection, this, &Client::onNewConnection);
+```
+
+**验证结果:**
+修复代码后，Bot 同时监听 TCP/UDP 6112 端口。客户端点击加入时，TCP 握手成功，Bot 回复 `0xF7 0x1F` (Request Accepted)，成功进入房间。
 ```

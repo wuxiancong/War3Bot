@@ -129,7 +129,7 @@ void Client::onNewConnection()
         m_tcpSockets.append(tcpSocket);
 
         // 连接玩家数据的读取信号
-        connect(tcpSocket, &QTcpSocket::readyRead, this, [tcpSocket]() {
+        connect(tcpSocket, &QTcpSocket::readyRead, this, [tcpSocket, this]() {
             // 1. 读取当前缓冲区所有数据
             QByteArray data = tcpSocket->readAll();
 
@@ -165,30 +165,26 @@ void Client::onNewConnection()
 
                 // --- C. Switch 逻辑处理 ---
                 switch (packetId) {
-                case 0x1E: // W3GS_REQJOIN (玩家请求加入)
+                case 0x1E: // W3GS_REQJOIN
                 {
                     LOG_INFO("🚪 收到加入请求 (0x1E)，正在验证并批准...");
 
-                    // 构造回复包: W3GS_REQJOIN (0x1F)
-                    // 格式: [F7] [1F] [08 00] [Status] [PlayerID(4)]
-                    // Status: 0 = 成功, 1 = 房间满
-
+                    // 1. 发送 0x1F (批准)
                     QByteArray response;
                     QDataStream out(&response, QIODevice::WriteOnly);
                     out.setByteOrder(QDataStream::LittleEndian);
+                    out << (quint8)0xF7 << (quint8)0x1F << (quint16)8 << (quint8)0;
 
-                    out << (quint8)0xF7;            // Header
-                    out << (quint8)0x1F;            // Packet ID
-                    out << (quint16)8;              // Length (固定 8 字节)
-                    out << (quint8)0;               // Status: 0 = OK
-
-                    // 分配玩家 ID (PlayerID)
-                    // 必须唯一，后续用于 UDP 握手。简单起见使用 socket 句柄
-                    quint32 playerId = (quint32)tcpSocket->socketDescriptor();
+                    quint32 playerId = 2;
                     out << playerId;
 
                     tcpSocket->write(response);
                     LOG_INFO(QString("✅ 已发送批准加入 (0x1F), 分配 PlayerID: %1").arg(playerId));
+
+                    // 2. 紧接着发送 0x09 (槽位信息)
+                    QByteArray slotPacket = createSlot();
+                    tcpSocket->write(slotPacket);
+                    LOG_INFO("📋 已发送房间槽位信息 (0x09)");
                 }
                 break;
 
@@ -198,13 +194,11 @@ void Client::onNewConnection()
                     break;
 
                 case 0x06: // W3GS_MAPPART (地图下载/校验相关)
-                    // 此时魔兽会询问地图信息，如果版本不对会触发地图下载
-                    // 暂时不处理，通常只回复 0x1F 就足够进入房间了
                     LOG_INFO("🗺️ 收到地图相关请求 (0x06)，暂忽略");
                     break;
 
                 case 0x28: // W3GS_PONG_TO_HOST (TCP Ping 回复)
-                    // LOG_INFO("💓 收到玩家 TCP Pong");
+                    LOG_INFO("💓 收到玩家 TCP Pong");
                     break;
 
                 default:
@@ -801,6 +795,85 @@ void Client::createGame(const QString &gameName, const QString &password, Provid
 
     sendPacket(SID_STARTADVEX3, payload);
     LOG_INFO("📤 房间创建请求发送完毕");
+}
+
+QByteArray createSlot()
+{
+    QByteArray slotsInfo;
+    QDataStream ds(&slotsInfo, QIODevice::WriteOnly);
+    ds.setByteOrder(QDataStream::LittleEndian);
+
+    // --- 构造槽位数据 (SlotInfo) ---
+    // 假设是 12 个槽位 (War3 最大)
+    quint8 numslotsInfo = 12;
+    ds << numslotsInfo;
+
+    // 定义每个槽位的数据
+    for (int i = 0; i < numslotsInfo; ++i) {
+        // PID: 0=空位, 其他=玩家ID
+        // DownloadStatus: 255=100%, 0=0%
+        // slotsInfotatus: 0=Open, 1=Closed, 2=Occupied
+        // Computer: 0=Human, 1=Comp
+        // Team: 0-11
+        // Color: 0-11
+        // Race: 1=Human, 2=Orc, 4=NE, 8=UD, 32=Random
+
+        if (i == 0) {
+            // 槽位 0: 主机 (Bot/Admin) - 也就是你自己
+            ds << (quint8)1;    // PID (Host)
+            ds << (quint8)100;  // Download Status (100%)
+            ds << (quint8)2;    // Status: Occupied
+            ds << (quint8)0;    // Computer: No
+            ds << (quint8)0;    // Team 0
+            ds << (quint8)0;    // Color Red
+            ds << (quint8)1;    // Race Human
+        }
+        else if (i == 1) {
+            // 槽位 1: 给刚才进来的玩家 (临时写死，生产环境需要根据 PlayerID 动态填)
+            // 这里的 PID 需要和你 0x1F 包里分配的一致！
+            // 假设你在 0x1F 里分配了 socketDescriptor，这里为了测试先填 2
+            ds << (quint8)2;    // PID
+            ds << (quint8)255;  // Download Status (100%) - 假装他有地图
+            ds << (quint8)2;    // Status: Occupied
+            ds << (quint8)0;    // Computer: No
+            ds << (quint8)0;    // Team 0
+            ds << (quint8)1;    // Color Blue
+            ds << (quint8)1;    // Race Human
+        }
+        else {
+            // 其他槽位: 空闲 (Open)
+            ds << (quint8)0;    // PID (0 = Empty)
+            ds << (quint8)0;    // Download %
+            ds << (quint8)0;    // Status: Open
+            ds << (quint8)0;    // Computer: No
+            ds << (quint8)0;    // Team
+            ds << (quint8)(i);  // Color
+            ds << (quint8)32;   // Race Random
+        }
+    }
+
+    // --- 构造完整 0x09 包 ---
+    QByteArray packet;
+    QDataStream out(&packet, QIODevice::WriteOnly);
+    out.setByteOrder(QDataStream::LittleEndian);
+
+    out << (quint8)0xF7;    // Header
+    out << (quint8)0x09;    // ID: W3GS_SLOTINFO
+
+    // 计算长度: Header(2) + Length(2) + NumslotsInfo(1) + (slotsInfoData) + RandomSeed(4) + GameType(1) + NumPlayers(1)
+    // slotsInfoData = numslotsInfo * 7 bytes
+    quint16 len = 4 + 1 + (numslotsInfo * 7) + 4 + 1 + 1;
+
+    out << len;
+
+    // 写入槽位数据
+    out.writeRawData(slotsInfo.data(), slotsInfo.size());
+
+    out << (quint32)123456; // RandomSeed (随机种子)
+    out << (quint8)3;       // GameType (3=Custom, 0=Melee)
+    out << (quint8)2;       // NumPlayers (当前房间人数)
+
+    return packet;
 }
 
 // =========================================================

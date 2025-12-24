@@ -161,6 +161,7 @@ public:
                     SubGameType subGameType, LadderType ladderType);
     void cancelGame();                              // 取消游戏/解散
     void stopAdv();                                 // 停止广播
+    QByteArray createSlot();
 
     // --- 工具与状态 ---
     QString getPrimaryIPv4();
