@@ -641,7 +641,6 @@ void Client::createGame(const QString &gameName, const QString &password, Provid
 {
     LOG_INFO(QString("🚀 广播房间: [%1]").arg(gameName));
 
-    // 1. 发送 UDP 端口通知 (保持不变)
     if (m_udpSocket->state() == QAbstractSocket::BoundState) {
         QByteArray portPayload;
         QDataStream portOut(&portPayload, QIODevice::WriteOnly);
@@ -655,7 +654,6 @@ void Client::createGame(const QString &gameName, const QString &password, Provid
         return;
     }
 
-    // 2. 加载地图并生成核心编码数据 (保持不变)
     if (!m_war3Map.load(m_dota683dPath)) {
         LOG_ERROR("❌ 地图加载失败");
         return;
@@ -668,31 +666,20 @@ void Client::createGame(const QString &gameName, const QString &password, Provid
 
     m_hostCounter++;
 
-    // =========================================================================
-    // ★★★ 核心修改区域 ★★★
-    // =========================================================================
-
     QByteArray finalStatString;
 
-    // 1. 【必须】先放入编码后的地图数据
-    // 这样 War3 解析器在 offset 0 处就能读到正确的 Mask，从而正确解码地图信息
-    finalStatString.append(encodedData);
+    // 1. 写入空闲槽位标识
+    finalStatString.append('9');
 
-    // 2. 【后缀】追加 '9' 和 HostCounter 作为随机盐 (Salt)
-    // 这些数据会被追加在地图数据之后。
-    // War3 解析完前面的地图数据后，会忽略后面的垃圾数据，但这些数据能保证 StatString 的唯一性。
-
-    finalStatString.append('9'); // 这里作为分隔符或填充存在，不再影响头部解析
-
-    // 生成反转的 Hex 字符串 (保持你原有的逻辑)
+    // 2. 写入反转的 Host Counter Hex 字符串
     QString hexCounter = QString("%1").arg(m_hostCounter, 8, 16, QChar('0'));
     for(int i = hexCounter.length() - 1; i >= 0; i--) {
         finalStatString.append(hexCounter[i].toLatin1());
     }
 
-    // =========================================================================
+    // 3. 追加编码后的地图数据
+    finalStatString.append(encodedData);
 
-    // 3. 构建最终数据包
     QByteArray payload;
     QDataStream out(&payload, QIODevice::WriteOnly);
     out.setByteOrder(QDataStream::LittleEndian);
@@ -703,13 +690,10 @@ void Client::createGame(const QString &gameName, const QString &password, Provid
         << (quint32)providerVersion << (quint32)ladderType;
     out.writeRawData(gameName.toUtf8().constData(), gameName.toUtf8().size()); out << (quint8)0;
     out.writeRawData(password.toUtf8().constData(), password.toUtf8().size()); out << (quint8)0;
-
-    // 写入包含后缀的 StatString
-    out.writeRawData(finalStatString.constData(), finalStatString.size());
-    out << (quint8)0; // StatString 结束符
+    out.writeRawData(finalStatString.constData(), finalStatString.size()); out << (quint8)0;
 
     sendPacket(SID_STARTADVEX3, payload);
-    LOG_INFO(QString("📤 房间创建请求发送完毕 (StatString Size: %1)").arg(finalStatString.size()));
+    LOG_INFO("📤 房间创建请求发送完毕");
 }
 
 // =========================================================
