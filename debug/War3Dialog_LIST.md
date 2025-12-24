@@ -380,7 +380,7 @@
 6F654667 | 8945 50                  | mov dword ptr ss:[ebp+50],eax                            |
 6F65466A | 8B4C24 24                | mov ecx,dword ptr ss:[esp+24]                            | <--- ECX = 缓冲区结束指针 (End Pointer)
 6F65466E | 394C24 28                | cmp dword ptr ss:[esp+28],ecx                            | <--- 比较缓冲区当前指针 (Current Pointer)
-6F654672 | 75 55                    | jne game.6F6546C9                                        |
+6F654672 | 75 55                    | jne game.6F6546C9                                        | <--- 错误发生在这里
 6F654674 | 8B53 20                  | mov edx,dword ptr ds:[ebx+20]                            |
 6F654677 | 8955 20                  | mov dword ptr ss:[ebp+20],edx                            |
 6F65467A | 8B43 24                  | mov eax,dword ptr ds:[ebx+24]                            |
