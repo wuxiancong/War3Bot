@@ -167,24 +167,72 @@ void Client::onNewConnection()
                 switch (packetId) {
                 case 0x1E: // W3GS_REQJOIN
                 {
-                    LOG_INFO("🚪 收到加入请求 (0x1E)，正在验证并批准...");
+                    LOG_INFO("🚪 收到加入请求 (0x1E)");
 
-                    // 1. 发送 0x1F (批准)
-                    QByteArray response;
-                    QDataStream out(&response, QIODevice::WriteOnly);
+                    // 1. 定义 ID
+                    quint8 hostPid = 1;      // 主机 ID
+                    quint8 assignedPid = 2;  // 分配给新玩家的 ID
+                    quint8 numSlots = 12;    // 最大槽位数
+
+                    // 2. 生成槽位数据 (Payload的一部分)
+                    QByteArray slotData = generateSlotData(numSlots, hostPid, assignedPid);
+
+                    // 3. 构造 0x04 包
+                    QByteArray packet;
+                    QDataStream out(&packet, QIODevice::WriteOnly);
                     out.setByteOrder(QDataStream::LittleEndian);
-                    out << (quint8)0xF7 << (quint8)0x1F << (quint16)8 << (quint8)0;
 
-                    quint32 playerId = 2;
-                    out << playerId;
+                    // --- Header ---
+                    out << (quint8)0xF7;
+                    out << (quint8)0x04; // W3GS_SLOTINFOJOIN
+                    out << (quint16)0;   // 占位符：总长度 (稍后回填)
 
-                    tcpSocket->write(response);
-                    LOG_INFO(QString("✅ 已发送批准加入 (0x1F), 分配 PlayerID: %1").arg(playerId));
+                    // --- Body ---
 
-                    // 2. 紧接着发送 0x09 (槽位信息)
-                    QByteArray slotPacket = createSlot();
-                    tcpSocket->write(slotPacket);
-                    LOG_INFO("📋 已发送房间槽位信息 (0x09)");
+                    // (UINT16) Length of Slot data (包含开头的 numSlots 字节)
+                    out << (quint16)slotData.size();
+
+                    // (UINT8) NumSlots + Slot Data array
+                    out.writeRawData(slotData.data(), slotData.size());
+
+                    // (UINT32) Random seed
+                    out << (quint32)12345;
+
+                    // (UINT8) Game type (3 = Custom)
+                    out << (quint8)3;
+
+                    // (UINT8) Number of player slots (total)
+                    out << (quint8)numSlots;
+
+                    // (UINT8) Player number
+                    out << (quint8)assignedPid;
+
+                    // (UINT16) AF_INET (2)
+                    out << (quint16)2;
+
+                    // (UINT16) Port (客户端的端口)
+                    out << (quint16)tcpSocket->peerPort();
+
+                    // (UINT32) External IP (客户端的IP)
+                    quint32 clientIp = tcpSocket->peerAddress().toIPv4Address();
+
+                    out << clientIp;
+
+                    // (UINT32) Unknown (0)
+                    out << (quint32)0;
+
+                    // (UINT32) Unknown (0)
+                    out << (quint32)0;
+
+                    // --- 回填总长度 ---
+                    QDataStream lenStream(&packet, QIODevice::ReadWrite);
+                    lenStream.setByteOrder(QDataStream::LittleEndian);
+                    lenStream.skipRawData(2); // 跳过 F7 04
+                    lenStream << (quint16)packet.size(); // 写入实际长度
+
+                    // 4. 发送
+                    tcpSocket->write(packet);
+                    LOG_INFO(QString("✅ 发送 0x04 (SLOTINFOJOIN), Size: %1, PID: %2").arg(packet.size()).arg(assignedPid));
                 }
                 break;
 
@@ -797,88 +845,57 @@ void Client::createGame(const QString &gameName, const QString &password, Provid
     LOG_INFO("📤 房间创建请求发送完毕");
 }
 
-QByteArray Client::createSlot()
-{
-    QByteArray slotsInfo;
-    QDataStream ds(&slotsInfo, QIODevice::WriteOnly);
-    ds.setByteOrder(QDataStream::LittleEndian);
-
-    // --- 构造槽位数据 (SlotInfo) ---
-    // 假设是 12 个槽位 (War3 最大)
-    quint8 numslotsInfo = 12;
-    ds << numslotsInfo;
-
-    // 定义每个槽位的数据
-    for (int i = 0; i < numslotsInfo; ++i) {
-        // PID: 0=空位, 其他=玩家ID
-        // DownloadStatus: 255=100%, 0=0%
-        // slotsInfotatus: 0=Open, 1=Closed, 2=Occupied
-        // Computer: 0=Human, 1=Comp
-        // Team: 0-11
-        // Color: 0-11
-        // Race: 1=Human, 2=Orc, 4=NE, 8=UD, 32=Random
-
-        if (i == 0) {
-            // 槽位 0: 主机 (Bot/Admin) - 也就是你自己
-            ds << (quint8)1;    // PID (Host)
-            ds << (quint8)100;  // Download Status (100%)
-            ds << (quint8)2;    // Status: Occupied
-            ds << (quint8)0;    // Computer: No
-            ds << (quint8)0;    // Team 0
-            ds << (quint8)0;    // Color Red
-            ds << (quint8)1;    // Race Human
-        }
-        else if (i == 1) {
-            // 槽位 1: 给刚才进来的玩家 (临时写死，生产环境需要根据 PlayerID 动态填)
-            // 这里的 PID 需要和你 0x1F 包里分配的一致！
-            // 假设你在 0x1F 里分配了 socketDescriptor，这里为了测试先填 2
-            ds << (quint8)2;    // PID
-            ds << (quint8)255;  // Download Status (100%) - 假装他有地图
-            ds << (quint8)2;    // Status: Occupied
-            ds << (quint8)0;    // Computer: No
-            ds << (quint8)0;    // Team 0
-            ds << (quint8)1;    // Color Blue
-            ds << (quint8)1;    // Race Human
-        }
-        else {
-            // 其他槽位: 空闲 (Open)
-            ds << (quint8)0;    // PID (0 = Empty)
-            ds << (quint8)0;    // Download %
-            ds << (quint8)0;    // Status: Open
-            ds << (quint8)0;    // Computer: No
-            ds << (quint8)0;    // Team
-            ds << (quint8)(i);  // Color
-            ds << (quint8)32;   // Race Random
-        }
-    }
-
-    // --- 构造完整 0x09 包 ---
-    QByteArray packet;
-    QDataStream out(&packet, QIODevice::WriteOnly);
-    out.setByteOrder(QDataStream::LittleEndian);
-
-    out << (quint8)0xF7;    // Header
-    out << (quint8)0x09;    // ID: W3GS_SLOTINFO
-
-    // 计算长度: Header(2) + Length(2) + NumslotsInfo(1) + (slotsInfoData) + RandomSeed(4) + GameType(1) + NumPlayers(1)
-    // slotsInfoData = numslotsInfo * 7 bytes
-    quint16 len = 4 + 1 + (numslotsInfo * 7) + 4 + 1 + 1;
-
-    out << len;
-
-    // 写入槽位数据
-    out.writeRawData(slotsInfo.data(), slotsInfo.size());
-
-    out << (quint32)123456; // RandomSeed (随机种子)
-    out << (quint8)3;       // GameType (3=Custom, 0=Melee)
-    out << (quint8)2;       // NumPlayers (当前房间人数)
-
-    return packet;
-}
-
 // =========================================================
 // 8. 辅助工具函数
 // =========================================================
+
+QByteArray Client::generateSlotData(int numSlots, quint8 hostPid, quint8 newPlayerPid)
+{
+    QByteArray data;
+    QDataStream ds(&data, QIODevice::WriteOnly);
+    ds.setByteOrder(QDataStream::LittleEndian);
+
+    ds << (quint8)numSlots; // Number of slots
+
+    for (int i = 0; i < numSlots; ++i) {
+        // --- 槽位数据开始 (9字节) ---
+
+        if (i == 0) { // 主机槽位 (Bot)
+            ds << (quint8)hostPid; // PID
+            ds << (quint8)100;     // Download Status (100%)
+            ds << (quint8)2;       // Slot Status: Occupied
+            ds << (quint8)0;       // Computer: No
+            ds << (quint8)0;       // Team 0
+            ds << (quint8)0;       // Color Red
+            ds << (quint8)1;       // Race Human
+            ds << (quint8)1;       // Computer Type: Normal
+            ds << (quint8)100;     // Handicap: 100%
+        }
+        else if (i == 1) { // 新加入玩家槽位
+            ds << (quint8)newPlayerPid; // PID
+            ds << (quint8)255;     // Download Status (255=未确定/100%)
+            ds << (quint8)2;       // Slot Status: Occupied
+            ds << (quint8)0;       // Computer: No
+            ds << (quint8)0;       // Team 0
+            ds << (quint8)1;       // Color Blue
+            ds << (quint8)1;       // Race Human
+            ds << (quint8)1;       // Computer Type: Normal
+            ds << (quint8)100;     // Handicap
+        }
+        else { // 空槽位
+            ds << (quint8)0;       // PID (0=Empty)
+            ds << (quint8)0;       // Download
+            ds << (quint8)0;       // Slot Status: Open
+            ds << (quint8)0;       // Computer
+            ds << (quint8)0;       // Team
+            ds << (quint8)(i);     // Color
+            ds << (quint8)32;      // Race Random
+            ds << (quint8)0;       // Computer Type: Easy
+            ds << (quint8)100;     // Handicap
+        }
+    }
+    return data;
+}
 
 bool Client::bindToRandomPort()
 {

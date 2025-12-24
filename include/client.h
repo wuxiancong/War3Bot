@@ -150,23 +150,23 @@ public:
     void setCredentials(const QString &user, const QString &pass, LoginProtocol protocol = Protocol_SRP_0x53);
 
     // --- 战网交互指令 ---
-    void createAccount();                           // 注册账号
-    void enterChat();                               // 进入聊天
-    void queryChannelList();                        // 请求频道列表
-    void joinChannel(const QString &channelName);   // 加入频道
+    void createAccount();                                                               // 注册账号
+    void enterChat();                                                                   // 进入聊天
+    void queryChannelList();                                                            // 请求频道列表
+    void joinChannel(const QString &channelName);                                       // 加入频道
 
     // --- 游戏主机指令 ---
     void createGame(const QString &gameName, const QString &password,
                     ProviderVersion providerVersion, ComboGameType comboGameType,
                     SubGameType subGameType, LadderType ladderType);
-    void cancelGame();                              // 取消游戏/解散
-    void stopAdv();                                 // 停止广播
-    QByteArray createSlot();
+    void cancelGame();                                                                  // 取消游戏/解散
+    void stopAdv();                                                                     // 停止广播
 
     // --- 工具与状态 ---
     QString getPrimaryIPv4();
-    bool bindToRandomPort();                        // 绑定 UDP 随机端口
-    bool isBlackListedPort(quint16 port);           // 端口黑名单检查
+    bool bindToRandomPort();                                                            // 绑定 UDP 随机端口
+    bool isBlackListedPort(quint16 port);                                               // 端口黑名单检查
+    QByteArray generateSlotData(int numSlots, quint8 hostPid, quint8 newPlayerPid);
 
     // IP 转换辅助
     quint32 ipToUint32(const QString &ipAddress);
