@@ -1,9 +1,9 @@
 # War3 Game StatString Decode 解码函数逆向分析
 
-**模块**: `Game.dll` (War3 1.26a)
-**地址**: `Game.dll + 0x650820`
-**函数**: `DecodeStatString`
-**功能**: 将输入的编码 StatString（二进制流）还原为明文数据，并写入 `CBitStream` 对象。
+- **模块**: `Game.dll` (War3 1.26a)
+- **地址**: `Game.dll + 0x650820`
+- **函数**: `DecodeStatString`
+- **功能**: 将输入的编码 StatString（二进制流）还原为明文数据，并写入 `CBitStream` 对象。
 
 ---
 
