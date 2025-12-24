@@ -1,4 +1,4 @@
-# War3 Game StatString 解析逻辑逆向分析 (Game.dll)
+# War3 Game StatString Parse解析逻辑逆向分析 (Game.dll)
 
 **目标**: 分析 `Game.dll` 如何解析房间的 StatString，并找出机器人房间 (Bot) 与真人房间 (Test) 在解析流程中的差异。
 **结论**: 机器人房间虽然通过了初步的解码函数，但在**数据流完整性校验 (Stream Integrity Check)** 阶段失败，导致整个房间信息被判定为无效。
