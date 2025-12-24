@@ -216,6 +216,7 @@ private:
     // 游戏/环境相关
     War3Map m_war3Map;
     QStringList m_channelList;
+    quint32 m_hostCounter = 1;
 
     // 路径
     QString m_war3ExePath;
