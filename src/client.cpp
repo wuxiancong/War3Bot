@@ -445,17 +445,18 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         out << (quint16)slotData.size();
         out.writeRawData(slotData.data(), slotData.size());
 
-        out << (quint32)12345;              // Random Seed
-        out << (quint8)3;                   // Game Type
+        // Random Seed 决定了游戏内的所有随机事件 如：幻影刺客是否闪避
+        out << (quint32)QRandomGenerator::global()->generate();         // Random Seed
+        out << (quint8)1;                                               // Game Type
         out << (quint8)m_slots.size();
-        out << (quint8)playerID;            // PID
-        out << (quint16)2;                  // AF_INET
+        out << (quint8)playerID;                                        // PlayerID
+        out << (quint16)2;                                              // AF_INET
         out << (quint16)socket->peerPort();
 
         quint32 clientIp = socket->peerAddress().toIPv4Address();
         out << (quint32)clientIp;
 
-        out << (quint32)0 << (quint32)0; // Unknowns
+        out << (quint32)1 << (quint32)0; // Unknowns
 
         // 回填长度
         QDataStream lenStream(&packet, QIODevice::ReadWrite);
