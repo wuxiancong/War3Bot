@@ -5,7 +5,6 @@
 #include "bnetsrp3.h"
 
 #include <QDir>
-#include <QtEndian>
 #include <QFileInfo>
 #include <QDateTime>
 #include <QDataStream>
@@ -425,10 +424,10 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         }
 
         // 2. 分配 PID
-        quint8 newPid = slotIndex == -1 ? slotIndex + 3 : slotIndex + 1;
+        quint8 playerID = slotIndex == -1 ? slotIndex + 3 : slotIndex + 1;
 
         // 3. 更新槽位状态
-        m_slots[slotIndex].pid = newPid;
+        m_slots[slotIndex].pid = playerID;
         m_slots[slotIndex].slotStatus = 2;
         m_slots[slotIndex].downloadStatus = 255;
         m_slots[slotIndex].computer = 0;
@@ -449,12 +448,12 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         out << (quint32)12345;              // Random Seed
         out << (quint8)3;                   // Game Type
         out << (quint8)m_slots.size();
-        out << (quint8)newPid;              // PID
+        out << (quint8)playerID;            // PID
         out << (quint16)2;                  // AF_INET
         out << (quint16)socket->peerPort();
 
         quint32 clientIp = socket->peerAddress().toIPv4Address();
-        out << (quint32)qToBigEndian(clientIp);
+        out << (quint32)clientIp;
 
         out << (quint32)0 << (quint32)0; // Unknowns
 
@@ -466,10 +465,10 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
         socket->write(packet);
         socket->flush(); // 确保立即发出
-        LOG_INFO(QString("✅ 发送 0x04, PID: %1").arg(newPid));
+        LOG_INFO(QString("✅ 发送 0x04, playerID: %1").arg(playerID));
 
         // 延迟 100ms 发送 Host Info (0x06)
-        QTimer::singleShot(100, this, [socket]() {
+        QTimer::singleShot(100, this, [this, socket]() {
             if (socket->state() != QAbstractSocket::ConnectedState) return;
 
             QByteArray hostInfo;
@@ -477,7 +476,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
             pOut.setByteOrder(QDataStream::LittleEndian);
 
             pOut << (quint8)0xF7 << (quint8)0x06 << (quint16)0; // Header
-            pOut << (quint32)1; // Host PID
+            pOut << (quint32)1; // Host PlayerID
             pOut << (quint8)1;  // Type
             pOut << (quint8)0;  // Team
 
@@ -499,7 +498,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
             LOG_INFO("👤 [延迟发送] 主机信息 (0x06)");
 
             // 再延迟 100ms 发送 Map Check (0x3D)
-            QTimer::singleShot(100, [socket]() {
+            QTimer::singleShot(100, this, [this, socket]() {
                 if (socket->state() != QAbstractSocket::ConnectedState) return;
 
                 QByteArray mapCheck;
@@ -507,16 +506,17 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
                 mOut.setByteOrder(QDataStream::LittleEndian);
 
                 mOut << (quint8)0xF7 << (quint8)0x3D << (quint16)0;
-                mOut << (quint32)1; // Unknown
+                mOut << (quint32)1; // Map Attributes / Unknown
 
                 // 确保路径不要太复杂，用最简单的相对路径
-                QByteArray mapPath = "Maps\\Download\\DotA v6.83d.w3x";
-                mOut.writeRawData(mapPath.data(), mapPath.length());
-                mOut << (quint8)0;
+                QString mapPath = "Maps\\Download\\" + m_war3Map.getMapName();
+                QByteArray mapPathBytes = mapPath.toLocal8Bit();
+                mOut.writeRawData(mapPathBytes.data(), mapPathBytes.length());
+                mOut << (quint8)0; // 字符串结束符
 
-                mOut << (quint32)0; // Size
-                mOut << (quint32)0; // Info
-                mOut << (quint32)0; // CRC
+                mOut << (quint32)m_war3Map.getMapSize(); // Map Size
+                mOut << (quint32)m_war3Map.getMapInfo(); // Map Info
+                mOut << (quint32)m_war3Map.getMapCRC();  // Map CRC
 
                 QDataStream mLen(&mapCheck, QIODevice::ReadWrite);
                 mLen.setByteOrder(QDataStream::LittleEndian);
@@ -525,7 +525,9 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
                 socket->write(mapCheck);
                 socket->flush();
-                LOG_INFO("🗺️ [延迟发送] 地图验证 (0x3D)");
+                LOG_INFO(QString("🗺️ [延迟发送] 地图验证 (0x3D) Size:%1 CRC:%2")
+                             .arg(m_war3Map.getMapSize())
+                             .arg(QString::number(m_war3Map.getMapCRC(), 16).toUpper()));
             });
         });
 

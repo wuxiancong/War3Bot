@@ -68,10 +68,15 @@ public:
     // === Getters (获取信息) ===
     bool isValid() const            { return m_valid; }
     QString getMapPath() const      { return m_mapPath; }
-    QByteArray getMapCRC() const    { return m_mapCRC; }
     QByteArray getMapSHA1() const   { return m_mapSHA1; }
     QByteArray getMapWidth() const  { return m_mapWidth; }
     QByteArray getMapHeight() const { return m_mapHeight; }
+
+    // === Getters (协议专用) ===
+    quint32 getMapCRC() const;
+    quint32 getMapSize() const;
+    quint32 getMapInfo() const;
+    QString getMapName() const;
 
     // 获取构建 StatString 所需的游戏标志位
     QByteArray getMapGameFlags();

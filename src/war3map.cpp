@@ -44,6 +44,26 @@ War3Map::War3Map() :
 
 War3Map::~War3Map() {}
 
+quint32 War3Map::getMapSize() const {
+    if (m_mapSize.size() < 4) return 0;
+    return qFromLittleEndian<quint32>(m_mapSize.constData());
+}
+
+quint32 War3Map::getMapInfo() const {
+    if (m_mapInfo.size() < 4) return 0;
+    return qFromLittleEndian<quint32>(m_mapInfo.constData());
+}
+
+quint32 War3Map::getMapCRC() const {
+    if (m_mapCRC.size() < 4) return 0;
+    return qFromLittleEndian<quint32>(m_mapCRC.constData());
+}
+
+QString War3Map::getMapName() const {
+    if (m_mapPath.isEmpty()) return QString();
+    return QFileInfo(m_mapPath).fileName();
+}
+
 // 仅获取游戏参数标志位 (用于 StatString)
 QByteArray War3Map::getMapGameFlags()
 {
