@@ -931,7 +931,7 @@ void Client::initSlots()
 {
     // 1. 清空旧数据
     m_slots.clear();
-    m_slots.resize(12);
+    m_slots.resize(12); // War3 协议固定发送 12 个槽位结构
 
     // 2. 清空现有玩家连接
     for (auto socket : qAsConst(m_playerSockets)) {
@@ -946,26 +946,42 @@ void Client::initSlots()
     for (int i = 0; i < 12; ++i) {
         m_slots[i] = GameSlot();
 
-        // 设置队伍和颜色
-        m_slots[i].color = i;
-        m_slots[i].team = 0;
-        m_slots[i].race = 32;
+        // --- 通用设置 ---
+        m_slots[i].pid = 0;             // 0 = Empty
+        m_slots[i].downloadStatus = 0;  // 0% = Empty
+        m_slots[i].computer = 0;        // No Computer
+        m_slots[i].color = i;           // 颜色通常对应槽位索引 (0=Red, 1=Blue...)
 
+        // --- 队伍与种族设置 ---
+        if (i < 5) {
+            // === 近卫军团 (Sentinel) : Slots 0-4 ===
+            m_slots[i].team = 0;        // Team 1
+            m_slots[i].race = 4;        // 4 = Night Elf (暗夜精灵)
+            m_slots[i].slotStatus = 0;  // 0 = Open
+        }
+        else if (i < 10) {
+            // === 天灾军团 (Scourge) : Slots 5-9 ===
+            m_slots[i].team = 1;        // Team 2
+            m_slots[i].race = 8;        // 8 = Undead (不死族)
+            m_slots[i].slotStatus = 0;  // 0 = Open
+        }
+        else {
+            // === 裁判/观察者 : Slots 10-11 ===
+            m_slots[i].team = 12;       // Team 13 (Observer)
+            m_slots[i].race = 32;       // Random
+            m_slots[i].slotStatus = 1;  // 1 = Closed (默认关闭，只开10个位置)
+        }
+
+        // --- 主机特殊覆盖 (Slot 0) ---
         if (i == 0) {
-            // === Slot 0: 主机 (Bot) ===
-            m_slots[i].pid = 1;         // 主机通常 PID=1
-            m_slots[i].downloadStatus = 100;
-            m_slots[i].slotStatus = 2;  // Occupied
-            m_slots[i].computer = 0;    // Human (Bot 假装是人)
-            m_slots[i].race = 1;        // Human (或者 Random)
-        } else {
-            // === Slot 1-11: 空位 ===
-            m_slots[i].pid = 0;         // 0 表示无人
-            m_slots[i].slotStatus = 0;  // Open
+            m_slots[i].pid = 1;         // 主机 PID
+            m_slots[i].downloadStatus = 100; // 主机肯定有地图
+            m_slots[i].slotStatus = 2;  // 2 = Occupied
+            m_slots[i].computer = 0;    // Human
         }
     }
 
-    LOG_INFO("✨ 房间槽位已初始化 (主机在 Slot 0)");
+    LOG_INFO("✨ 房间槽位已初始化 (DotA 5v5 模式, 槽位 10-11 关闭)");
 }
 
 QByteArray Client::serializeSlotData() {
