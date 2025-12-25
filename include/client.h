@@ -126,6 +126,18 @@ enum LadderType {
     Ladder_IronMan              = 0x00000003
 };
 
+struct GameSlot {
+    quint8 pid                  = 0;
+    quint8 downloadStatus       = 0;
+    quint8 slotStatus           = 0;
+    quint8 computer             = 0;
+    quint8 team                 = 0;
+    quint8 color                = 0;
+    quint8 race                 = 32;
+    quint8 computerType         = 0;
+    quint8 handicap             = 100;
+};
+
 // 前置声明
 class BnetSRP3;
 
@@ -167,7 +179,6 @@ public:
     QString getPrimaryIPv4();
     bool bindToRandomPort();                                                            // 绑定 UDP 随机端口
     bool isBlackListedPort(quint16 port);                                               // 端口黑名单检查
-    QByteArray generateSlotData(int numSlots, quint8 hostPid, quint8 newPlayerPid);
 
     // IP 转换辅助
     quint32 ipToUint32(const QString &ipAddress);
@@ -186,12 +197,20 @@ private slots:
     void onTcpReadyRead();
     void onUdpReadyRead();
     void onNewConnection();
+    void onPlayerReadyRead();
+    void onPlayerDisconnected();
 
 private:
+    // --- 游戏槽位处理 ---
+    void initSlots();
+    GameSlot *findEmptySlot();
+    QByteArray serializeSlotData();
+
     // --- 内部网络处理 ---
     void sendPacket(TCPPacketID id, const QByteArray &payload);
     void handleTcpPacket(TCPPacketID id, const QByteArray &data);
     void handleUdpPacket(const QByteArray &data, const QHostAddress &sender, quint16 senderPort);
+    void handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &payload);
 
     // --- 认证与登录流程 ---
     void sendAuthInfo();
@@ -217,10 +236,12 @@ private:
     QUdpSocket *m_udpSocket;
     QTcpSocket *m_tcpSocket;
     QTcpServer *m_tcpServer;
-    QList<QTcpSocket*> m_tcpSockets;
+    QList<QTcpSocket*> m_playerSockets;
+    QMap<QTcpSocket*, QByteArray> m_playerBuffers;
 
     // 游戏/环境相关
     War3Map m_war3Map;
+    QVector<GameSlot> m_slots;
     QStringList m_channelList;
     quint32 m_hostCounter = 1;
 
