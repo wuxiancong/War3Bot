@@ -54,6 +54,11 @@ quint32 War3Map::getMapInfo() const {
     return qFromLittleEndian<quint32>(m_mapInfo.constData());
 }
 
+quint32 War3Map::getMapSHA1() const {
+    if (m_mapSHA1.size() < 4) return 0;
+    return qFromLittleEndian<quint32>(m_mapSHA1.constData());
+}
+
 quint32 War3Map::getMapCRC() const {
     if (m_mapCRC.size() < 4) return 0;
     return qFromLittleEndian<quint32>(m_mapCRC.constData());

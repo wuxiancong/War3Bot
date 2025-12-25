@@ -259,6 +259,7 @@ private:
     // 网络相关
     QString m_serverAddr;
     quint16 m_serverPort;
+    quint16 m_listenPort;
     QUdpSocket *m_udpSocket;
     QTcpSocket *m_tcpSocket;
     QTcpServer *m_tcpServer;
@@ -267,9 +268,11 @@ private:
 
     // 游戏/环境相关
     War3Map m_war3Map;
+    quint32 m_randomSeed = 0;
+    quint32 m_hostCounter = 1;
     QVector<GameSlot> m_slots;
     QStringList m_channelList;
-    quint32 m_hostCounter = 1;
+    quint16 m_comboGameType = 0;
 
     // 路径
     QString m_war3ExePath;
