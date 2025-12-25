@@ -456,7 +456,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         quint32 clientIp = socket->peerAddress().toIPv4Address();
         out << (quint32)clientIp;
 
-        out << (quint32)1 << (quint32)0; // Unknowns
+        out << (quint32)0 << (quint32)0; // Unknowns
 
         // 回填长度
         QDataStream lenStream(&packet, QIODevice::ReadWrite);

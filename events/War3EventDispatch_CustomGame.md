@@ -109,7 +109,7 @@
 6F5BAC50 | E8 9B40FEFF              | call game.6F59ECF0                                       |
 6F5BAC55 | 5E                       | pop esi                                                  |
 6F5BAC56 | C2 0400                  | ret 4                                                    |
-6F5BAC59 | 8BCE                     | mov ecx,esi                                              | <--- 必须选择一个游戏加入
+6F5BAC59 | 8BCE                     | mov ecx,esi                                              | <--- 确定关闭对话框
 6F5BAC5B | E8 30B0FBFF              | call game.6F575C90                                       |
 6F5BAC60 | 5E                       | pop esi                                                  |
 6F5BAC61 | C2 0400                  | ret 4                                                    |

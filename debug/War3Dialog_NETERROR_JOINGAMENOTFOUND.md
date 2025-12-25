@@ -251,7 +251,7 @@
 029DAC50 | E8 9B40FEFF              | call game.29BECF0                          |
 029DAC55 | 5E                       | pop esi                                    |
 029DAC56 | C2 0400                  | ret 4                                      |
-029DAC59 | 8BCE                     | mov ecx,esi                                | <--- 弹出错误对话框 （如：必须选择一个游戏加入）
+029DAC59 | 8BCE                     | mov ecx,esi                                | <--- 确定关闭对话框
 029DAC5B | E8 30B0FBFF              | call game.2995C90                          |
 029DAC60 | 5E                       | pop esi                                    |
 029DAC61 | C2 0400                  | ret 4                                      |
@@ -295,6 +295,7 @@
 029DACC2 | E8 3972FDFF              | call game.29B1F00                          |
 029DACC7 | 5E                       | pop esi                                    |
 029DACC8 | C2 0400                  | ret 4                                      |
+; ========================== 错误码 E 跳转到此处 =================================
 029DACCB | 50                       | push eax                                   | <--- 弹出错误对话框 （如：您尝试加入的游戏未找到。/n/您输入的名称可能不正确，或者游戏创建者可能已取消了该游戏。）
 029DACCC | 8BCE                     | mov ecx,esi                                |
 029DACCE | E8 FDA4FFFF              | call game.29D51D0                          |
@@ -515,7 +516,7 @@
 02B7A6E2 | 8B5424 48                | mov edx,dword ptr ss:[esp+48]              |
 02B7A6E6 | 3955 04                  | cmp dword ptr ss:[ebp+4],edx               |
 02B7A6E9 | 75 1E                    | jne game.2B7A709                           |
-02B7A6EB | 8B45 0C                  | mov eax,dword ptr ss:[ebp+C]               |
+02B7A6EB | 8B45 0C                  | mov eax,dword ptr ss:[ebp+C]               | <--- 读取错误码E
 02B7A6EE | 8B5424 4C                | mov edx,dword ptr ss:[esp+4C]              |
 02B7A6F2 | 8942 08                  | mov dword ptr ds:[edx+8],eax               |
 02B7A6F5 | 8B01                     | mov eax,dword ptr ds:[ecx]                 | <--- 取出事件对象
@@ -572,6 +573,215 @@
 02B7A78C | 5B                       | pop ebx                                    |
 02B7A78D | 83C4 30                  | add esp,30                                 |
 02B7A790 | C2 0800                  | ret 8                                      |
+```
+
+- 技巧：在 02B7A6EB 处硬件断点写入，定位到下面的反汇编：
+- 地址：`029EA820` 
+- 偏移: `game.dll + 62A820`
+- 断点：`game.dll + 62A954`
+
+```assembly
+029EA820 | 83EC 10                  | sub esp,10                                 |
+029EA823 | 53                       | push ebx                                   |
+029EA824 | 55                       | push ebp                                   |
+029EA825 | 8BE9                     | mov ebp,ecx                                |
+029EA827 | 0FB645 01                | movzx eax,byte ptr ss:[ebp+1]              |
+029EA82B | 8B4D 04                  | mov ecx,dword ptr ss:[ebp+4]               |
+029EA82E | 83E8 01                  | sub eax,1                                  |
+029EA831 | 234424 1C                | and eax,dword ptr ss:[esp+1C]              |
+029EA835 | 56                       | push esi                                   |
+029EA836 | 8D1C81                   | lea ebx,dword ptr ds:[ecx+eax*4]           |
+029EA839 | 33C0                     | xor eax,eax                                |
+029EA83B | 57                       | push edi                                   |
+029EA83C | 8B3B                     | mov edi,dword ptr ds:[ebx]                 |
+029EA83E | 3BF8                     | cmp edi,eax                                |
+029EA840 | 896C24 14                | mov dword ptr ss:[esp+14],ebp              |
+029EA844 | 894424 1C                | mov dword ptr ss:[esp+1C],eax              |
+029EA848 | 894424 18                | mov dword ptr ss:[esp+18],eax              |
+029EA84C | 74 04                    | je game.029EA852                           |
+029EA84E | 8B37                     | mov esi,dword ptr ds:[edi]                 |
+029EA850 | EB 02                    | jmp game.029EA854                          |
+029EA852 | 33F6                     | xor esi,esi                                |
+029EA854 | 3BF0                     | cmp esi,eax                                |
+029EA856 | 897424 10                | mov dword ptr ss:[esp+10],esi              |
+029EA85A | 0F84 96000000            | je game.029EA8F6                           |
+029EA860 | 8B46 08                  | mov eax,dword ptr ds:[esi+8]               |
+029EA863 | 85C0                     | test eax,eax                               |
+029EA865 | 8D6E 08                  | lea ebp,dword ptr ds:[esi+8]               |
+029EA868 | 75 56                    | jne game.029EA8C0                          |
+029EA86A | 8B5424 14                | mov edx,dword ptr ss:[esp+14]              |
+029EA86E | 3802                     | cmp byte ptr ds:[edx],al                   |
+029EA870 | 75 68                    | jne game.029EA8DA                          |
+029EA872 | 8B06                     | mov eax,dword ptr ds:[esi]                 |
+029EA874 | 8907                     | mov dword ptr ds:[edi],eax                 |
+029EA876 | 8B0B                     | mov ecx,dword ptr ds:[ebx]                 |
+029EA878 | 3BF1                     | cmp esi,ecx                                |
+029EA87A | 8BD6                     | mov edx,esi                                |
+029EA87C | 75 12                    | jne game.029EA890                          |
+029EA87E | 3BF9                     | cmp edi,ecx                                |
+029EA880 | 75 08                    | jne game.029EA88A                          |
+029EA882 | 33FF                     | xor edi,edi                                |
+029EA884 | 893B                     | mov dword ptr ds:[ebx],edi                 |
+029EA886 | 33F6                     | xor esi,esi                                |
+029EA888 | EB 08                    | jmp game.029EA892                          |
+029EA88A | 893B                     | mov dword ptr ds:[ebx],edi                 |
+029EA88C | 33F6                     | xor esi,esi                                |
+029EA88E | EB 02                    | jmp game.029EA892                          |
+029EA890 | 8BF0                     | mov esi,eax                                |
+029EA892 | C702 00000000            | mov dword ptr ds:[edx],0                   |
+029EA898 | 8B4D 00                  | mov ecx,dword ptr ss:[ebp]                 |
+029EA89B | 85C9                     | test ecx,ecx                               |
+029EA89D | 74 0C                    | je game.029EA8AB                           |
+029EA89F | 8341 04 FF               | add dword ptr ds:[ecx+4],FFFFFFFF          |
+029EA8A3 | 75 06                    | jne game.029EA8AB                          |
+029EA8A5 | 8B01                     | mov eax,dword ptr ds:[ecx]                 |
+029EA8A7 | 8B10                     | mov edx,dword ptr ds:[eax]                 |
+029EA8A9 | FFD2                     | call edx                                   |
+029EA8AB | 8B4424 10                | mov eax,dword ptr ss:[esp+10]              |
+029EA8AF | 6A 00                    | push 0                                     |
+029EA8B1 | 6A 00                    | push 0                                     |
+029EA8B3 | 50                       | push eax                                   |
+029EA8B4 | B9 ECE9AC6F              | mov ecx,game.2E8E9EC                       |
+029EA8B9 | E8 9272E9FF              | call game.6F4C1B50                         |
+029EA8BE | EB 26                    | jmp game.029EA8E6                          |
+029EA8C0 | 8B4C24 24                | mov ecx,dword ptr ss:[esp+24]              |
+029EA8C4 | 394E 04                  | cmp dword ptr ds:[esi+4],ecx               |
+029EA8C7 | 75 11                    | jne game.029EA8DA                          |
+029EA8C9 | 8B7C24 2C                | mov edi,dword ptr ss:[esp+2C]              |
+029EA8CD | 3BC7                     | cmp eax,edi                                |
+029EA8CF | B9 01000000              | mov ecx,1                                  |
+029EA8D4 | 894C24 1C                | mov dword ptr ss:[esp+1C],ecx              |
+029EA8D8 | 74 54                    | je game.029EA92E                           |
+029EA8DA | 3B33                     | cmp esi,dword ptr ds:[ebx]                 |
+029EA8DC | 8BFE                     | mov edi,esi                                |
+029EA8DE | 75 04                    | jne game.029EA8E4                          |
+029EA8E0 | 33F6                     | xor esi,esi                                |
+029EA8E2 | EB 02                    | jmp game.029EA8E6                          |
+029EA8E4 | 8B36                     | mov esi,dword ptr ds:[esi]                 |
+029EA8E6 | 85F6                     | test esi,esi                               |
+029EA8E8 | 897424 10                | mov dword ptr ss:[esp+10],esi              |
+029EA8EC | 0F85 6EFFFFFF            | jne game.029EA860                          |
+029EA8F2 | 8B6C24 14                | mov ebp,dword ptr ss:[esp+14]              |
+029EA8F6 | 6A FE                    | push FFFFFFFE                              |
+029EA8F8 | 68 70B3A96F              | push game.2E5B370                          | <--- AUObserverEventReg
+029EA8FD | 6A 00                    | push 0                                     |
+029EA8FF | B9 ECE9AC6F              | mov ecx,game.2E8E9EC                       |
+029EA904 | E8 A771E9FF              | call game.2881AB0                          |
+029EA909 | 85C0                     | test eax,eax                               |
+029EA90B | 74 0D                    | je game.029EA91A                           |
+029EA90D | C700 00000000            | mov dword ptr ds:[eax],0                   |
+029EA913 | C740 08 00000000         | mov dword ptr ds:[eax+8],0                 |
+029EA91A | 8B0B                     | mov ecx,dword ptr ds:[ebx]                 |
+029EA91C | 85C9                     | test ecx,ecx                               |
+029EA91E | 894424 10                | mov dword ptr ss:[esp+10],eax              |
+029EA922 | 74 14                    | je game.029EA938                           |
+029EA924 | 8B11                     | mov edx,dword ptr ds:[ecx]                 |
+029EA926 | 8910                     | mov dword ptr ds:[eax],edx                 |
+029EA928 | 8B0B                     | mov ecx,dword ptr ds:[ebx]                 |
+029EA92A | 8901                     | mov dword ptr ds:[ecx],eax                 |
+029EA92C | EB 0C                    | jmp game.029EA93A                          |
+029EA92E | 8B6C24 14                | mov ebp,dword ptr ss:[esp+14]              |
+029EA932 | 894C24 18                | mov dword ptr ss:[esp+18],ecx              |
+029EA936 | EB 0F                    | jmp game.029EA947                          |
+029EA938 | 8900                     | mov dword ptr ds:[eax],eax                 |
+029EA93A | 8B5424 24                | mov edx,dword ptr ss:[esp+24]              |
+029EA93E | 8B7C24 2C                | mov edi,dword ptr ss:[esp+2C]              |
+029EA942 | 8903                     | mov dword ptr ds:[ebx],eax                 |
+029EA944 | 8950 04                  | mov dword ptr ds:[eax+4],edx               |
+029EA947 | 85FF                     | test edi,edi                               |
+029EA949 | 8B4C24 28                | mov ecx,dword ptr ss:[esp+28]              |
+029EA94D | 8B4424 10                | mov eax,dword ptr ss:[esp+10]              |
+029EA951 | 8948 0C                  | mov dword ptr ds:[eax+C],ecx               | <--- 这里写入了错误码E
+029EA954 | 74 04                    | je game.029EA95A                           | <--- 在此处硬件端点写入
+029EA956 | 8347 04 01               | add dword ptr ds:[edi+4],1                 |
+029EA95A | 8B48 08                  | mov ecx,dword ptr ds:[eax+8]               |
+029EA95D | 85C9                     | test ecx,ecx                               |
+029EA95F | 74 0C                    | je game.029EA96D                           |
+029EA961 | 8341 04 FF               | add dword ptr ds:[ecx+4],FFFFFFFF          |
+029EA965 | 75 06                    | jne game.029EA96D                          |
+029EA967 | 8B11                     | mov edx,dword ptr ds:[ecx]                 |
+029EA969 | 8B02                     | mov eax,dword ptr ds:[edx]                 |
+029EA96B | FFD0                     | call eax                                   |
+029EA96D | 837C24 18 00             | cmp dword ptr ss:[esp+18],0                |
+029EA972 | 8B4C24 10                | mov ecx,dword ptr ss:[esp+10]              |
+029EA976 | 8979 08                  | mov dword ptr ds:[ecx+8],edi               |
+029EA979 | 75 0E                    | jne game.029EA989                          |
+029EA97B | 837C24 1C 00             | cmp dword ptr ss:[esp+1C],0                |
+029EA980 | 75 07                    | jne game.029EA989                          |
+029EA982 | 8BCD                     | mov ecx,ebp                                |
+029EA984 | E8 17FEFFFF              | call game.029EA7A0                         |
+029EA989 | 5F                       | pop edi                                    |
+029EA98A | 5E                       | pop esi                                    |
+029EA98B | 5D                       | pop ebp                                    |
+029EA98C | 5B                       | pop ebx                                    |
+029EA98D | 83C4 10                  | add esp,10                                 |
+029EA990 | C2 0C00                  | ret C                                      |
+```
+
+找到了一些上层函数！！
+调用顺序如下：（`6F53F36B | 69C0 04030000            | imul eax,eax,304          |）这里的代码貌似在分配槽位数据的没存！
+
+```assembly
+6F5B4CF0 | 56                       | push esi                                   |
+6F5B4CF1 | 8BF1                     | mov esi,ecx                                |
+6F5B4CF3 | E8 C867FFFF              | call game.6F5AB4C0                         |
+6F5B4CF8 | 8B4C24 10                | mov ecx,dword ptr ss:[esp+10]              |
+6F5B4CFC | 51                       | push ecx                                   |
+6F5B4CFD | 8B4C24 0C                | mov ecx,dword ptr ss:[esp+C]               |
+6F5B4D01 | 05 1C020000              | add eax,21C                                |
+6F5B4D06 | 50                       | push eax                                   |
+6F5B4D07 | 68 9C52876F              | push game.6F87529C                         |
+6F5B4D0C | BA 9C52876F              | mov edx,game.6F87529C                      |
+6F5B4D11 | E8 1A040100              | call game.6F5C5130                         |
+6F5B4D16 | 6A 00                    | push 0                                     |
+6F5B4D18 | 56                       | push esi                                   |
+6F5B4D19 | BA 0E000000              | mov edx,E                                  |
+6F5B4D1E | B9 78000940              | mov ecx,40090078                           |
+6F5B4D23 | E8 28A6F8FF              | call game.6F53F350                         |
+6F5B4D28 | 6A 01                    | push 1                                     |
+6F5B4D2A | 56                       | push esi                                   |
+6F5B4D2B | BA 0E000000              | mov edx,E                                  |
+6F5B4D30 | B9 78000940              | mov ecx,40090078                           |
+6F5B4D35 | E8 16A6F8FF              | call game.6F53F350                         |
+6F5B4D3A | 5E                       | pop esi                                    |
+6F5B4D3B | C2 0C00                  | ret C                                      |
+```
+```assembly
+6F53F350 | 56                       | push esi                                   |
+6F53F351 | 57                       | push edi                                   |
+6F53F352 | 8BF9                     | mov edi,ecx                                |
+6F53F354 | B9 0D000000              | mov ecx,D                                  |
+6F53F359 | 8BF2                     | mov esi,edx                                |
+6F53F35B | E8 7041F8FF              | call game.6F4C34D0                         |
+6F53F360 | 8B50 10                  | mov edx,dword ptr ds:[eax+10]              |
+6F53F363 | 8B4424 10                | mov eax,dword ptr ss:[esp+10]              |
+6F53F367 | 8B4C24 0C                | mov ecx,dword ptr ss:[esp+C]               |
+6F53F36B | 69C0 04030000            | imul eax,eax,304                           |
+6F53F371 | 51                       | push ecx                                   |
+6F53F372 | 8B4A 08                  | mov ecx,dword ptr ds:[edx+8]               |
+6F53F375 | 56                       | push esi                                   |
+6F53F376 | 57                       | push edi                                   |
+6F53F377 | 8D4C01 08                | lea ecx,dword ptr ds:[ecx+eax+8]           |
+6F53F37B | E8 4085FFFF              | call game.6F5378C0                         |
+6F53F380 | 5F                       | pop edi                                    |
+6F53F381 | 5E                       | pop esi                                    |
+6F53F382 | C2 0800                  | ret 8                                      |
+```
+```assembly
+6F5378C0 | 8B41 10                  | mov eax,dword ptr ds:[ecx+10]              |
+6F5378C3 | 8B40 08                  | mov eax,dword ptr ds:[eax+8]               |
+6F5378C6 | 83C1 10                  | add ecx,10                                 |
+6F5378C9 | FFE0                     | jmp eax                                    |
+```
+
+eax=game.6F62A9A0
+
+```assembly
+
+6F62A9A0 | 6A 01                    | push 1                                     |
+6F62A9A2 | E8 C9F5FFFF              | call game.6F629F70                         |
+6F62A9A7 | 8BC8                     | mov ecx,eax                                |
+6F62A9A9 | E9 72FEFFFF              | jmp game.6F62A820                          |
 ```
 
 ### 2.3 网络层：定位连接失败原因
