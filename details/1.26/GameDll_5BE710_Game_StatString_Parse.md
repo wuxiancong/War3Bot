@@ -1,15 +1,15 @@
-# War3 Game StatString Parse解析逻辑逆向分析 (Game.dll)
+# War3 Game StatString 解析逻辑逆向分析 (Game.dll)
 
 **目标**: 分析 `Game.dll` 如何解析房间的 StatString，并找出机器人房间 (Bot) 与真人房间 (Test) 在解析流程中的差异。
 **结论**: 机器人房间虽然通过了初步的解码函数，但在**数据流完整性校验 (Stream Integrity Check)** 阶段失败，导致整个房间信息被判定为无效。
 
-这是一个关于 WarCraft III (WAR3/W3XP) **Game Statstring**（游戏统计字符串）字段结构的中文技术文档。
+这是一个关于 WarCraft III (WAR3/W3XP) **Game StatString**（游戏统计字符串）字段结构的中文技术文档。
 
 该字段包含了针对每个游戏产品非常具体的信息。
 
 ***
 
-# WarCraft III (WAR3/W3XP) Game Statstring 结构
+# WarCraft III (WAR3/W3XP) Game StatString 结构
 
 该字段的数据通过特殊编码以符合 **以 Null (0x00) 结尾的字符串** 格式，这意味着原始数据中即便包含 0x00，经过编码后也不会在字符串中间出现空字符。
 
@@ -85,22 +85,22 @@
 此函数是上层 UI 逻辑调用解析器的入口。它调用核心解析函数，并根据结果决定是否继续比较缓存的数据。
 
 ```assembly
-6F5BE710 | 56                       | push esi                                                 | 保存 ESI (指向 BattleNetCustomJoinPanel)
-6F5BE711 | 8BF1                     | mov esi,ecx                                              | ESI = this 指针
+6F5BE710 | 56                       | push esi                                                 | <--- 保存 ESI (指向 BattleNetCustomJoinPanel)
+6F5BE711 | 8BF1                     | mov esi,ecx                                              | <--- ESI = this 指针
 6F5BE713 | E8 F85D0900              | call game.6F654510                                       | <--- 核心调用 ParseStatString (解析函数)
-6F5BE718 | 85C0                     | test eax,eax                                             | 检查解析结果 (1=成功, 0=失败)
-6F5BE71A | 75 04                    | jne game.6F5BE720                                        | 若成功(1)，跳转继续比较数据
-6F5BE71C | 33C0                     | xor eax,eax                                              | 若失败(0)，返回 0
-6F5BE71E | 5E                       | pop esi                                                  | 恢复 ESI
-6F5BE71F | C3                       | ret                                                      | 返回
+6F5BE718 | 85C0                     | test eax,eax                                             | <--- 检查解析结果 (1=成功, 0=失败)
+6F5BE71A | 75 04                    | jne game.6F5BE720                                        | <--- 若成功(1)，跳转继续比较数据
+6F5BE71C | 33C0                     | xor eax,eax                                              | <--- 若失败(0)，返回 0
+6F5BE71E | 5E                       | pop esi                                                  | <--- 恢复 ESI
+6F5BE71F | C3                       | ret                                                      | <--- 返回
 ; --- 以下是解析成功后的缓存比较逻辑 ---
-6F5BE720 | 807E 31 02               | cmp byte ptr ds:[esi+31],2                               | 比较标志位 (Memory Dump 2)
+6F5BE720 | 807E 31 02               | cmp byte ptr ds:[esi+31],2                               | <--- 比较标志位 (Memory Dump 2)
 6F5BE724 | 77 F6                    | ja game.6F5BE71C                                         |
 6F5BE726 | 33C0                     | xor eax,eax                                              |
-6F5BE728 | 3846 54                  | cmp byte ptr ds:[esi+54],al                              | 比较地图路径首字符 'M' (Memory Dump: 0019F8DC)
+6F5BE728 | 3846 54                  | cmp byte ptr ds:[esi+54],al                              | <--- 比较地图路径首字符 'M' (Memory Dump: 0019F8DC)
 6F5BE72B | 74 09                    | je game.6F5BE736                                         |
-6F5BE72D | 3886 8A000000            | cmp byte ptr ds:[esi+8A],al                              | 比较创建者首字符 't' (Memory Dump: 0019F912)
-6F5BE733 | 0F95C0                   | setne al                                                 | 设置返回值
+6F5BE72D | 3886 8A000000            | cmp byte ptr ds:[esi+8A],al                              | <--- 比较创建者首字符 't' (Memory Dump: 0019F912)
+6F5BE733 | 0F95C0                   | setne al                                                 | <--- 设置返回值
 6F5BE736 | 5E                       | pop esi                                                  |
 6F5BE737 | C3                       | ret                                                      |
 ```
@@ -116,15 +116,15 @@
 ```assembly
 ; --- 函数序言与栈帧建立 ---
 6F654510 | 6A FF                    | push FFFFFFFF                                            |
-6F654512 | 68 DB12846F              | push game.6F8412DB                                       | 注册 SEH 异常处理
+6F654512 | 68 DB12846F              | push game.6F8412DB                                       | <--- 注册 SEH 异常处理
 6F654517 | 64:A1 00000000           | mov eax,dword ptr fs:[0]                                 |
 6F65451D | 50                       | push eax                                                 |
-6F65451E | 81EC 8C000000            | sub esp,8C                                               | 分配栈空间
-6F654524 | A1 40E1AA6F              | mov eax,dword ptr ds:[6FAAE140]                          | Stack Cookie
+6F65451E | 81EC 8C000000            | sub esp,8C                                               | <--- 分配栈空间
+6F654524 | A1 40E1AA6F              | mov eax,dword ptr ds:[6FAAE140]                          | <--- Stack Cookie
 6F654529 | 33C4                     | xor eax,esp                                              |
 6F65452B | 898424 88000000          | mov dword ptr ss:[esp+88],eax                            |
-6F654532 | 53                       | push ebx                                                 | ebx: 指向房间名字符串 (如 "bot" 或 "test")
-6F654533 | 55                       | push ebp                                                 | ebp: 指向输出结构体 (0019FA08)
+6F654532 | 53                       | push ebx                                                 | <--- ebx: 指向房间名字符串 (如 "bot" 或 "test")
+6F654533 | 55                       | push ebp                                                 | <--- ebp: 指向输出结构体 (0019FA08)
 6F654534 | 56                       | push esi                                                 |
 6F654535 | 57                       | push edi                                                 |
 6F654536 | A1 40E1AA6F              | mov eax,dword ptr ds:[6FAAE140]                          |
@@ -133,57 +133,57 @@
 6F65453E | 8D8424 A0000000          | lea eax,dword ptr ss:[esp+A0]                            |
 6F654545 | 64:A3 00000000           | mov dword ptr fs:[0],eax                                 |
 6F65454B | 8BE9                     | mov ebp,ecx                                              |
-6F65454D | 8BDA                     | mov ebx,edx                                              | EBX = 房间名指针
+6F65454D | 8BDA                     | mov ebx,edx                                              | <--- EBX = 房间名指针
 6F65454F | B9 08000000              | mov ecx,8                                                |
 6F654554 | 8BF3                     | mov esi,ebx                                              |
 6F654556 | 8BFD                     | mov edi,ebp                                              |
-6F654558 | F3:A5                    | rep movsd                                                | 复制部分数据初始化
-6F65455A | 807D 00 00               | cmp byte ptr ss:[ebp],0                                  | 检查名字是否为空
+6F654558 | F3:A5                    | rep movsd                                                | <--- 复制部分数据初始化
+6F65455A | 807D 00 00               | cmp byte ptr ss:[ebp],0                                  | <--- 检查名字是否为空
 6F65455E | 0F84 79010000            | je game.6F6546DD                                         |
 6F654564 | 6A 68                    | push 68                                                  |
 6F654566 | 8D4424 38                | lea eax,dword ptr ss:[esp+38]                            |
 6F65456A | 50                       | push eax                                                 |
 6F65456B | 8D4C24 1C                | lea ecx,dword ptr ss:[esp+1C]                            |
-6F65456F | E8 1CFCFFFF              | call game.6F654190                                       | 初始化解密缓冲区
+6F65456F | E8 1CFCFFFF              | call game.6F654190                                       | <--- 初始化解密缓冲区
 6F654574 | C74424 14 800E976F       | mov dword ptr ss:[esp+14],game.6F970E80                  |
 
 ; --- 解码 StatString (Decode) ---
-6F65457C | 8D4B 30                  | lea ecx,dword ptr ds:[ebx+30]                            | ECX = StatString 起始地址 (Memory Dump: 15E201D4)
+6F65457C | 8D4B 30                  | lea ecx,dword ptr ds:[ebx+30]                            | <--- ECX = StatString 起始地址 (Memory Dump: 15E201D4)
 6F65457F | 51                       | push ecx                                                 |
 6F654580 | 33F6                     | xor esi,esi                                              |
 6F654582 | 8D4C24 18                | lea ecx,dword ptr ss:[esp+18]                            |
 6F654586 | 89B424 AC000000          | mov dword ptr ss:[esp+AC],esi                            |
 6F65458D | E8 8EC2FFFF              | call game.6F650820                                       | <--- DecodeStatString (解码)
-6F654592 | 85C0                     | test eax,eax                                             | 检查解码头部校验和是否正确
+6F654592 | 85C0                     | test eax,eax                                             | <--- 检查解码头部校验和是否正确
 6F654594 | 8D4C24 14                | lea ecx,dword ptr ss:[esp+14]                            |
-6F654598 | 0F84 2F010000            | je game.6F6546CD                                         | 解码失败则跳转 (Bot 未在此跳转)
+6F654598 | 0F84 2F010000            | je game.6F6546CD                                         | <--- 解码失败则跳转 (Bot 未在此跳转)
 
 ; --- 逐字段读取解析 (Parse Fields) ---
 6F65459E | 8D55 31                  | lea edx,dword ptr ss:[ebp+31]                            | 
 6F6545A1 | 52                       | push edx                                                 |
 6F6545A2 | 897424 2C                | mov dword ptr ss:[esp+2C],esi                            |
-6F6545A6 | E8 65E6E6FF              | call game.6F4C2C10                                       | 读取 Flags
+6F6545A6 | E8 65E6E6FF              | call game.6F4C2C10                                       | <--- 读取 Flags
 6F6545AB | 8D45 34                  | lea eax,dword ptr ss:[ebp+34]                            |
 6F6545AE | 50                       | push eax                                                 |
 6F6545AF | 8D4C24 18                | lea ecx,dword ptr ss:[esp+18]                            |
-6F6545B3 | E8 78E7E6FF              | call game.6F4C2D30                                       | 读取 Map Path
+6F6545B3 | E8 78E7E6FF              | call game.6F4C2D30                                       | <--- 读取 Map Path
 6F6545B8 | 8D4D 38                  | lea ecx,dword ptr ss:[ebp+38]                            |
 6F6545BB | 51                       | push ecx                                                 |
 6F6545BC | 8D4C24 18                | lea ecx,dword ptr ss:[esp+18]                            |
-6F6545C0 | E8 ABE6E6FF              | call game.6F4C2C70                                       | 读取数据
+6F6545C0 | E8 ABE6E6FF              | call game.6F4C2C70                                       | <--- 读取数据
 6F6545C5 | 8D55 3A                  | lea edx,dword ptr ss:[ebp+3A]                            |
 6F6545C8 | 52                       | push edx                                                 |
 6F6545C9 | 8D4C24 18                | lea ecx,dword ptr ss:[esp+18]                            |
-6F6545CD | E8 9EE6E6FF              | call game.6F4C2C70                                       | 读取数据
+6F6545CD | E8 9EE6E6FF              | call game.6F4C2C70                                       | <--- 读取数据
 6F6545D2 | 8D45 3C                  | lea eax,dword ptr ss:[ebp+3C]                            |
 6F6545D5 | 50                       | push eax                                                 |
 6F6545D6 | 8D4C24 18                | lea ecx,dword ptr ss:[esp+18]                            |
-6F6545DA | E8 51E7E6FF              | call game.6F4C2D30                                       | 读取 Creator Name
+6F6545DA | E8 51E7E6FF              | call game.6F4C2D30                                       | <--- 读取 Creator Name
 6F6545DF | 6A 36                    | push 36                                                  |
 6F6545E1 | 8D75 54                  | lea esi,dword ptr ss:[ebp+54]                            |
 6F6545E4 | 56                       | push esi                                                 |
 6F6545E5 | 8D4C24 1C                | lea ecx,dword ptr ss:[esp+1C]                            |
-6F6545E9 | E8 22E8E6FF              | call game.6F4C2E10                                       | 处理字符串
+6F6545E9 | E8 22E8E6FF              | call game.6F4C2E10                                       | <--- 处理字符串
 6F6545EE | 8B4C24 28                | mov ecx,dword ptr ss:[esp+28]                            |
 6F6545F2 | 3B4C24 24                | cmp ecx,dword ptr ss:[esp+24]                            |
 6F6545F6 | 76 03                    | jbe game.6F6545FB                                        |
@@ -222,23 +222,23 @@
 ; ========================================================================
 ; 关键差异点：数据流完整性校验 (Check Stream End)
 ; ========================================================================
-6F65466A | 8B4C24 24                | mov ecx,dword ptr ss:[esp+24]                            | ECX = 缓冲区结束位置 (End Ptr)
-6F65466E | 394C24 28                | cmp dword ptr ss:[esp+28],ecx                            | 比较: 当前读取位置 (Current Ptr) vs 结束位置
+6F65466A | 8B4C24 24                | mov ecx,dword ptr ss:[esp+24]                            | <--- ECX = 缓冲区结束位置 (End Ptr)
+6F65466E | 394C24 28                | cmp dword ptr ss:[esp+28],ecx                            | <--- 比较: 当前读取位置 (Current Ptr) vs 结束位置
 6F654672 | 75 55                    | jne game.6F6546C9                                        | <--- Bot 死因 (校验失败，跳转至清理代码)
 
 ; --- 解析成功后续处理 ---
-6F654674 | 8B53 20                  | mov edx,dword ptr ds:[ebx+20]                            | 保存解析出的数据到 GameInfo
+6F654674 | 8B53 20                  | mov edx,dword ptr ds:[ebx+20]                            | <--- 保存解析出的数据到 GameInfo
 6F654677 | 8955 20                  | mov dword ptr ss:[ebp+20],edx                            |
 ; ... (填充结构体) ...
 6F6546BD | E8 AEFBFFFF              | call game.6F654270                                       |
-6F6546C2 | B8 01000000              | mov eax,1                                                | 设置返回值 EAX = 1 (成功)
-6F6546C7 | EB 16                    | jmp game.6F6546DF                                        | 跳转到退出
+6F6546C2 | B8 01000000              | mov eax,1                                                | <--- 设置返回值 EAX = 1 (成功)
+6F6546C7 | EB 16                    | jmp game.6F6546DF                                        | <--- 跳转到退出
 
 ; --- 错误处理分支 (Bot 跳转到了这里) ---
 6F6546C9 | 8D4C24 14                | lea ecx,dword ptr ss:[esp+14]                            |
 6F6546CD | C78424 A8000000 FFFFFFFF | mov dword ptr ss:[esp+A8],FFFFFFFF                       |
-6F6546D8 | E8 93FBFFFF              | call game.6F654270                                       | 清理资源
-6F6546DD | 33C0                     | xor eax,eax                                              | 设置返回值 EAX = 0 (失败)
+6F6546D8 | E8 93FBFFFF              | call game.6F654270                                       | <--- 清理资源
+6F6546DD | 33C0                     | xor eax,eax                                              | <--- 设置返回值 EAX = 0 (失败)
 
 ; --- 函数退出 ---
 6F6546DF | 8B8C24 A0000000          | mov ecx,dword ptr ss:[esp+A0]                            |

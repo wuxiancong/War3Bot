@@ -409,7 +409,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
         LOG_INFO(QString("🚪 收到加入请求 (0x1E) 来自玩家: %1").arg(playerName));
 
-        // 1. 寻找空槽位 (保持你的逻辑)
+        // 1. 寻找空槽位
         int slotIndex = -1;
         for (int i = 0; i < m_slots.size(); ++i) {
             if (m_slots[i].slotStatus == 0) {

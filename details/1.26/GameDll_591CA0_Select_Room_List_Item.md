@@ -6,13 +6,14 @@
 
 ## 1. 核心逻辑流程
 
-1.  **获取数据**: 从 UI 列表选中项中获取 `GameInfo` 结构体指针。
-2.  **解析数据**: 调用 `ParseStatString` 解析地图信息。**关键点**: 如果解析失败（例如机器人发送了 ASCII 格式），直接跳过后续所有 UI 更新。
-3.  **UI 更新**:
-    *   更新游戏名称输入框 (JoinGameNameEditBox)。
-    *   更新“创建者”标签 (GameCreatorLabel)。
-    *   更新“游戏时长”标签 (TimeLabel)。
-    *   加载并显示地图预览图 (MapInfoPane)。
+- 1.  **获取数据**: 从 UI 列表选中项中获取 `GameInfo` 结构体指针。
+- 2.  **解析数据**: 调用 `ParseStatString` 解析地图信息。
+- 3.	**关键点**: 如果解析失败（例如数据格式对不上），直接跳过后续所有 UI 更新。
+- 4.  **UI 更新**:
+    - *   更新游戏名称输入框 (JoinGameNameEditBox)。
+    - *   更新“创建者”标签 (GameCreatorLabel)。
+    - *   更新“游戏时长”标签 (TimeLabel)。
+    - *   加载并显示地图预览图 (MapInfoPane)。
 
 ---
 
@@ -24,18 +25,18 @@
 ; ========================================================================
 ; 函数入口: 选中房间列表项
 ; ========================================================================
-6F591CA0 | 81EC 60010000            | sub esp,160                                              | 建立栈帧
-6F591CA6 | A1 40E1AA6F              | mov eax,dword ptr ds:[6FAAE140]                          | Stack Cookie 保护
+6F591CA0 | 81EC 60010000            | sub esp,160                                              | <--- 建立栈帧
+6F591CA6 | A1 40E1AA6F              | mov eax,dword ptr ds:[6FAAE140]                          | <--- Stack Cookie 保护
 6F591CAB | 33C4                     | xor eax,esp                                              |
 6F591CAD | 898424 5C010000          | mov dword ptr ss:[esp+15C],eax                           |
 6F591CB4 | 53                       | push ebx                                                 |
 6F591CB5 | 56                       | push esi                                                 |
 6F591CB6 | 57                       | push edi                                                 |
-6F591CB7 | 33DB                     | xor ebx,ebx                                              | EBX = 0
-6F591CB9 | 8BF1                     | mov esi,ecx                                              | ESI = BattleNetCustomJoinPanel 对象指针
+6F591CB7 | 33DB                     | xor ebx,ebx                                              | <--- EBX = 0
+6F591CB9 | 8BF1                     | mov esi,ecx                                              | <--- ESI = BattleNetCustomJoinPanel 对象指针
 
 ; --- 获取 UI 控件对象 ---
-6F591CBB | 8B8E 04020000            | mov ecx,dword ptr ds:[esi+204]                           | ECX = JoinGameNameEditBox 指针
+6F591CBB | 8B8E 04020000            | mov ecx,dword ptr ds:[esi+204]                           | <--- ECX = JoinGameNameEditBox 指针
 6F591CC1 | 53                       | push ebx                                                 |
 6F591CC2 | 68 9C52876F              | push game.6F87529C                                       |
 6F591CC7 | E8 843E0800              | call game.6F615B50                                       |
@@ -45,47 +46,47 @@
 ; ========================================================================
 ; 步骤 1: 获取选中项的数据结构 (GameInfo)
 ; ========================================================================
-6F591CD3 | 8B8E 08020000            | mov ecx,dword ptr ds:[esi+208]                           | ECX = CListBoxWar3 指针
-6F591CD9 | E8 22C0FCFF              | call game.6F55DD00                                       | call GetItemData() -> 获取选中项关联数据
-6F591CDE | 8BF8                     | mov edi,eax                                              | EDI = GameInfo 结构体指针
-6F591CE0 | 3BFB                     | cmp edi,ebx                                              | 检查指针是否为 NULL
-6F591CE2 | 0F84 B1010000            | je game.6F591E99                                         | -> 如果为空，直接跳到函数末尾 (不刷新UI)
+6F591CD3 | 8B8E 08020000            | mov ecx,dword ptr ds:[esi+208]                           | <--- ECX = CListBoxWar3 指针
+6F591CD9 | E8 22C0FCFF              | call game.6F55DD00                                       | <--- call GetItemData() -> 获取选中项关联数据
+6F591CDE | 8BF8                     | mov edi,eax                                              | <--- EDI = GameInfo 结构体指针
+6F591CE0 | 3BFB                     | cmp edi,ebx                                              | <--- 检查指针是否为 NULL
+6F591CE2 | 0F84 B1010000            | je game.6F591E99                                         | <---  如果为空，直接跳到函数末尾 (不刷新UI)
 
 ; ========================================================================
 ; 步骤 2: 解析 StatString (核心判决点)
 ; ========================================================================
-6F591CE8 | 8D57 0C                  | lea edx,dword ptr ds:[edi+C]                             | EDX = 房间名字符串 ("bot" 或 "test")
-6F591CEB | 8D4C24 24                | lea ecx,dword ptr ss:[esp+24]                            | ECX = 栈上的临时缓冲区
-6F591CEF | 885C24 24                | mov byte ptr ss:[esp+24],bl                              | 初始化缓冲区
+6F591CE8 | 8D57 0C                  | lea edx,dword ptr ds:[edi+C]                             | <--- EDX = 房间名字符串 ("bot" 或 "test")
+6F591CEB | 8D4C24 24                | lea ecx,dword ptr ss:[esp+24]                            | <--- ECX = 栈上的临时缓冲区
+6F591CEF | 885C24 24                | mov byte ptr ss:[esp+24],bl                              | <--- 初始化缓冲区
 6F591CF3 | 885C24 44                | mov byte ptr ss:[esp+44],bl                              |
 6F591CF7 | 885C24 78                | mov byte ptr ss:[esp+78],bl                              |
 6F591CFB | 889C24 AE000000          | mov byte ptr ss:[esp+AE],bl                              |
-6F591D02 | E8 09CA0200              | call game.6F5BE710                                       | call ParseStatString() -> 尝试解析地图/主机信息
-6F591D07 | 85C0                     | test eax,eax                                             | 检查解析结果 (1=成功, 0=失败)
+6F591D02 | E8 09CA0200              | call game.6F5BE710                                       | <--- call ParseStatString() -> 尝试解析地图/主机信息
+6F591D07 | 85C0                     | test eax,eax                                             | <--- 检查解析结果 (1=成功, 0=失败)
 ; ------------------------------------------------------------------------
 ; [异常点] 如果 Bot 发送了 ASCII 格式，解析失败(0)，此处跳转触发
 ; 导致下方所有 UI 更新代码被跳过，右侧面板变白。
 ; ------------------------------------------------------------------------
-6F591D09 | 0F84 8A010000            | je game.6F591E99                                         | -> 解析失败则退出
+6F591D09 | 0F84 8A010000            | je game.6F591E99                                         | <--- 解析失败则退出
 
 ; ========================================================================
 ; 步骤 3: 更新 UI - 游戏名称 (Game Name)
 ; ========================================================================
-6F591D0F | 8B8E 04020000            | mov ecx,dword ptr ds:[esi+204]                           | ECX = JoinGameNameEditBox
+6F591D0F | 8B8E 04020000            | mov ecx,dword ptr ds:[esi+204]                           | <--- ECX = JoinGameNameEditBox
 6F591D15 | 53                       | push ebx                                                 |
-6F591D16 | 8D4424 28                | lea eax,dword ptr ss:[esp+28]                            | 指向解析出的游戏名
+6F591D16 | 8D4424 28                | lea eax,dword ptr ss:[esp+28]                            | <--- 指向解析出的游戏名
 6F591D1A | 50                       | push eax                                                 |
-6F591D1B | E8 303E0800              | call game.6F615B50                                       | <- [UI] 更新游戏名编辑框 (SetText)
+6F591D1B | E8 303E0800              | call game.6F615B50                                       | <---  [UI] 更新游戏名编辑框 (SetText)
 
 ; ========================================================================
 ; 步骤 4: 更新 UI - 创建者 (Creator)
 ; ========================================================================
-6F591D20 | 8B86 28020000            | mov eax,dword ptr ds:[esi+228]                           | EAX = GameCreatorValue 控件
-6F591D26 | 8B90 B4000000            | mov edx,dword ptr ds:[eax+B4]                            | 获取虚表
+6F591D20 | 8B86 28020000            | mov eax,dword ptr ds:[esi+228]                           | <--- EAX = GameCreatorValue 控件
+6F591D26 | 8B90 B4000000            | mov edx,dword ptr ds:[eax+B4]                            | <--- 获取虚表
 6F591D2C | 8D88 B4000000            | lea ecx,dword ptr ds:[eax+B4]                            |
-6F591D32 | 8B42 18                  | mov eax,dword ptr ds:[edx+18]                            | 获取 SetText 虚函数
-6F591D35 | FFD0                     | call eax                                                 | <- [UI] 更新“创建者”标签
-6F591D37 | D95C24 0C                | fstp dword ptr ss:[esp+C]                                | 浮点数处理...
+6F591D32 | 8B42 18                  | mov eax,dword ptr ds:[edx+18]                            | <--- 获取 SetText 虚函数
+6F591D35 | FFD0                     | call eax                                                 | <---  [UI] 更新“创建者”标签
+6F591D37 | D95C24 0C                | fstp dword ptr ss:[esp+C]                                | <--- 浮点数处理...
 6F591D3B | 53                       | push ebx                                                 |
 6F591D3C | 68 80000000              | push 80                                                  |
 6F591D41 | 8D8C24 F0000000          | lea ecx,dword ptr ss:[esp+F0]                            |
@@ -104,7 +105,7 @@
 6F591D6C | 8D8424 F8000000          | lea eax,dword ptr ss:[esp+F8]                            |
 6F591D73 | D91C24                   | fstp dword ptr ss:[esp]                                  |
 6F591D76 | 50                       | push eax                                                 |
-6F591D77 | E8 EA981500              | call <JMP.&Ordinal#506>                                  | String Length
+6F591D77 | E8 EA981500              | call <JMP.&Ordinal#506>                                  | <--- String Length
 6F591D7C | 8B8E 20020000            | mov ecx,dword ptr ds:[esi+220]                           |
 6F591D82 | 50                       | push eax                                                 |
 6F591D83 | E8 189C0600              | call game.6F5FB9A0                                       |
@@ -142,9 +143,9 @@
 6F591E05 | E8 76321300              | call game.6F6C5080                                       |
 6F591E0A | 66:8B4424 1E             | mov ax,word ptr ss:[esp+1E]                              |
 6F591E0F | 66:3D 0A00               | cmp ax,A                                                 |
-6F591E13 | B9 885B966F              | mov ecx,game.6F965B88                                    | Format: "%d:0%d"
+6F591E13 | B9 885B966F              | mov ecx,game.6F965B88                                    | <--- 格式化字符串: "%d:0%d"
 6F591E18 | 72 05                    | jb game.6F591E1F                                         |
-6F591E1A | B9 805B966F              | mov ecx,game.6F965B80                                    | Format: "%d:%d"
+6F591E1A | B9 805B966F              | mov ecx,game.6F965B80                                    | <--- 格式化字符串: "%d:%d"
 6F591E1F | 0FB7D0                   | movzx edx,ax                                             |
 6F591E22 | 0FB74424 1C              | movzx eax,word ptr ss:[esp+1C]                           |
 6F591E27 | 52                       | push edx                                                 |
@@ -153,29 +154,29 @@
 6F591E2A | 8D8C24 E4000000          | lea ecx,dword ptr ss:[esp+E4]                            |
 6F591E31 | 6A 10                    | push 10                                                  |
 6F591E33 | 51                       | push ecx                                                 |
-6F591E34 | E8 6D971500              | call <JMP.&Ordinal#578>                                  | sprintf() 格式化时间字符串
+6F591E34 | E8 6D971500              | call <JMP.&Ordinal#578>                                  | <--- sprintf() 格式化时间字符串
 
 ; ========================================================================
 ; 步骤 5: 更新 UI - 游戏时长 (Game Duration)
 ; ========================================================================
-6F591E39 | 8B8E 30020000            | mov ecx,dword ptr ds:[esi+230]                           | ECX = GameCreationTimeValue 指针
+6F591E39 | 8B8E 30020000            | mov ecx,dword ptr ds:[esi+230]                           | <--- ECX = GameCreationTimeValue 指针
 6F591E3F | 83C4 14                  | add esp,14                                               |
-6F591E42 | 8D9424 D8000000          | lea edx,dword ptr ss:[esp+D8]                            | EDX = 格式化后的时间字符串 (如 "6:39")
+6F591E42 | 8D9424 D8000000          | lea edx,dword ptr ss:[esp+D8]                            | <--- EDX = 格式化后的时间字符串 (如 "6:39")
 6F591E49 | 52                       | push edx                                                 |
-6F591E4A | E8 F1FE0700              | call game.6F611D40                                       | <- [UI] 更新“游戏时长”标签 (SetText)
+6F591E4A | E8 F1FE0700              | call game.6F611D40                                       | <--- [UI] 更新“游戏时长”标签 (SetText)
 
 ; ========================================================================
 ; 步骤 6: 加载地图预览 (Map Preview)
 ; ========================================================================
 6F591E4F | 33D2                     | xor edx,edx                                              |
-6F591E51 | 8D4C24 78                | lea ecx,dword ptr ss:[esp+78]                            | ECX = 地图路径字符串 "Maps\..."
-6F591E55 | E8 A6631900              | call game.6F728200                                       | <- [File] 检查地图文件是否存在
+6F591E51 | 8D4C24 78                | lea ecx,dword ptr ss:[esp+78]                            | <--- ECX = 地图路径字符串 "Maps\..."
+6F591E55 | E8 A6631900              | call game.6F728200                                       | <--- [File] 检查地图文件是否存在
 6F591E5A | 85C0                     | test eax,eax                                             |
 6F591E5C | 74 2B                    | je game.6F591E89                                         |
-6F591E5E | 8B8E 18020000            | mov ecx,dword ptr ds:[esi+218]                           | ECX = MapInfoPane 指针
+6F591E5E | 8B8E 18020000            | mov ecx,dword ptr ds:[esi+218]                           | <--- ECX = MapInfoPane 指针
 6F591E64 | 8D4424 78                | lea eax,dword ptr ss:[esp+78]                            |
 6F591E68 | 50                       | push eax                                                 |
-6F591E69 | E8 D2C5FEFF              | call game.6F57E440                                       | <- [UI] 加载地图预览图 (LoadMapImage)
+6F591E69 | E8 D2C5FEFF              | call game.6F57E440                                       | <--- [UI] 加载地图预览图 (LoadMapImage)
 6F591E6E | F68424 C4000000 08       | test byte ptr ss:[esp+C4],8                              |
 6F591E76 | 8B8E 18020000            | mov ecx,dword ptr ds:[esi+218]                           |
 6F591E7C | 74 04                    | je game.6F591E82                                         |

@@ -7,7 +7,7 @@
 
 ---
 
-# WarCraft III (WAR3/W3XP) Game Statstring 结构
+# WarCraft III (WAR3/W3XP) Game StatString 结构
 
 该字段的数据通过特殊编码以符合 **以 Null (0x00) 结尾的字符串** 格式，这意味着原始数据中即便包含 0x00，经过编码后也不会在字符串中间出现空字符。
 
