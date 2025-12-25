@@ -425,7 +425,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         }
 
         // 2. 分配 PID
-        quint8 newPid = slotIndex == -1 ? slotIndex + 2 : slotIndex;
+        quint8 newPid = slotIndex == -1 ? slotIndex + 3 : slotIndex + 1;
 
         // 3. 更新槽位状态
         m_slots[slotIndex].pid = newPid;
@@ -977,7 +977,7 @@ void Client::initSlots()
 
         // --- 主机特殊覆盖 (Slot 0) ---
         if (i == 0) {
-            m_slots[i].pid = 0;                                     // 主机初始槽位编号
+            m_slots[i].pid = 1;                                     // 主机初始槽位编号
             m_slots[i].downloadStatus = 100;                        // 主机肯定有地图
             m_slots[i].slotStatus = (quint8)SlotStatus::Occupied;   // 被占领
             m_slots[i].computer = 0;                                // 人类
