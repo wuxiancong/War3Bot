@@ -469,34 +469,34 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         LOG_INFO(QString("✅ 发送 0x04, playerID: %1").arg(playerID));
 
         // 延迟 100ms 发送 Host Info (0x06)
-        QTimer::singleShot(100, this, [this, socket]() {
-            if (socket->state() != QAbstractSocket::ConnectedState) return;
+        // QTimer::singleShot(100, this, [this, socket]() {
+        //     if (socket->state() != QAbstractSocket::ConnectedState) return;
 
-            QByteArray hostInfo;
-            QDataStream pOut(&hostInfo, QIODevice::WriteOnly);
-            pOut.setByteOrder(QDataStream::LittleEndian);
+        //     QByteArray hostInfo;
+        //     QDataStream pOut(&hostInfo, QIODevice::WriteOnly);
+        //     pOut.setByteOrder(QDataStream::LittleEndian);
 
-            pOut << (quint8)0xF7 << (quint8)0x06 << (quint16)0; // Header
-            pOut << (quint32)1; // Host PlayerID
-            pOut << (quint8)1;  // Type
-            pOut << (quint8)0;  // Team
+        //     pOut << (quint8)0xF7 << (quint8)0x06 << (quint16)0; // Header
+        //     pOut << (quint32)1; // Host PlayerID
+        //     pOut << (quint8)1;  // Type
+        //     pOut << (quint8)0;  // Team
 
-            QByteArray name = "War3Bot";
-            pOut.writeRawData(name.data(), name.length());
-            pOut << (quint8)0;
-            // 不要发 IP 地址，发未知标识符
-            pOut << (quint32)1; // Unknown 1
-            pOut << (quint32)2; // Unknown 2
+        //     QByteArray name = "War3Bot";
+        //     pOut.writeRawData(name.data(), name.length());
+        //     pOut << (quint8)0;
+        //     // 不要发 IP 地址，发未知标识符
+        //     pOut << (quint32)1; // Unknown 1
+        //     pOut << (quint32)2; // Unknown 2
 
-            // 回填长度
-            QDataStream pLen(&hostInfo, QIODevice::ReadWrite);
-            pLen.setByteOrder(QDataStream::LittleEndian);
-            pLen.skipRawData(2);
-            pLen << (quint16)hostInfo.size();
+        //     // 回填长度
+        //     QDataStream pLen(&hostInfo, QIODevice::ReadWrite);
+        //     pLen.setByteOrder(QDataStream::LittleEndian);
+        //     pLen.skipRawData(2);
+        //     pLen << (quint16)hostInfo.size();
 
-            socket->write(hostInfo);
-            socket->flush();
-            LOG_INFO("👤 [延迟发送] 主机信息 (0x06)");
+        //     socket->write(hostInfo);
+        //     socket->flush();
+        //     LOG_INFO("👤 [延迟发送] 主机信息 (0x06)");
 
             // 再延迟 100ms 发送 Map Check (0x3D)
             QTimer::singleShot(100, this, [this, socket]() {
@@ -530,7 +530,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
                              .arg(m_war3Map.getMapSize())
                              .arg(QString::number(m_war3Map.getMapCRC(), 16).toUpper()));
             });
-        });
+        // });
 
         // 别忘了通知其他玩家 (0x09) ... 暂时省略
     }
@@ -923,8 +923,13 @@ void Client::createGame(const QString &gameName, const QString &password, Provid
     quint32 state = 0x00000010;
     if (!password.isEmpty()) state = 0x00000011;
 
-    out << state << (quint32)0 << (quint16)comboGameType << (quint16)subGameType
-        << (quint32)providerVersion << (quint32)ladderType;
+    out << state                        /*Game State*/
+        << (quint32)0                   /*Game Elapsed Time*/
+        << (quint16)comboGameType       /*Game Type*/
+        << (quint16)subGameType         /*Sub Game Type*/
+        << (quint32)providerVersion     /*Provider Version Constant*/
+        << (quint32)ladderType;         /*Ladder Type*/
+
     out.writeRawData(gameName.toUtf8().constData(), gameName.toUtf8().size()); out << (quint8)0;
     out.writeRawData(password.toUtf8().constData(), password.toUtf8().size()); out << (quint8)0;
     out.writeRawData(finalStatString.constData(), finalStatString.size()); out << (quint8)0;
