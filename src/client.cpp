@@ -5,6 +5,7 @@
 #include "bnetsrp3.h"
 
 #include <QDir>
+#include <QtEndian>
 #include <QFileInfo>
 #include <QDateTime>
 #include <QDataStream>
@@ -399,10 +400,10 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
     {
         LOG_INFO("🚪 收到加入请求 (0x1E)");
 
-        // 1. 寻找空槽位
+        // 1. 寻找空槽位 (保持你的逻辑)
         int slotIndex = -1;
         for (int i = 0; i < m_slots.size(); ++i) {
-            if (m_slots[i].slotStatus == 0) { // Open
+            if (m_slots[i].slotStatus == 0) {
                 slotIndex = i;
                 break;
             }
@@ -410,41 +411,45 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
         if (slotIndex == -1) {
             LOG_WARNING("⚠️ 房间已满，拒绝加入");
-            // 发送 0x05 REJECT
+            // 这里应该发送 0x05 REJECTJOIN
             return;
         }
 
-        // 2. 分配 PID (简单算法：槽位索引 + 2)
-        // 注意：真实逻辑需要更严谨的 PID 分配，这里简化处理
+        // 2. 分配 PID
         quint8 newPid = slotIndex + 2;
 
         // 3. 更新槽位状态
         m_slots[slotIndex].pid = newPid;
-        m_slots[slotIndex].slotStatus = 2; // Occupied
+        m_slots[slotIndex].slotStatus = 2;
         m_slots[slotIndex].downloadStatus = 255;
         m_slots[slotIndex].computer = 0;
 
-        // 4. 发送 0x04 (SlotInfoJoin)
+        // =================================================================================
+        // 第一步：发送 0x04 (SlotInfoJoin)
+        // =================================================================================
         QByteArray packet;
         QDataStream out(&packet, QIODevice::WriteOnly);
         out.setByteOrder(QDataStream::LittleEndian);
 
-        // 序列化当前的槽位数据
         QByteArray slotData = serializeSlotData();
 
-        out << (quint8)0xF7 << (quint8)0x04 << (quint16)0; // Head
+        out << (quint8)0xF7 << (quint8)0x04 << (quint16)0; // Header + Length Placeholder
+        out << (quint16)slotData.size();
+        out.writeRawData(slotData.data(), slotData.size());
 
-        out << (quint16)slotData.size();    // SlotInfo Len
-        out.writeRawData(slotData.data(), slotData.size()); // Slots
-
-        out << (quint32)12345;  // Seed
-        out << (quint8)3;       // Custom Game
-        out << (quint8)m_slots.size(); // Total Slots
-        out << (quint8)newPid;  // **告诉玩家他是谁**
+        out << (quint32)12345;  // Random Seed
+        out << (quint8)3;       // Game Type
+        out << (quint8)m_slots.size();
+        out << (quint8)newPid;  // PID
         out << (quint16)2;      // AF_INET
         out << (quint16)socket->peerPort();
-        out << (quint32)socket->peerAddress().toIPv4Address();
-        out << (quint32)0 << (quint32)0;
+
+        // [修复 IP 地址反转] 强制使用 BigEndian 写入 IP，或者按字节写入
+        // War3 期望的是 [IP1, IP2, IP3, IP4] 的顺序
+        quint32 clientIp = socket->peerAddress().toIPv4Address();
+        out << (quint32)qToBigEndian(clientIp);
+
+        out << (quint32)0 << (quint32)0; // Unknowns
 
         // 回填长度
         QDataStream lenStream(&packet, QIODevice::ReadWrite);
@@ -453,72 +458,75 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         lenStream << (quint16)packet.size();
 
         socket->write(packet);
-        LOG_INFO(QString("✅ 发送 0x04, PID: %1, Slot: %2").arg(newPid).arg(slotIndex));
+        socket->flush(); // 确保立即发出
+        LOG_INFO(QString("✅ 发送 0x04, PID: %1").arg(newPid));
 
-        // --- 构造 0x06 (Host Info) ---
-        // 告诉客户端：PID=1 的人是主机，名字叫 "War3Bot"
-        QByteArray hostInfo;
-        QDataStream pOut(&hostInfo, QIODevice::WriteOnly);
-        pOut.setByteOrder(QDataStream::LittleEndian);
+        // =================================================================================
+        // 关键修复：延迟发送后续包，防止粘包导致客户端忽略
+        // =================================================================================
 
-        pOut << (quint8)0xF7 << (quint8)0x06; // Header
-        pOut << (quint16)0; // 长度占位
+        // 延迟 100ms 发送 Host Info (0x06)
+        QTimer::singleShot(100, this, [socket]() {
+            if (socket->state() != QAbstractSocket::ConnectedState) return;
 
-        pOut << (quint32)1; // Host PID (通常主机是 1)
-        pOut << (quint8)1;  // Player Type (1=Host/Player)
-        pOut << (quint8)0;  // Team (0=Sentinel/Team 1)
+            QByteArray hostInfo;
+            QDataStream pOut(&hostInfo, QIODevice::WriteOnly);
+            pOut.setByteOrder(QDataStream::LittleEndian);
 
-        QByteArray hostName = "War3Bot"; // 主机名字
-        pOut.writeRawData(hostName.data(), hostName.length());
-        pOut << (quint8)0;  // 字符串结束符
+            pOut << (quint8)0xF7 << (quint8)0x06 << (quint16)0; // Header
+            pOut << (quint32)1; // Host PID
+            pOut << (quint8)1;  // Type
+            pOut << (quint8)0;  // Team
 
-        pOut << (quint16)1; // External Port (随便填，不重要)
-        pOut << (quint32)1; // External IP (随便填，不重要)
-        pOut << (quint32)0; // Internal IP (0)
-        pOut << (quint32)0; // Internal IP (0)
+            QByteArray name = "War3Bot";
+            pOut.writeRawData(name.data(), name.length());
+            pOut << (quint8)0;
+            // 不要发 IP 地址，发未知标识符
+            pOut << (quint32)1; // Unknown 1
+            pOut << (quint32)2; // Unknown 2
 
-        // 回填长度
-        QDataStream pLenOut(&hostInfo, QIODevice::ReadWrite);
-        pLenOut.setByteOrder(QDataStream::LittleEndian);
-        pLenOut.skipRawData(2);
-        pLenOut << (quint16)hostInfo.size();
+            // 回填长度
+            QDataStream pLen(&hostInfo, QIODevice::ReadWrite);
+            pLen.setByteOrder(QDataStream::LittleEndian);
+            pLen.skipRawData(2);
+            pLen << (quint16)hostInfo.size();
 
-        socket->write(hostInfo);
-        LOG_INFO("👤 发送主机信息 (0x06)");
+            socket->write(hostInfo);
+            socket->flush();
+            LOG_INFO("👤 [延迟发送] 主机信息 (0x06)");
 
-        // --- 构造 0x3D (Map Check) ---
-        QByteArray mapCheck;
-        QDataStream mOut(&mapCheck, QIODevice::WriteOnly);
-        mOut.setByteOrder(QDataStream::LittleEndian);
+            // 再延迟 100ms 发送 Map Check (0x3D)
+            QTimer::singleShot(100, [socket]() {
+                if (socket->state() != QAbstractSocket::ConnectedState) return;
 
-        mOut << (quint8)0xF7 << (quint8)0x3D; // Header
-        mOut << (quint16)0; // 长度占位
+                QByteArray mapCheck;
+                QDataStream mOut(&mapCheck, QIODevice::WriteOnly);
+                mOut.setByteOrder(QDataStream::LittleEndian);
 
-        mOut << (quint32)1; // Unknown (1)
+                mOut << (quint8)0xF7 << (quint8)0x3D << (quint16)0;
+                mOut << (quint32)1; // Unknown
 
-        // 地图路径 (必须和客户端本地路径匹配，或者相对路径)
-        // 标准 DotA 路径示例
-        QByteArray mapPath = "Maps\\Download\\DotA v6.83d.w3x";
-        mOut.writeRawData(mapPath.data(), mapPath.length());
-        mOut << (quint8)0; // 字符串结束符
+                // 确保路径不要太复杂，用最简单的相对路径
+                QByteArray mapPath = "Maps\\Download\\DotA v6.83d.w3x";
+                mOut.writeRawData(mapPath.data(), mapPath.length());
+                mOut << (quint8)0;
 
-        mOut << (quint32)0; // Map Size (如果你知道真实大小最好填对，不知道填0也行，但这会影响下载逻辑)
-        mOut << (quint32)0; // Map Info (CRC32等) - 这里填0通常会让客户端显示"未知地图"但能进
-        mOut << (quint32)0; // Map CRC
-        mOut << (quint32)0; // Map SHA1 (部分私服协议需要)
+                mOut << (quint32)0; // Size
+                mOut << (quint32)0; // Info
+                mOut << (quint32)0; // CRC
 
-        // 回填长度
-        QDataStream mLenOut(&mapCheck, QIODevice::ReadWrite);
-        mLenOut.setByteOrder(QDataStream::LittleEndian);
-        mLenOut.skipRawData(2);
-        mLenOut << (quint16)mapCheck.size();
+                QDataStream mLen(&mapCheck, QIODevice::ReadWrite);
+                mLen.setByteOrder(QDataStream::LittleEndian);
+                mLen.skipRawData(2);
+                mLen << (quint16)mapCheck.size();
 
-        socket->write(mapCheck);
-        LOG_INFO("🗺️ 发送地图验证请求 (0x3D)");
+                socket->write(mapCheck);
+                socket->flush();
+                LOG_INFO("🗺️ [延迟发送] 地图验证 (0x3D)");
+            });
+        });
 
-        // 7. 通知房间内 OTHER 玩家：有人进来了 (0x09 SlotInfo Update)
-        // 这一步对于多人游戏是必须的，否则其他人看不到新玩家
-        // 遍历 m_playerSockets 发送 0x09
+        // 别忘了通知其他玩家 (0x09) ... 暂时省略
     }
     break;
 
