@@ -425,7 +425,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         }
 
         // 2. 分配 PID
-        quint8 newPid = slotIndex + 2;
+        quint8 newPid = slotIndex == -1 ? slotIndex + 2 : slotIndex;
 
         // 3. 更新槽位状态
         m_slots[slotIndex].pid = newPid;
@@ -446,15 +446,13 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         out << (quint16)slotData.size();
         out.writeRawData(slotData.data(), slotData.size());
 
-        out << (quint32)12345;  // Random Seed
-        out << (quint8)3;       // Game Type
+        out << (quint32)12345;              // Random Seed
+        out << (quint8)3;                   // Game Type
         out << (quint8)m_slots.size();
-        out << (quint8)newPid;  // PID
-        out << (quint16)2;      // AF_INET
+        out << (quint8)newPid;              // PID
+        out << (quint16)2;                  // AF_INET
         out << (quint16)socket->peerPort();
 
-        // [修复 IP 地址反转] 强制使用 BigEndian 写入 IP，或者按字节写入
-        // War3 期望的是 [IP1, IP2, IP3, IP4] 的顺序
         quint32 clientIp = socket->peerAddress().toIPv4Address();
         out << (quint32)qToBigEndian(clientIp);
 
@@ -469,10 +467,6 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         socket->write(packet);
         socket->flush(); // 确保立即发出
         LOG_INFO(QString("✅ 发送 0x04, PID: %1").arg(newPid));
-
-        // =================================================================================
-        // 关键修复：延迟发送后续包，防止粘包导致客户端忽略
-        // =================================================================================
 
         // 延迟 100ms 发送 Host Info (0x06)
         QTimer::singleShot(100, this, [socket]() {
@@ -940,7 +934,7 @@ void Client::initSlots()
 {
     // 1. 清空旧数据
     m_slots.clear();
-    m_slots.resize(12); // War3 协议固定发送 12 个槽位结构
+    m_slots.resize(10); // Dota 固定发送 10 个槽位结构
 
     // 2. 清空现有玩家连接
     for (auto socket : qAsConst(m_playerSockets)) {
@@ -952,7 +946,7 @@ void Client::initSlots()
     m_playerBuffers.clear();
 
     // 3. 初始化槽位状态
-    for (int i = 0; i < 12; ++i) {
+    for (int i = 0; i < 10; ++i) {
         m_slots[i] = GameSlot();
 
         // --- 通用设置 ---
@@ -983,7 +977,7 @@ void Client::initSlots()
 
         // --- 主机特殊覆盖 (Slot 0) ---
         if (i == 0) {
-            m_slots[i].pid = 1;                                     // 主机初始槽位编号
+            m_slots[i].pid = 0;                                     // 主机初始槽位编号
             m_slots[i].downloadStatus = 100;                        // 主机肯定有地图
             m_slots[i].slotStatus = (quint8)SlotStatus::Occupied;   // 被占领
             m_slots[i].computer = 0;                                // 人类
