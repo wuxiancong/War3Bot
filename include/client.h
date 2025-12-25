@@ -126,6 +126,32 @@ enum LadderType {
     Ladder_IronMan              = 0x00000003
 };
 
+enum class SlotRace : quint8 {
+    Human                       = 0x01,
+    Orc                         = 0x02,
+    NightElf                    = 0x04,
+    Undead                      = 0x08,
+    Random                      = 0x20,
+    Fixed                       = 0x40,
+
+    // DotA 专用别名
+    Sentinel                    = NightElf,
+    Scourge                     = Undead,
+    Observer                    = Random
+};
+
+enum class SlotTeam : quint8 {
+    Sentinel                    = 0,
+    Scourge                     = 1,
+    Observer                    = 2
+};
+
+enum class SlotStatus : quint8 {
+    Open                        = 0,
+    Close                       = 1,
+    Occupied                    = 2
+};
+
 struct GameSlot {
     quint8 pid                  = 0;
     quint8 downloadStatus       = 0;

@@ -398,7 +398,16 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
     switch (id) {
     case 0x1E: // W3GS_REQJOIN
     {
-        LOG_INFO("🚪 收到加入请求 (0x1E)");
+        QString playerName = "Unknown";
+        if (payload.size() >= 15) {
+            int nameEnd = payload.indexOf('\0', 15);
+            if (nameEnd != -1) {
+                QByteArray nameBytes = payload.mid(15, nameEnd - 15);
+                playerName = QString::fromUtf8(nameBytes);
+            }
+        }
+
+        LOG_INFO(QString("🚪 收到加入请求 (0x1E) 来自玩家: %1").arg(playerName));
 
         // 1. 寻找空槽位 (保持你的逻辑)
         int slotIndex = -1;
@@ -947,37 +956,37 @@ void Client::initSlots()
         m_slots[i] = GameSlot();
 
         // --- 通用设置 ---
-        m_slots[i].pid = 0;             // 0 = Empty
-        m_slots[i].downloadStatus = 0;  // 0% = Empty
-        m_slots[i].computer = 0;        // No Computer
-        m_slots[i].color = i;           // 颜色通常对应槽位索引 (0=Red, 1=Blue...)
+        m_slots[i].pid = 0;                                         // 0 = Empty
+        m_slots[i].downloadStatus = 0;                              // 0% = Empty
+        m_slots[i].computer = 0;                                    // No Computer
+        m_slots[i].color = i;                                       // 颜色通常对应槽位索引 (0=Red, 1=Blue...)
 
         // --- 队伍与种族设置 ---
         if (i < 5) {
             // === 近卫军团 (Sentinel) : Slots 0-4 ===
-            m_slots[i].team = 0;        // Team 1
-            m_slots[i].race = 4;        // 4 = Night Elf (暗夜精灵)
-            m_slots[i].slotStatus = 0;  // 0 = Open
+            m_slots[i].team = (quint8)SlotTeam::Sentinel;           // Team 1
+            m_slots[i].race = (quint8)SlotRace::Sentinel;           // 4 = Night Elf (暗夜精灵)
+            m_slots[i].slotStatus = (quint8)SlotStatus::Open;       // 0 = Open
         }
         else if (i < 10) {
             // === 天灾军团 (Scourge) : Slots 5-9 ===
-            m_slots[i].team = 1;        // Team 2
-            m_slots[i].race = 8;        // 8 = Undead (不死族)
-            m_slots[i].slotStatus = 0;  // 0 = Open
+            m_slots[i].team = (quint8)SlotTeam::Scourge;            // Team 2
+            m_slots[i].race = (quint8)SlotRace::Scourge;            // 8 = Undead (不死族)
+            m_slots[i].slotStatus = (quint8)SlotStatus::Open;       // 0 = Open
         }
         else {
             // === 裁判/观察者 : Slots 10-11 ===
-            m_slots[i].team = 12;       // Team 13 (Observer)
-            m_slots[i].race = 32;       // Random
-            m_slots[i].slotStatus = 1;  // 1 = Closed (默认关闭，只开10个位置)
+            m_slots[i].team = (quint8)SlotTeam::Observer;           // Team 3 (裁判)
+            m_slots[i].race = (quint8)SlotRace::Observer;           // Random
+            m_slots[i].slotStatus = (quint8)SlotStatus::Close;      // 1 = Closed (默认关闭，只开10个位置)
         }
 
         // --- 主机特殊覆盖 (Slot 0) ---
         if (i == 0) {
-            m_slots[i].pid = 1;         // 主机 PID
-            m_slots[i].downloadStatus = 100; // 主机肯定有地图
-            m_slots[i].slotStatus = 2;  // 2 = Occupied
-            m_slots[i].computer = 0;    // Human
+            m_slots[i].pid = 1;                                     // 主机初始槽位编号
+            m_slots[i].downloadStatus = 100;                        // 主机肯定有地图
+            m_slots[i].slotStatus = (quint8)SlotStatus::Occupied;   // 被占领
+            m_slots[i].computer = 0;                                // 人类
         }
     }
 
