@@ -228,6 +228,20 @@ ss -tulpn | grep :6112
 netstat -tulpn | grep 6112
 ```
 
+# 开放 TCP 范围
+sudo ufw allow 6113:7113/tcp
+
+# 开放 UDP 范围
+sudo ufw allow 6113:7113/udp
+
+# 重新加载让配置生效
+sudo ufw reload
+
+# 检查一下
+sudo ufw status
+
+# 查看所有正在监听的 TCP 和 UDP 端口，并显示进程名
+sudo ss -tulnp
 ---
 
 ## 🛡️ 防火墙配置
