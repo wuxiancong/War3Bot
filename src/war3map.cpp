@@ -55,8 +55,8 @@ quint32 War3Map::getMapInfo() const {
 }
 
 quint32 War3Map::getMapSHA1() const {
-    if (m_mapSHA1.size() < 4) return 0;
-    return qFromLittleEndian<quint32>(m_mapSHA1.constData());
+    if (m_mapSHA1Bytes.size() < 4) return 0;
+    return qFromLittleEndian<quint32>(m_mapSHA1Bytes.constData());
 }
 
 quint32 War3Map::getMapCRC() const {
@@ -131,7 +131,7 @@ bool War3Map::load(const QString &mapPath)
     QCryptographicHash sha1(QCryptographicHash::Sha1);
     sha1.addData(mapRawData);
     sha1.addData("\x9E\x37\xF1\x03", 4); // War3 Map SHA1 Magic
-    m_mapSHA1 = sha1.result();
+    m_mapSHA1Bytes = sha1.result();
 
     // 2. 打开 MPQ 档案
     HANDLE hMpq = NULL;
@@ -248,7 +248,7 @@ bool War3Map::load(const QString &mapPath)
     m_mapCRC = toBytes(val);
 
     LOG_INFO(QString("[War3Map] Final Checksum: %1").arg(QString(m_mapCRC.toHex().toUpper())));
-    LOG_INFO(QString("[War3Map] Map SHA1:       %1").arg(QString(m_mapSHA1.toHex().toUpper())));
+    LOG_INFO(QString("[War3Map] Map SHA1:       %1").arg(QString(m_mapSHA1Bytes.toHex().toUpper())));
 
 
     // 3. 解析 war3map.w3i (获取地图信息)
@@ -367,7 +367,7 @@ QByteArray War3Map::getEncodedStatString(const QString &hostName, const QString 
     out << (quint8)0;
 
     // 5. Map SHA1
-    out.writeRawData(m_mapSHA1.constData(), 20);
+    out.writeRawData(m_mapSHA1Bytes.constData(), 20);
 
     QByteArray encoded = encodeStatString(rawData);
     analyzeStatString("War3Map生成结果", encoded);

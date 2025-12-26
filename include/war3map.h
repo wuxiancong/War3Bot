@@ -60,16 +60,17 @@ public:
     bool load(const QString &mapFilePath);
 
     // === Setters (游戏设置) ===
-    void setMapVisibility(W3MapVisibility vis) { m_mapVisibility = vis; }
-    void setMapObservers(W3MapObservers obs)   { m_mapObservers = obs; }
-    void setMapSpeed(W3MapSpeed speed)         { m_mapSpeed = speed; }
-    void setMapFlags(quint32 flags)            { m_mapFlags = flags; }
+    void setMapVisibility(W3MapVisibility vis)  { m_mapVisibility = vis; }
+    void setMapObservers(W3MapObservers obs)    { m_mapObservers = obs; }
+    void setMapSpeed(W3MapSpeed speed)          { m_mapSpeed = speed; }
+    void setMapFlags(quint32 flags)             { m_mapFlags = flags; }
 
     // === Getters (获取信息) ===
-    bool isValid() const            { return m_valid; }
-    QString getMapPath() const      { return m_mapPath; }
-    QByteArray getMapWidth() const  { return m_mapWidth; }
-    QByteArray getMapHeight() const { return m_mapHeight; }
+    bool isValid() const                        { return m_valid; }
+    QString getMapPath() const                  { return m_mapPath; }
+    QByteArray getMapWidth() const              { return m_mapWidth; }
+    QByteArray getMapHeight() const             { return m_mapHeight; }
+    QByteArray getMapSHA1Bytes() const          { return m_mapSHA1Bytes; }
 
     // === Getters (协议专用) ===
     quint32 getMapCRC() const;
@@ -107,7 +108,7 @@ private:
     QByteArray m_mapSize;
     QByteArray m_mapInfo; // MPQ Header CRC
     QByteArray m_mapCRC;  // 游戏逻辑 CRC (XORO)
-    QByteArray m_mapSHA1; // 地图文件 SHA1
+    QByteArray m_mapSHA1Bytes; // 地图文件 SHA1
 
     // --- 地图信息 (w3i) ---
     quint32 m_mapOptions;

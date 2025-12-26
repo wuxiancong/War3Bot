@@ -5,6 +5,7 @@
 #include "bnetsrp3.h"
 
 #include <QDir>
+#include <QtEndian>
 #include <QFileInfo>
 #include <QDateTime>
 #include <QDataStream>
@@ -397,11 +398,10 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
     switch (id) {
     case 0x1E: // W3GS_REQJOIN
     {
-        // 准备解析流
+        // 1. 解析客户端请求
         QDataStream in(payload);
         in.setByteOrder(QDataStream::LittleEndian);
 
-        // 定义变量来存储解析出的客户端数据
         quint32 clientHostCounter = 0;
         quint32 clientEntryKey = 0;
         quint8  clientUnknown8 = 0;
@@ -412,13 +412,12 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         quint16 clientInternalPort = 0;
         quint32 clientInternalIP = 0;
 
-        //  开始按照文档结构解析
         if (payload.size() >= 15) {
-            in >> clientHostCounter; // (UINT32) Host Counter
-            in >> clientEntryKey;    // (UINT32) Entry Key (LAN)
-            in >> clientUnknown8;    // (UINT8)  Unknown
-            in >> clientListenPort;  // (UINT16) Listen Port (UDP)
-            in >> clientPeerKey;     // (UINT32) Peer Key
+            in >> clientHostCounter;
+            in >> clientEntryKey;
+            in >> clientUnknown8;
+            in >> clientListenPort;
+            in >> clientPeerKey;
             QByteArray nameBytes;
             char c;
             while (!in.atEnd()) {
@@ -428,16 +427,15 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
             }
             clientPlayerName = QString::fromUtf8(nameBytes);
             if (!in.atEnd()) {
-                in >> clientUnknown32;    // (UINT32) Unknown
-                in >> clientInternalPort; // (UINT16) Internal Port
-                in >> clientInternalIP;   // (UINT32) Internal IP
+                in >> clientUnknown32;
+                in >> clientInternalPort;
+                in >> clientInternalIP;
             }
         } else {
             LOG_ERROR(QString("❌ W3GS_REQJOIN 包长度不足: %1").arg(payload.size()));
             return;
         }
 
-        // 打印解析结果日志
         LOG_INFO("------------------------------------------------");
         LOG_INFO("📥 [0x1E] 客户端加入请求解析结果:");
         LOG_INFO(QString("(UINT32) Host Counter: %1").arg(clientHostCounter));
@@ -452,7 +450,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         LOG_INFO(QString("(UINT32) Intrnl IP   : %1 (%2)").arg(clientInternalIP).arg(iAddr.toString()));
         LOG_INFO("------------------------------------------------");
 
-        // 寻找空槽位
+        // 2. 槽位与PID分配逻辑
         int slotIndex = -1;
         for (int i = 0; i < m_slots.size(); ++i) {
             if (m_slots[i].slotStatus == 0) { // 0 = Open
@@ -463,138 +461,66 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
         if (slotIndex == -1) {
             LOG_WARNING("⚠️ 房间已满，拒绝加入");
-            // 此时应该发送 W3GS_REJECTJOIN (0x05) 并断开
+            // TODO: 发送 W3GS_REJECTJOIN (0x05)
+            socket->disconnectFromHost();
             return;
         }
 
-        // 分配 PID (Slot 0=PID 1, Slot 1=PID 2...)
-        quint8 playerID = slotIndex + 1;
+        // 分配 PID
+        quint8 playerID = slotIndex + 2;
 
-        //  更新槽位状态 (占位)
+        // 更新槽位状态
         m_slots[slotIndex].pid = playerID;
         m_slots[slotIndex].slotStatus = 2;          // Occupied
         m_slots[slotIndex].downloadStatus = 255;    // Unknown/No Map
         m_slots[slotIndex].computer = 0;
 
-        // 4. 发送 0x04 (SlotInfoJoin)
-        QByteArray packet;
-        QDataStream out(&packet, QIODevice::WriteOnly);
-        out.setByteOrder(QDataStream::LittleEndian);
+        // 3. 构建握手响应包序列
+        QByteArray finalPacket;
 
-        // 序列化槽位数据
-        // serializeSlotData() 内部结构应该是: [NumSlots(1)][Slot1][Slot2]...
-        QByteArray slotData = serializeSlotData();
+        // --- Step A: 发送 0x04 (SlotInfoJoin) ---
+        finalPacket.append(createW3GSSlotInfoJoinPacket(
+            playerID,
+            socket->peerAddress(),      // 玩家的外网IP
+            m_udpSocket->localPort()    // 主机的UDP端口
+            ));
 
-        // 写入头部
-        out << (quint8)0xF7 << (quint8)0x04 << (quint16)0; // Header
+        // --- Step B: 发送 0x06 (PlayerInfo) ---
+        finalPacket.append(createPlayerInfoPacket(
+            1,                          // Host PID
+            m_user,                     // Host Name
+            QHostAddress::LocalHost,    // Host Ext IP (占位)
+            6112,                       // Host Ext Port
+            QHostAddress::LocalHost,    // Host Int IP
+            6112                        // Host Int Port
+            ));
 
-        // 写入槽位数据块长度 (包含 NumSlots 的 1 字节 + 数据字节)
-        out << (quint16)slotData.size();
+        // for(auto p : otherPlayers) { finalPacket.append(createPlayerInfoPacket(...)); }
 
-        // 写入槽位数据块
-        out.writeRawData(slotData.data(), slotData.size());
+        // --- Step C: 发送 0x3D (MapCheck) ---
+        finalPacket.append(createW3GSMapCheckPacket());
 
-        // 写入游戏状态
-        out << (quint32)m_randomSeed;       // 随机种子 (必须固定)
-        out << (quint8)m_comboGameType;
-        out << (quint8)m_slots.size();      // Num Slots (UI显示用)
-        out << (quint8)playerID;            // 分配给玩家的 playerID
-        out << (quint16)2;                  // AF_INET
+        // --- Step D: 发送 0x09 (SlotInfo) ---
+        finalPacket.append(createW3GSSlotInfoPacket());
 
-        // 写入网络信息
-        out << (quint16)m_udpSocket->localPort();
-        out << (quint32)socket->peerAddress().toIPv4Address();
-
-        // Unknown
-        out << (quint32)0;
-
-        // Unknown
-        out << (quint32)0;
-
-        // 回填包总长度
-        QDataStream lenStream(&packet, QIODevice::ReadWrite);
-        lenStream.setByteOrder(QDataStream::LittleEndian);
-        lenStream.skipRawData(2);
-        lenStream << (quint16)packet.size();
-
-        // 2. 立即发送 0x06 (Host Player Info)
-        QByteArray hostPacket;
-        QDataStream hostOut(&hostPacket, QIODevice::WriteOnly);
-        hostOut.setByteOrder(QDataStream::LittleEndian);
-
-        hostOut << (quint8)0xF7 << (quint8)0x06 << (quint16)0;
-        hostOut << (quint32)10;                                     // Player Counter
-        hostOut << (quint8)1;                                       // Player ID
-
-        QByteArray hostName = m_user.toUtf8();                      // 主机名字
-        hostOut.writeRawData(hostName.data(), hostName.length());
-        hostOut << (quint8)0;                                       // String Terminator
-
-        hostOut << (quint16)1;                                      // Unknown (Fixed 1)
-
-        // External IP/Port
-        hostOut << (quint16)2 << (quint16)0 << (quint32)0 << (quint32)0 << (quint32)0;
-        // Internal IP/Port
-        hostOut << (quint16)2 << (quint16)0 << (quint32)0 << (quint32)0 << (quint32)0;
-
-        // 回填 0x06 长度
-        QDataStream hostLen(&hostPacket, QIODevice::ReadWrite);
-        hostLen.setByteOrder(QDataStream::LittleEndian);
-        hostLen.skipRawData(2);
-        hostLen << (quint16)hostPacket.size();
-
-        // 将 0x06 追加到发送缓冲区
-        packet.append(hostPacket);
-
-        // =================================================================================
-        // 3. 立即发送 0x3D (Map Check)
-        // =================================================================================
-        QByteArray mapPacket;
-        QDataStream mapOut(&mapPacket, QIODevice::WriteOnly);
-        mapOut.setByteOrder(QDataStream::LittleEndian);
-
-        mapOut << (quint8)0xF7 << (quint8)0x3D << (quint16)0;
-        mapOut << (quint32)1; // Unknown
-
-        QString mapPath = "Maps\\Download\\" + m_war3Map.getMapName();
-        QByteArray mapPathBytes = mapPath.toLocal8Bit();
-        mapOut.writeRawData(mapPathBytes.data(), mapPathBytes.length());
-        mapOut << (quint8)0;
-
-        mapOut << (quint32)m_war3Map.getMapSize();
-        mapOut << (quint32)m_war3Map.getMapInfo();
-        mapOut << (quint32)m_war3Map.getMapCRC();
-        mapOut << (quint32)m_war3Map.getMapSHA1();
-
-        // 回填 0x3D 长度
-        QDataStream mapLen(&mapPacket, QIODevice::ReadWrite);
-        mapLen.setByteOrder(QDataStream::LittleEndian);
-        mapLen.skipRawData(2);
-        mapLen << (quint16)mapPacket.size();
-
-        // 将 0x3D 追加到发送缓冲区
-        packet.append(mapPacket);
-
-        // =================================================================================
-        // 一次性写入 Socket
-        // =================================================================================
-        socket->write(packet);
+        // 4. 发送数据
+        socket->write(finalPacket);
         socket->flush();
 
-        LOG_INFO(QString("✅ 发送握手包序列 (0x04 -> 0x06 -> 0x3D) PID: %1").arg(playerID));
+        LOG_INFO(QString("✅ 加入成功: 发送握手序列 (0x04 -> 0x06 -> 0x3D -> 0x09) PID: %1").arg(playerID));
     }
     break;
 
-    case 0x21: // W3GS_LEAVEREQ (玩家离开)
+    case 0x21: // W3GS_LEAVEREQ
         LOG_INFO("👋 玩家请求离开房间");
         socket->disconnectFromHost();
         break;
 
-    case 0x06: // W3GS_MAPPART (地图下载/校验相关)
-        LOG_INFO("🗺️ 收到地图相关请求 (0x06)，暂忽略");
+    case 0x06: // W3GS_MAPPART
+        LOG_INFO("🗺️ 收到地图下载请求 (0x06)");
         break;
 
-    case 0x28: // W3GS_PONG_TO_HOST (TCP Ping 回复)
+    case 0x28: // W3GS_PONG_TO_HOST
         LOG_INFO("💓 收到玩家 TCP Pong");
         break;
 
@@ -984,11 +910,13 @@ void Client::createGame(const QString &gameName, const QString &password, Provid
     out.writeRawData(password.toUtf8().constData(), password.toUtf8().size()); out << (quint8)0;
     out.writeRawData(finalStatString.constData(), finalStatString.size()); out << (quint8)0;
 
-    m_comboGameType = (quint16)comboGameType;
-
     sendPacket(SID_STARTADVEX3, payload);
     LOG_INFO("📤 房间创建请求发送完毕");
 }
+
+// =========================================================
+// 8. 游戏数据处理
+// =========================================================
 
 void Client::initSlots()
 {
@@ -1013,7 +941,7 @@ void Client::initSlots()
         m_slots[i].pid = 0;                                         // 0 = Empty
         m_slots[i].downloadStatus = 0;                              // 0% = Empty
         m_slots[i].computer = 0;                                    // No Computer
-        m_slots[i].color = i;                                       // 颜色通常对应槽位索引 (0=Red, 1=Blue...)
+        m_slots[i].color = i + 1;                                   // Slot Color
 
         // --- 队伍与种族设置 ---
         if (i < 5) {
@@ -1068,8 +996,184 @@ QByteArray Client::serializeSlotData() {
     return data;
 }
 
+QByteArray Client::createW3GSSlotInfoJoinPacket(quint8 playerID, const QHostAddress& externalIp, quint16 localPort)
+{
+    QByteArray packet;
+    QDataStream out(&packet, QIODevice::WriteOnly);
+    out.setByteOrder(QDataStream::LittleEndian);
+
+    // 1. 获取槽位数据
+    QByteArray slotData = serializeSlotData();
+
+    // 2. 写入 Header (长度稍后回填)
+    out << (quint8)0xF7 << (quint8)0x04 << (quint16)0;
+
+    // 3. 写入槽位数据块长度 & 内容
+    out << (quint16)slotData.size();
+    out.writeRawData(slotData.data(), slotData.size());
+
+    // 4. 写入游戏状态信息
+    out << (quint32)m_randomSeed;       // 随机种子 (Random Seek)
+    out << (quint8)m_comboGameType;     // 游戏类型 (Game Type)
+    out << (quint8)m_slots.size();      // 槽位总数 (Num Slots)
+    out << (quint8)playerID;            // 玩家的ID (Player ID)
+
+    // 5. 写入网络信息
+    out << (quint16)2;                  // AF_INET (IPv4)
+    out << (quint16)localPort;          // 主机 UDP 端口
+
+    quint32 ipVal = externalIp.toIPv4Address();
+    out << (quint32)qToBigEndian(ipVal);
+
+    // 6. 填充尾部 (Unknown / Padding)
+    out << (quint32)0;
+    out << (quint32)0;
+
+    // 7. 回填包总长度
+    QDataStream lenStream(&packet, QIODevice::ReadWrite);
+    lenStream.setByteOrder(QDataStream::LittleEndian);
+    lenStream.skipRawData(2); // 跳过 F7 04
+    lenStream << (quint16)packet.size();
+
+    return packet;
+}
+
+QByteArray Client::createPlayerInfoPacket(quint8 pid, const QString& name,
+                                          const QHostAddress& externalIp, quint16 externalPort,
+                                          const QHostAddress& internalIp, quint16 internalPort)
+{
+    QByteArray packet;
+    QDataStream out(&packet, QIODevice::WriteOnly);
+    out.setByteOrder(QDataStream::LittleEndian);
+
+    // 1. 写入 Header (长度稍后回填)
+    out << (quint8)0xF7 << (quint8)0x06 << (quint16)0;
+
+    // 2. 写入 Id
+    out << (quint32)2; // Internal ID / P2P Key
+    out << (quint8)pid;
+
+    // 3. 写入玩家名字
+    QByteArray nameBytes = name.toUtf8();
+    out.writeRawData(nameBytes.data(), nameBytes.length());
+    out << (quint8)0; // Null terminator
+
+    out << (quint16)1; // Unknown
+
+    // 5. 写入网络配置
+    out << (quint16)2;
+    out << (quint16)externalPort;
+    out << (quint32)qToBigEndian(externalIp.toIPv4Address());
+    out << (quint32)0 << (quint32)0;
+
+    out << (quint16)2;
+    out << (quint16)internalPort;
+    out << (quint32)qToBigEndian(internalIp.toIPv4Address());
+    out << (quint32)0 << (quint32)0;
+
+    // 6. 回填包总长度
+    QDataStream lenStream(&packet, QIODevice::ReadWrite);
+    lenStream.setByteOrder(QDataStream::LittleEndian);
+    lenStream.skipRawData(2);
+    lenStream << (quint16)packet.size();
+
+    return packet;
+}
+
+QByteArray Client::createW3GSSlotInfoPacket()
+{
+    QByteArray packet;
+    QDataStream out(&packet, QIODevice::WriteOnly);
+    out.setByteOrder(QDataStream::LittleEndian);
+
+    // 1. 写入 Header (长度稍后回填)
+    out << (quint8)0xF7 << (quint8)0x09 << (quint16)0;
+
+    // 2. 写入槽位数据块长度 & 内容
+    QByteArray slotData = serializeSlotData();
+
+    out << (quint16)slotData.size();                    // 写入数据块长度
+    out.writeRawData(slotData.data(), slotData.size()); // 写入数据块内容
+
+    // 3. 写入游戏状态信息
+    out << (quint32)m_randomSeed;                       // 随机种子
+    out << (quint8)m_comboGameType;                     // 游戏类型 (Game Type)
+    out << (quint8)m_slots.size();                      // 槽位总数 (Num Slots)
+
+    // 4. 回填包总长度
+    QDataStream lenStream(&packet, QIODevice::ReadWrite);
+    lenStream.setByteOrder(QDataStream::LittleEndian);
+    lenStream.skipRawData(2); // 跳过 F7 09
+    lenStream << (quint16)packet.size();
+
+    return packet;
+}
+
+QByteArray Client::createW3GSMapCheckPacket()
+{
+    QByteArray packet;
+    QDataStream out(&packet, QIODevice::WriteOnly);
+    out.setByteOrder(QDataStream::LittleEndian);
+
+    // 1. Header (长度稍后回填)
+    out << (quint8)0xF7 << (quint8)0x3D << (quint16)0;
+
+    // 2. Unknown Constant
+    out << (quint32)1;
+
+    // 3. Map Path (String)
+    QString mapPath = "Maps\\Download\\" + m_war3Map.getMapName();
+    QByteArray mapPathBytes = mapPath.toLocal8Bit();
+    out.writeRawData(mapPathBytes.data(), mapPathBytes.length());
+    out << (quint8)0; // String Terminator
+
+    // 4. Map Stat Data
+    out << (quint32)m_war3Map.getMapSize();
+    out << (quint32)m_war3Map.getMapInfo();
+    out << (quint32)m_war3Map.getMapCRC();
+
+    // 5. Map SHA1 (Critical: Must be 20 bytes)
+    QByteArray sha1 = m_war3Map.getMapSHA1Bytes();
+
+    // 安全检查：强制确保 20 字节
+    if (sha1.size() != 20) {
+        LOG_ERROR(QString("❌ SHA1 长度错误: %1 字节 (应为20)，正在强制调整...").arg(sha1.size()));
+        sha1.resize(20); // 补零或截断
+    }
+
+    // 写入 SHA1
+    out.writeRawData(sha1.data(), 20);
+
+    // 记录日志方便调试
+    QString sha1Hex = sha1.toHex(' ').toUpper();
+    LOG_INFO(QString("📝 [0x3D] SHA1 写入内容: %1").arg(sha1Hex));
+
+    // 6. 回填包总长度
+    QDataStream lenStream(&packet, QIODevice::ReadWrite);
+    lenStream.setByteOrder(QDataStream::LittleEndian);
+    lenStream.skipRawData(2); // 跳过 F7 3D
+    lenStream << (quint16)packet.size();
+
+    return packet;
+}
+
+void Client::broadcastSlotInfo()
+{
+    // 生成最新的槽位包
+    QByteArray slotPacket = createW3GSSlotInfoPacket();
+
+    // 假设 m_players 存储了所有连接的 socket
+    for (QTcpSocket* s : qAsConst(m_playerSockets)) {
+        if (s->state() == QAbstractSocket::ConnectedState) {
+            s->write(slotPacket);
+            s->flush();
+        }
+    }
+    LOG_INFO("📢 已向所有玩家广播最新的槽位信息 (0x09)");
+}
+
 // =========================================================
-// 8. 辅助工具函数
+// 9. 辅助工具函数
 // =========================================================
 
 bool Client::bindToRandomPort()
