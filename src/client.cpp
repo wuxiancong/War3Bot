@@ -1194,7 +1194,7 @@ bool Client::bindToRandomPort()
 
     // 随机范围
     for (int i = 0; i < 200; ++i) {
-        quint16 p = QRandomGenerator::global()->bounded(49152, 65536);
+        quint16 p = QRandomGenerator::global()->bounded(6113, 65536);
         if (isBlackListedPort(p)) continue;
         if (tryBind(p)) return true;
     }
