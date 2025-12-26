@@ -467,12 +467,12 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         }
 
         // 分配 PID
-        quint8 playerID = slotIndex + 1;
+        quint8 playerID = slotIndex + 2;
 
         // 更新槽位状态
         m_slots[slotIndex].pid = playerID;
         m_slots[slotIndex].slotStatus = 2;          // Occupied
-        m_slots[slotIndex].downloadStatus = 255;    // Unknown/No Map
+        m_slots[slotIndex].downloadStatus = 255;    // Unknown
         m_slots[slotIndex].computer = 0;
 
         // 3. 构建握手响应包序列
@@ -918,11 +918,11 @@ void Client::createGame(const QString &gameName, const QString &password, Provid
 // 8. 游戏数据处理
 // =========================================================
 
-void Client::initSlots()
+void Client::initSlots(quint8 maxPlayers)
 {
     // 1. 清空旧数据
     m_slots.clear();
-    m_slots.resize(10); // Dota 固定发送 10 个槽位结构
+    m_slots.resize(maxPlayers);
 
     // 2. 清空现有玩家连接
     for (auto socket : qAsConst(m_playerSockets)) {
@@ -934,14 +934,12 @@ void Client::initSlots()
     m_playerBuffers.clear();
 
     // 3. 初始化槽位状态
-    for (int i = 0; i < 10; ++i) {
+    for (quint8 i = 0; i < maxPlayers; ++i) {
         m_slots[i] = GameSlot();
-
-        // --- 通用设置 ---
-        m_slots[i].pid = 0;                                         // 0 = Empty
-        m_slots[i].downloadStatus = 0;                              // 0 = Empty
+        m_slots[i].pid = 0;
+        m_slots[i].downloadStatus = 255;                            // No Map
         m_slots[i].computer = 0;                                    // No Computer
-        m_slots[i].color = i + 1;                                   // Slot Color
+        m_slots[i].color = i + 1;
 
         // --- 队伍与种族设置 ---
         if (i < 5) {
@@ -1021,10 +1019,7 @@ QByteArray Client::createW3GSSlotInfoJoinPacket(quint8 playerID, const QHostAddr
     // 5. 写入网络信息
     out << (quint16)2;                                              // AF_INET (IPv4)
     out << (quint16)localPort;                                      // 主机 UDP 端口
-
-    quint32 ipHost = externalIp.toIPv4Address();
-    quint32 ipNet = qToBigEndian(ipHost);
-    out.writeRawData(reinterpret_cast<const char*>(&ipNet), 4);
+    writeIpToStreamWithLog(out, externalIp);
 
     // 6. 填充尾部
     out << (quint32)0;
@@ -1064,12 +1059,12 @@ QByteArray Client::createPlayerInfoPacket(quint8 pid, const QString& name,
     // 5. 写入网络配置
     out << (quint16)2;
     out << (quint16)externalPort;
-    out << (quint32)qToBigEndian(externalIp.toIPv4Address());
+    writeIpToStreamWithLog(out, externalIp);
     out << (quint32)0 << (quint32)0;
 
     out << (quint16)2;
     out << (quint16)internalPort;
-    out << (quint32)qToBigEndian(internalIp.toIPv4Address());
+    writeIpToStreamWithLog(out, internalIp);
     out << (quint32)0 << (quint32)0;
 
     // 6. 回填包总长度

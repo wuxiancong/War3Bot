@@ -229,9 +229,9 @@ private slots:
 
 private:
     // --- 游戏槽位处理 ---
-    void initSlots();
-    GameSlot *findEmptySlot();
+    void initSlots(quint8 maxPlayers = 10);
     QByteArray serializeSlotData();
+    GameSlot *findEmptySlot();
     void broadcastSlotInfo();
 
     // --- W3GS 协议包生成辅助函数 ---
@@ -263,6 +263,12 @@ private:
                                       const QHostAddress& externalIp, quint16 externalPort,
                                       const QHostAddress& internalIp, quint16 internalPort);
 
+    /**
+     * @brief 将 IP 转为网络字节序写入流，并打印 Hex 字节供调试
+     * @param out 目标数据流 (必须已设置为 LittleEndian)
+     * @param ip 要写入的 IP 地址
+     */
+    void writeIpToStreamWithLog(QDataStream &out, const QHostAddress &ip);
 
     // --- 内部网络处理 ---
     void sendPacket(TCPPacketID id, const QByteArray &payload);
