@@ -1192,10 +1192,6 @@ bool Client::bindToRandomPort()
         return true;
     };
 
-    // 优先 6112-6119
-    for (quint16 p = 6112; p <= 6119; ++p) {
-        if (tryBind(p)) return true;
-    }
     // 随机范围
     for (int i = 0; i < 200; ++i) {
         quint16 p = QRandomGenerator::global()->bounded(49152, 65536);
