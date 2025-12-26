@@ -1235,10 +1235,10 @@ void Client::writeIpToStreamWithLog(QDataStream &out, const QHostAddress &ip)
 
     if (parts.size() == 4) {
         // 3. 逐个字节写入，绕过 Stream 的端序自动反转
-        quint8 b0 = (quint8)parts[0].toUInt();
-        quint8 b1 = (quint8)parts[1].toUInt();
-        quint8 b2 = (quint8)parts[2].toUInt();
-        quint8 b3 = (quint8)parts[3].toUInt();
+        quint8 b0 = (quint8)parts[3].toUInt();
+        quint8 b1 = (quint8)parts[2].toUInt();
+        quint8 b2 = (quint8)parts[1].toUInt();
+        quint8 b3 = (quint8)parts[0].toUInt();
 
         out << b0 << b1 << b2 << b3;
 
