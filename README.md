@@ -170,6 +170,9 @@ sudo journalctl -u war3bot -f
 
 # 杀死所有相关进程
 pkill -f War3Bot
+
+# 强制杀死所有相关进程
+pkill -9 -f War3Bot
 ```
 
 ### 2. 🎮 交互式控制台模式 (手动发送指令)

@@ -1234,7 +1234,7 @@ void Client::writeIpToStreamWithLog(QDataStream &out, const QHostAddress &ip)
     QStringList parts = ipStr.split('.');
 
     if (parts.size() == 4) {
-        // 3. 逐个字节写入，绕过 Stream 的端序自动反转
+        // 3. 逐个字节写入
         quint8 b0 = (quint8)parts[3].toUInt();
         quint8 b1 = (quint8)parts[2].toUInt();
         quint8 b2 = (quint8)parts[1].toUInt();
@@ -1242,7 +1242,7 @@ void Client::writeIpToStreamWithLog(QDataStream &out, const QHostAddress &ip)
 
         out << b0 << b1 << b2 << b3;
 
-        LOG_INFO(QString("🔧 IP写入 | 目标Hex: 49 ED 5A CF | 实际Hex: %1 %2 %3 %4")
+        LOG_INFO(QString("🔧 IP (HEX): %1 %2 %3 %4")
                      .arg(b0, 2, 16, QChar('0'))
                      .arg(b1, 2, 16, QChar('0'))
                      .arg(b2, 2, 16, QChar('0'))
