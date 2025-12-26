@@ -1022,9 +1022,9 @@ QByteArray Client::createW3GSSlotInfoJoinPacket(quint8 playerID, const QHostAddr
     out << (quint16)2;                                              // AF_INET (IPv4)
     out << (quint16)localPort;                                      // 主机 UDP 端口
 
-    quint32 ipHostOrder = externalIp.toIPv4Address();               // 获取主机序整数
-    quint32 ipNetOrder = qToBigEndian(ipHostOrder);                 // 转为网络序 (Big Endian)
-    out.writeRawData(reinterpret_cast<const char*>(&ipNetOrder), 4);
+    quint32 ipHost = externalIp.toIPv4Address();
+    quint32 ipNet = qToBigEndian(ipHost);
+    out.writeRawData(reinterpret_cast<const char*>(&ipNet), 4);
 
     // 6. 填充尾部
     out << (quint32)0;
