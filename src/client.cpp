@@ -602,6 +602,18 @@ void Client::handleUdpPacket(const QByteArray &data, const QHostAddress &sender,
     case W3GS_REFRESHGAME:  // 0x32
         LOG_INFO(QString("🗺️ [UDP] 收到局域网房间广播 (0x%1)").arg(QString::number(msgId, 16)));
         break;
+    case W3GS_TEST: // 自定义测试包 ID
+    {
+        // 读取剩余的数据作为字符串打印出来
+        QByteArray payload = data.mid(4);
+        QString msg = QString::fromUtf8(payload);
+        LOG_INFO(QString("🧪 [UDP] 收到测试包 (0x88) | 连通性测试成功！"));
+        LOG_INFO(QString("   -> 附加消息: %1").arg(msg));
+
+        // 可选：给发送者回一个包，证明死活 (这里简单回复一个 0x88)
+        m_udpSocket->writeDatagram(data, sender, senderPort);
+    }
+    break;
     default:
         LOG_INFO(QString("❓ [UDP] 未处理包 ID: 0x%1").arg(QString::number(msgId, 16)));
         break;

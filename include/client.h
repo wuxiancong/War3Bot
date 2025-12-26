@@ -17,152 +17,153 @@
 
 // 登录协议类型
 enum LoginProtocol {
-    Protocol_Old_0x29    = 0x29, /* 旧版协议 (DoubleHash BrokenSHA1) */
-    Protocol_Logon2_0x3A = 0x3A, /* 中期协议 (同 0x29 算法，ID 不同) */
-    Protocol_SRP_0x53    = 0x53  /* 新版协议 (SRP NLS) */
+    Protocol_Old_0x29           = 0x29, /* 旧版协议 (DoubleHash BrokenSHA1) */
+    Protocol_Logon2_0x3A        = 0x3A, /* 中期协议 (同 0x29 算法，ID 不同) */
+    Protocol_SRP_0x53           = 0x53  /* 新版协议 (SRP NLS) */
 };
 
 // TCP 协议 ID (BNET)
 enum TCPPacketID {
-    SID_NULL                   = 0x00,
-    SID_STOPADV                = 0x02,
-    SID_ENTERCHAT              = 0x0A,
-    SID_GETCHANNELLIST         = 0x0B,
-    SID_JOINCHANNEL            = 0x0C,
-    SID_CHATEVENT              = 0x0F,
-    SID_STARTADVEX3            = 0x1C,
-    SID_PING                   = 0x25,
-    SID_LOGONRESPONSE          = 0x29,
-    SID_LOGONRESPONSE2         = 0x3A,
-    SID_NETGAMEPORT            = 0x45,
-    SID_AUTH_INFO              = 0x50,
-    SID_AUTH_CHECK             = 0x51,
-    SID_AUTH_ACCOUNTCREATE     = 0x52,
-    SID_AUTH_ACCOUNTLOGON      = 0x53,
-    SID_AUTH_ACCOUNTLOGONPROOF = 0x54
+    SID_NULL                    = 0x00,
+    SID_STOPADV                 = 0x02,
+    SID_ENTERCHAT               = 0x0A,
+    SID_GETCHANNELLIST          = 0x0B,
+    SID_JOINCHANNEL             = 0x0C,
+    SID_CHATEVENT               = 0x0F,
+    SID_STARTADVEX3             = 0x1C,
+    SID_PING                    = 0x25,
+    SID_LOGONRESPONSE           = 0x29,
+    SID_LOGONRESPONSE2          = 0x3A,
+    SID_NETGAMEPORT             = 0x45,
+    SID_AUTH_INFO               = 0x50,
+    SID_AUTH_CHECK              = 0x51,
+    SID_AUTH_ACCOUNTCREATE      = 0x52,
+    SID_AUTH_ACCOUNTLOGON       = 0x53,
+    SID_AUTH_ACCOUNTLOGONPROOF  = 0x54
 };
 
 // UDP 协议 ID (W3GS / LAN)
 enum UdpPacketID {
-    W3GS_PING_FROM_HOST   = 0x01,
-    W3GS_INCOMING_ACTION  = 0x0C,
-    W3GS_REQJOIN          = 0x1E,
-    W3GS_SEARCHGAME       = 0x2F,
-    W3GS_GAMEINFO         = 0x30,
-    W3GS_REFRESHGAME      = 0x32,
-    W3GS_DECREATEGAME     = 0x33,
-    W3GS_PING_FROM_OTHERS = 0x35,
-    W3GS_PONG_TO_OTHERS   = 0x36,
-    W3GS_MAPCHECK         = 0x3D,
-    W3GS_PONG_TO_HOST     = 0x46
+    W3GS_PING_FROM_HOST         = 0x01,
+    W3GS_INCOMING_ACTION        = 0x0C,
+    W3GS_REQJOIN                = 0x1E,
+    W3GS_SEARCHGAME             = 0x2F,
+    W3GS_GAMEINFO               = 0x30,
+    W3GS_REFRESHGAME            = 0x32,
+    W3GS_DECREATEGAME           = 0x33,
+    W3GS_PING_FROM_OTHERS       = 0x35,
+    W3GS_PONG_TO_OTHERS         = 0x36,
+    W3GS_MAPCHECK               = 0x3D,
+    W3GS_PONG_TO_HOST           = 0x46,
+    W3GS_TEST                   = 0x88
 };
 
 // 游戏类型枚举
 enum BaseGameType {
-    Type_All           = 0x00,
-    Type_Melee         = 0x02,
-    Type_FFA           = 0x03,
-    Type_1v1           = 0x04,
-    Type_CTF           = 0x05,
-    Type_Greed         = 0x06,
-    Type_Slaughter     = 0x07,
-    Type_SuddenDeath   = 0x08,
-    Type_Ladder        = 0x09,
-    Type_IronManLadder = 0x10,
-    Type_UMS           = 0x0A,
-    Type_TeamMelee     = 0x0B,
-    Type_TeamFFA       = 0x0C,
-    Type_TeamCTF       = 0x0D,
-    Type_TopVsBottom   = 0x0F,
-    Type_PGL           = 0x20
+    Type_All                    = 0x00,
+    Type_Melee                  = 0x02,
+    Type_FFA                    = 0x03,
+    Type_1v1                    = 0x04,
+    Type_CTF                    = 0x05,
+    Type_Greed                  = 0x06,
+    Type_Slaughter              = 0x07,
+    Type_SuddenDeath            = 0x08,
+    Type_Ladder                 = 0x09,
+    Type_IronManLadder          = 0x10,
+    Type_UMS                    = 0x0A,
+    Type_TeamMelee              = 0x0B,
+    Type_TeamFFA                = 0x0C,
+    Type_TeamCTF                = 0x0D,
+    Type_TopVsBottom            = 0x0F,
+    Type_PGL                    = 0x20
 };
 
 enum GameTypeFlags {
-    Flag_None       = 0x0000,
-    Flag_Expansion  = 0x2000,
-    Flag_FixedTeams = 0x4000,
-    Flag_Official   = 0x8000
+    Flag_None                   = 0x0000,
+    Flag_Expansion              = 0x2000,
+    Flag_FixedTeams             = 0x4000,
+    Flag_Official               = 0x8000
 };
 
 enum ComboGameType {
-    Game_TFT_Custom   = 0x2001,
-    Game_TFT_Official = 0xC009,
-    Game_RoC_Custom   = 0x0001
+    Game_TFT_Custom             = 0x2001,
+    Game_TFT_Official           = 0xC009,
+    Game_RoC_Custom             = 0x0001
 };
 
 enum SubGameType {
-    SubType_None     = 0x00,
-    SubType_Blizzard = 0x42,
-    SubType_Scenario = 0x43,
-    SubType_Internet = 0x49,
-    SubType_Load     = 0x4C,
-    SubType_Save     = 0x53
+    SubType_None                = 0x00,
+    SubType_Blizzard            = 0x42,
+    SubType_Scenario            = 0x43,
+    SubType_Internet            = 0x49,
+    SubType_Load                = 0x4C,
+    SubType_Save                = 0x53
 };
 
 enum GameState {
-    State_None              = 0x00,
-    State_Private           = 0x01,
-    State_Full              = 0x02,
-    State_HasOtherPlayers   = 0x04,
-    State_InProgress        = 0x08,
-    State_DisconnectIsLoss  = 0x10,
-    State_Replay            = 0x80,
-    State_Open_Public       = State_HasOtherPlayers,
-    State_Open_Private      = State_Private | State_HasOtherPlayers,
-    State_Ladder_InProgress = State_InProgress | State_DisconnectIsLoss,
-    State_Lobby_Full        = State_Full | State_HasOtherPlayers,
-    State_ActiveGame        = State_InProgress | State_HasOtherPlayers
+    State_None                  = 0x00,
+    State_Private               = 0x01,
+    State_Full                  = 0x02,
+    State_HasOtherPlayers       = 0x04,
+    State_InProgress            = 0x08,
+    State_DisconnectIsLoss      = 0x10,
+    State_Replay                = 0x80,
+    State_Open_Public           = State_HasOtherPlayers,
+    State_Open_Private          = State_Private | State_HasOtherPlayers,
+    State_Ladder_InProgress     = State_InProgress | State_DisconnectIsLoss,
+    State_Lobby_Full            = State_Full | State_HasOtherPlayers,
+    State_ActiveGame            = State_InProgress | State_HasOtherPlayers
 };
 
 enum ProviderVersion {
-    Provider_All_Bits = 0xFFFFFFFF,
-    Provider_RoC      = 0x00000000,
-    Provider_SC_BW    = 0x000000FF,
-    Provider_TFT_New  = 0x000003FF
+    Provider_All_Bits           = 0xFFFFFFFF,
+    Provider_RoC                = 0x00000000,
+    Provider_SC_BW              = 0x000000FF,
+    Provider_TFT_New            = 0x000003FF
 };
 
 enum LadderType {
-    Ladder_None     = 0x00000000,
-    Ladder_Standard = 0x00000001,
-    Ladder_IronMan  = 0x00000003
+    Ladder_None                 = 0x00000000,
+    Ladder_Standard             = 0x00000001,
+    Ladder_IronMan              = 0x00000003
 };
 
 enum class SlotRace : quint8 {
-    Human    = 0x01,
-    Orc      = 0x02,
-    NightElf = 0x04,
-    Undead   = 0x08,
-    Random   = 0x20,
-    Fixed    = 0x40,
+    Human                       = 0x01,
+    Orc                         = 0x02,
+    NightElf                    = 0x04,
+    Undead                      = 0x08,
+    Random                      = 0x20,
+    Fixed                       = 0x40,
 
     // DotA 专用别名
-    Sentinel = NightElf,
-    Scourge  = Undead,
-    Observer = Random
+    Sentinel                    = NightElf,
+    Scourge                     = Undead,
+    Observer                    = Random
 };
 
 enum class SlotTeam : quint8 {
-    Sentinel = 0,
-    Scourge  = 1,
-    Observer = 2
+    Sentinel                    = 0,
+    Scourge                     = 1,
+    Observer                    = 2
 };
 
 enum class SlotStatus : quint8 {
-    Open     = 0,
-    Close    = 1,
-    Occupied = 2
+    Open                        = 0,
+    Close                       = 1,
+    Occupied                    = 2
 };
 
 struct GameSlot {
-    quint8 pid            = 0;
-    quint8 downloadStatus = 0;
-    quint8 slotStatus     = 0;
-    quint8 computer       = 0;
-    quint8 team           = 0;
-    quint8 color          = 0;
-    quint8 race           = 32;
-    quint8 computerType   = 0;
-    quint8 handicap       = 100;
+    quint8 pid                  = 0;
+    quint8 downloadStatus       = 0;
+    quint8 slotStatus           = 0;
+    quint8 computer             = 0;
+    quint8 team                 = 0;
+    quint8 color                = 0;
+    quint8 race                 = 32;
+    quint8 computerType         = 0;
+    quint8 handicap             = 100;
 };
 
 // 前置声明
