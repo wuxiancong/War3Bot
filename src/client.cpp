@@ -478,19 +478,22 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         // 3. 构建握手响应包序列
         QByteArray finalPacket;
 
+        QHostAddress hostIp = socket->localAddress();
+        quint16 hostPort = m_udpSocket->localPort();
+
         // --- Step A: 发送 0x04 (SlotInfoJoin) ---
         finalPacket.append(createW3GSSlotInfoJoinPacket(
             playerID,
             socket->peerAddress(),      // 玩家的外网IP
-            m_udpSocket->localPort()    // 主机的UDP端口
+            hostPort                    // 主机的UDP端口
             ));
 
         // --- Step B: 发送 0x06 (PlayerInfo) ---
         finalPacket.append(createPlayerInfoPacket(
             1,                          // Host PID
             m_user,                     // Host Name
-            QHostAddress("0.0.0.0"),    // Host Ext IP
-            0,                          // Host Ext Port
+            hostIp,                     // Host Ext IP
+            hostPort,                   // Host Ext Port
             QHostAddress("0.0.0.0"),    // Host Int IP
             0                           // Host Int Port
             ));
