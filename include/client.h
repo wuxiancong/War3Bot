@@ -259,7 +259,6 @@ private:
     // 网络相关
     QString m_serverAddr;
     quint16 m_serverPort;
-    quint16 m_listenPort;
     QUdpSocket *m_udpSocket;
     QTcpSocket *m_tcpSocket;
     QTcpServer *m_tcpServer;
