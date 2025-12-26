@@ -467,7 +467,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         }
 
         // 分配 PID
-        quint8 playerID = slotIndex + 2;
+        quint8 playerID = slotIndex + 1;
 
         // 更新槽位状态
         m_slots[slotIndex].pid = playerID;
@@ -939,7 +939,7 @@ void Client::initSlots()
 
         // --- 通用设置 ---
         m_slots[i].pid = 0;                                         // 0 = Empty
-        m_slots[i].downloadStatus = 0;                              // 0% = Empty
+        m_slots[i].downloadStatus = 0;                              // 0 = Empty
         m_slots[i].computer = 0;                                    // No Computer
         m_slots[i].color = i + 1;                                   // Slot Color
 
@@ -1013,19 +1013,20 @@ QByteArray Client::createW3GSSlotInfoJoinPacket(quint8 playerID, const QHostAddr
     out.writeRawData(slotData.data(), slotData.size());
 
     // 4. 写入游戏状态信息
-    out << (quint32)m_randomSeed;       // 随机种子 (Random Seek)
-    out << (quint8)m_comboGameType;     // 游戏类型 (Game Type)
-    out << (quint8)m_slots.size();      // 槽位总数 (Num Slots)
-    out << (quint8)playerID;            // 玩家的ID (Player ID)
+    out << (quint32)m_randomSeed;                                   // 随机种子 (Random Seek)
+    out << (quint8)m_comboGameType;                                 // 游戏类型 (Game Type)
+    out << (quint8)m_slots.size();                                  // 槽位总数 (Num Slots)
+    out << (quint8)playerID;                                        // 玩家的ID (Player ID)
 
     // 5. 写入网络信息
-    out << (quint16)2;                  // AF_INET (IPv4)
-    out << (quint16)localPort;          // 主机 UDP 端口
+    out << (quint16)2;                                              // AF_INET (IPv4)
+    out << (quint16)localPort;                                      // 主机 UDP 端口
 
-    quint32 ipVal = externalIp.toIPv4Address();
-    out << (quint32)qToBigEndian(ipVal);
+    quint32 ipHostOrder = externalIp.toIPv4Address();               // 获取主机序整数
+    quint32 ipNetOrder = qToBigEndian(ipHostOrder);                 // 转为网络序 (Big Endian)
+    out.writeRawData(reinterpret_cast<const char*>(&ipNetOrder), 4);
 
-    // 6. 填充尾部 (Unknown / Padding)
+    // 6. 填充尾部
     out << (quint32)0;
     out << (quint32)0;
 
