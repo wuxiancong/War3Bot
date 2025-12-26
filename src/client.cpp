@@ -489,10 +489,10 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         finalPacket.append(createPlayerInfoPacket(
             1,                          // Host PID
             m_user,                     // Host Name
-            QHostAddress::LocalHost,    // Host Ext IP (占位)
-            6112,                       // Host Ext Port
-            QHostAddress::LocalHost,    // Host Int IP
-            6112                        // Host Int Port
+            QHostAddress("0.0.0.0"),    // Host Ext IP
+            m_udpSocket->localPort(),   // Host Ext Port
+            QHostAddress("0.0.0.0"),    // Host Int IP
+            m_udpSocket->localPort()    // Host Int Port
             ));
 
         // for(auto p : otherPlayers) { finalPacket.append(createPlayerInfoPacket(...)); }
@@ -1018,7 +1018,7 @@ QByteArray Client::createW3GSSlotInfoJoinPacket(quint8 playerID, const QHostAddr
 
     // 5. 写入网络信息
     out << (quint16)2;                                              // AF_INET (IPv4)
-    out << (quint16)localPort;                                      // 主机 UDP 端口
+    out << (quint16)qToBigEndian(localPort);                        // 主机 UDP 端口
     writeIpToStreamWithLog(out, externalIp);
 
     // 6. 填充尾部
@@ -1058,12 +1058,12 @@ QByteArray Client::createPlayerInfoPacket(quint8 pid, const QString& name,
 
     // 5. 写入网络配置
     out << (quint16)2;
-    out << (quint16)externalPort;
+    out << (quint16)qToBigEndian(externalPort);
     writeIpToStreamWithLog(out, externalIp);
     out << (quint32)0 << (quint32)0;
 
     out << (quint16)2;
-    out << (quint16)internalPort;
+    out << (quint16)qToBigEndian(internalPort);
     writeIpToStreamWithLog(out, internalIp);
     out << (quint32)0 << (quint32)0;
 
