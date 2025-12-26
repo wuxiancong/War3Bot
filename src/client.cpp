@@ -1226,19 +1226,15 @@ void Client::sendPingLoop()
 
 void Client::writeIpToStreamWithLog(QDataStream &out, const QHostAddress &ip)
 {
-    // 1. 获取 IP 字符串
+    // 1. 获取 IP
     QString ipStr = ip.toString();
+    if (ipStr.startsWith("::ffff:")) ipStr = ipStr.mid(7);
 
-    // 处理 IPv6 映射地址
-    if (ipStr.startsWith("::ffff:")) {
-        ipStr = ipStr.mid(7);
-    }
-
-    // 2. 按点号拆分
+    // 2. 拆分
     QStringList parts = ipStr.split('.');
 
     if (parts.size() == 4) {
-        // 3. 逐个字节写入
+        // 3. 逐个字节写入，绕过 Stream 的端序自动反转
         quint8 b0 = (quint8)parts[0].toUInt();
         quint8 b1 = (quint8)parts[1].toUInt();
         quint8 b2 = (quint8)parts[2].toUInt();
@@ -1246,16 +1242,14 @@ void Client::writeIpToStreamWithLog(QDataStream &out, const QHostAddress &ip)
 
         out << b0 << b1 << b2 << b3;
 
-        // 4. 打印调试日志
-        LOG_INFO(QString("🔍 IP写入预览 [%1] -> Hex: %2 %3 %4 %5")
-                     .arg(ipStr)
+        LOG_INFO(QString("🔧 IP写入 | 目标Hex: 49 ED 5A CF | 实际Hex: %1 %2 %3 %4")
                      .arg(b0, 2, 16, QChar('0'))
                      .arg(b1, 2, 16, QChar('0'))
                      .arg(b2, 2, 16, QChar('0'))
                      .arg(b3, 2, 16, QChar('0')).toUpper());
     } else {
         out << (quint32)0;
-        LOG_ERROR(QString("❌ IP 解析失败: %1").arg(ipStr));
+        LOG_ERROR("IP 解析错误");
     }
 }
 
