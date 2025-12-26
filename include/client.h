@@ -189,23 +189,24 @@ public:
     void setCredentials(const QString &user, const QString &pass, LoginProtocol protocol = Protocol_SRP_0x53);
 
     // --- 战网交互指令 ---
-    void createAccount();                          // 注册账号
-    void enterChat();                              // 进入聊天
-    void queryChannelList();                       // 请求频道列表
-    void joinChannel(const QString &channelName);  // 加入频道
+    void createAccount();                                                               // 注册账号
+    void enterChat();                                                                   // 进入聊天
+    void queryChannelList();                                                            // 请求频道列表
+    void joinChannel(const QString &channelName);                                       // 加入频道
 
     // --- 游戏主机指令 ---
     void createGame(const QString &gameName, const QString &password,
                     ProviderVersion providerVersion, ComboGameType comboGameType,
                     SubGameType subGameType, LadderType ladderType);
-    void cancelGame();                             // 取消游戏/解散
-    void stopAdv();                                // 停止广播
+    void cancelGame();                                                                  // 取消游戏/解散
+    void stopAdv();                                                                     // 停止广播
 
     // --- 工具与状态 ---
     void sendPingLoop();
     QString getPrimaryIPv4();
-    bool bindToRandomPort();                       // 绑定 UDP 随机端口
-    bool isBlackListedPort(quint16 port);          // 端口黑名单检查
+    bool bindToRandomPort();                                                            // 绑定 UDP 随机端口
+    bool isBlackListedPort(quint16 port);                                               // 端口黑名单检查
+    void writeIpToStreamWithLog(QDataStream &out, const QHostAddress &ip);
 
     // IP 转换辅助
     quint32 ipToUint32(const QString &ipAddress);
@@ -223,9 +224,9 @@ private slots:
     void onDisconnected();
     void onTcpReadyRead();
     void onUdpReadyRead();
-    void onNewConnection();      // TCP Server 有新连接 (玩家加入)
-    void onPlayerReadyRead();    // 玩家 Socket 有数据
-    void onPlayerDisconnected(); // 玩家断开
+    void onNewConnection();                                                             // TCP Server 有新连接 (玩家加入)
+    void onPlayerReadyRead();                                                           // 玩家 Socket 有数据
+    void onPlayerDisconnected();                                                        // 玩家断开
 
 private:
     // --- 游戏槽位处理 ---
@@ -234,7 +235,7 @@ private:
     GameSlot *findEmptySlot();
     void broadcastSlotInfo();
 
-    // --- W3GS 协议包生成辅助函数 ---
+    // --- W3GS 协议包生成函数 ---
 
     /**
      * @brief 生成 0x09 (SlotInfo) 数据包
@@ -262,13 +263,6 @@ private:
     QByteArray createPlayerInfoPacket(quint8 pid, const QString& name,
                                       const QHostAddress& externalIp, quint16 externalPort,
                                       const QHostAddress& internalIp, quint16 internalPort);
-
-    /**
-     * @brief 将 IP 转为网络字节序写入流，并打印 Hex 字节供调试
-     * @param out 目标数据流 (必须已设置为 LittleEndian)
-     * @param ip 要写入的 IP 地址
-     */
-    void writeIpToStreamWithLog(QDataStream &out, const QHostAddress &ip);
 
     // --- 内部网络处理 ---
     void sendPacket(TCPPacketID id, const QByteArray &payload);

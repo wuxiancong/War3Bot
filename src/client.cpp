@@ -1228,6 +1228,29 @@ void Client::sendPingLoop()
     }
 }
 
+void Client::writeIpToStreamWithLog(QDataStream &out, const QHostAddress &ip)
+{
+    // 1. 获取主机序整数
+    quint32 rawIp = ip.toIPv4Address();
+
+    // 2. 转换为大端序 (网络字节序)
+    quint32 bigEndianIp = qToBigEndian(rawIp);
+
+    // 3. 强制把这个整数当成字节数组读出来进行预览
+    const quint8* bytes = reinterpret_cast<const quint8*>(&bigEndianIp);
+
+    // 4. 打印调试日志
+    LOG_INFO(QString("🔍 IP写入预览 [%1] -> Hex: %2 %3 %4 %5")
+                 .arg(ip.toString())
+                 .arg(bytes[0], 2, 16, QChar('0'))
+                 .arg(bytes[1], 2, 16, QChar('0'))
+                 .arg(bytes[2], 2, 16, QChar('0'))
+                 .arg(bytes[3], 2, 16, QChar('0')).toUpper());
+
+    // 5. 写入流
+    out << bigEndianIp;
+}
+
 QString Client::getPrimaryIPv4() {
     foreach(const QNetworkInterface &interface, QNetworkInterface::allInterfaces()) {
         if (interface.flags() & QNetworkInterface::IsUp && interface.flags() & QNetworkInterface::IsRunning && !(interface.flags() & QNetworkInterface::IsLoopBack)) {
