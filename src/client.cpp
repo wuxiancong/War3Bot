@@ -1226,25 +1226,37 @@ void Client::sendPingLoop()
 
 void Client::writeIpToStreamWithLog(QDataStream &out, const QHostAddress &ip)
 {
-    // 1. 获取主机序整数
-    quint32 rawIp = ip.toIPv4Address();
+    // 1. 获取 IP 字符串
+    QString ipStr = ip.toString();
 
-    // 2. 转换为大端序 (网络字节序)
-    quint32 bigEndianIp = qToBigEndian(rawIp);
+    // 处理 IPv6 映射地址
+    if (ipStr.startsWith("::ffff:")) {
+        ipStr = ipStr.mid(7);
+    }
 
-    // 3. 强制把这个整数当成字节数组读出来进行预览
-    const quint8* bytes = reinterpret_cast<const quint8*>(&bigEndianIp);
+    // 2. 按点号拆分
+    QStringList parts = ipStr.split('.');
 
-    // 4. 打印调试日志
-    LOG_INFO(QString("🔍 IP写入预览 [%1] -> Hex: %2 %3 %4 %5")
-                 .arg(ip.toString())
-                 .arg(bytes[0], 2, 16, QChar('0'))
-                 .arg(bytes[1], 2, 16, QChar('0'))
-                 .arg(bytes[2], 2, 16, QChar('0'))
-                 .arg(bytes[3], 2, 16, QChar('0')).toUpper());
+    if (parts.size() == 4) {
+        // 3. 逐个字节写入
+        quint8 b0 = (quint8)parts[0].toUInt();
+        quint8 b1 = (quint8)parts[1].toUInt();
+        quint8 b2 = (quint8)parts[2].toUInt();
+        quint8 b3 = (quint8)parts[3].toUInt();
 
-    // 5. 写入流
-    out << bigEndianIp;
+        out << b0 << b1 << b2 << b3;
+
+        // 4. 打印调试日志
+        LOG_INFO(QString("🔍 IP写入预览 [%1] -> Hex: %2 %3 %4 %5")
+                     .arg(ipStr)
+                     .arg(b0, 2, 16, QChar('0'))
+                     .arg(b1, 2, 16, QChar('0'))
+                     .arg(b2, 2, 16, QChar('0'))
+                     .arg(b3, 2, 16, QChar('0')).toUpper());
+    } else {
+        out << (quint32)0;
+        LOG_ERROR(QString("❌ IP 解析失败: %1").arg(ipStr));
+    }
 }
 
 QString Client::getPrimaryIPv4() {
