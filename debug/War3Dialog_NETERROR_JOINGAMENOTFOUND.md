@@ -1341,7 +1341,6 @@ struct GameDescription {
 #### 1. 第一步：随机种子 (Offset +0)
 *   **写入 (26C4)**: `mov eax, dword ptr ds:[edi]` -> 把结构体里的种子拿出来写入包。
 *   **读取 (2714)**: `push edi` -> `call 6F4C2D30` -> 把包里的数据读出来存入结构体。
-*   **关联**: 这就是之前发生 **内存错位** 的地方！`6F652710` 里的这个 `call 6F4C2D30` 本来期望读到随机种子，结果读到了槽位数量 (12)。
 
 #### 2. 第四步：游戏描述信息 (Offset +20)
 *   **写入 (26E9)**: `call 6F652160`。
@@ -1468,76 +1467,66 @@ graph TD
     %% ==========================================
     %% 外部环境 (External World)
     %% ==========================================
-    Bot[PVPGN Bot / Server] -->|TCP SYN/ACK| OS_Net[Windows OS Network Stack]
-    Bot -->|UDP Broadcast (0x30)| OS_Net
-    Bot -->|TCP Data Packet (0x04)| OS_Net
+    Bot[PVPGN Bot / Server] -->|TCP SYN-ACK| OS_Net[Windows OS Network Stack]
+    Bot -->|UDP Broadcast 0x30| OS_Net
+    Bot -->|TCP Data Packet 0x04| OS_Net
 
     %% ==========================================
     %% 第1层：动力核心 (Tier 1: The Engine)
     %% ==========================================
     subgraph Tier1_IOCP_Engine [Tier 1: IOCP 工作线程]
         direction TB
-        OS_Net -->|唤醒| Worker[6F6E3EE0: IOCP Worker Loop]
-        Worker -->|Call GetQueuedCompletionStatus| GQCS[GetQueuedCompletionStatus]
-        GQCS -->|返回 Overlapped| CheckOp{检查操作码<br>[edx+14]}
+        OS_Net -->|唤醒| Worker[6F6E3EE0 IOCP Worker Loop]
+        Worker -->|Call GQCS| GQCS[GetQueuedCompletionStatus]
+        GQCS -->|返回 Overlapped| CheckOp{检查操作码 edx+14}
     end
 
     %% ==========================================
     %% 第2层：事件分发 (Tier 2: Event Dispatchers)
     %% ==========================================
     subgraph Tier2_Dispatchers [Tier 2: 事件分发器]
-        CheckOp --"Op=0 (断开)"--> Evt0[6F6DA240: Event 0 Dispatcher]
-        CheckOp --"Op=1 (数据)"--> Evt1[6F6DA2C0: Event 1 Dispatcher<br>+ WSARecv]
-        CheckOp --"Op=2 (连接)"--> Evt2[6F6DA280: Event 2 Dispatcher]
+        CheckOp -- Op0 断开 --> Evt0[6F6DA240 Event0 Dispatcher]
+        CheckOp -- Op1 数据 --> Evt1[6F6DA2C0 Event1 Dispatcher + WSARecv]
+        CheckOp -- Op2 连接 --> Evt2[6F6DA280 Event2 Dispatcher]
     end
 
     %% ==========================================
     %% 第3层：状态机核心 (Tier 3: State Machine)
     %% ==========================================
-    subgraph Tier3_Router [Tier 3: NetClient::RouterEventProc]
-        Evt0 -->|push 0| Router[6F682E00: RouterEventProc]
+    subgraph Tier3_Router [Tier 3: NetClient RouterEventProc]
+        Evt0 -->|push 0| Router[6F682E00 RouterEventProc]
         Evt1 -->|push 1| Router
         Evt2 -->|push 2| Router
 
-        Router --> Switch{判断 EAX<br>Event ID}
-        
-        %% 分支 0: 断开
-        Switch --"Case 0"--> SetStateDisc[SetState 11 (0xB)<br>NETSTATE_DISCONNECTED]
-        
-        %% 分支 2: 连接成功 (关注的固定参数C)
-        Switch --"Case 2"--> SetStateConn[6F6803C0: SetState 12 (0xC)<br>NETSTATE_CONNECTED]
-        SetStateConn -.->|状态变更| StateOk[等待握手]
+        Router --> Switch{判断 EAX EventID}
 
-        %% 分支 1: 收到数据
-        Switch --"Case 1"--> PacketMgr[6F664220: Packet Dispatcher]
+        Switch -- Case0 --> SetStateDisc[SetState 0x0B DISCONNECTED]
+        Switch -- Case2 --> SetStateConn[SetState 0x0C CONNECTED]
+        SetStateConn -.-> StateOk[等待握手]
+        Switch -- Case1 --> PacketMgr[6F664220 Packet Dispatcher]
     end
 
     %% ==========================================
-    %% 第4层：业务逻辑与解析 (Tier 4: Parsing & Logic)
+    %% 第4层：业务逻辑与解析 (Tier 4)
     %% ==========================================
-    subgraph Tier4_Business [Tier 4: 数据解析与错误处理]
-        PacketMgr -->|解析 0x04 包| Parse04[解析 W3GS_SLOTINFOJOIN]
-        
-        Parse04 -->|Call| ReadU32[6F4C2D30: ReadUInt32]
-        
-        %% 错误发生点
-        ReadU32 --"读取缓冲区"--> MemData[内存数据]
-        
-        MemData --"BUG: 读到槽位数 12"--> BadVal[返回值 = 12 (0xC)]
-        MemData --"FIX: 读到 RandomSeed"--> GoodVal[返回值 = Seed]
+    subgraph Tier4_Business [Tier 4: Parsing and Logic]
+        PacketMgr --> Parse04[解析 W3GS_SLOTINFOJOIN]
+        Parse04 --> ReadU32[6F4C2D30 ReadUInt32]
+        ReadU32 --> MemData[读取缓冲区]
 
-        BadVal -->|传递给| ErrHandler[6F5B51D0: 错误处理函数]
-        
-        ErrHandler -->|lea eax, [edi-1]| CalcErr[eax = 12 - 1 = 11 (0xB)]
-        CalcErr -->|查表| ErrTable{Switch EAX}
-        
-        ErrTable --"Case 0xB"--> ErrMsg[错误弹窗: 端口被占用<br>ERROR_ID_GAMEPORTINUSE]
+        MemData -- BUG --> BadVal[返回 12]
+        MemData -- FIX --> GoodVal[返回 RandomSeed]
+
+        BadVal --> ErrHandler[6F5B51D0 ErrorHandler]
+        ErrHandler --> CalcErr[EAX = 11]
+        CalcErr --> ErrTable{Switch EAX}
+        ErrTable -- Case0B --> ErrMsg[ERROR GAMEPORTINUSE]
     end
 
-    %% 样式定义
+    %% 样式
     style Worker fill:#f9f,stroke:#333,stroke-width:2px
     style Router fill:#ff9,stroke:#333,stroke-width:2px
-    style SetStateConn fill:#9f9,stroke:#333,stroke-width:2px,stroke-dasharray: 5 5
+    style SetStateConn fill:#9f9,stroke:#333,stroke-width:2px,stroke-dasharray:5 5
     style BadVal fill:#f99,stroke:#333,stroke-width:2px
     style ErrMsg fill:#f55,stroke:#333,color:#fff
 ```
