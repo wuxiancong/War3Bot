@@ -1239,33 +1239,25 @@ void Client::sendPingLoop()
     }
 }
 
+#include <QtEndian> // 确保包含这个头文件
+
 void Client::writeIpToStreamWithLog(QDataStream &out, const QHostAddress &ip)
 {
-    // 1. 获取 IP
-    QString ipStr = ip.toString();
-    if (ipStr.startsWith("::ffff:")) ipStr = ipStr.mid(7);
+    // 1. 获取主机序的整数
+    quint32 ipVal = ip.toIPv4Address();
 
-    // 2. 拆分
-    QStringList parts = ipStr.split('.');
+    // 2. 转换为网络大端序
+    quint32 networkOrderIp = qToBigEndian(ipVal);
 
-    if (parts.size() == 4) {
-        // 3. 逐个字节写入
-        quint8 b0 = (quint8)parts[3].toUInt();
-        quint8 b1 = (quint8)parts[2].toUInt();
-        quint8 b2 = (quint8)parts[1].toUInt();
-        quint8 b3 = (quint8)parts[0].toUInt();
+    // 3. 使用 writeRawData 直接写入内存数据
+    out.writeRawData(reinterpret_cast<const char*>(&networkOrderIp), 4);
 
-        out << b0 << b1 << b2 << b3;
-
-        LOG_INFO(QString("🔧 IP (HEX): %1 %2 %3 %4")
-                     .arg(b0, 2, 16, QChar('0'))
-                     .arg(b1, 2, 16, QChar('0'))
-                     .arg(b2, 2, 16, QChar('0'))
-                     .arg(b3, 2, 16, QChar('0')).toUpper());
-    } else {
-        out << (quint32)0;
-        LOG_ERROR("IP 解析错误");
-    }
+    const quint8* bytes = reinterpret_cast<const quint8*>(&networkOrderIp);
+    LOG_INFO(QString("🔧 IP (HEX): %1 %2 %3 %4")
+                 .arg(bytes[0], 2, 16, QChar('0'))
+                 .arg(bytes[1], 2, 16, QChar('0'))
+                 .arg(bytes[2], 2, 16, QChar('0'))
+                 .arg(bytes[3], 2, 16, QChar('0')).toUpper());
 }
 
 QString Client::getPrimaryIPv4() {
