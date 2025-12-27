@@ -1608,7 +1608,7 @@ game.dll + 4C2360
 
 game.dll + 682E00
 
-```
+```assembly
 6F682E00 | 83EC 20                       | sub esp,20                           |
 6F682E03 | A1 40E1AA6F                   | mov eax,dword ptr ds:[6FAAE140]      |
 6F682E08 | 33C4                          | xor eax,esp                          |
