@@ -231,7 +231,7 @@ private slots:
 
 private:
     // --- 游戏槽位处理 ---
-    void initSlots();
+    void initSlots(quint8 maxPlayers = 10);
     QByteArray serializeSlotData();
     GameSlot *findEmptySlot();
     void broadcastSlotInfo();

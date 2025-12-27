@@ -933,11 +933,11 @@ void Client::createGame(const QString &gameName, const QString &password, Provid
 // 8. 游戏数据处理
 // =========================================================
 
-void Client::initSlots()
+void Client::initSlots(quint8 maxPlayers)
 {
     // 1. 清空旧数据
     m_slots.clear();
-    m_slots.resize(1);
+    m_slots.resize(maxPlayers);
 
     // 2. 清空现有玩家连接
     for (auto socket : qAsConst(m_playerSockets)) {
@@ -949,7 +949,7 @@ void Client::initSlots()
     m_playerBuffers.clear();
 
     // 3. 初始化槽位状态
-    for (quint8 i = 0; i < 1; ++i) {
+    for (quint8 i = 0; i < maxPlayers; ++i) {
         m_slots[i] = GameSlot();
         m_slots[i].pid = 0;
         m_slots[i].downloadStatus = 255;                            // No Map
