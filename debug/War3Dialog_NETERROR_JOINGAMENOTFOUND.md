@@ -340,7 +340,7 @@
 6F4C2D42 | 8B4E 04                  	 | mov ecx,dword ptr ds:[esi+4]          |
 6F4C2D45 | 2B4E 08                  	 | sub ecx,dword ptr ds:[esi+8]          |
 6F4C2D48 | 8B56 14                  	 | mov edx,dword ptr ds:[esi+14]         |
-6F4C2D4B | 8B0411                   	 | mov eax,dword ptr ds:[ecx+edx]        |
+6F4C2D4B | 8B0411                   	 | mov eax,dword ptr ds:[ecx+edx]        | <--- ecx=EngineNet#Recycled#Event#Data对象 edx是索引
 6F4C2D4E | 8B4C24 08                	 | mov ecx,dword ptr ss:[esp+8]          |
 6F4C2D52 | 8901                     	 | mov dword ptr ds:[ecx],eax            | <--- 暂停条件(ecx==0019F770)
 6F4C2D54 | 8346 14 04               	 | add dword ptr ds:[esi+14],4           |
