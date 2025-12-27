@@ -1356,6 +1356,7 @@ struct GameDescription {
 *   **`6F652710`**: **`CGameInfo::Unpack(CDataStore* stream)`**
     *   客户端（Client）在收到 `0x04` (Join Response) 或 `0x30` (UDP Info) 时调用此函数，将网络数据还原成内存结构体。
 
+#### 硬件断点写入
 
 game.dll + 4C2360
 
@@ -1457,6 +1458,207 @@ game.dll + 4C2360
 *   **输入**: 一个 32 位整数 (在 `[esp+4]`，因为 `thiscall` 入栈了)。
 *   **操作**: 将该整数追加到数据包末尾。
 *   **对应**: 它是 `ReadUInt32 (6F4C2D30)` 的逆操作。
+
+### 状态机核心
+
+game.dll + 682E00
+
+```
+6F682E00 | 83EC 20                       | sub esp,20                           |
+6F682E03 | A1 40E1AA6F                   | mov eax,dword ptr ds:[6FAAE140]      |
+6F682E08 | 33C4                          | xor eax,esp                          |
+6F682E0A | 894424 1C                     | mov dword ptr ss:[esp+1C],eax        |
+6F682E0E | 8B4C24 3C                     | mov ecx,dword ptr ss:[esp+3C]        |
+6F682E12 | 8B4424 28                     | mov eax,dword ptr ss:[esp+28]        |
+6F682E16 | 55                            | push ebp                             |
+6F682E17 | 8B6C24 38                     | mov ebp,dword ptr ss:[esp+38]        |
+6F682E1B | 56                            | push esi                             |
+6F682E1C | 8B7424 38                     | mov esi,dword ptr ss:[esp+38]        |
+6F682E20 | 894C24 10                     | mov dword ptr ss:[esp+10],ecx        |
+6F682E24 | 57                            | push edi                             |
+6F682E25 | 8B7C24 30                     | mov edi,dword ptr ss:[esp+30]        |
+6F682E29 | B9 58C0A96F                   | mov ecx,game.6FA9C058                |
+6F682E2E | 894424 10                     | mov dword ptr ss:[esp+10],eax        |
+6F682E32 | E8 29120400                   | call game.6F6C4060                   |
+6F682E37 | 833D 54C0A96F 00              | cmp dword ptr ds:[6FA9C054],0        |
+6F682E3E | 74 20                         | je game.6F682E60                     |
+6F682E40 | B9 58C0A96F                   | mov ecx,game.6FA9C058                |
+6F682E45 | E8 26120400                   | call game.6F6C4070                   |
+6F682E4A | 5F                            | pop edi                              |
+6F682E4B | 5E                            | pop esi                              |
+6F682E4C | 33C0                          | xor eax,eax                          |
+6F682E4E | 5D                            | pop ebp                              |
+6F682E4F | 8B4C24 1C                     | mov ecx,dword ptr ss:[esp+1C]        |
+6F682E53 | 33CC                          | xor ecx,esp                          |
+6F682E55 | E8 FFE11500                   | call game.6F7E1059                   |
+6F682E5A | 83C4 20                       | add esp,20                           |
+6F682E5D | C2 1C00                       | ret 1C                               |
+6F682E60 | 8B4424 38                     | mov eax,dword ptr ss:[esp+38]        |
+6F682E64 | 53                            | push ebx                             |
+6F682E65 | 33DB                          | xor ebx,ebx                          |
+6F682E67 | 83F8 03                       | cmp eax,3                            |
+6F682E6A | 0F87 BD010000                 | ja game.6F68302D                     |
+6F682E70 | FF2485 5C30686F               | jmp dword ptr ds:[eax*4+6F68305C]    | 0,1,2,other
+6F682E77 | 56                            | push esi                             |
+6F682E78 | B9 A8FFAC6F                   | mov ecx,game.6FACFFA8                |
+6F682E7D | E8 AE6EFFFF                   | call game.6F679D30                   |
+6F682E82 | 8BF0                          | mov esi,eax                          |
+6F682E84 | 85F6                          | test esi,esi                         |
+6F682E86 | 0F84 A1010000                 | je game.6F68302D                     |
+6F682E8C | 6A 0B                         | push B                               |
+6F682E8E | 8BD7                          | mov edx,edi                          |
+6F682E90 | 8BCE                          | mov ecx,esi                          |
+6F682E92 | C746 1C 01000000              | mov dword ptr ds:[esi+1C],1          |
+6F682E99 | E8 22D5FFFF                   | call game.6F6803C0                   |
+6F682E9E | 56                            | push esi                             |
+6F682E9F | B9 A8FFAC6F                   | mov ecx,game.6FACFFA8                |
+6F682EA4 | E8 E76EFFFF                   | call game.6F679D90                   |
+6F682EA9 | E9 7F010000                   | jmp game.6F68302D                    |
+6F682EAE | 85F6                          | test esi,esi                         | <--- eax=0
+6F682EB0 | 74 40                         | je game.6F682EF2                     |
+6F682EB2 | 56                            | push esi                             |
+6F682EB3 | B9 A8FFAC6F                   | mov ecx,game.6FACFFA8                |
+6F682EB8 | E8 736EFFFF                   | call game.6F679D30                   |
+6F682EBD | 8BF0                          | mov esi,eax                          |
+6F682EBF | 85F6                          | test esi,esi                         |
+6F682EC1 | 0F84 66010000                 | je game.6F68302D                     |
+6F682EC7 | 8B5424 14                     | mov edx,dword ptr ss:[esp+14]        |
+6F682ECB | 52                            | push edx                             |
+6F682ECC | 8BD7                          | mov edx,edi                          |
+6F682ECE | 8BCE                          | mov ecx,esi                          |
+6F682ED0 | E8 7BFDFFFF                   | call game.6F682C50                   |
+6F682ED5 | 8BD8                          | mov ebx,eax                          |
+6F682ED7 | 85DB                          | test ebx,ebx                         |
+6F682ED9 | 75 07                         | jne game.6F682EE2                    |
+6F682EDB | C746 1C 01000000              | mov dword ptr ds:[esi+1C],1          |
+6F682EE2 | 56                            | push esi                             |
+6F682EE3 | B9 A8FFAC6F                   | mov ecx,game.6FACFFA8                |
+6F682EE8 | E8 A36EFFFF                   | call game.6F679D90                   |
+6F682EED | E9 3B010000                   | jmp game.6F68302D                    |
+6F682EF2 | 33DB                          | xor ebx,ebx                          |
+6F682EF4 | E9 34010000                   | jmp game.6F68302D                    |
+6F682EF9 | 56                            | push esi                             | <--- eax=2，正常退出房间
+6F682EFA | B9 A8FFAC6F                   | mov ecx,game.6FACFFA8                |
+6F682EFF | E8 2C6EFFFF                   | call game.6F679D30                   |
+6F682F04 | 8BF0                          | mov esi,eax                          |
+6F682F06 | 85F6                          | test esi,esi                         |
+6F682F08 | 0F84 1F010000                 | je game.6F68302D                     |
+6F682F0E | 6A 0C                         | push C                               |
+6F682F10 | 8BD7                          | mov edx,edi                          |
+6F682F12 | 8BCE                          | mov ecx,esi                          |
+6F682F14 | E8 A7D4FFFF                   | call game.6F6803C0                   | <--- C 参数来源，无法进入房间
+6F682F19 | 56                            | push esi                             |
+6F682F1A | B9 A8FFAC6F                   | mov ecx,game.6FACFFA8                |
+6F682F1F | E8 6C6EFFFF                   | call game.6F679D90                   |
+6F682F24 | E9 04010000                   | jmp game.6F68302D                    |
+6F682F29 | 56                            | push esi                             | <--- eax=1，正常进入房间
+6F682F2A | B9 A8FFAC6F                   | mov ecx,game.6FACFFA8                |
+6F682F2F | E8 FC6DFFFF                   | call game.6F679D30                   |
+6F682F34 | 85C0                          | test eax,eax                         |
+6F682F36 | 894424 10                     | mov dword ptr ss:[esp+10],eax        |
+6F682F3A | 0F84 96000000                 | je game.6F682FD6                     |
+6F682F40 | 8B4424 18                     | mov eax,dword ptr ss:[esp+18]        |
+6F682F44 | 8B4C24 48                     | mov ecx,dword ptr ss:[esp+48]        |
+6F682F48 | 6A 01                         | push 1                               |
+6F682F4A | 68 0023686F                   | push game.6F682300                   |
+6F682F4F | 50                            | push eax                             |
+6F682F50 | 51                            | push ecx                             |
+6F682F51 | 55                            | push ebp                             |
+6F682F52 | 8D5424 24                     | lea edx,dword ptr ss:[esp+24]        |
+6F682F56 | 52                            | push edx                             |
+6F682F57 | 8B5424 2C                     | mov edx,dword ptr ss:[esp+2C]        |
+6F682F5B | 8BCF                          | mov ecx,edi                          |
+6F682F5D | E8 BE12FEFF                   | call game.6F664220                   |
+6F682F62 | 8BF0                          | mov esi,eax                          |
+6F682F64 | 83FE 01                       | cmp esi,1                            |
+6F682F67 | 75 42                         | jne game.6F682FAB                    |
+6F682F69 | 8B4C24 10                     | mov ecx,dword ptr ss:[esp+10]        |
+6F682F6D | 8B51 40                       | mov edx,dword ptr ds:[ecx+40]        |
+6F682F70 | 50                            | push eax                             |
+6F682F71 | 6A 00                         | push 0                               |
+6F682F73 | 8D4424 20                     | lea eax,dword ptr ss:[esp+20]        |
+6F682F77 | 50                            | push eax                             |
+6F682F78 | 56                            | push esi                             |
+6F682F79 | 52                            | push edx                             |
+6F682F7A | B9 70FFAC6F                   | mov ecx,game.6FACFF70                |
+6F682F7F | E8 FC6BFFFF                   | call game.6F679B80                   |
+6F682F84 | 85C0                          | test eax,eax                         |
+6F682F86 | 74 28                         | je game.6F682FB0                     |
+6F682F88 | 8BC8                          | mov ecx,eax                          |
+6F682F8A | E8 6165FFFF                   | call game.6F6794F0                   |
+6F682F8F | 8B4424 18                     | mov eax,dword ptr ss:[esp+18]        |
+6F682F93 | 83F8 FF                       | cmp eax,FFFFFFFF                     |
+6F682F96 | 74 18                         | je game.6F682FB0                     |
+6F682F98 | 3BC6                          | cmp eax,esi                          |
+6F682F9A | 1BC0                          | sbb eax,eax                          |
+6F682F9C | 03C6                          | add eax,esi                          |
+6F682F9E | 50                            | push eax                             |
+6F682F9F | B9 90FFAC6F                   | mov ecx,game.6FACFF90                |
+6F682FA4 | E8 A7590500                   | call game.6F6D8950                   |
+6F682FA9 | EB 05                         | jmp game.6F682FB0                    |
+6F682FAB | 83FE 02                       | cmp esi,2                            |
+6F682FAE | 74 0B                         | je game.6F682FBB                     |
+6F682FB0 | 8B4C24 10                     | mov ecx,dword ptr ss:[esp+10]        |
+6F682FB4 | C741 1C 01000000              | mov dword ptr ds:[ecx+1C],1          |
+6F682FBB | 8B5424 10                     | mov edx,dword ptr ss:[esp+10]        |
+6F682FBF | 52                            | push edx                             |
+6F682FC0 | B9 A8FFAC6F                   | mov ecx,game.6FACFFA8                |
+6F682FC5 | E8 C66DFFFF                   | call game.6F679D90                   |
+6F682FCA | 33DB                          | xor ebx,ebx                          |
+6F682FCC | 83FE 02                       | cmp esi,2                            |
+6F682FCF | 0F94C3                        | sete bl                              |
+6F682FD2 | 85DB                          | test ebx,ebx                         |
+6F682FD4 | 75 57                         | jne game.6F68302D                    |
+6F682FD6 | 8B4C24 14                     | mov ecx,dword ptr ss:[esp+14]        |
+6F682FDA | 33D2                          | xor edx,edx                          |
+6F682FDC | E8 8F800500                   | call game.6F6DB070                   |
+6F682FE1 | 8BC8                          | mov ecx,eax                          |
+6F682FE3 | E8 E8800500                   | call game.6F6DB0D0                   |
+6F682FE8 | 0FB6C8                        | movzx ecx,al                         |
+6F682FEB | 51                            | push ecx                             |
+6F682FEC | 0FB6D4                        | movzx edx,ah                         |
+6F682FEF | 52                            | push edx                             |
+6F682FF0 | 8BC8                          | mov ecx,eax                          |
+6F682FF2 | C1E9 10                       | shr ecx,10                           |
+6F682FF5 | 81E1 FF000000                 | and ecx,FF                           |
+6F682FFB | 51                            | push ecx                             |
+6F682FFC | C1E8 18                       | shr eax,18                           |
+6F682FFF | 50                            | push eax                             |
+6F683000 | 68 1C50966F                   | push game.6F96501C                   | <--- Ip地址格式化
+6F683005 | 8D5424 30                     | lea edx,dword ptr ss:[esp+30]        |
+6F683009 | 6A 10                         | push 10                              |
+6F68300B | 52                            | push edx                             |
+6F68300C | E8 95850600                   | call <JMP.&Ordinal#578>              |
+6F683011 | 8D4424 38                     | lea eax,dword ptr ss:[esp+38]        |
+6F683015 | 50                            | push eax                             |
+6F683016 | 68 BF070000                   | push 7BF                             |
+6F68301B | 68 3C17976F                   | push game.6F97173C                   | <--- NetClient.cpp
+6F683020 | 68 8818976F                   | push game.6F971888                   | <--- %s(%u): NetClient::RouterEventProc:NETNOTE_DATA %s returning false\n
+6F683025 | E8 368CB8FF                   | call game.6F20BC60                   |
+6F68302A | 83C4 2C                       | add esp,2C                           |
+6F68302D | B9 58C0A96F                   | mov ecx,game.6FA9C058                |
+6F683032 | E8 39100400                   | call game.6F6C4070                   |
+6F683037 | 85C0                          | test eax,eax                         |
+6F683039 | 75 0A                         | jne game.6F683045                    |
+6F68303B | B9 5CC0A96F                   | mov ecx,game.6FA9C05C                | <--- <C
+6F683040 | E8 DB540500                   | call game.6F6D8520                   |
+6F683045 | 8B4C24 2C                     | mov ecx,dword ptr ss:[esp+2C]        |
+6F683049 | 8BC3                          | mov eax,ebx                          |
+6F68304B | 5B                            | pop ebx                              |
+6F68304C | 5F                            | pop edi                              |
+6F68304D | 5E                            | pop esi                              |
+6F68304E | 5D                            | pop ebp                              |
+6F68304F | 33CC                          | xor ecx,esp                          |
+6F683051 | E8 03E01500                   | call game.6F7E1059                   |
+6F683056 | 83C4 20                       | add esp,20                           |
+6F683059 | C2 1C00                       | ret 1C                               |
+6F68305C | AE                            | scasb                                |
+6F68305D | 2E:68 6F292F68                | push 682F296F                        |
+6F683063 | 6F                            | outsd                                |
+6F683064 | F9                            | stc                                  |
+6F683065 | 2E:68 6F772E68                | push 682E776F                        |
+6F68306B | 6F                            | outsd                                |
+```
 
 **War3 网络核心逻辑拓扑图**。
 
