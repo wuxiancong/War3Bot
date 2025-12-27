@@ -1464,6 +1464,7 @@ game.dll + 4C2360
 ---
 
 ### 等待数据
+地址：`game.dll + 6E3EE0`
 
 ```assembly
 6F6E3EE0 | 83EC 2C                       | sub esp,2C                                |
@@ -1606,7 +1607,7 @@ game.dll + 4C2360
 
 ### 事件分发
 
-game.dll + 682E00
+地址：game.dll + 682E00
 
 ```assembly
 6F682E00 | 83EC 20                       | sub esp,20                           |
