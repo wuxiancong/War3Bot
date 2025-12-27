@@ -1863,12 +1863,12 @@ graph TD
         ReadU32 --> MemData[读取缓冲区]
 
         MemData -- BUG --> BadVal[返回 12]
-        MemData -- FIX --> GoodVal[返回 RandomSeed]
+        MemData -- FIX --> GoodVal[返回 1]
 
         BadVal --> ErrHandler[6F5B51D0 ErrorHandler]
         ErrHandler --> CalcErr[EAX = 11]
         CalcErr --> ErrTable{Switch EAX}
-        ErrTable -- Case0B --> ErrMsg[ERROR GAMEPORTINUSE]
+        ErrTable -- Case0B --> ErrMsg[ERROR NOTFOUND]
     end
 
     %% 样式
