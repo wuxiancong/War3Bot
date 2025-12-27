@@ -933,11 +933,11 @@ void Client::createGame(const QString &gameName, const QString &password, Provid
 // 8. 游戏数据处理
 // =========================================================
 
-void Client::initSlots(quint8 maxPlayers)
+void Client::initSlots()
 {
     // 1. 清空旧数据
     m_slots.clear();
-    m_slots.resize(maxPlayers);
+    m_slots.resize(1);
 
     // 2. 清空现有玩家连接
     for (auto socket : qAsConst(m_playerSockets)) {
@@ -949,7 +949,7 @@ void Client::initSlots(quint8 maxPlayers)
     m_playerBuffers.clear();
 
     // 3. 初始化槽位状态
-    for (quint8 i = 0; i < maxPlayers; ++i) {
+    for (quint8 i = 0; i < 1; ++i) {
         m_slots[i] = GameSlot();
         m_slots[i].pid = 0;
         m_slots[i].downloadStatus = 255;                            // No Map
@@ -1063,7 +1063,6 @@ QByteArray Client::createW3GSSlotInfoJoinPacket(quint8 playerID, const QHostAddr
     out << (quint16)2;                                              // AF_INET
     out << (quint16)qToBigEndian(localPort);                        // Port (注意：网络端口通常是 BigEndian，但War3协议里有时混用)
 
-    // 这里的 IP 写入你封装在函数里了，最好确认一下那个函数没有多写或少写字节
     LOG_INFO(QString("[Step 5] 写入网络信息: Port=%1, IP=%2").arg(localPort).arg(externalIp.toString()));
     writeIpToStreamWithLog(out, externalIp);
 
@@ -1082,7 +1081,6 @@ QByteArray Client::createW3GSSlotInfoJoinPacket(quint8 playerID, const QHostAddr
     LOG_INFO(QString("[Step 7] 回填包总长度: %1 字节").arg(totalSize));
 
     // === 终极检查：打印整个包的 Hex ===
-    // 拿着这个 Hex 去跟你的内存 Dump 对比
     QString hexStr = packet.toHex(' ').toUpper();
     LOG_INFO(QString("=== [0x04] 最终包 Hex Dump ==="));
     LOG_INFO(hexStr);
