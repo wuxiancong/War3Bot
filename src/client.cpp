@@ -467,10 +467,10 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         }
 
         // 分配 PID
-        quint8 playerID = slotIndex + 2;
+        quint8 hostId = slotIndex + 1;
 
         // 更新槽位状态
-        m_slots[slotIndex].pid = playerID;
+        m_slots[slotIndex].pid = hostId;
         m_slots[slotIndex].slotStatus = 2;          // Occupied
         m_slots[slotIndex].downloadStatus = 255;    // Unknown
         m_slots[slotIndex].computer = 0;
@@ -483,8 +483,8 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
         // --- Step A: 发送 0x04 (SlotInfoJoin) ---
         finalPacket.append(createW3GSSlotInfoJoinPacket(
-            playerID,
-            socket->peerAddress(),      // 玩家的外网IP
+            hostId,
+            hostIp,                     // 玩家的外网IP
             hostPort                    // 主机的UDP端口
             ));
 
@@ -492,8 +492,8 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         finalPacket.append(createPlayerInfoPacket(
             1,                          // Host PID
             m_user,                     // Host Name
-            hostIp,                     // Host Ext IP
-            hostPort,                   // Host Ext Port
+            QHostAddress("0.0.0.0"),    // Host Ext IP
+            0,                          // Host Ext Port
             QHostAddress("0.0.0.0"),    // Host Int IP
             0                           // Host Int Port
             ));
@@ -510,7 +510,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         socket->write(finalPacket);
         socket->flush();
 
-        LOG_INFO(QString("✅ 加入成功: 发送握手序列 (0x04 -> 0x06 -> 0x3D -> 0x09) PID: %1").arg(playerID));
+        LOG_INFO(QString("✅ 加入成功: 发送握手序列 (0x04 -> 0x06 -> 0x3D -> 0x09) PID: %1").arg(hostId));
     }
     break;
 
