@@ -1356,6 +1356,8 @@ struct GameDescription {
 *   **`6F652710`**: **`CGameInfo::Unpack(CDataStore* stream)`**
     *   客户端（Client）在收到 `0x04` (Join Response) 或 `0x30` (UDP Info) 时调用此函数，将网络数据还原成内存结构体。
 
+---
+
 #### 硬件断点写入
 
 game.dll + 4C2360
