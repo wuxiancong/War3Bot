@@ -446,7 +446,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         LOG_INFO(QString("(STRING) Player name : %1").arg(clientPlayerName));
         LOG_INFO(QString("(UINT32) Unknown     : %1").arg(clientUnknown32));
         LOG_INFO(QString("(UINT16) Intrnl Port : %1").arg(clientInternalPort));
-        QHostAddress iAddr(clientInternalIP);
+        QHostAddress iAddr(qToBigEndian(clientInternalIP));
         LOG_INFO(QString("(UINT32) Intrnl IP   : %1 (%2)").arg(clientInternalIP).arg(iAddr.toString()));
         LOG_INFO("------------------------------------------------");
 
