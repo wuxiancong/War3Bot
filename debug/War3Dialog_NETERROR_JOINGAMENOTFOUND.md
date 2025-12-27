@@ -1502,7 +1502,7 @@ game.dll + 682E00
 6F682E65 | 33DB                          | xor ebx,ebx                          |
 6F682E67 | 83F8 03                       | cmp eax,3                            |
 6F682E6A | 0F87 BD010000                 | ja game.6F68302D                     |
-6F682E70 | FF2485 5C30686F               | jmp dword ptr ds:[eax*4+6F68305C]    | 0,1,2,other
+6F682E70 | FF2485 5C30686F               | jmp dword ptr ds:[eax*4+6F68305C]    | 0,1,2,3
 6F682E77 | 56                            | push esi                             |
 6F682E78 | B9 A8FFAC6F                   | mov ecx,game.6FACFFA8                |
 6F682E7D | E8 AE6EFFFF                   | call game.6F679D30                   |
@@ -1518,7 +1518,7 @@ game.dll + 682E00
 6F682E9F | B9 A8FFAC6F                   | mov ecx,game.6FACFFA8                |
 6F682EA4 | E8 E76EFFFF                   | call game.6F679D90                   |
 6F682EA9 | E9 7F010000                   | jmp game.6F68302D                    |
-6F682EAE | 85F6                          | test esi,esi                         | <--- eax=0
+6F682EAE | 85F6                          | test esi,esi                         | <--- eax=0，建立连接
 6F682EB0 | 74 40                         | je game.6F682EF2                     |
 6F682EB2 | 56                            | push esi                             |
 6F682EB3 | B9 A8FFAC6F                   | mov ecx,game.6FACFFA8                |
@@ -1541,13 +1541,13 @@ game.dll + 682E00
 6F682EED | E9 3B010000                   | jmp game.6F68302D                    |
 6F682EF2 | 33DB                          | xor ebx,ebx                          |
 6F682EF4 | E9 34010000                   | jmp game.6F68302D                    |
-6F682EF9 | 56                            | push esi                             | <--- eax=2，正常退出房间
+6F682EF9 | 56                            | push esi                             | <--- eax=2，断开连接（遇到错误）
 6F682EFA | B9 A8FFAC6F                   | mov ecx,game.6FACFFA8                |
 6F682EFF | E8 2C6EFFFF                   | call game.6F679D30                   |
 6F682F04 | 8BF0                          | mov esi,eax                          |
 6F682F06 | 85F6                          | test esi,esi                         |
 6F682F08 | 0F84 1F010000                 | je game.6F68302D                     |
-6F682F0E | 6A 0C                         | push C                               |
+6F682F0E | 6A 0C                         | push C                               | <--- 传递错误码，调用下层函数
 6F682F10 | 8BD7                          | mov edx,edi                          |
 6F682F12 | 8BCE                          | mov ecx,esi                          |
 6F682F14 | E8 A7D4FFFF                   | call game.6F6803C0                   | <--- C 参数来源，无法进入房间
@@ -1555,7 +1555,7 @@ game.dll + 682E00
 6F682F1A | B9 A8FFAC6F                   | mov ecx,game.6FACFFA8                |
 6F682F1F | E8 6C6EFFFF                   | call game.6F679D90                   |
 6F682F24 | E9 04010000                   | jmp game.6F68302D                    |
-6F682F29 | 56                            | push esi                             | <--- eax=1，正常进入房间
+6F682F29 | 56                            | push esi                             | <--- eax=1，正常进入房间（成功）
 6F682F2A | B9 A8FFAC6F                   | mov ecx,game.6FACFFA8                |
 6F682F2F | E8 FC6DFFFF                   | call game.6F679D30                   |
 6F682F34 | 85C0                          | test eax,eax                         |
