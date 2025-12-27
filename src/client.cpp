@@ -1239,8 +1239,6 @@ void Client::sendPingLoop()
     }
 }
 
-#include <QtEndian> // 确保包含这个头文件
-
 void Client::writeIpToStreamWithLog(QDataStream &out, const QHostAddress &ip)
 {
     // 1. 获取主机序的整数
@@ -1252,7 +1250,7 @@ void Client::writeIpToStreamWithLog(QDataStream &out, const QHostAddress &ip)
     // 3. 使用 writeRawData 直接写入内存数据
     out.writeRawData(reinterpret_cast<const char*>(&networkOrderIp), 4);
 
-    const quint8* bytes = reinterpret_cast<const quint8*>(&networkOrderIp);
+    const quint8 *bytes = reinterpret_cast<const quint8*>(&networkOrderIp);
     LOG_INFO(QString("🔧 IP (HEX): %1 %2 %3 %4")
                  .arg(bytes[0], 2, 16, QChar('0'))
                  .arg(bytes[1], 2, 16, QChar('0'))
