@@ -1463,7 +1463,148 @@ game.dll + 4C2360
 
 ---
 
-### 状态机核心
+### 等待数据
+
+```assembly
+6F6E3EE0 | 83EC 2C                       | sub esp,2C                                |
+6F6E3EE3 | 53                            | push ebx                                  |
+6F6E3EE4 | 8B5C24 34                     | mov ebx,dword ptr ss:[esp+34]             |
+6F6E3EE8 | 55                            | push ebp                                  |
+6F6E3EE9 | 57                            | push edi                                  |
+6F6E3EEA | 33FF                          | xor edi,edi                               |
+6F6E3EEC | 83FB FF                       | cmp ebx,FFFFFFFF                          |
+6F6E3EEF | 8BE9                          | mov ebp,ecx                               |
+6F6E3EF1 | 897C24 20                     | mov dword ptr ss:[esp+20],edi             |
+6F6E3EF5 | 897C24 24                     | mov dword ptr ss:[esp+24],edi             |
+6F6E3EF9 | 74 1F                         | je game.6F6E3F1A                          |
+6F6E3EFB | 393D 18A6AD6F                 | cmp dword ptr ds:[6FADA618],edi           |
+6F6E3F01 | 74 0D                         | je game.6F6E3F10                          |
+6F6E3F03 | 8D4424 20                     | lea eax,dword ptr ss:[esp+20]             |
+6F6E3F07 | 50                            | push eax                                  |
+6F6E3F08 | FF15 20D2866F                 | call dword ptr ds:[<QueryPerformanceCount |
+6F6E3F0E | EB 0A                         | jmp game.6F6E3F1A                         |
+6F6E3F10 | FF15 30D2866F                 | call dword ptr ds:[<GetTickCount>]        |
+6F6E3F16 | 894424 20                     | mov dword ptr ss:[esp+20],eax             |
+6F6E3F1A | 53                            | push ebx                                  |
+6F6E3F1B | 8D4C24 18                     | lea ecx,dword ptr ss:[esp+18]             |
+6F6E3F1F | 51                            | push ecx                                  |
+6F6E3F20 | 8B8D 18060000                 | mov ecx,dword ptr ss:[ebp+618]            |
+6F6E3F26 | 8D5424 14                     | lea edx,dword ptr ss:[esp+14]             |
+6F6E3F2A | 52                            | push edx                                  |
+6F6E3F2B | 8D4424 1C                     | lea eax,dword ptr ss:[esp+1C]             |
+6F6E3F2F | 50                            | push eax                                  |
+6F6E3F30 | 51                            | push ecx                                  |
+6F6E3F31 | FF15 2CD1866F                 | call dword ptr ds:[<GetQueuedCompletionSt |
+6F6E3F37 | 8B15 D4A7AD6F                 | mov edx,dword ptr ds:[6FADA7D4]           |
+6F6E3F3D | 85D2                          | test edx,edx                              |
+6F6E3F3F | 0F85 20010000                 | jne game.6F6E4065                         |
+6F6E3F45 | 56                            | push esi                                  |
+6F6E3F46 | 83FB FF                       | cmp ebx,FFFFFFFF                          |
+6F6E3F49 | 8B5424 18                     | mov edx,dword ptr ss:[esp+18]             |
+6F6E3F4D | 74 0C                         | je game.6F6E3F5B                          |
+6F6E3F4F | 85C0                          | test eax,eax                              |
+6F6E3F51 | 75 08                         | jne game.6F6E3F5B                         |
+6F6E3F53 | 85D2                          | test edx,edx                              |
+6F6E3F55 | 0F84 09010000                 | je game.6F6E4064                          |
+6F6E3F5B | 8B4C24 10                     | mov ecx,dword ptr ss:[esp+10]             |
+6F6E3F5F | 85C9                          | test ecx,ecx                              |
+6F6E3F61 | 74 47                         | je game.6F6E3FAA                          | <--- 会跳过所有
+6F6E3F63 | 85D2                          | test edx,edx                              |
+6F6E3F65 | 74 3A                         | je game.6F6E3FA1                          | <--- 会跳过1
+6F6E3F67 | 8B72 14                       | mov esi,dword ptr ds:[edx+14]             |
+6F6E3F6A | 83EE 00                       | sub esi,0                                 |
+6F6E3F6D | 74 20                         | je game.6F6E3F8F                          |
+6F6E3F6F | 83EE 01                       | sub esi,1                                 |
+6F6E3F72 | 75 2D                         | jne game.6F6E3FA1                         | <--- 会跳过1
+6F6E3F74 | 8B31                          | mov esi,dword ptr ds:[ecx]                |
+6F6E3F76 | 50                            | push eax                                  |
+6F6E3F77 | 8B4424 18                     | mov eax,dword ptr ss:[esp+18]             |
+6F6E3F7B | 50                            | push eax                                  |
+6F6E3F7C | 52                            | push edx                                  |
+6F6E3F7D | 8B56 1C                       | mov edx,dword ptr ds:[esi+1C]             |
+6F6E3F80 | FFD2                          | call edx                                  |
+6F6E3F82 | 8B4C24 10                     | mov ecx,dword ptr ss:[esp+10]             |
+6F6E3F86 | 8B01                          | mov eax,dword ptr ds:[ecx]                |
+6F6E3F88 | 8B50 18                       | mov edx,dword ptr ds:[eax+18]             |
+6F6E3F8B | FFD2                          | call edx                                  |
+6F6E3F8D | EB 33                         | jmp game.6F6E3FC2                         |
+6F6E3F8F | 8B31                          | mov esi,dword ptr ds:[ecx]                |
+6F6E3F91 | 50                            | push eax                                  |
+6F6E3F92 | 8B4424 18                     | mov eax,dword ptr ss:[esp+18]             |
+6F6E3F96 | 50                            | push eax                                  |
+6F6E3F97 | 52                            | push edx                                  |
+6F6E3F98 | 8B56 20                       | mov edx,dword ptr ds:[esi+20]             |
+6F6E3F9B | FFD2                          | call edx                                  | <--- eax=1 -> 正常情况
+6F6E3F9D | 8B4C24 10                     | mov ecx,dword ptr ss:[esp+10]             |
+6F6E3FA1 | 8B01                          | mov eax,dword ptr ds:[ecx]                |
+6F6E3FA3 | 8B50 18                       | mov edx,dword ptr ds:[eax+18]             |
+6F6E3FA6 | FFD2                          | call edx                                  | <--- eax=2 -> 固定参数C
+6F6E3FA8 | EB 18                         | jmp game.6F6E3FC2                         |
+6F6E3FAA | 85D2                          | test edx,edx                              |
+6F6E3FAC | 74 14                         | je game.6F6E3FC2                          |
+6F6E3FAE | 8B4A 14                       | mov ecx,dword ptr ds:[edx+14]             |
+6F6E3FB1 | 83E9 02                       | sub ecx,2                                 |
+6F6E3FB4 | 75 0C                         | jne game.6F6E3FC2                         |
+6F6E3FB6 | 50                            | push eax                                  |
+6F6E3FB7 | 83C2 F8                       | add edx,FFFFFFF8                          |
+6F6E3FBA | 52                            | push edx                                  |
+6F6E3FBB | 8BCD                          | mov ecx,ebp                               |
+6F6E3FBD | E8 0EF8FFFF                   | call game.6F6E37D0                        |
+6F6E3FC2 | 83FB FF                       | cmp ebx,FFFFFFFF                          |
+6F6E3FC5 | 74 6E                         | je game.6F6E4035                          |
+6F6E3FC7 | 833D 18A6AD6F 00              | cmp dword ptr ds:[6FADA618],0             |
+6F6E3FCE | 74 55                         | je game.6F6E4025                          |
+6F6E3FD0 | 8D4424 2C                     | lea eax,dword ptr ss:[esp+2C]             |
+6F6E3FD4 | 50                            | push eax                                  |
+6F6E3FD5 | FF15 20D2866F                 | call dword ptr ds:[<QueryPerformanceCount |
+6F6E3FDB | D97C24 40                     | fnstcw word ptr ss:[esp+40]               |
+6F6E3FDF | 8B4C24 2C                     | mov ecx,dword ptr ss:[esp+2C]             |
+6F6E3FE3 | 2B4C24 24                     | sub ecx,dword ptr ss:[esp+24]             |
+6F6E3FE7 | 8B5424 30                     | mov edx,dword ptr ss:[esp+30]             |
+6F6E3FEB | 1B5424 28                     | sbb edx,dword ptr ss:[esp+28]             |
+6F6E3FEF | 0FB74424 40                   | movzx eax,word ptr ss:[esp+40]            |
+6F6E3FF4 | 894C24 34                     | mov dword ptr ss:[esp+34],ecx             |
+6F6E3FF8 | 895424 38                     | mov dword ptr ss:[esp+38],edx             |
+6F6E3FFC | 0D 000C0000                   | or eax,C00                                |
+6F6E4001 | 894424 1C                     | mov dword ptr ss:[esp+1C],eax             |
+6F6E4005 | DF6C24 34                     | fild qword ptr ss:[esp+34]                |
+6F6E4009 | D80D 14A6AD6F                 | fmul dword ptr ds:[6FADA614]              |
+6F6E400F | D96C24 1C                     | fldcw word ptr ss:[esp+1C]                |
+6F6E4013 | DF7C24 1C                     | fistp qword ptr ss:[esp+1C]               |
+6F6E4017 | 8B7C24 1C                     | mov edi,dword ptr ss:[esp+1C]             |
+6F6E401B | 85FF                          | test edi,edi                              |
+6F6E401D | D96C24 40                     | fldcw word ptr ss:[esp+40]                |
+6F6E4021 | 7C 41                         | jl game.6F6E4064                          |
+6F6E4023 | EB 0C                         | jmp game.6F6E4031                         |
+6F6E4025 | FF15 30D2866F                 | call dword ptr ds:[<GetTickCount>]        |
+6F6E402B | 8BF8                          | mov edi,eax                               |
+6F6E402D | 2B7C24 24                     | sub edi,dword ptr ss:[esp+24]             |
+6F6E4031 | 3BFB                          | cmp edi,ebx                               |
+6F6E4033 | 73 2F                         | jae game.6F6E4064                         |
+6F6E4035 | 8BC3                          | mov eax,ebx                               |
+6F6E4037 | 2BC7                          | sub eax,edi                               |
+6F6E4039 | 50                            | push eax                                  |
+6F6E403A | 8D4C24 1C                     | lea ecx,dword ptr ss:[esp+1C]             |
+6F6E403E | 51                            | push ecx                                  |
+6F6E403F | 8B8D 18060000                 | mov ecx,dword ptr ss:[ebp+618]            |
+6F6E4045 | 8D5424 18                     | lea edx,dword ptr ss:[esp+18]             |
+6F6E4049 | 52                            | push edx                                  |
+6F6E404A | 8D4424 20                     | lea eax,dword ptr ss:[esp+20]             |
+6F6E404E | 50                            | push eax                                  |
+6F6E404F | 51                            | push ecx                                  |
+6F6E4050 | FF15 2CD1866F                 | call dword ptr ds:[<GetQueuedCompletionSt |
+6F6E4056 | 8B15 D4A7AD6F                 | mov edx,dword ptr ds:[6FADA7D4]           |
+6F6E405C | 85D2                          | test edx,edx                              |
+6F6E405E | 0F84 E2FEFFFF                 | je game.6F6E3F46                          |
+6F6E4064 | 5E                            | pop esi                                   |
+6F6E4065 | 5F                            | pop edi                                   |
+6F6E4066 | 5D                            | pop ebp                                   |
+6F6E4067 | 5B                            | pop ebx                                   |
+6F6E4068 | 83C4 2C                       | add esp,2C                                |
+6F6E406B | C2 0400                       | ret 4                                     |
+```
+
+### 事件分发
 
 game.dll + 682E00
 
@@ -1756,9 +1897,8 @@ graph TD
 4.  **事故现场 (`Tier 4`)**:
     *   当连接建立后，随后触发 `Event 1` (收到数据)。
     *   逻辑进入 `Packet Dispatcher` -> `ReadUInt32`。
-    *   **事故原因**：根本没有走eax=1的的分支。
-    *   **事故结果**：call game.6F6803C0，传递固定参数C。
-    *   **错误映射**：导致参数C一直传递下去，直达6F5B51D0（game.dll + 5B51D0）。
+    *   **事故原因**：根本没有走eax=1的的分支。（正常情况 0->，异常情况 0->2）
+    *   **事故结果**：call game.6F6803C0，传递固定参数C，一直传递下去，直达6F5B51D0（game.dll + 5B51D0）。
 **总结：**
 根本没有走eax=1的的分支，导致 call game.6F6803C0，传递固定参数C。
 
