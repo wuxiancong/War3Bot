@@ -162,7 +162,7 @@ struct GameSlot {
     quint8 team                 = 0;
     quint8 color                = 0;
     quint8 race                 = 32;
-    quint8 computerType         = 0;
+    quint8 computerType         = 1;
     quint8 handicap             = 100;
 };
 
@@ -330,7 +330,7 @@ private:
     QVector<GameSlot> m_slots;
     QStringList m_channelList;
     QMap<quint8, PlayerData> m_players;
-    BaseGameType m_baseGameType = BaseGameType::Type_FFA;
+    BaseGameType m_baseGameType = BaseGameType::Type_UMS;
 
     // 路径配置
     QString m_war3ExePath;
