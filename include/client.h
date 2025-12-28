@@ -166,6 +166,16 @@ struct GameSlot {
     quint8 handicap             = 100;
 };
 
+struct PlayerData {
+    QString name;
+    quint8 pid;
+    QTcpSocket *socket;         // 对应的连接
+    QHostAddress extIp;         // 外网 IP (Socket Peer Address)
+    quint16 extPort;            // 外网 Port
+    QHostAddress intIp;         // 内网 IP (来自 0x1E)
+    quint16 intPort;            // 内网 Port
+};
+
 // 前置声明
 class BnetSRP3;
 
@@ -252,6 +262,18 @@ private:
     QByteArray createW3GSMapCheckPacket();
 
     /**
+     * @brief 生成 0x05 (RejectJoin) 数据包
+     * 用于拒绝玩家加入
+     */
+    QByteArray createW3GSRejectJoinPacket(quint32 reason);
+
+    /**
+     * @brief 生成 0x04 (PlayerLeft) 数据包
+     * 用于告知老玩家有人离开房间
+     */
+    QByteArray createW3GSPlayerLeftPacket(quint8 pid, quint32 reason);
+
+    /**
      * @brief 生成 0x04 (SlotInfoJoin) 数据包
      * 用于告知刚加入的玩家当前的槽位信息、他的 PID 以及房间的网络信息
      */
@@ -307,6 +329,7 @@ private:
     quint32 m_hostCounter = 1;
     QVector<GameSlot> m_slots;
     QStringList m_channelList;
+    QMap<quint8, PlayerData> m_players;
     BaseGameType m_baseGameType = BaseGameType::Type_FFA;
 
     // 路径配置

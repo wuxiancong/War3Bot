@@ -461,7 +461,9 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
         if (slotIndex == -1) {
             LOG_WARNING("⚠️ 房间已满，拒绝加入");
-            // TODO: 发送 W3GS_REJECTJOIN (0x05)
+            // 发送拒绝包 (0x09 = Game Full)
+            socket->write(createW3GSRejectJoinPacket(0x09));
+            socket->flush();
             socket->disconnectFromHost();
             return;
         }
@@ -475,10 +477,23 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         m_slots[slotIndex].downloadStatus = 255;    // Unknown
         m_slots[slotIndex].computer = 0;
 
+        // 保存玩家数据到列表
+        PlayerData newPlayer;
+        newPlayer.pid = hostId;
+        newPlayer.name = clientPlayerName;
+        newPlayer.socket = socket;
+        newPlayer.extIp = socket->peerAddress();
+        newPlayer.extPort = socket->peerPort();
+        newPlayer.intIp = QHostAddress(qToBigEndian(clientInternalIP));
+        newPlayer.intPort = clientInternalPort;
+
+        m_players.insert(hostId, newPlayer);
+        LOG_INFO(QString("💾 已注册玩家: [%1] PID: %2").arg(clientPlayerName).arg(hostId));
+
         // 3. 构建握手响应包序列
         QByteArray finalPacket;
 
-        QHostAddress hostIp = socket->localAddress();
+        QHostAddress hostIp = m_udpSocket->localAddress();
         quint16 hostPort = m_udpSocket->localPort();
 
         // --- Step A: 发送 0x04 (SlotInfoJoin) ---
@@ -498,7 +513,23 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
             0                           // Host Int Port
             ));
 
-        // for(auto p : otherPlayers) { finalPacket.append(createPlayerInfoPacket(...)); }
+        // 循环发送已存在的其他玩家信息给新玩家
+        for (auto it = m_players.begin(); it != m_players.end(); ++it) {
+            const PlayerData &p = it.value();
+
+            // 跳过新玩家自己 (不需要发给自己)
+            if (p.pid == hostId) continue;
+            if (p.pid == 1) continue;
+
+            finalPacket.append(createPlayerInfoPacket(
+                p.pid,
+                p.name,
+                p.extIp,
+                p.extPort,
+                p.intIp,
+                p.intPort
+                ));
+        }
 
         // --- Step C: 发送 0x3D (MapCheck) ---
         finalPacket.append(createW3GSMapCheckPacket());
@@ -511,13 +542,40 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         socket->flush();
 
         LOG_INFO(QString("✅ 加入成功: 发送握手序列 (0x04 -> 0x06 -> 0x3D -> 0x09) PID: %1").arg(hostId));
+
+        // 广播新玩家加入给房间内老玩家
+        QByteArray newPlayerInfoPacket = createPlayerInfoPacket(
+            newPlayer.pid,
+            newPlayer.name,
+            newPlayer.extIp,
+            newPlayer.extPort,
+            newPlayer.intIp,
+            newPlayer.intPort
+            );
+
+        // 广播 0x06 (新玩家信息) 和 0x09 (最新槽位图)
+        QByteArray slotInfoPacket = createW3GSSlotInfoPacket();
+
+        for (auto it = m_players.begin(); it != m_players.end(); ++it) {
+            const PlayerData &p = it.value();
+            if (p.pid == hostId) continue;
+
+            if (p.socket && p.socket->state() == QAbstractSocket::ConnectedState) {
+                p.socket->write(newPlayerInfoPacket); // 告诉老玩家有人来了
+                p.socket->write(slotInfoPacket);      // 更新老玩家的槽位界面
+                p.socket->flush();
+            }
+        }
+        LOG_INFO("📢 已向其他玩家广播新玩家加入信息 (0x06 + 0x09)");
     }
     break;
 
     case 0x21: // W3GS_LEAVEREQ
-        LOG_INFO("👋 玩家请求离开房间");
+    {
+        LOG_INFO(QString("👋 收到主动离开请求 (0x21) 来自: %1").arg(socket->peerAddress().toString()));
         socket->disconnectFromHost();
-        break;
+    }
+    break;
 
     case 0x06: // W3GS_MAPPART
         LOG_INFO("🗺️ 收到地图下载请求 (0x06)");
@@ -535,15 +593,59 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
 void Client::onPlayerDisconnected() {
     QTcpSocket* socket = qobject_cast<QTcpSocket*>(sender());
-    if (socket) {
-        LOG_INFO("🔌 玩家断开");
-        m_playerSockets.removeAll(socket);
-        m_playerBuffers.remove(socket); // 清理缓存
+    if (!socket) return;
 
-        // TODO: 找到该 Socket 对应的 PID，将 m_slots 设置回 Open (0)
-        // 并广播 0x09 给剩余玩家
+    quint8 pidToRemove = 0;
+    QString nameToRemove;
 
-        socket->deleteLater();
+    // 1. 在 m_players 中找到是谁断开了
+    auto it = m_players.begin();
+    while (it != m_players.end()) {
+        if (it.value().socket == socket) {
+            pidToRemove = it.key();
+            nameToRemove = it.value().name;
+            // 从玩家列表移除
+            it = m_players.erase(it);
+            break;
+        } else {
+            ++it;
+        }
+    }
+
+    // 清理 Socket 缓存
+    m_playerSockets.removeAll(socket);
+    m_playerBuffers.remove(socket);
+    socket->deleteLater(); // 确保释放内存
+
+    if (pidToRemove != 0) {
+        LOG_INFO(QString("🔌 玩家 [%1] (PID: %2) 断开连接 - 开始清理").arg(nameToRemove).arg(pidToRemove));
+
+        // 2. 恢复槽位状态 (Slot)
+        for (int i = 0; i < m_slots.size(); ++i) {
+            if (m_slots[i].pid == pidToRemove) {
+                m_slots[i].pid = 0;
+                m_slots[i].slotStatus = 0; // Open
+                m_slots[i].downloadStatus = 255;
+                m_slots[i].computer = 0;
+                break;
+            }
+        }
+
+        // 3. 广播通知给剩余的所有玩家
+        QByteArray leftPacket = createW3GSPlayerLeftPacket(pidToRemove, 0x08); // 0x08 = Left
+        QByteArray slotInfoPacket = createW3GSSlotInfoPacket(); // 0x09 = Update Slots
+
+        for (auto& p : m_players) {
+            if (p.socket && p.socket->state() == QAbstractSocket::ConnectedState) {
+                // 告诉大家：某人走了 (0x07)
+                p.socket->write(leftPacket);
+                // 告诉大家：槽位空出来了 (0x09)
+                p.socket->write(slotInfoPacket);
+                p.socket->flush();
+            }
+        }
+
+        LOG_INFO("📢 已广播玩家离开消息 (0x07 + 0x09)");
     }
 }
 
@@ -1097,6 +1199,32 @@ QByteArray Client::createW3GSSlotInfoJoinPacket(quint8 playerID, const QHostAddr
     return packet;
 }
 
+QByteArray Client::createW3GSRejectJoinPacket(quint32 reason)
+{
+    QByteArray packet;
+    QDataStream out(&packet, QIODevice::WriteOnly);
+    out.setByteOrder(QDataStream::LittleEndian);
+
+    // Header: F7 05 [Length]
+    out << (quint8)0xF7 << (quint8)0x05 << (quint16)0;
+
+    // Reason Code (4 bytes)
+    // 0x06 = Invalid
+    // 0x07 = Game Full
+    // 0x09 = Game Full
+    // 0x10 = Bad Password
+    // 0x0A = Started
+    out << (quint32)reason;
+
+    // 回填长度
+    QDataStream lenStream(&packet, QIODevice::ReadWrite);
+    lenStream.setByteOrder(QDataStream::LittleEndian);
+    lenStream.skipRawData(2);
+    lenStream << (quint16)packet.size();
+
+    return packet;
+}
+
 QByteArray Client::createPlayerInfoPacket(quint8 pid, const QString& name,
                                           const QHostAddress& externalIp, quint16 externalPort,
                                           const QHostAddress& internalIp, quint16 internalPort)
@@ -1109,15 +1237,15 @@ QByteArray Client::createPlayerInfoPacket(quint8 pid, const QString& name,
     out << (quint8)0xF7 << (quint8)0x06 << (quint16)0;
 
     // 2. 写入 Id
-    out << (quint32)2; // Internal ID / P2P Key
+    out << (quint32)2;  // Internal ID / P2P Key
     out << (quint8)pid;
 
     // 3. 写入玩家名字
     QByteArray nameBytes = name.toUtf8();
     out.writeRawData(nameBytes.data(), nameBytes.length());
-    out << (quint8)0; // Null terminator
+    out << (quint8)0;   // Null terminator
 
-    out << (quint8)1; // Unknown
+    out << (quint16)1;  // Unknown
 
     // 5. 写入网络配置
     out << (quint16)2;
@@ -1131,6 +1259,33 @@ QByteArray Client::createPlayerInfoPacket(quint8 pid, const QString& name,
     out << (quint32)0 << (quint32)0;
 
     // 6. 回填包总长度
+    QDataStream lenStream(&packet, QIODevice::ReadWrite);
+    lenStream.setByteOrder(QDataStream::LittleEndian);
+    lenStream.skipRawData(2);
+    lenStream << (quint16)packet.size();
+
+    return packet;
+}
+
+QByteArray Client::createW3GSPlayerLeftPacket(quint8 pid, quint32 reason)
+{
+    QByteArray packet;
+    QDataStream out(&packet, QIODevice::WriteOnly);
+    out.setByteOrder(QDataStream::LittleEndian);
+
+    // Header: F7 07 [Length]
+    out << (quint8)0xF7 << (quint8)0x07 << (quint16)0;
+
+    // Player ID (1 byte)
+    out << (quint8)pid;
+
+    // Reason (4 bytes)
+    // 0x01 = Remote Connection Closed (掉线)
+    // 0x08 = Left the game (主动离开)
+    // 0x0C = Kicked (被踢)
+    out << (quint32)reason;
+
+    // 回填长度
     QDataStream lenStream(&packet, QIODevice::ReadWrite);
     lenStream.setByteOrder(QDataStream::LittleEndian);
     lenStream.skipRawData(2);
