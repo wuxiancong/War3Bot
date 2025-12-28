@@ -29,7 +29,7 @@
 | **4** | `6F5BAC36` | `call 6F5B4FB0` | **加入游戏** (Join Game) - *核心函数* |
 | **5** | `6F5BAC43` | `call 6F597C50` | **返回/取消** (Back/Cancel) |
 | **6** | `6F5BAC4E` | `call 6F59ECF0` | *(未知/UI更新)* |
-| **7** | `6F5BAC59` | `call 6F575C90` | **错误提示**: "必须选择一个游戏加入" |
+| **7** | `6F5BAC59` | `call 6F575C90` | **确定关闭对话框**(Close Dialog)  |
 | **8** | `6F5BAC64` | `call 6F5861A0` | **设置过滤条件** (Open Filter Menu) |
 | **9** | `6F5BAC6F` | `call 6F591C80` | **刷新列表开始** (Start Refresh) |
 | **10** | `6F5BAC7A` | `call 6F591C60` | **确认过滤** (Confirm Filter) |
@@ -38,8 +38,8 @@
 | **13** | `6F5BAC9B` | `call 6F5B9520` | *(结构类似，具体功能待定)* |
 | **14** | `6F5BACA7` | `call 6F5861B0` | **获取列表结束** (End List Fetch) - 循环填入数据 |
 | **15** | `6F5BACB3` | `call 6F597B40` | **刷新列表完毕** (Refresh Complete) |
-| **16** | `6F5BACBF` | `call 6F591F00` | *(未知)* |
-| **17** | `6F5BACCC` | `call 6F5B51D0` | *(未知)* |
+| **16** | `6F5BACBF` | `call 6F591F00` | *(暂时未知)* |
+| **17** | `6F5BACCC` | `call 6F5B51D0` | **加入错误，例如：房间已满或找不到** (Full Or Not Found) |
 
 ## 3. 辅助流程与状态处理
 
