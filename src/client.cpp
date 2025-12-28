@@ -490,12 +490,12 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
         // --- Step B: 发送 0x06 (PlayerInfo) ---
         finalPacket.append(createPlayerInfoPacket(
-            1,                          // Host PID
-            m_user,                     // Host Name
-            QHostAddress("0.0.0.0"),    // Host Ext IP
-            0,                          // Host Ext Port
-            QHostAddress("0.0.0.0"),    // Host Int IP
-            0                           // Host Int Port
+            1,
+            m_user,
+            socket->localAddress(),     // <--- 传入真实 IP
+            m_udpSocket->localPort(),   // <--- 传入真实端口
+            socket->localAddress(),     // <--- 内网 IP 也填真实的
+            m_udpSocket->localPort()
             ));
 
         // for(auto p : otherPlayers) { finalPacket.append(createPlayerInfoPacket(...)); }
@@ -1117,7 +1117,7 @@ QByteArray Client::createPlayerInfoPacket(quint8 pid, const QString& name,
     out.writeRawData(nameBytes.data(), nameBytes.length());
     out << (quint8)0; // Null terminator
 
-    out << (quint8)1; // Unknown
+    out << (quint16)1; // Unknown
 
     // 5. 写入网络配置
     out << (quint16)2;

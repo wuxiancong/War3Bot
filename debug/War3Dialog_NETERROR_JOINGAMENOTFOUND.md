@@ -1522,8 +1522,8 @@ game.dll + 4C2360
 6F6E3F77 | 8B4424 18                     | mov eax,dword ptr ss:[esp+18]             |
 6F6E3F7B | 50                            | push eax                                  |
 6F6E3F7C | 52                            | push edx                                  |
-6F6E3F7D | 8B56 1C                       | mov edx,dword ptr ds:[esi+1C]             |
-6F6E3F80 | FFD2                          | call edx                                  |
+6F6E3F7D | 8B56 1C                       | mov edx,dword ptr ds:[esi+1C]             | <--- game.dll + 6DA720
+6F6E3F80 | FFD2                          | call edx                                  | <--- TCP 字节流缓冲区管理与分包逻辑 (TCP Stream Buffer & Packet Splitter)
 6F6E3F82 | 8B4C24 10                     | mov ecx,dword ptr ss:[esp+10]             |
 6F6E3F86 | 8B01                          | mov eax,dword ptr ds:[ecx]                |
 6F6E3F88 | 8B50 18                       | mov edx,dword ptr ds:[eax+18]             |
