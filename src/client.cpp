@@ -1050,12 +1050,12 @@ QByteArray Client::createW3GSSlotInfoJoinPacket(quint8 playerID, const QHostAddr
     // 4. 写入游戏状态信息
     LOG_INFO(QString("[Step 4] 写入游戏状态 (Expect Seed at this offset):"));
     LOG_INFO(QString("   -> Random Seed : 0x%1").arg(QString::number(m_randomSeed, 16).toUpper()));
-    LOG_INFO(QString("   -> Game Type   : %1").arg(m_comboGameType));
+    LOG_INFO(QString("   -> Game Type   : %1").arg(m_baseGameType));
     LOG_INFO(QString("   -> Num Slots   : %1 (Hex: 0x%2)").arg(m_slots.size()).arg(QString::number(m_slots.size(), 16).toUpper()));
     LOG_INFO(QString("   -> Player ID   : %1").arg(playerID));
 
     out << (quint32)m_randomSeed;                                   // 随机种子
-    out << (quint8)m_comboGameType;                                 // 游戏类型
+    out << (quint8)m_baseGameType;                                  // 游戏类型
     out << (quint8)m_slots.size();                                  // 槽位总数
     out << (quint8)playerID;                                        // 玩家的ID
 
@@ -1117,7 +1117,7 @@ QByteArray Client::createPlayerInfoPacket(quint8 pid, const QString& name,
     out.writeRawData(nameBytes.data(), nameBytes.length());
     out << (quint8)0; // Null terminator
 
-    out << (quint16)1; // Unknown
+    out << (quint8)1; // Unknown
 
     // 5. 写入网络配置
     out << (quint16)2;
@@ -1156,7 +1156,7 @@ QByteArray Client::createW3GSSlotInfoPacket()
 
     // 3. 写入游戏状态信息
     out << (quint32)m_randomSeed;                       // 随机种子
-    out << (quint8)m_comboGameType;                     // 游戏类型 (Game Type)
+    out << (quint8)m_baseGameType;                      // 游戏类型 (Game Type)
     out << (quint8)m_slots.size();                      // 槽位总数 (Num Slots)
 
     // 4. 回填包总长度

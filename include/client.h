@@ -307,7 +307,7 @@ private:
     quint32 m_hostCounter = 1;
     QVector<GameSlot> m_slots;
     QStringList m_channelList;
-    quint16 m_comboGameType = 3;
+    BaseGameType m_baseGameType = BaseGameType::Type_FFA;
 
     // 路径配置
     QString m_war3ExePath;
