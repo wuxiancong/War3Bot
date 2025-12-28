@@ -83,9 +83,9 @@
 
 ### 2.2 错误分发：定位错误弹窗来源
 
-**地址**: `6F5B51D0` (错误分发逻辑)
-**偏移**: `game.dll + 5B51D0`
-**关键发现**: 程序根据错误代码（Error ID）查表跳转。本案中的错误码导致跳转到 `NETERROR_JOINGAMENOTFOUND`。
+- **地址**: `6F5B51D0` (错误分发逻辑)
+- **偏移**: `game.dll + 5B51D0`
+- **关键发现**: 程序根据错误代码（Error ID）查表跳转。本案中的错误码导致跳转到 `NETERROR_JOINGAMENOTFOUND`。
 
 ```assembly
 6F5B51D0 | 81EC 04020000            | sub esp,204                           	 |
