@@ -1117,7 +1117,7 @@ QByteArray Client::createPlayerInfoPacket(quint8 pid, const QString& name,
     out.writeRawData(nameBytes.data(), nameBytes.length());
     out << (quint8)0; // Null terminator
 
-    out << (quint16)1; // Unknown
+    out << (quint8)1; // Unknown
 
     // 5. 写入网络配置
     out << (quint16)2;
