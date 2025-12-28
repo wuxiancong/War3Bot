@@ -493,7 +493,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         // 3. 构建握手响应包序列
         QByteArray finalPacket;
 
-        QHostAddress hostIp = m_udpSocket->localAddress();
+        QHostAddress hostIp = socket->peerAddress();
         quint16 hostPort = m_udpSocket->localPort();
 
         // --- Step A: 发送 0x04 (SlotInfoJoin) ---
