@@ -29,9 +29,9 @@
 ### 2.1 字符处理：追踪处理字符的函数
 通过搜索字符串 "The game you attempted to join could not be found"，定位到 `Storm.dll` 中的字符处理函数。
 
-**地址**: `6F5C9650` (字符处理逻辑)
-**偏移**: `game.dll + 5C9650`
-**关键发现**: 命中 Storm.dll Ordinal#501 导入表序号，由此追踪上一级函数。
+- **地址**: `6F5C9650` (字符处理逻辑)
+- **偏移**: `game.dll + 5C9650`
+- **关键发现**: 命中 Storm.dll Ordinal#501 导入表序号，由此追踪上一级函数。
 
 
 ```assembly
