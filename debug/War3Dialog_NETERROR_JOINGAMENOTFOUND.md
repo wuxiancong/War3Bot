@@ -1509,21 +1509,21 @@ game.dll + 4C2360
 6F6E3F55 | 0F84 09010000                 | je game.6F6E4064                          |
 6F6E3F5B | 8B4C24 10                     | mov ecx,dword ptr ss:[esp+10]             |
 6F6E3F5F | 85C9                          | test ecx,ecx                              |
-6F6E3F61 | 74 47                         | je game.6F6E3FAA                          | <--- 会跳过所有
+6F6E3F61 | 74 47                         | je game.6F6E3FAA                          |
 6F6E3F63 | 85D2                          | test edx,edx                              |
-6F6E3F65 | 74 3A                         | je game.6F6E3FA1                          | <--- 会跳过1
+6F6E3F65 | 74 3A                         | je game.6F6E3FA1                          |
 6F6E3F67 | 8B72 14                       | mov esi,dword ptr ds:[edx+14]             |
 6F6E3F6A | 83EE 00                       | sub esi,0                                 |
 6F6E3F6D | 74 20                         | je game.6F6E3F8F                          |
 6F6E3F6F | 83EE 01                       | sub esi,1                                 |
-6F6E3F72 | 75 2D                         | jne game.6F6E3FA1                         | <--- 会跳过1
+6F6E3F72 | 75 2D                         | jne game.6F6E3FA1                         |
 6F6E3F74 | 8B31                          | mov esi,dword ptr ds:[ecx]                |
 6F6E3F76 | 50                            | push eax                                  |
 6F6E3F77 | 8B4424 18                     | mov eax,dword ptr ss:[esp+18]             |
 6F6E3F7B | 50                            | push eax                                  |
 6F6E3F7C | 52                            | push edx                                  |
 6F6E3F7D | 8B56 1C                       | mov edx,dword ptr ds:[esi+1C]             | <--- game.dll + 6DA720
-6F6E3F80 | FFD2                          | call edx                                  | <--- TCP 字节流缓冲区管理与分包逻辑 (TCP Stream Buffer & Packet Splitter)
+6F6E3F80 | FFD2                          | call edx                                  | <--- 执行 WSARecv 函数
 6F6E3F82 | 8B4C24 10                     | mov ecx,dword ptr ss:[esp+10]             |
 6F6E3F86 | 8B01                          | mov eax,dword ptr ds:[ecx]                |
 6F6E3F88 | 8B50 18                       | mov edx,dword ptr ds:[eax+18]             |
@@ -1535,11 +1535,11 @@ game.dll + 4C2360
 6F6E3F96 | 50                            | push eax                                  |
 6F6E3F97 | 52                            | push edx                                  |
 6F6E3F98 | 8B56 20                       | mov edx,dword ptr ds:[esi+20]             |
-6F6E3F9B | FFD2                          | call edx                                  | <--- eax=1 -> 正常情况
+6F6E3F9B | FFD2                          | call edx                                  |
 6F6E3F9D | 8B4C24 10                     | mov ecx,dword ptr ss:[esp+10]             |
 6F6E3FA1 | 8B01                          | mov eax,dword ptr ds:[ecx]                |
 6F6E3FA3 | 8B50 18                       | mov edx,dword ptr ds:[eax+18]             |
-6F6E3FA6 | FFD2                          | call edx                                  | <--- eax=2 -> 固定参数C
+6F6E3FA6 | FFD2                          | call edx                                  |
 6F6E3FA8 | EB 18                         | jmp game.6F6E3FC2                         |
 6F6E3FAA | 85D2                          | test edx,edx                              |
 6F6E3FAC | 74 14                         | je game.6F6E3FC2                          |
