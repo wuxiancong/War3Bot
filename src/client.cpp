@@ -1309,11 +1309,6 @@ QByteArray Client::createW3GSSlotInfoPacket()
     out << (quint16)slotData.size();                    // 写入数据块长度
     out.writeRawData(slotData.data(), slotData.size()); // 写入数据块内容
 
-    // 3. 写入游戏状态信息
-    out << (quint32)m_randomSeed;                       // 随机种子
-    out << (quint8)m_baseGameType;                      // 游戏类型 (Game Type)
-    out << (quint8)m_slots.size();                      // 槽位总数 (Num Slots)
-
     // 4. 回填包总长度
     QDataStream lenStream(&packet, QIODevice::ReadWrite);
     lenStream.setByteOrder(QDataStream::LittleEndian);

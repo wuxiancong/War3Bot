@@ -2628,18 +2628,18 @@ graph TD
 6F66434C | 8D4C24 21                     | lea ecx,dword ptr ss:[esp+21]          |
 6F664350 | 51                            | push ecx                               |
 6F664351 | 8D4C24 2C                     | lea ecx,dword ptr ss:[esp+2C]          |
-6F664355 | E8 B6E8E5FF                   | call game.6F4C2C10                     |
+6F664355 | E8 B6E8E5FF                   | call game.6F4C2C10                     | <--- 读取Pack ID
 6F66435A | 8D5424 22                     | lea edx,dword ptr ss:[esp+22]          |
 6F66435E | 52                            | push edx                               |
 6F66435F | 8D4C24 2C                     | lea ecx,dword ptr ss:[esp+2C]          |
-6F664363 | E8 08E9E5FF                   | call game.6F4C2C70                     |
+6F664363 | E8 08E9E5FF                   | call game.6F4C2C70                     | <--- 读取Pack Length
 6F664368 | 66:8B4424 22                  | mov ax,word ptr ss:[esp+22]            |
-6F66436D | 66:3D 0400                    | cmp ax,4                               | <--- 判断协议编号 是否为 0x4
+6F66436D | 66:3D 0400                    | cmp ax,4                               | <--- 判断包长度是否大于 0x4
 6F664371 | 0F82 D8000000                 | jb game.6F66444F                       |
-6F664377 | 66:3D 0010                    | cmp ax,1000                            | <--- 判断数据大小是否超过最大分页（0x1000）
+6F664377 | 66:3D 0010                    | cmp ax,1000                            | <--- 判断包长度是否超过最大分页（0x1000）
 6F66437B | 0F83 CE000000                 | jae game.2B4444F                       |
 6F664381 | 0FB7C0                        | movzx eax,ax                           |
-6F664384 | 3BF0                          | cmp esi,eax                            | <--- 判断数据大小是否超过槽分配的最大内存（0x341）
+6F664384 | 3BF0                          | cmp esi,eax                            | <--- 判断包长度是否超过分配的最大内存（0x341）
 6F664386 | 0F82 9A000000                 | jb game.6F664426                       |
 6F66438C | 8B5424 21                     | mov edx,dword ptr ss:[esp+21]          |
 6F664390 | 2BF0                          | sub esi,eax                            |
@@ -2823,7 +2823,7 @@ graph TD
 
 如果在这里没有崩溃，说明包头读取是正常的。真正导致返回 `1` (Error) 的逻辑在更后面的**内容解析**部分（即读取完 Header, Length, ID 之后，解析 SlotInfo 数据块的时候）。
 
-### 3.1 判断协议编号和数据长度
+### 3.1 判断数据长度
 **协议编号**: `0x04'
 **对应类型**: 'W3GS_SLOTINFOJOIN'
 
@@ -2831,22 +2831,22 @@ graph TD
 6F66434C | 8D4C24 21                     | lea ecx,dword ptr ss:[esp+21]          |
 6F664350 | 51                            | push ecx                               |
 6F664351 | 8D4C24 2C                     | lea ecx,dword ptr ss:[esp+2C]          |
-6F664355 | E8 B6E8E5FF                   | call game.6F4C2C10                     |
+6F664355 | E8 B6E8E5FF                   | call game.6F4C2C10                     | <--- 读取Pack ID
 6F66435A | 8D5424 22                     | lea edx,dword ptr ss:[esp+22]          |
 6F66435E | 52                            | push edx                               |
 6F66435F | 8D4C24 2C                     | lea ecx,dword ptr ss:[esp+2C]          |
-6F664363 | E8 08E9E5FF                   | call game.6F4C2C70                     |
+6F664363 | E8 08E9E5FF                   | call game.6F4C2C70                     | <--- 读取Pack Length
 6F664368 | 66:8B4424 22                  | mov ax,word ptr ss:[esp+22]            |
-6F66436D | 66:3D 0400                    | cmp ax,4                               | <--- 判断协议编号 是否为 0x4
+6F66436D | 66:3D 0400                    | cmp ax,4                               | <--- 判断包长度是否大于 0x4
 6F664371 | 0F82 D8000000                 | jb game.6F66444F                       |
-6F664377 | 66:3D 0010                    | cmp ax,1000                            | <--- 判断数据大小是否超过最大分页（0x1000）
+6F664377 | 66:3D 0010                    | cmp ax,1000                            | <--- 判断包长度是否超过最大分页（0x1000）
 6F66437B | 0F83 CE000000                 | jae game.2B4444F                       |
 6F664381 | 0FB7C0                        | movzx eax,ax                           |
-6F664384 | 3BF0                          | cmp esi,eax                            | <--- 判断数据大小是否超过槽分配的最大内存（0x341）
+6F664384 | 3BF0                          | cmp esi,eax                            | <--- 判断包长度是否超过槽分配的最大内存（0x341）
 6F664386 | 0F82 9A000000                 | jb game.6F664426                       |
 ```
 
-这段汇编代码的功能非常明确：**读取数据包的第 2 个字节（Packet ID）**。
+这段汇编代码的功能非常明确：**判断包长度是否大于 0x4**。
 
 #### 详细分析
 
@@ -2868,14 +2868,14 @@ graph TD
 
 6F4C2C2B | 8A0411          | mov al,byte ptr ds:[ecx+edx]   ; 读取字节。
                            ; 基址 1F3D0758 + 偏移 1 = 1F3D0759
-                           ; 内存中 1F3D0759 的值是 0x04
+                           ; 内存中 1F3D0759 的值是 包长度
 
-6F4C2C32 | 8801            | mov byte ptr ds:[ecx],al       ; 将 04 写入 [esp+21]
+6F4C2C32 | 8801            | mov byte ptr ds:[ecx],al       ; 将 包长度 写入 [esp+21]
 
 6F4C2C34 | 8346 14 01      | add dword ptr ds:[esi+14],1    ; 偏移量 + 1，变成 2
 ```
 
-#### 结论：正在读取协议 ID
+#### 结论：正在读取包长度
 
 1.  **偏移量为 1**：说明跳过了第 0 字节（`0xF7` 包头）。
 2.  **读取值为 0x04**：对应 `W3GS_SLOTINFOJOIN`。
@@ -2950,7 +2950,7 @@ graph TD
 到目前为止，War3 客户端已经成功解析了包头的所有信息：
 1.  **Header**: `F7` (OK)
 2.  **ID**: `04` (OK)
-3.  **Length**: `120` (OK, 符合数据大小)
+3.  **Length**: `120` (OK，符合数据大小，实际正确的数据大小应该是114，这里只是调试数据)
 
 ### 接下来会发生什么？(核心问题所在)
 
@@ -2975,7 +2975,7 @@ graph TD
 6F6643A6 | 8B5424 24                     | mov edx,dword ptr ss:[esp+24]          |
 6F6643AA | 57                            | push edi                               |
 6F6643AB | 897424 6C                     | mov dword ptr ss:[esp+6C],esi          |
-6F6643AF | FF5424 74                     | call dword ptr ss:[esp+74]             |
+6F6643AF | FF5424 74                     | call dword ptr ss:[esp+74]             | <--- 跳转函数
 6F6643B3 | 8BF0                          | mov esi,eax                            |
 6F6643B5 | 83C8 FF                       | or eax,FFFFFFFF                        |
 6F6643B8 | 83FE 02                       | cmp esi,2                              |
@@ -3025,7 +3025,7 @@ graph TD
 6F68236A | E8 3114FFFF                   | call game.6F6737A0                         |
 6F68236F | 5E                            | pop esi                                   |
 6F682370 | C2 1400                       | ret 14                                    |
-6F682373 | 8B4424 14                     | mov eax,dword ptr ss:[esp+14]             | <--- 跳转到了这里
+6F682373 | 8B4424 14                     | mov eax,dword ptr ss:[esp+14]             | <--- esi=3，跳转到了这里
 6F682377 | 50                            | push eax                                  |
 6F682378 | 8B4424 14                     | mov eax,dword ptr ss:[esp+14]             |
 6F68237C | 50                            | push eax                                  |
