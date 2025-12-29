@@ -534,7 +534,10 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         // --- Step C: 发送 0x3D (MapCheck) ---
         finalPacket.append(createW3GSMapCheckPacket());
 
-        // --- Step D: 发送 0x09 (SlotInfo) ---
+        // --- Step D: 发送 0x42 (MapSize) ---
+        finalPacket.append(createW3GSMapSizePacket());
+
+        // --- Step E: 发送 0x09 (SlotInfo) ---
         finalPacket.append(createW3GSSlotInfoPacket());
 
         // 4. 发送数据
@@ -570,6 +573,10 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
     }
     break;
 
+    case 0x06: // W3GS_MAPPART
+        LOG_INFO("🗺️ 收到地图下载请求 (0x06)");
+        break;
+
     case 0x21: // W3GS_LEAVEREQ
     {
         LOG_INFO(QString("👋 收到主动离开请求 (0x21) 来自: %1").arg(socket->peerAddress().toString()));
@@ -577,14 +584,42 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
     }
     break;
 
-    case 0x06: // W3GS_MAPPART
-        LOG_INFO("🗺️ 收到地图下载请求 (0x06)");
-        break;
-
     case 0x28: // W3GS_PONG_TO_HOST
         LOG_INFO("💓 收到玩家 TCP Pong");
         break;
 
+    case 0x42: // W3GS_MAPSIZE
+    {
+        if (payload.size() < 9) {
+            LOG_ERROR(QString("❌ W3GS_MAPSIZE 包长度不足: %1").arg(payload.size()));
+            return;
+        }
+
+        QDataStream in(payload);
+        in.setByteOrder(QDataStream::LittleEndian);
+
+        quint32 unknown;
+        quint8  sizeFlag;
+        quint32 clientMapSize;
+
+        in >> unknown >> sizeFlag >> clientMapSize;
+
+        LOG_INFO(QString("🗺️ [0x42] 收到玩家地图大小报告: %1 字节 (Flag: %2, Unknown: %3)")
+                     .arg(clientMapSize)
+                     .arg(sizeFlag)
+                     .arg(unknown));
+
+        // 这里可以校验客户端的地图大小是否与主机的 m_war3Map.getMapSize() 一致
+        // 如果不一致，通常意味着玩家正在下载地图或者版本不对。
+        if (clientMapSize != m_war3Map.getMapSize()) {
+            LOG_WARNING(QString("⚠️ 玩家地图大小 (%1) 与主机 (%2) 不匹配！")
+                            .arg(clientMapSize)
+                            .arg(m_war3Map.getMapSize()));
+        } else {
+            LOG_INFO("✅ 玩家地图大小校验通过");
+        }
+    }
+    break;
     default:
         LOG_INFO(QString("❓ 未处理的 TCP 包 ID: 0x%1").arg(QString::number(id, 16)));
         break;
@@ -1363,6 +1398,36 @@ QByteArray Client::createW3GSMapCheckPacket()
     lenStream.skipRawData(2); // 跳过 F7 3D
     lenStream << (quint16)packet.size();
 
+    return packet;
+}
+
+QByteArray Client::createW3GSMapSizePacket()
+{
+    QByteArray packet;
+    QDataStream out(&packet, QIODevice::WriteOnly);
+    out.setByteOrder(QDataStream::LittleEndian);
+
+    // 1. Header: F7 42 [Length]
+    out << (quint8)0xF7 << (quint8)0x42 << (quint16)0;
+
+    // 2. Unknown (UINT32): 通常为 1
+    out << (quint32)1;
+
+    // 3. Size Flag (UINT8):
+    // 如果地图小于 256MB，通常设为 1；现代高版本魔兽协议中这个值比较固定。
+    out << (quint8)1;
+
+    // 4. Map Size (UINT32): 地图字节数
+    out << (quint32)m_war3Map.getMapSize();
+
+    // 5. 回填长度
+    quint16 totalSize = (quint16)packet.size();
+    QDataStream lenStream(&packet, QIODevice::ReadWrite);
+    lenStream.setByteOrder(QDataStream::LittleEndian);
+    lenStream.skipRawData(2);
+    lenStream << totalSize;
+
+    LOG_INFO(QString("📤 构建 W3GS_MAPSIZE (0x42): Size=%1").arg(m_war3Map.getMapSize()));
     return packet;
 }
 
