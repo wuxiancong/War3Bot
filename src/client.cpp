@@ -512,10 +512,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         // Step D: 发送地图校验 (0x3D)
         finalPacket.append(createW3GSMapCheckPacket());
 
-        // Step E: 发送地图大小 (0x42)
-        // finalPacket.append(createW3GSMapSizePacket());
-
-        // Step F: 发送槽位信息 (0x09)
+        // Step E: 发送槽位信息 (0x09)
         finalPacket.append(createW3GSSlotInfoPacket());
 
         // 执行物理发送
@@ -570,22 +567,35 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
         in >> unknown >> sizeFlag >> clientMapSize;
 
-        LOG_INFO(QString("🗺️ [0x42] 收到玩家地图大小报告: %1 字节 (Flag: %2, Unknown: %3)")
+        LOG_INFO(QString("🗺️ [0x42] 收到玩家 [%1] 地图报告: %2 字节 (Flag: %3)")
+                     .arg(socket->peerAddress().toString())
                      .arg(clientMapSize)
-                     .arg(sizeFlag)
-                     .arg(unknown));
+                     .arg(sizeFlag));
 
-        // 这里可以校验客户端的地图大小是否与主机的 m_war3Map.getMapSize() 一致
-        // 如果不一致，通常意味着玩家正在下载地图或者版本不对。
-        if (clientMapSize != m_war3Map.getMapSize()) {
-            LOG_WARNING(QString("⚠️ 玩家地图大小 (%1) 与主机 (%2) 不匹配！")
-                            .arg(clientMapSize)
-                            .arg(m_war3Map.getMapSize()));
+        quint32 serverMapSize = m_war3Map.getMapSize();
+
+        if (clientMapSize != serverMapSize) {
+            LOG_WARNING(QString("⚠️ 玩家地图大小 (%1) 与主机 (%2) 不匹配！正在回复主机地图信息...").arg(clientMapSize).arg(serverMapSize));
+
+            // 当玩家地图大小不正确（特别是为 0 时），回复主机的 0x42 包
+            // 这通常会诱导客户端进入“准备下载”或“路径修正”状态
+            socket->write(createW3GSMapSizePacket());
+            socket->flush();
+
+            // 对于大小为 0 的情况，玩家 UI 通常不会显示名字。
+            // 在发送 0x42 后，补发一个 0x09 有助于部分客户端刷新 UI
+            socket->write(createW3GSSlotInfoPacket());
+            socket->flush();
         } else {
-            LOG_INFO("✅ 玩家地图大小校验通过");
+            LOG_INFO("✅ 玩家地图大小校验通过，玩家已就绪。");
+
+            // 玩家地图确认 OK，此时再补发一个槽位包确保名字显示在 UI 上
+            socket->write(createW3GSSlotInfoPacket());
+            socket->flush();
         }
     }
     break;
+
     default:
         LOG_INFO(QString("❓ 未处理的 TCP 包 ID: 0x%1").arg(QString::number(id, 16)));
         break;
