@@ -306,6 +306,7 @@
 
 <details open>
   <summary>点击展开更多内容</summary>
+  
 ```assembly
 6F5BABF0 | 8B4424 04                     | mov eax,dword ptr ss:[esp+4]          |
 6F5BABF4 | 56                            | push esi                              |
@@ -899,6 +900,7 @@ eax=game.6F62A9A0
 6F62A9A7 | 8BC8                     	 | mov ecx,eax                           |
 6F62A9A9 | E9 72FEFFFF              	 | jmp game.6F62A820                     |
 ```
+
 </details>
 
 通过对上面反汇编的分析，得到生成 错误码 `C` 的函数在 `game.dll + 652710` ，现在我们分析此函数。
@@ -1142,8 +1144,10 @@ eax=game.6F62A9A0
 
 注意到的 1, 2, 4, 8 正是字节长度（Byte Size）。
 这是 C++ 模板或重载函数（Overloading）编译后的典型结果。虽然它们读取的数据长度不同，但逻辑完全一致。
+
 <details open>
   <summary>点击查看详情</summary>
+  
 ```assembly
 6F4C2BE0 | 56                       	 | push esi                              |
 6F4C2BE1 | 8BF1                     	 | mov esi,ecx                           |
@@ -1451,6 +1455,7 @@ eax=game.6F62A9A0
 6F4C2EE8 | 5D                       	 | pop ebp                               |
 6F4C2EE9 | C2 0800                  	 | ret 8                                 |
 ```
+
 </details>
 
 上面是 `CDataStore` (BitStream) 读取类函数的部分反汇编。
@@ -1864,7 +1869,7 @@ struct GameDescription {
 4.  **Int 1**
 5.  **Int 2**
 
-这再次印证了之前在 `createGame` 中构建的数据包结构。如果这个函数解析出错（比如 StatString 格式不对），也会导致加入失败或显示错误的游戏信息。\
+这再次印证了之前在 `createGame` 中构建的数据包结构。如果这个函数解析出错（比如 StatString 格式不对），也会导致加入失败或显示错误的游戏信息。
 
 ---
 
@@ -3693,12 +3698,13 @@ graph TD
 6F684D29 | 5E                            | pop esi                                   |
 6F684D2A | C3                            | ret                                       |
 ```
-
-<details open>
-  <summary>点击查看详情</summary>
+  
 - 现在我们分析
 **地址**: '6F443720'
 **偏移**: `game.dll + 443720`
+
+<details open>
+  <summary>点击查看详情</summary>
 
 ```assembly
 6F443720 | 51                            | push ecx                                  |
@@ -3878,6 +3884,7 @@ graph TD
                              ; Offset += 91
                              ; 新 Offset = 2 + 91 = 93
 ```
+
 </details>
 
 - `6F684D14` 处执行的函数如下
@@ -3954,8 +3961,10 @@ graph TD
 02 (PID) <--- 真正的 PID 在这里！
 ```
 - Dump示例（Random Seed: 0x4E88491D）
+
 <details open>
   <summary>点击查看Dump示例</summary>
+  
 ```
 [2025-12-29 05:58:47.027] === GetQueuedCompletionStatus调用开始 ===
 [2025-12-29 05:58:47.027] 返回值: 1
@@ -4066,6 +4075,7 @@ g.[...d......d..
 I.N..
 [2025-12-29 05:58:47.027] === GetQueuedCompletionStatus调用结束 ===
 ```
+
 </details>
 
 *   SlotData 结束于偏移 93 (0x5D)。
@@ -4121,9 +4131,12 @@ I.N..
 
 - 相关的C++代码如下
 - ❌ 错误的代码示列
+
 <details open>
   <summary>点击查看详情</summary>
+  
 **头文件**: [client.h](https://github.com/wuxiancong/War3Bot/blob/main/include/client.h)
+
 ```cpp
 struct GameSlot {
     quint8 pid                  = 0;
@@ -4228,6 +4241,7 @@ QByteArray Client::createW3GSSlotInfoJoinPacket(quint8 playerID, const QHostAddr
     return packet;
 }
 ```
+
 </details>
 
 
@@ -4243,6 +4257,7 @@ QByteArray Client::createW3GSSlotInfoJoinPacket(quint8 playerID, const QHostAddr
   <summary>点击查看详情</summary>
 
 **源文件**: [client.cpp](https://github.com/wuxiancong/War3Bot/blob/main/include/client.cpp)
+
 ```cpp
 QByteArray Client::createW3GSSlotInfoJoinPacket(quint8 playerID, const QHostAddress& externalIp, quint16 localPort)
 {
@@ -4300,6 +4315,7 @@ QByteArray Client::createW3GSSlotInfoJoinPacket(quint8 playerID, const QHostAddr
     return packet;
 }
 ```
+
 </details>
 
 **验证逻辑：**
@@ -4343,14 +4359,14 @@ QByteArray Client::createW3GSSlotInfoJoinPacket(quint8 playerID, const QHostAddr
 6F4C2FD7 | 57                            | push edi                                  |
 6F4C2FD8 | 8BF9                          | mov edi,ecx                               |
 6F4C2FDA | 8B4C24 10                     | mov ecx,dword ptr ss:[esp+10]             |
-6F4C2FDE | 75 08                         | jne game.6F4C2FE8                          |
+6F4C2FDE | 75 08                         | jne game.6F4C2FE8                         |
 6F4C2FE0 | 85C9                          | test ecx,ecx                              |
-6F4C2FE2 | 74 04                         | je game.6F4C2FE8                           |
+6F4C2FE2 | 74 04                         | je game.6F4C2FE8                          |
 6F4C2FE4 | 33C0                          | xor eax,eax                               |
-6F4C2FE6 | EB 03                         | jmp game.6F4C2FEB                          |
+6F4C2FE6 | EB 03                         | jmp game.6F4C2FEB                         |
 6F4C2FE8 | 83C8 FF                       | or eax,FFFFFFFF                           |
 6F4C2FEB | 85C0                          | test eax,eax                              |
-6F4C2FED | 75 0E                         | jne game.6F4C2FFD                          |
+6F4C2FED | 75 0E                         | jne game.6F4C2FFD                         |
 6F4C2FEF | 6A 57                         | push 57                                   |
 6F4C2FF1 | E8 B6852200                   | call <JMP.&Ordinal#465>                   |
 6F4C2FF6 | 8BC7                          | mov eax,edi                               |
@@ -4359,37 +4375,37 @@ QByteArray Client::createW3GSSlotInfoJoinPacket(quint8 playerID, const QHostAddr
 6F4C2FFA | C2 0800                       | ret 8                                     |
 6F4C2FFD | 8B47 14                       | mov eax,dword ptr ds:[edi+14]             |
 6F4C3000 | 3B47 10                       | cmp eax,dword ptr ds:[edi+10]             |
-6F4C3003 | 77 5C                         | ja game.6F4C3061                           |
+6F4C3003 | 77 5C                         | ja game.6F4C3061                          |
 6F4C3005 | 85C9                          | test ecx,ecx                              |
 6F4C3007 | 53                            | push ebx                                  |
 6F4C3008 | 8BD9                          | mov ebx,ecx                               |
-6F4C300A | 74 54                         | je game.6F4C3060                           |
+6F4C300A | 74 54                         | je game.6F4C3060                          |
 6F4C300C | 56                            | push esi                                  |
 6F4C300D | 8D49 00                       | lea ecx,dword ptr ds:[ecx]                |
 6F4C3010 | 8B4F 14                       | mov ecx,dword ptr ds:[edi+14]             |
 6F4C3013 | 8B77 10                       | mov esi,dword ptr ds:[edi+10]             |
 6F4C3016 | 2BF1                          | sub esi,ecx                               |
 6F4C3018 | 3BF3                          | cmp esi,ebx                               |
-6F4C301A | 72 02                         | jb game.6F4C301E                           |
+6F4C301A | 72 02                         | jb game.6F4C301E                          |
 6F4C301C | 8BF3                          | mov esi,ebx                               |
 6F4C301E | 8B47 0C                       | mov eax,dword ptr ds:[edi+C]              |
 6F4C3021 | 3BF0                          | cmp esi,eax                               |
-6F4C3023 | 72 02                         | jb game.6F4C3027                           |
+6F4C3023 | 72 02                         | jb game.6F4C3027                          |
 6F4C3025 | 8BF0                          | mov esi,eax                               |
 6F4C3027 | 83FE 01                       | cmp esi,1                                 |
-6F4C302A | 77 05                         | ja game.6F4C3031                           |
+6F4C302A | 77 05                         | ja game.6F4C3031                          |
 6F4C302C | BE 01000000                   | mov esi,1                                 |
 6F4C3031 | 56                            | push esi                                  |
 6F4C3032 | 51                            | push ecx                                  |
 6F4C3033 | 8BCF                          | mov ecx,edi                               |
-6F4C3035 | E8 F6FAFFFF                   | call game.6F4C2B30                         |
+6F4C3035 | E8 F6FAFFFF                   | call game.6F4C2B30                        |
 6F4C303A | 85C0                          | test eax,eax                              |
-6F4C303C | 74 21                         | je game.6F4C305F                           |
+6F4C303C | 74 21                         | je game.6F4C305F                          |
 6F4C303E | 8B47 04                       | mov eax,dword ptr ds:[edi+4]              |
 6F4C3041 | 2B47 08                       | sub eax,dword ptr ds:[edi+8]              |
 6F4C3044 | 0347 14                       | add eax,dword ptr ds:[edi+14]             |
 6F4C3047 | 3BE8                          | cmp ebp,eax                               |
-6F4C3049 | 74 0B                         | je game.6F4C3056                           |
+6F4C3049 | 74 0B                         | je game.6F4C3056                          |
 6F4C304B | 56                            | push esi                                  |
 6F4C304C | 50                            | push eax                                  |
 6F4C304D | 55                            | push ebp                                  |
@@ -4398,7 +4414,7 @@ QByteArray Client::createW3GSSlotInfoJoinPacket(quint8 playerID, const QHostAddr
 6F4C3056 | 0177 14                       | add dword ptr ds:[edi+14],esi             |
 6F4C3059 | 03EE                          | add ebp,esi                               |
 6F4C305B | 2BDE                          | sub ebx,esi                               |
-6F4C305D | 75 B1                         | jne game.6F4C3010                          |
+6F4C305D | 75 B1                         | jne game.6F4C3010                         |
 6F4C305F | 5E                            | pop esi                                   |
 6F4C3060 | 5B                            | pop ebx                                   |
 6F4C3061 | 8BC7                          | mov eax,edi                               |
@@ -4415,7 +4431,7 @@ QByteArray Client::createW3GSSlotInfoJoinPacket(quint8 playerID, const QHostAddr
 6F4C2B3C | 8B46 10                       | mov eax,dword ptr ds:[esi+10]             |
 6F4C2B3F | 8D1419                        | lea edx,dword ptr ds:[ecx+ebx]            |
 6F4C2B42 | 3BD0                          | cmp edx,eax                               |
-6F4C2B44 | 76 0D                         | jbe game.6F4C2B53                          |
+6F4C2B44 | 76 0D                         | jbe game.6F4C2B53                         |
 6F4C2B46 | 83C0 01                       | add eax,1                                 |
 6F4C2B49 | 8946 14                       | mov dword ptr ds:[esi+14],eax             |
 6F4C2B4C | 5E                            | pop esi                                   |
