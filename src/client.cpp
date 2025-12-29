@@ -1299,68 +1299,51 @@ QByteArray Client::createW3GSSlotInfoPacket()
 QByteArray Client::createW3GSMapCheckPacket()
 {
     LOG_INFO("================================================");
-    LOG_INFO("🛠️ 开始构建 W3GS_MAPCHECK (0x3D) 数据包...");
+    LOG_INFO("🛠️ 正在构建修复版的 W3GS_MAPCHECK (0x3D)...");
 
     QByteArray packet;
     QDataStream out(&packet, QIODevice::WriteOnly);
     out.setByteOrder(QDataStream::LittleEndian);
 
-    // 1. Header (长度稍后回填)
+    // 1. Header
     out << (quint8)0xF7 << (quint8)0x3D << (quint16)0;
 
-    // 2. Unknown Constant (GHost++ 中此值固定为 1)
+    // 2. Unknown (固定为 1)
     out << (quint32)1;
 
-    // 3. Map Path (String)
-    // ⚠️ 注意：魔兽对路径非常敏感，确保这个路径在客户端确实存在
+    // 3. Map Path
+    // 建议：如果 Maps\Download\ 依然返回 0，请尝试直接发文件名或者 Maps\文件名
     QString mapPath = "Maps\\Download\\" + m_war3Map.getMapName();
     QByteArray mapPathBytes = mapPath.toLocal8Bit();
     out.writeRawData(mapPathBytes.data(), mapPathBytes.length());
-    out << (quint8)0; // String Terminator
+    out << (quint8)0;
 
-    LOG_INFO(QString("📍 [0x3D] 地图路径: %1").arg(mapPath));
-
-    // 4. Map Stat Data
+    // 4. Map Stat Data (⚠️ 严格校验此处顺序)
     quint32 fileSize = m_war3Map.getMapSize();
     quint32 fileInfo = m_war3Map.getMapInfo();
     quint32 fileCRC  = m_war3Map.getMapCRC();
 
-    LOG_INFO(QString("📊 [0x3D] 地图尺寸: %1 字节 (Hex: 0x%2)")
-                 .arg(fileSize)
-                 .arg(QString::number(fileSize, 16).toUpper()));
-    LOG_INFO(QString("ℹ️ [0x3D] 地图信息 (Info): 0x%1")
-                 .arg(QString::number(fileInfo, 16).toUpper()));
-    LOG_INFO(QString("🔑 [0x3D] 地图校验 (CRC): 0x%1")
-                 .arg(QString::number(fileCRC, 16).toUpper()));
+    LOG_INFO(QString("📊 Size: %1").arg(fileSize));
+    LOG_INFO(QString("ℹ️ Info (XORO): 0x%1").arg(QString::number(fileInfo, 16).toUpper()));
+    LOG_INFO(QString("🔑 CRC: 0x%1").arg(QString::number(fileCRC, 16).toUpper()));
 
-    out << fileSize;
-    out << fileInfo;
-    out << fileCRC;
+    out << (quint32)fileSize;
+    out << (quint32)fileInfo;
+    out << (quint32)fileCRC;
 
-    // 5. Map SHA1 (必须精确 20 字节)
+    // 5. Map SHA1
     QByteArray sha1 = m_war3Map.getMapSHA1Bytes();
-
-    if (sha1.size() != 20) {
-        LOG_ERROR(QString("❌ [0x3D] SHA1 长度错误: %1 字节 (应为20)，正在调整...").arg(sha1.size()));
-        sha1.resize(20);
-    }
-
-    // 写入 SHA1
+    if (sha1.size() != 20) sha1.resize(20);
     out.writeRawData(sha1.data(), 20);
 
-    QString sha1Hex = sha1.toHex(' ').toUpper();
-    LOG_INFO(QString("✨ [0x3D] 地图 SHA1: %1").arg(sha1Hex));
-
-    // 6. 回填包总长度
+    // 6. 回填长度
     quint16 totalSize = (quint16)packet.size();
     QDataStream lenStream(&packet, QIODevice::ReadWrite);
     lenStream.setByteOrder(QDataStream::LittleEndian);
-    lenStream.skipRawData(2); // 跳过 F7 3D
+    lenStream.skipRawData(2);
     lenStream << totalSize;
 
-    LOG_INFO(QString("📦 [0x3D] 数据包构建完成，总长度: %1 字节").arg(totalSize));
     LOG_INFO("================================================");
-
     return packet;
 }
 
