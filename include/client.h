@@ -263,13 +263,6 @@ private:
     QByteArray createW3GSMapCheckPacket();
 
     /**
-     * @brief 生成 0x3D (Map Size) 数据包
-     * 用于告知玩家地图大小
-     */
-
-    QByteArray createW3GSMapSizePacket();
-
-    /**
      * @brief 生成 0x05 (RejectJoin) 数据包
      * 用于拒绝玩家加入
      */

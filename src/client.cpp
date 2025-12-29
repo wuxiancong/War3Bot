@@ -553,46 +553,24 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
     case 0x42: // W3GS_MAPSIZE
     {
-        if (payload.size() < 9) {
-            LOG_ERROR(QString("❌ W3GS_MAPSIZE 包长度不足: %1").arg(payload.size()));
-            return;
-        }
+        if (payload.size() < 9) return;
 
         QDataStream in(payload);
         in.setByteOrder(QDataStream::LittleEndian);
-
-        quint32 unknown;
-        quint8  sizeFlag;
-        quint32 clientMapSize;
-
+        quint32 unknown; quint8 sizeFlag; quint32 clientMapSize;
         in >> unknown >> sizeFlag >> clientMapSize;
 
-        LOG_INFO(QString("🗺️ [0x42] 收到玩家 [%1] 地图报告: %2 字节 (Flag: %3)")
-                     .arg(socket->peerAddress().toString())
-                     .arg(clientMapSize)
-                     .arg(sizeFlag));
+        LOG_INFO(QString("🗺️ [0x42] 收到玩家地图报告: %1 字节").arg(clientMapSize));
 
-        quint32 serverMapSize = m_war3Map.getMapSize();
-
-        if (clientMapSize != serverMapSize) {
-            LOG_WARNING(QString("⚠️ 玩家地图大小 (%1) 与主机 (%2) 不匹配！正在回复主机地图信息...").arg(clientMapSize).arg(serverMapSize));
-
-            // 当玩家地图大小不正确（特别是为 0 时），回复主机的 0x42 包
-            // 这通常会诱导客户端进入“准备下载”或“路径修正”状态
-            socket->write(createW3GSMapSizePacket());
-            socket->flush();
-
-            // 对于大小为 0 的情况，玩家 UI 通常不会显示名字。
-            // 在发送 0x42 后，补发一个 0x09 有助于部分客户端刷新 UI
-            socket->write(createW3GSSlotInfoPacket());
-            socket->flush();
-        } else {
-            LOG_INFO("✅ 玩家地图大小校验通过，玩家已就绪。");
-
-            // 玩家地图确认 OK，此时再补发一个槽位包确保名字显示在 UI 上
-            socket->write(createW3GSSlotInfoPacket());
-            socket->flush();
+        if (clientMapSize == 0) {
+            // ⚠️ 重点警告：如果这里是 0，说明玩家在 Maps\Download\ 下找不到地图
+            // 因为你没写地图下载逻辑，玩家会一直卡在等待中，最终超时断开。
+            LOG_WARNING("⚠️ 玩家找不到地图！请检查 Maps\\Download\\ 路径是否正确。");
         }
+
+        // 不再发送 0x42 回包，直接发送 0x09 尝试刷新 UI
+        socket->write(createW3GSSlotInfoPacket());
+        socket->flush();
     }
     break;
 
@@ -1320,6 +1298,9 @@ QByteArray Client::createW3GSSlotInfoPacket()
 
 QByteArray Client::createW3GSMapCheckPacket()
 {
+    LOG_INFO("================================================");
+    LOG_INFO("🛠️ 开始构建 W3GS_MAPCHECK (0x3D) 数据包...");
+
     QByteArray packet;
     QDataStream out(&packet, QIODevice::WriteOnly);
     out.setByteOrder(QDataStream::LittleEndian);
@@ -1327,72 +1308,59 @@ QByteArray Client::createW3GSMapCheckPacket()
     // 1. Header (长度稍后回填)
     out << (quint8)0xF7 << (quint8)0x3D << (quint16)0;
 
-    // 2. Unknown Constant
+    // 2. Unknown Constant (GHost++ 中此值固定为 1)
     out << (quint32)1;
 
     // 3. Map Path (String)
+    // ⚠️ 注意：魔兽对路径非常敏感，确保这个路径在客户端确实存在
     QString mapPath = "Maps\\Download\\" + m_war3Map.getMapName();
     QByteArray mapPathBytes = mapPath.toLocal8Bit();
     out.writeRawData(mapPathBytes.data(), mapPathBytes.length());
     out << (quint8)0; // String Terminator
 
-    // 4. Map Stat Data
-    out << (quint32)m_war3Map.getMapSize();
-    out << (quint32)m_war3Map.getMapInfo();
-    out << (quint32)m_war3Map.getMapCRC();
+    LOG_INFO(QString("📍 [0x3D] 地图路径: %1").arg(mapPath));
 
-    // 5. Map SHA1 (Critical: Must be 20 bytes)
+    // 4. Map Stat Data
+    quint32 fileSize = m_war3Map.getMapSize();
+    quint32 fileInfo = m_war3Map.getMapInfo();
+    quint32 fileCRC  = m_war3Map.getMapCRC();
+
+    LOG_INFO(QString("📊 [0x3D] 地图尺寸: %1 字节 (Hex: 0x%2)")
+                 .arg(fileSize)
+                 .arg(QString::number(fileSize, 16).toUpper()));
+    LOG_INFO(QString("ℹ️ [0x3D] 地图信息 (Info): 0x%1")
+                 .arg(QString::number(fileInfo, 16).toUpper()));
+    LOG_INFO(QString("🔑 [0x3D] 地图校验 (CRC): 0x%1")
+                 .arg(QString::number(fileCRC, 16).toUpper()));
+
+    out << fileSize;
+    out << fileInfo;
+    out << fileCRC;
+
+    // 5. Map SHA1 (必须精确 20 字节)
     QByteArray sha1 = m_war3Map.getMapSHA1Bytes();
 
-    // 安全检查：强制确保 20 字节
     if (sha1.size() != 20) {
-        LOG_ERROR(QString("❌ SHA1 长度错误: %1 字节 (应为20)，正在强制调整...").arg(sha1.size()));
-        sha1.resize(20); // 补零或截断
+        LOG_ERROR(QString("❌ [0x3D] SHA1 长度错误: %1 字节 (应为20)，正在调整...").arg(sha1.size()));
+        sha1.resize(20);
     }
 
     // 写入 SHA1
     out.writeRawData(sha1.data(), 20);
 
-    // 记录日志方便调试
     QString sha1Hex = sha1.toHex(' ').toUpper();
-    LOG_INFO(QString("📝 [0x3D] SHA1 写入内容: %1").arg(sha1Hex));
+    LOG_INFO(QString("✨ [0x3D] 地图 SHA1: %1").arg(sha1Hex));
 
     // 6. 回填包总长度
-    QDataStream lenStream(&packet, QIODevice::ReadWrite);
-    lenStream.setByteOrder(QDataStream::LittleEndian);
-    lenStream.skipRawData(2); // 跳过 F7 3D
-    lenStream << (quint16)packet.size();
-
-    return packet;
-}
-
-QByteArray Client::createW3GSMapSizePacket()
-{
-    QByteArray packet;
-    QDataStream out(&packet, QIODevice::WriteOnly);
-    out.setByteOrder(QDataStream::LittleEndian);
-
-    // 1. Header: F7 42 [Length]
-    out << (quint8)0xF7 << (quint8)0x42 << (quint16)0;
-
-    // 2. Unknown (UINT32): 通常为 1
-    out << (quint32)1;
-
-    // 3. Size Flag (UINT8):
-    // 如果地图小于 256MB，通常设为 1；现代高版本魔兽协议中这个值比较固定。
-    out << (quint8)1;
-
-    // 4. Map Size (UINT32): 地图字节数
-    out << (quint32)m_war3Map.getMapSize();
-
-    // 5. 回填长度
     quint16 totalSize = (quint16)packet.size();
     QDataStream lenStream(&packet, QIODevice::ReadWrite);
     lenStream.setByteOrder(QDataStream::LittleEndian);
-    lenStream.skipRawData(2);
+    lenStream.skipRawData(2); // 跳过 F7 3D
     lenStream << totalSize;
 
-    LOG_INFO(QString("📤 构建 W3GS_MAPSIZE (0x42): Size=%1").arg(m_war3Map.getMapSize()));
+    LOG_INFO(QString("📦 [0x3D] 数据包构建完成，总长度: %1 字节").arg(totalSize));
+    LOG_INFO("================================================");
+
     return packet;
 }
 
