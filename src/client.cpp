@@ -564,11 +564,11 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
         if (clientMapSize == 0) {
             // ⚠️ 重点警告：如果这里是 0，说明玩家在 Maps\Download\ 下找不到地图
-            // 因为你没写地图下载逻辑，玩家会一直卡在等待中，最终超时断开。
+            // 因为没写地图下载逻辑，玩家会一直卡在等待中，最终超时断开。
             LOG_WARNING("⚠️ 玩家找不到地图！请检查 Maps\\Download\\ 路径是否正确。");
         }
 
-        // 不再发送 0x42 回包，直接发送 0x09 尝试刷新 UI
+        // 发送 0x09 尝试刷新 UI
         socket->write(createW3GSSlotInfoPacket());
         socket->flush();
     }
