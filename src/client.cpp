@@ -1356,7 +1356,7 @@ QByteArray Client::createW3GSMapCheckPacket()
         sha1.resize(20);
     }
 
-    // === 打印 SHA1 内容供比对 ===
+    // === 打印 SHA1 内容 ===
     QString currentHex = sha1.toHex().toUpper();
     for(int i = 2; i < currentHex.length(); i += 3) currentHex.insert(i, " ");
 
@@ -1364,17 +1364,6 @@ QByteArray Client::createW3GSMapCheckPacket()
     LOG_INFO(QString("ℹ️ Info: 0x%1").arg(QString::number(fileInfo, 16).toUpper()));
     LOG_INFO(QString("🔑 CRC:  0x%1").arg(QString::number(fileCRC, 16).toUpper()));
     LOG_INFO(QString("🔐 SHA1 (当前): %1").arg(currentHex));
-
-    // DotA v6.83d 官方标准指纹
-    QString officialSHA1 = "75 C9 9A 34 33 0A 59 0D 93 42 F6 7C 3D 72 63 93 4F 93 4C 1D";
-    LOG_INFO(QString("✅ SHA1 (官方): %1").arg(officialSHA1));
-
-    if (currentHex == officialSHA1) {
-        LOG_INFO("✨ SHA1 匹配成功！");
-    } else {
-        LOG_ERROR("❌ SHA1 不匹配！客户端将无法通过校验。");
-    }
-    // ===========================
 
     out.writeRawData(sha1.data(), 20);
 

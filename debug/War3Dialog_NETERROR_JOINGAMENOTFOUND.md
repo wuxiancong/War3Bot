@@ -3044,7 +3044,7 @@ graph TD
 6F68236A | E8 3114FFFF                   | call game.6F6737A0                         |
 6F68236F | 5E                            | pop esi                                   |
 6F682370 | C2 1400                       | ret 14                                    |
-6F682373 | 8B4424 14                     | mov eax,dword ptr ss:[esp+14]             | <--- esi=3，跳转到了这里
+6F682373 | 8B4424 14                     | mov eax,dword ptr ss:[esp+14]             | <--- esi=3，跳转到了这里 0x04 数据包
 6F682377 | 50                            | push eax                                  |
 6F682378 | 8B4424 14                     | mov eax,dword ptr ss:[esp+14]             |
 6F68237C | 50                            | push eax                                  |
@@ -3290,7 +3290,7 @@ graph TD
 6F6825E0 | E8 4B92FFFF                   | call game.6F67B830                         |
 6F6825E5 | 5E                            | pop esi                                   |
 6F6825E6 | C2 1400                       | ret 14                                    |
-6F6825E9 | 8B4424 14                     | mov eax,dword ptr ss:[esp+14]             |
+6F6825E9 | 8B4424 14                     | mov eax,dword ptr ss:[esp+14]             | <--- esi=1A，跳转到这里处理 0x3D 数据包
 6F6825ED | 50                            | push eax                                  |
 6F6825EE | 8B4424 14                     | mov eax,dword ptr ss:[esp+14]             |
 6F6825F2 | 50                            | push eax                                  |

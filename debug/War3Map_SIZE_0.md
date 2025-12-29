@@ -3,76 +3,76 @@
 6F657C16  | A1 40E1AA6F             | mov eax,dword ptr ds:[6FAAE140]     |
 6F657C1B  | 33C4                    | xor eax,esp                         |
 6F657C1D  | 898424 6C040000         | mov dword ptr ss:[esp+46C],eax      |
-6F657C24  | 8B8424 7C040000         | mov eax,dword ptr ss:[esp+47C]      | <--- nvGetCompilerInterface+F9A4E
-6F657C2B  | 8B9424 80040000         | mov edx,dword ptr ss:[esp+480]      | <--- dword ptr ss:[esp+480]=[0019FC0C]=E3FF9B37
+6F657C24  | 8B8424 7C040000         | mov eax,dword ptr ss:[esp+47C]      |
+6F657C2B  | 8B9424 80040000         | mov edx,dword ptr ss:[esp+480]      |
 6F657C32  | 894424 10               | mov dword ptr ss:[esp+10],eax       |
-6F657C36  | 8B8424 84040000         | mov eax,dword ptr ss:[esp+484]      | <--- dword ptr ss:[esp+484]=[0019FC10]=E74C5752
-6F657C3D  | 53                      | push ebx                            | <--- ebx=1E7B02AC
-6F657C3E  | 55                      | push ebp                            | <--- ebp=1E7B00A4 "Maps\\Download\\DotA v6.83d.w3x"
-6F657C3F  | 8BAC24 A0040000         | mov ebp,dword ptr ss:[esp+4A0]      | <--- dword ptr ss:[esp+4A0]=[0019FC24]=1E7B01A8
+6F657C36  | 8B8424 84040000         | mov eax,dword ptr ss:[esp+484]      |
+6F657C3D  | 53                      | push ebx                            |
+6F657C3E  | 55                      | push ebp                            |
+6F657C3F  | 8BAC24 A0040000         | mov ebp,dword ptr ss:[esp+4A0]      |
 6F657C46  | 85ED                    | test ebp,ebp                        |
-6F657C48  | 895424 1C               | mov dword ptr ss:[esp+1C],edx       | <--- edx=E3FF9B37
-6F657C4C  | 8B9424 90040000         | mov edx,dword ptr ss:[esp+490]      | <--- dword ptr ss:[esp+490]=[0019FC14]=A7B9F545
-6F657C53  | 894424 20               | mov dword ptr ss:[esp+20],eax       | <--- eax=E74C5752
-6F657C57  | 8B8424 94040000         | mov eax,dword ptr ss:[esp+494]      | <--- dword ptr ss:[esp+494]=[0019FC18]=5FA4DF1A
-6F657C5E  | 56                      | push esi                            | <--- esi=1E7B0098 "AUFileInfo@NetClient@Net@@"
-6F657C5F  | 895424 28               | mov dword ptr ss:[esp+28],edx       | <--- edx=A7B9F545
-6F657C63  | 8B9424 A0040000         | mov edx,dword ptr ss:[esp+4A0]      | <--- dword ptr ss:[esp+4A0]=[0019FC20]=1E7B02AC
-6F657C6A  | 894424 2C               | mov dword ptr ss:[esp+2C],eax       | <--- eax=5FA4DF1A
-6F657C6E  | 8B8424 9C040000         | mov eax,dword ptr ss:[esp+49C]      | <--- dword ptr ss:[esp+49C]=[0019FC1C]=1E7B02D0
-6F657C75  | 57                      | push edi                            | <--- edi=1E7B02BC
-6F657C76  | 8BBC24 84040000         | mov edi,dword ptr ss:[esp+484]      | <--- dword ptr ss:[esp+484]=[0019FC00]=1E7B00A4 "Maps\\Download\\DotA v6.83d.w3x"
-6F657C7D  | 894C24 1C               | mov dword ptr ss:[esp+1C],ecx       | <--- ecx=02160090（NetProviderBNET有关）内存数据在下面
-6F657C81  | 894424 14               | mov dword ptr ss:[esp+14],eax       | <--- eax=1E7B02D0
-6F657C85  | 895424 18               | mov dword ptr ss:[esp+18],edx       | <--- edx=1E7B02AC
+6F657C48  | 895424 1C               | mov dword ptr ss:[esp+1C],edx       |
+6F657C4C  | 8B9424 90040000         | mov edx,dword ptr ss:[esp+490]      |
+6F657C53  | 894424 20               | mov dword ptr ss:[esp+20],eax       |
+6F657C57  | 8B8424 94040000         | mov eax,dword ptr ss:[esp+494]      |
+6F657C5E  | 56                      | push esi                            | <--- FileInfo->NetClient->Net
+6F657C5F  | 895424 28               | mov dword ptr ss:[esp+28],edx       |
+6F657C63  | 8B9424 A0040000         | mov edx,dword ptr ss:[esp+4A0]      |
+6F657C6A  | 894424 2C               | mov dword ptr ss:[esp+2C],eax       |
+6F657C6E  | 8B8424 9C040000         | mov eax,dword ptr ss:[esp+49C]      |
+6F657C75  | 57                      | push edi                            |
+6F657C76  | 8BBC24 84040000         | mov edi,dword ptr ss:[esp+484]      | <--- Maps\\Download\\DotA v6.83d.w3x
+6F657C7D  | 894C24 1C               | mov dword ptr ss:[esp+1C],ecx       | <--- NetProviderBNET: 内存数据在下面
+6F657C81  | 894424 14               | mov dword ptr ss:[esp+14],eax       |
+6F657C85  | 895424 18               | mov dword ptr ss:[esp+18],edx       |
 6F657C89  | C700 00000000           | mov dword ptr ds:[eax],0            |
 6F657C8F  | 74 0E                   | je game.6F657C9F                    | <--- 跳转不会执行
-6F657C91  | 83BC24 AC040000 00      | cmp dword ptr ss:[esp+4AC],0        | <--- dword ptr ss:[esp+4AC]=[0019FC28]=104
+6F657C91  | 83BC24 AC040000 00      | cmp dword ptr ss:[esp+4AC],0        | <--- 0!=104
 6F657C99  | 74 04                   | je game.6F657C9F                    | <--- 跳转不会执行
 6F657C9B  | C645 00 00              | mov byte ptr ss:[ebp],0             |
-6F657C9F  | 8B81 EC050000           | mov eax,dword ptr ds:[ecx+5EC]      | <--- dword ptr ds:[ecx+5EC]=[0216067C]=game.6F537EB0
-6F657CA5  | 8B99 E8050000           | mov ebx,dword ptr ds:[ecx+5E8]      | <--- dword ptr ds:[ecx+5E8]=[02160678]=game.6F537E90
+6F657C9F  | 8B81 EC050000           | mov eax,dword ptr ds:[ecx+5EC]      |
+6F657CA5  | 8B99 E8050000           | mov ebx,dword ptr ds:[ecx+5E8]      |
 6F657CAB  | BA 04010000             | mov edx,104                         |
-6F657CB0  | 8D8C24 74020000         | lea ecx,dword ptr ss:[esp+274]      | <--- dword ptr ss:[esp+274]=[0019F9F0]=0
+6F657CB0  | 8D8C24 74020000         | lea ecx,dword ptr ss:[esp+274]      |
 6F657CB7  | 894424 10               | mov dword ptr ss:[esp+10],eax       |
 6F657CBB  | E8 40E30600             | call game.6F6C6000                  |
-6F657CC0  | 8D8C24 74020000         | lea ecx,dword ptr ss:[esp+274]      | <--- dword ptr ss:[esp+274]=[0019F9F0 "D:\\我的游戏\\iCCup Warcraft III\\"]=CE5C3A44 CE5C3A44
-6F657CC7  | 51                      | push ecx                            | <--- ecx=0019F9F0 "D:\\我的游戏\\iCCup Warcraft III\\"
+6F657CC0  | 8D8C24 74020000         | lea ecx,dword ptr ss:[esp+274]      | <--- 安装目录（D:\\我的游戏\\iCCup Warcraft III\\）
+6F657CC7  | 51                      | push ecx                            |
 6F657CC8  | E8 99390900             | call <JMP.&Ordinal#506>             |
 6F657CCD  | 8BF0                    | mov esi,eax                         | <--- eax=1F
-6F657CCF  | BA 04010000             | mov edx,104                         | <--- edx=104 esi=1F
+6F657CCF  | BA 04010000             | mov edx,104                         | <--- edx=104
 6F657CD4  | 2BD6                    | sub edx,esi                         |
 6F657CD6  | 52                      | push edx                            | <--- edx=E5
-6F657CD7  | 57                      | push edi                            | <--- edi=1E7B00A4 "Maps\\Download\\DotA v6.83d.w3x"
-6F657CD8  | 8D8434 7C020000         | lea eax,dword ptr ss:[esp+esi+27C]  | <--- dword ptr ss:[esp+esi*1+27C]=[0019FA0F]=33726100
-6F657CDF  | 50                      | push eax                            | <--- eax=0019FA0F
+6F657CD7  | 57                      | push edi                            | <--- Maps\\Download\\DotA v6.83d.w3x
+6F657CD8  | 8D8434 7C020000         | lea eax,dword ptr ss:[esp+esi+27C]  |
+6F657CDF  | 50                      | push eax                            |
 6F657CE0  | E8 DF380900             | call <JMP.&Ordinal#501>             | <--- 通过 SStrPrintf (Storm.dll Ordinal #501) 拼接成完整的本地绝对路径
-6F657CE5  | 8B8C24 AC040000         | mov ecx,dword ptr ss:[esp+4AC]      | <--- dword ptr ss:[esp+4AC]=[0019FC28]=104
-6F657CEC  | 8B5424 18               | mov edx,dword ptr ss:[esp+18]       | <--- dword ptr ss:[esp+18]=[0019F794]=1E7B02AC
-6F657CF0  | 8B4424 14               | mov eax,dword ptr ss:[esp+14]       | <--- dword ptr ss:[esp+14]=[0019F790]=1E7B02D0
-6F657CF4  | 51                      | push ecx                            | <--- ecx=104
-6F657CF5  | 8B4C24 14               | mov ecx,dword ptr ss:[esp+14]       | <--- dword ptr ss:[esp+14]=[0019F78C]=game.6F537EB0
-6F657CF9  | 55                      | push ebp                            | <--- ebp=1E7B01A8
-6F657CFA  | 52                      | push edx                            | <--- edx=1E7B02AC
-6F657CFB  | 8B5424 2C               | mov edx,dword ptr ss:[esp+2C]       | <--- dword ptr ss:[esp+2C]=[0019F79C]=nvgpucomp32.0AA52F2E
-6F657CFF  | 50                      | push eax                            | <--- eax=1E7B02D0
-6F657D00  | 51                      | push ecx                            | <--- ecx=game.6F537EB0
-6F657D01  | 8B4C24 38               | mov ecx,dword ptr ss:[esp+38]       | <--- dword ptr ss:[esp+38]=[0019F7A0]=E3FF9B37
+6F657CE5  | 8B8C24 AC040000         | mov ecx,dword ptr ss:[esp+4AC]      |
+6F657CEC  | 8B5424 18               | mov edx,dword ptr ss:[esp+18]       |
+6F657CF0  | 8B4424 14               | mov eax,dword ptr ss:[esp+14]       |
+6F657CF4  | 51                      | push ecx                            |
+6F657CF5  | 8B4C24 14               | mov ecx,dword ptr ss:[esp+14]       |
+6F657CF9  | 55                      | push ebp                            |
+6F657CFA  | 52                      | push edx                            |
+6F657CFB  | 8B5424 2C               | mov edx,dword ptr ss:[esp+2C]       |
+6F657CFF  | 50                      | push eax                            |
+6F657D00  | 51                      | push ecx                            |
+6F657D01  | 8B4C24 38               | mov ecx,dword ptr ss:[esp+38]       |
 6F657D05  | 83EC 14                 | sub esp,14                          |
-6F657D08  | 8BC4                    | mov eax,esp                         | <--- esp=0019F754
-6F657D0A  | 8910                    | mov dword ptr ds:[eax],edx          | <--- edx=nvgpucomp32.0AA52F2E
-6F657D0C  | 8B5424 50               | mov edx,dword ptr ss:[esp+50]       | <--- dword ptr ss:[esp+50]=[0019F7A4]=E74C5752
-6F657D10  | 8948 04                 | mov dword ptr ds:[eax+4],ecx        | <--- ecx=E3FF9B37
-6F657D13  | 8B4C24 54               | mov ecx,dword ptr ss:[esp+54]       | <--- dword ptr ss:[esp+54]=[0019F7A8]=A7B9F545
-6F657D17  | 8950 08                 | mov dword ptr ds:[eax+8],edx        | <--- edx=E74C5752
-6F657D1A  | 8B5424 58               | mov edx,dword ptr ss:[esp+58]       | <--- dword ptr ss:[esp+58]=[0019F7AC]=5FA4DF1A
-6F657D1E  | 8948 0C                 | mov dword ptr ds:[eax+C],ecx        | <--- ecx=A7B9F545
-6F657D21  | 8950 10                 | mov dword ptr ds:[eax+10],edx       | <--- edx=5FA4DF1A
-6F657D24  | 8B9424 B0040000         | mov edx,dword ptr ss:[esp+4B0]      | <--- dword ptr ss:[esp+4B0]=[0019FC04]=3AEBCEF3
-6F657D2B  | 53                      | push ebx                            | <--- ebx=game.6F537E90
+6F657D08  | 8BC4                    | mov eax,esp                         |
+6F657D0A  | 8910                    | mov dword ptr ds:[eax],edx          |
+6F657D0C  | 8B5424 50               | mov edx,dword ptr ss:[esp+50]       |
+6F657D10  | 8948 04                 | mov dword ptr ds:[eax+4],ecx        |
+6F657D13  | 8B4C24 54               | mov ecx,dword ptr ss:[esp+54]       |
+6F657D17  | 8950 08                 | mov dword ptr ds:[eax+8],edx        |
+6F657D1A  | 8B5424 58               | mov edx,dword ptr ss:[esp+58]       |
+6F657D1E  | 8948 0C                 | mov dword ptr ds:[eax+C],ecx        |
+6F657D21  | 8950 10                 | mov dword ptr ds:[eax+10],edx       |
+6F657D24  | 8B9424 B0040000         | mov edx,dword ptr ss:[esp+4B0]      |
+6F657D2B  | 53                      | push ebx                            |
 6F657D2C  | 8BCF                    | mov ecx,edi                         | <--- 地图路径（Maps\\Download\\DotA v6.83d.w3x）
 6F657D2E  | E8 FDFBFFFF             | call game.6F657930                  | <--- 关键函数
-6F657D33  | 85C0                    | test eax,eax                        | <--- eax=0 -> 失败？
+6F657D33  | 85C0                    | test eax,eax                        | <--- eax=0 -> 失败
 6F657D35  | 74 0A                   | je game.6F657D41                    |
 6F657D37  | B8 01000000             | mov eax,1                           |
 6F657D3C  | E9 1F010000             | jmp game.6F657E60                   |
@@ -164,7 +164,7 @@
 6F657E78  | C2 2C00                 | ret 2C                              |
 ```
 
-内存数据示例
+内存示例1
 
 ```
 
@@ -364,4 +364,148 @@
 02160370  00783377  w3x.
 02160374  00000000  ....
 
+```
+
+```assembly
+6F657930  | 83EC 44                 | sub esp,44                          |
+6F657933  | A1 40E1AA6F             | mov eax,dword ptr ds:[6FAAE140]     |
+6F657938  | 33C4                    | xor eax,esp                         |
+6F65793A  | 894424 40               | mov dword ptr ss:[esp+40],eax       |
+6F65793E  | 8B4424 48               | mov eax,dword ptr ss:[esp+48]       |
+6F657942  | 53                      | push ebx                            |
+6F657943  | 56                      | push esi                            |
+6F657944  | 57                      | push edi                            |
+6F657945  | 8BF9                    | mov edi,ecx                         |
+6F657947  | 8B4C24 58               | mov ecx,dword ptr ss:[esp+58]       |
+6F65794B  | 8B5C24 70               | mov ebx,dword ptr ss:[esp+70]       |
+6F65794F  | 894C24 24               | mov dword ptr ss:[esp+24],ecx       |
+6F657953  | 8B4C24 60               | mov ecx,dword ptr ss:[esp+60]       |
+6F657957  | 8BF2                    | mov esi,edx                         |
+6F657959  | 8B5424 5C               | mov edx,dword ptr ss:[esp+5C]       |
+6F65795D  | 894C24 2C               | mov dword ptr ss:[esp+2C],ecx       |
+6F657961  | 8B4C24 68               | mov ecx,dword ptr ss:[esp+68]       |
+6F657965  | 895424 28               | mov dword ptr ss:[esp+28],edx       |
+6F657969  | 8B5424 64               | mov edx,dword ptr ss:[esp+64]       |
+6F65796D  | 894C24 34               | mov dword ptr ss:[esp+34],ecx       |
+6F657971  | 8B4C24 6C               | mov ecx,dword ptr ss:[esp+6C]       |
+6F657975  | 51                      | push ecx                            |
+6F657976  | 895424 34               | mov dword ptr ss:[esp+34],edx       |
+6F65797A  | 8B5424 78               | mov edx,dword ptr ss:[esp+78]       |
+6F65797E  | 895424 20               | mov dword ptr ss:[esp+20],edx       |
+6F657982  | 8B5424 7C               | mov edx,dword ptr ss:[esp+7C]       |
+6F657986  | 8D4C24 3C               | lea ecx,dword ptr ss:[esp+3C]       |
+6F65798A  | 51                      | push ecx                            |
+6F65798B  | 50                      | push eax                            |
+6F65798C  | 895424 20               | mov dword ptr ss:[esp+20],edx       |
+6F657990  | 8D5424 24               | lea edx,dword ptr ss:[esp+24]       |
+6F657994  | 52                      | push edx                            |
+6F657995  | 8D4424 30               | lea eax,dword ptr ss:[esp+30]       |
+6F657999  | 50                      | push eax                            |
+6F65799A  | 8D4C24 20               | lea ecx,dword ptr ss:[esp+20]       |
+6F65799E  | 51                      | push ecx                            |
+6F65799F  | 8D5424 28               | lea edx,dword ptr ss:[esp+28]       |
+6F6579A3  | 8BCF                    | mov ecx,edi                         | <--- Maps\\Download\\DotA v6.83d.w3x
+6F6579A5  | E8 C6FDFFFF             | call game.6F657770                  | <--- 本地CRC和Sha1计算
+6F6579AA  | 83F8 01                 | cmp eax,1                           | <--- eax=1
+6F6579AD  | 0F85 BE000000           | jne game.6F657A71                   | <--- 跳转不会执行
+6F6579B3  | 397424 18               | cmp dword ptr ss:[esp+18],esi       | <--- esi=3AEBCEF3（对比 CRC）
+6F6579B7  | 0F85 B4000000           | jne game.6F657A71                   | <--- 跳转不会执行（结果: Ok）
+6F6579BD  | B8 14000000             | mov eax,14                          |
+6F6579C2  | 8D4C24 24               | lea ecx,dword ptr ss:[esp+24]       |
+6F6579C6  | 8D5424 38               | lea edx,dword ptr ss:[esp+38]       |
+6F6579CA  | 55                      | push ebp                            |
+6F6579CB  | EB 03                   | jmp game.6F6579D0                   |
+6F6579CD  | 8D49 00                 | lea ecx,dword ptr ds:[ecx]          |
+6F6579D0  | 8B32                    | mov esi,dword ptr ds:[edx]          | <--- 读取远程服务端 SHA1 的前 4 字节
+6F6579D2  | 3B31                    | cmp esi,dword ptr ds:[ecx]          | <--- 对比本地客户端 SHA1 的前 4 字节
+6F6579D4  | 75 12                   | jne game.6F6579E8                   | <--- 跳转将要执行（结果: Fail）
+6F6579D6  | 83E8 04                 | sub eax,4                           | 
+6F6579D9  | 83C1 04                 | add ecx,4                           | 
+6F6579DC  | 83C2 04                 | add edx,4                           | 
+6F6579DF  | 83F8 04                 | cmp eax,4                           | 
+6F6579E2  | 73 EC                   | jae game.6F6579D0                   | 
+6F6579E4  | 85C0                    | test eax,eax                        | 
+6F6579E6  | 74 5D                   | je game.6F657A45                    | 
+6F6579E8  | 0FB632                  | movzx esi,byte ptr ds:[edx]         | <--- byte ptr ds:[edx]=[0019F734]=90
+6F6579EB  | 0FB629                  | movzx ebp,byte ptr ds:[ecx]         | <--- byte ptr ds:[ecx]=[0019F720]=2E
+6F6579EE  | 2BF5                    | sub esi,ebp                         | <--- esi=90, ebp=2E
+6F6579F0  | 75 45                   | jne game.6F657A37                   | <--- 跳转将要执行
+6F6579F2  | 83E8 01                 | sub eax,1                           |
+6F6579F5  | 83C1 01                 | add ecx,1                           |
+6F6579F8  | 83C2 01                 | add edx,1                           |
+6F6579FB  | 85C0                    | test eax,eax                        |
+6F6579FD  | 74 46                   | je game.6F657A45                    |
+6F6579FF  | 0FB632                  | movzx esi,byte ptr ds:[edx]         |
+6F657A02  | 0FB629                  | movzx ebp,byte ptr ds:[ecx]         |
+6F657A05  | 2BF5                    | sub esi,ebp                         |
+6F657A07  | 75 2E                   | jne game.6F657A37                   |
+6F657A09  | 83E8 01                 | sub eax,1                           |
+6F657A0C  | 83C1 01                 | add ecx,1                           |
+6F657A0F  | 83C2 01                 | add edx,1                           |
+6F657A12  | 85C0                    | test eax,eax                        |
+6F657A14  | 74 2F                   | je game.6F657A45                    |
+6F657A16  | 0FB632                  | movzx esi,byte ptr ds:[edx]         |
+6F657A19  | 0FB629                  | movzx ebp,byte ptr ds:[ecx]         |
+6F657A1C  | 2BF5                    | sub esi,ebp                         |
+6F657A1E  | 75 17                   | jne game.6F657A37                   |
+6F657A20  | 83E8 01                 | sub eax,1                           |
+6F657A23  | 83C1 01                 | add ecx,1                           |
+6F657A26  | 83C2 01                 | add edx,1                           |
+6F657A29  | 85C0                    | test eax,eax                        |
+6F657A2B  | 74 18                   | je game.6F657A45                    |
+6F657A2D  | 0FB632                  | movzx esi,byte ptr ds:[edx]         |
+6F657A30  | 0FB611                  | movzx edx,byte ptr ds:[ecx]         |
+6F657A33  | 2BF2                    | sub esi,edx                         |
+6F657A35  | 74 0E                   | je game.6F657A45                    |
+6F657A37  | 85F6                    | test esi,esi                        | <--- esi=62
+6F657A39  | B8 01000000             | mov eax,1                           |
+6F657A3E  | 7F 07                   | jg game.6F657A47                    | <--- 跳转将要执行
+6F657A40  | 83C8 FF                 | or eax,FFFFFFFF                     |
+6F657A43  | EB 02                   | jmp game.6F657A47                   |
+6F657A45  | 33C0                    | xor eax,eax                         |
+6F657A47  | 85C0                    | test eax,eax                        | <--- eax=1
+6F657A49  | 5D                      | pop ebp                             | <--- ebp=2E
+6F657A4A  | 75 25                   | jne game.6F657A71                   | <--- 跳转将要执行
+6F657A4C  | 8B4C24 14               | mov ecx,dword ptr ss:[esp+14]       |
+6F657A50  | 8D70 01                 | lea esi,dword ptr ds:[eax+1]        |
+6F657A53  | 8B4424 7C               | mov eax,dword ptr ss:[esp+7C]       |
+6F657A57  | 50                      | push eax                            |
+6F657A58  | 57                      | push edi                            |
+6F657A59  | 51                      | push ecx                            |
+6F657A5A  | E8 653B0900             | call <JMP.&Ordinal#501>             |
+6F657A5F  | 8B5424 10               | mov edx,dword ptr ss:[esp+10]       |
+6F657A63  | 8B4424 0C               | mov eax,dword ptr ss:[esp+C]        |
+6F657A67  | 8B4C24 1C               | mov ecx,dword ptr ss:[esp+1C]       |
+6F657A6B  | 8913                    | mov dword ptr ds:[ebx],edx          |
+6F657A6D  | 8901                    | mov dword ptr ds:[ecx],eax          |
+6F657A6F  | EB 0F                   | jmp game.6F657A80                   |
+6F657A71  | 8D5424 0C               | lea edx,dword ptr ss:[esp+C]        | <--- dword ptr ss:[esp+0C]=[0019F708]=007E9836
+6F657A75  | 8D4C24 10               | lea ecx,dword ptr ss:[esp+10]       | <--- dword ptr ss:[esp+10]=[0019F70C]=21A90010 "HM3W"
+6F657A79  | 33F6                    | xor esi,esi                         | <--- esi=62
+6F657A7B  | E8 80F3FFFF             | call game.6F656E00                  |
+6F657A80  | 8B4C24 4C               | mov ecx,dword ptr ss:[esp+4C]       | <--- dword ptr ss:[esp+4C]=[0019F748]=7E47A5FD
+6F657A84  | 5F                      | pop edi                             | <--- edi=180200A4 "Maps\\Download\\DotA v6.83d.w3x"
+6F657A85  | 8BC6                    | mov eax,esi                         | <--- esi=0
+6F657A87  | 5E                      | pop esi                             | <--- esi=0
+6F657A88  | 5B                      | pop ebx                             | <--- ebx=180202D0
+6F657A89  | 33CC                    | xor ecx,esp                         |
+6F657A8B  | E8 C9951800             | call game.6F7E1059                  |
+6F657A90  | 83C4 44                 | add esp,44                          |
+6F657A93  | C2 2C00                 | ret 2C                              |
+```
+
+内存示列2
+
+```
+180202A8  00000000
+
+180202AC  007E9836
+180202B0  007E9836
+180202B4  91FA5A45
+180202B8  3AEBCEF3 -> CRC
+180202BC  0AA52F2E
+180202C0  E3FF9B37
+180202C4  E74C5752
+180202C8  A7B9F545
+180202CC  5FA4DF1A
 ```

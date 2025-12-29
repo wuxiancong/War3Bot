@@ -1,13 +1,17 @@
 # War3 Game StatString 解析逻辑逆向分析 (Game.dll)
 
+**环境 (Environment):**
+- **客户端:** Warcraft III (1.26a / Game.dll)
+- **服务端:** PVPGN
+- **调试工具:** x64dbg
+- **基地址:** 6F000000
+
 **目标**: 分析 `Game.dll` 如何解析房间的 StatString，并找出机器人房间 (Bot) 与真人房间 (Test) 在解析流程中的差异。
 **结论**: 机器人房间虽然通过了初步的解码函数，但在**数据流完整性校验 (Stream Integrity Check)** 阶段失败，导致整个房间信息被判定为无效。
 
 这是一个关于 WarCraft III (WAR3/W3XP) **Game StatString**（游戏统计字符串）字段结构的中文技术文档。
 
 该字段包含了针对每个游戏产品非常具体的信息。
-
-***
 
 # WarCraft III (WAR3/W3XP) Game StatString 结构
 
