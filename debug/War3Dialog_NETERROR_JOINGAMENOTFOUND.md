@@ -530,7 +530,7 @@
 6F5BAE1B | 6F                            | outsd                                 |
 ```
 
-下面的函数 02B7A6FB 在调用上面子函数，此父函数处于事件循环中，所以不在这里断点。
+- 下面的函数 02B7A6FB 在调用上面子函数，此父函数处于事件循环中，所以不在这里断点。
 **地址**: `6F5BABF0` (UI 事件处理)
 **偏移**: `game.dll + 62A5D0`
 **断点**: `game.dll + 62A6FB`
@@ -903,7 +903,7 @@ eax=game.6F62A9A0
 
 </details>
 
-通过对上面反汇编的分析，得到生成 错误码 `C` 的函数在 `game.dll + 652710` ，现在我们分析此函数。
+- 通过对上面反汇编的分析，得到生成 错误码 `C` 的函数在 `game.dll + 652710` ，现在我们分析此函数。
 	
 ```assembly
 6F652710 | 56                       	 | push esi                              |
@@ -934,7 +934,7 @@ eax=game.6F62A9A0
 - **地址**: `6F4C2D30` (字符处理逻辑)
 - **偏移**: `game.dll + 4C2D30`
 
-现在分析下面的函数，是玩家加入时（CNetEventGameJoin）处理字符有关的逻辑。
+- 现在分析下面的函数，是玩家加入时（CNetEventGameJoin）处理字符有关的逻辑。
 
 ```assembly
 6F4C2D30 | 56                       	 | push esi                              |
@@ -1620,9 +1620,9 @@ eax=game.6F62A9A0
 ### 2.3 逻辑层：追溯加入流程
 通过分析点击“加入”按钮后的调用栈，找到发起连接的入口。
 
-**地址**: `6F5BABF0` (UI 事件处理)
-**偏移**: `game.dll + 5BABF0`
-这里处理了用户的键盘输入、创建游戏、刷新列表以及**加入游戏**的请求。
+- **地址**: `6F5BABF0` (UI 事件处理)
+- **偏移**: `game.dll + 5BABF0`
+- 这里处理了用户的键盘输入、创建游戏、刷新列表以及**加入游戏**的请求。
 
 ---
 
@@ -2525,9 +2525,9 @@ graph TD
 根本没有走eax=1的的分支，导致 call game.6F6803C0，传递固定参数C。
 
 ### 3. 最终原因：数据包解析错误
-**地址**: `6F664220` (数据包解析函数)
-**地址**: `game.dll + 664220`
-**关键发现**: 。
+- **地址**: `6F664220` (数据包解析函数)
+- **偏移**: `game.dll + 664220`
+- **关键发现**: 。
 
 ```assembly
 6F664220 | 6A FF                         | push FFFFFFFF                          |
@@ -2753,8 +2753,8 @@ graph TD
 - `6F66433C`处执行的函数如下
 
 - 下面这段反汇编之前已经分析过，在这里我们再分析一次。
-**地址**: `6F4C2C10'（读取第一个字节）
-**偏移**: `game.dll + 4C2C10`
+- **地址**: `6F4C2C10'（读取第一个字节）
+- **偏移**: `game.dll + 4C2C10`
 
 ```assembly
 6F4C2C10 | 56                            | push esi                              | <--- 保存寄存器
@@ -2892,8 +2892,8 @@ graph TD
 - `6F664363`处执行的函数如下
 
 - 下面这段反汇编之前已经分析过，在这里我们再分析一次。
-**地址**: `6F4C2C70'（读取第一个字节）
-**偏移**: `game.dll + 4C2C70`
+- **地址**: `6F4C2C70'（读取第一个字节）
+- **偏移**: `game.dll + 4C2C70`
 
 ```
 6F4C2C70 | 56                            | push esi                                  | <--- 保存寄存器
@@ -3454,8 +3454,8 @@ graph TD
 
 - 分支跳转到（esi=3）
 
-**地址**: `6F682373`
-**偏移**: 'game.dll + 682373'
+- **地址**: `6F682373`
+- **偏移**: 'game.dll + 682373'
 
 ```assembly
 6F682373 | 8B4424 14                     | mov eax,dword ptr ss:[esp+14]             | <--- 跳转到了这里
@@ -3471,8 +3471,8 @@ graph TD
 ```
 
 - 现在我们分析
-**地址**: '6F67D040'
-**偏移**: `game.dll + 67D040`
+- **地址**: '6F67D040'
+- **偏移**: `game.dll + 67D040`
 
 ```assembly
 6F67D040 | 81EC 9C000000                 | sub esp,9C                                |
@@ -3624,8 +3624,8 @@ graph TD
 ```
 
 - 现在我们分析
-**地址**: '6F675190'
-**偏移**: `game.dll + 675190`
+- **地址**: '6F675190'
+- **偏移**: `game.dll + 675190`
 
 ```assembly
 6F675190 | 6A FF                         | push FFFFFFFF                             |
@@ -3677,8 +3677,8 @@ graph TD
 ```
 
 - 现在我们分析
-**地址**: '6F675190'
-**偏移**: `game.dll + 684D00`
+- **地址**: '6F675190'
+- **偏移**: `game.dll + 684D00`
 
 ```assembly
 6F684D00 | 56                            | push esi                                  |
@@ -3700,8 +3700,8 @@ graph TD
 ```
   
 - 现在我们分析
-**地址**: '6F443720'
-**偏移**: `game.dll + 443720`
+- **地址**: '6F443720'
+- **偏移**: `game.dll + 443720`
 
 <details open>
   <summary>点击查看详情</summary>
@@ -3744,8 +3744,8 @@ graph TD
 
 - `6F443734`处执行的函数如下
 - 下面这段反汇编之前已经分析过，在这里我们再分析一次。
-**地址**: `6F4C2C70'（读取第一个字节）
-**偏移**: `game.dll + 4C2C70`
+- **地址**: `6F4C2C70'（读取第一个字节）
+- **偏移**: `game.dll + 4C2C70`
 
 ```
 6F4C2C70 | 56                            | push esi                                  | <--- 保存寄存器
@@ -3769,8 +3769,8 @@ graph TD
 ```
 
 - 现在我们分析
-**地址**: '6F4C3420'
-**偏移**: `game.dll + 4C3420`
+- **地址**: '6F4C3420'
+- **偏移**: `game.dll + 4C3420`
 
 ```assembly
 6F4C3420 | E9 ABFBFFFF                   | jmp game.6F4C2FD0                         |
@@ -3890,8 +3890,8 @@ graph TD
 - `6F684D14` 处执行的函数如下
 
 - 下面这段反汇编之前已经分析过，在这里我们再分析一次。
-**地址**: `6F4C2C10'（读取第一个字节）
-**偏移**: `game.dll + 4C2C10`
+- **地址**: `6F4C2C10'（读取第一个字节）
+- **偏移**: `game.dll + 4C2C10`
 
 ```assembly
 6F4C2C10 | 56                            | push esi                              | <--- 保存寄存器
@@ -4422,7 +4422,7 @@ QByteArray Client::createW3GSSlotInfoJoinPacket(quint8 playerID, const QHostAddr
 6F4C3064 | 5D                            | pop ebp                                   |
 6F4C3065 | C2 0800                       | ret 8                                     |
 ```
-```
+```assembly
 6F4C2B30 | 53                            | push ebx                                  |
 6F4C2B31 | 8B5C24 0C                     | mov ebx,dword ptr ss:[esp+C]              |
 6F4C2B35 | 56                            | push esi                                  |
@@ -4512,3 +4512,109 @@ QByteArray Client::createW3GSSlotInfoJoinPacket(quint8 playerID, const QHostAddr
 *   `cmp 0x6E, 0x6E` -> **Equal -> Success!**
 
 **这就通了！**
+
+---
+
+这是一份基于我们整个调试过程的**逻辑拓扑图**与**数据结构对比图**。
+
+它总结了 War3 客户端与你 Bot 服务端交互的全过程，重点展示了导致“无法加入”的协议冲突点以及最终修复后的正确结构。
+
+### 1. 宏观交互流程拓扑 (Interaction Topology)
+
+这是玩家点击加入房间时的网络交互流程。
+
+```mermaid
+sequenceDiagram
+    participant Client as War3 Client (Player)
+    participant Server as War3Bot (Host)
+    
+    Note over Client, Server: 阶段一：连接建立
+    Client->>Server: TCP Syn (Port 6112)
+    Server-->>Client: TCP Ack
+    
+    Note over Client, Server: 阶段二：加入请求
+    Client->>Server: 0x1E W3GS_REQJOIN (我是谁，我想进房)
+    
+    Note over Server: 逻辑检查
+    Server->>Server: 1. 检查黑名单/Ban
+    Server->>Server: 2. 检查空位 (Slot Open?)
+    Server->>Server: 3. 分配 PID (例如: 2)
+    Server->>Server: 4. 初始化槽位数据 (ComputerType=1)
+    
+    Note over Client, Server: 阶段三：握手响应 (核心故障点)
+    Server->>Client: 0x04 W3GS_SLOTINFOJOIN (房间信息+你的PID)
+    
+    Note right of Client: 客户端解析 0x04 包
+    alt 解析失败 (旧代码)
+        Client->>Client: 读 SlotData -> 读 Seed(误当PID)
+        Client->>Client: 校验长度失败 (剩6字节)
+        Client->>Client: 校验逻辑失败 (GameType=3冲突)
+        Client->>Server: FIN / RST (主动断开)
+    else 解析成功 (修复后)
+        Client->>Client: 读 SlotData -> 直接读 PID
+        Client->>Client: 读 IP/Port
+        Client->>Client: 长度完美匹配
+        Client->>Client: 逻辑校验通过 (Type=10)
+        
+        Note over Client, Server: 阶段四：信息同步
+        Server->>Client: 0x06 W3GS_PLAYERINFO (Host是谁)
+        Server->>Client: 0x3D W3GS_MAPCHECK (地图校验)
+        Server->>Client: 0x09 W3GS_SLOTINFO (更新列表)
+        
+        Client->>Server: 0x44 W3GS_MAPPARTOK (地图我有)
+        Client->>Server: 0x28 W3GS_PONG_TO_HOST (心跳)
+        Note over Client: 进入房间画面
+    end
+```
+
+---
+
+### 2. 核心故障：0x04 数据包结构对比图 (Packet Structure Topology)
+
+这是导致问题的根本原因。本地真实客户端使用了一种**精简协议**，而服务端最初发送的是**标准协议**，导致了错位。
+
+#### ❌ 修复前 (错位与校验失败)
+
+服务端发送了 122 字节，客户端只读了 110 字节，且中间数据错位。
+
+| 偏移 | 服务端发送的内容 (Server Sent) | 客户端读取的逻辑 (Client Expected) | 结果 (Result) |
+| :--- | :--- | :--- | :--- |
+| 0x00 | Header (F7 04) + Len | Header (F7 04) + Len | ✅ OK |
+| 0x07 | **Slot Data (91 bytes)** <br> *(含 ComputerType=0)* | **Slot Data (91 bytes)** | ❌ **逻辑错误**: Client 校验 ComputerType 发现是 0 -> 失败 |
+| 0x62 | **Random Seed (4 bytes)** | **PID (1 byte)** | ❌ **数据错位**: Client 把 Seed 的第1字节当成了 PID |
+| 0x66 | **Game Type (1 byte)** <br> *(值=3)* | **SockAddr Family (2 bytes)** | ❌ **错位**: 把 GameType 当成了 IP 协议族 |
+| 0x67 | **Num Slots (1 byte)** | ... Port ... | ❌ **错位** |
+| 0x68 | **PID (1 byte)** | ... IP ... | ❌ **错位** |
+| 0x69 | **External IP (16 bytes)** | ... Padding ... | |
+| 0x79 | **Padding (8 bytes)** | (停止读取) | ❌ **长度错误**: Client 读完了，但在流里还剩 6 字节 |
+
+---
+
+#### ✅ 修复后 (完美对齐)
+
+删除了中间的 6 字节，修正了逻辑值，对齐了长度。
+
+| 偏移 | 服务端发送的内容 (Server Sent) | 客户端读取的逻辑 (Client Expected) | 结果 (Result) |
+| :--- | :--- | :--- | :--- |
+| 0x00 | Header (F7 04) | Header (F7 04) | ✅ OK |
+| 0x04 | Length (117) | Length (117) | ✅ OK |
+| 0x07 | **Slot Data (91 bytes)** <br> *(ComputerType=1)* | **Slot Data (91 bytes)** | ✅ **逻辑通过**: 电脑类型合法 |
+| ... | *(中间6字节已删除)* | *(直接跳转)* | ✅ **对齐**: 紧接着 SlotData |
+| 0x62 | **PID (1 byte)** | **PID (1 byte)** | ✅ **数值正确**: 读到了正确的 PID |
+| 0x63 | **Socket Family (2 bytes)** | **Socket Family (2 bytes)** | ✅ OK |
+| 0x65 | **Port (2 bytes)** | **Port (2 bytes)** | ✅ OK |
+| 0x67 | **IP Address (4 bytes)** | **IP Address (4 bytes)** | ✅ OK |
+| 0x6B | **Padding (8 bytes)** | **Padding (8 bytes)** | ✅ OK |
+| 0x73 | (包结束) | (读取结束) | ✅ **长度校验通过**: `Read == Total` |
+
+---
+
+### 3. 代码修复逻辑总结
+
+为了实现上述的“修复后”状态，在代码层面做的关键修改如下：
+
+**协议结构修正 (Protocol Fix)**:
+    *   **删除**: `out << m_randomSeed;`
+    *   **删除**: `out << m_baseGameType;`
+    *   **删除**: `out << m_slots.size();`
+    *   **原因**: 汇编证明客户端直接从 `SlotData` 跳到了 `PID` 读取。
