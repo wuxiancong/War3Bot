@@ -3962,7 +3962,7 @@ graph TD
 ```
 - Dump示例（Random Seed: 0x4E88491D）
 
-<details open>
+<details>
   <summary>点击查看Dump示例</summary>
   
 ```
