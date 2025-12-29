@@ -1320,7 +1320,7 @@ QByteArray Client::createW3GSSlotInfoPacket()
 QByteArray Client::createW3GSMapCheckPacket()
 {
     LOG_INFO("================================================");
-    LOG_INFO("🛠️ 正在构建修复版的 W3GS_MAPCHECK (0x3D)...");
+    LOG_INFO("🛠️ 正在构建 W3GS_MAPCHECK (0x3D)...");
 
     QByteArray packet;
     QDataStream out(&packet, QIODevice::WriteOnly);
@@ -1329,24 +1329,19 @@ QByteArray Client::createW3GSMapCheckPacket()
     // 1. Header
     out << (quint8)0xF7 << (quint8)0x3D << (quint16)0;
 
-    // 2. Unknown (固定为 1)
+    // 2. Unknown
     out << (quint32)1;
 
     // 3. Map Path
-    // 建议：如果 Maps\Download\ 依然返回 0，请尝试直接发文件名或者 Maps\文件名
     QString mapPath = "Maps\\Download\\" + m_war3Map.getMapName();
     QByteArray mapPathBytes = mapPath.toLocal8Bit();
     out.writeRawData(mapPathBytes.data(), mapPathBytes.length());
     out << (quint8)0;
 
-    // 4. Map Stat Data (⚠️ 严格校验此处顺序)
+    // 4. Map Stat Data
     quint32 fileSize = m_war3Map.getMapSize();
     quint32 fileInfo = m_war3Map.getMapInfo();
     quint32 fileCRC  = m_war3Map.getMapCRC();
-
-    LOG_INFO(QString("📊 Size: %1").arg(fileSize));
-    LOG_INFO(QString("ℹ️ Info (XORO): 0x%1").arg(QString::number(fileInfo, 16).toUpper()));
-    LOG_INFO(QString("🔑 CRC: 0x%1").arg(QString::number(fileCRC, 16).toUpper()));
 
     out << (quint32)fileSize;
     out << (quint32)fileInfo;
@@ -1354,7 +1349,33 @@ QByteArray Client::createW3GSMapCheckPacket()
 
     // 5. Map SHA1
     QByteArray sha1 = m_war3Map.getMapSHA1Bytes();
-    if (sha1.size() != 20) sha1.resize(20);
+
+    // 如果获取失败，打印警告
+    if (sha1.size() != 20) {
+        LOG_WARNING(QString("⚠️ SHA1 长度异常 (%1)，已强制补零调整为 20").arg(sha1.size()));
+        sha1.resize(20);
+    }
+
+    // === 打印 SHA1 内容供比对 ===
+    QString currentHex = sha1.toHex().toUpper();
+    for(int i = 2; i < currentHex.length(); i += 3) currentHex.insert(i, " ");
+
+    LOG_INFO(QString("📊 Size: %1").arg(fileSize));
+    LOG_INFO(QString("ℹ️ Info: 0x%1").arg(QString::number(fileInfo, 16).toUpper()));
+    LOG_INFO(QString("🔑 CRC:  0x%1").arg(QString::number(fileCRC, 16).toUpper()));
+    LOG_INFO(QString("🔐 SHA1 (当前): %1").arg(currentHex));
+
+    // DotA v6.83d 官方标准指纹
+    QString officialSHA1 = "75 C9 9A 34 33 0A 59 0D 93 42 F6 7C 3D 72 63 93 4F 93 4C 1D";
+    LOG_INFO(QString("✅ SHA1 (官方): %1").arg(officialSHA1));
+
+    if (currentHex == officialSHA1) {
+        LOG_INFO("✨ SHA1 匹配成功！");
+    } else {
+        LOG_ERROR("❌ SHA1 不匹配！客户端将无法通过校验。");
+    }
+    // ===========================
+
     out.writeRawData(sha1.data(), 20);
 
     // 6. 回填长度
