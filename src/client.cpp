@@ -359,37 +359,58 @@ void Client::onPlayerReadyRead()
     QTcpSocket* socket = qobject_cast<QTcpSocket*>(sender());
     if (!socket) return;
 
-    // 1. 将新数据追加到该 socket 对应的缓冲区
-    QByteArray &buffer = m_playerBuffers[socket];
-    buffer.append(socket->readAll());
+    // 1. 确保缓冲区存在
+    if (!m_playerBuffers.contains(socket)) {
+        m_playerBuffers.insert(socket, QByteArray());
+    }
 
-    // 2. 循环处理缓冲区中的完整包
-    while (buffer.size() >= 4) {
+    // 2. 追加新数据
+    m_playerBuffers[socket].append(socket->readAll());
+
+    // 3. 循环处理包
+    while (true) {
+        // 每次循环开始前，确认该 socket 的缓冲区还存在
+        if (!m_playerBuffers.contains(socket)) {
+            return;
+        }
+
+        QByteArray &buffer = m_playerBuffers[socket];
+
+        if (buffer.size() < 4) {
+            break; // 数据不足，等待下一次 readyRead
+        }
+
         quint8 header = (quint8)buffer[0];
         if (header != 0xF7) {
             LOG_WARNING("❌ 非法协议头，断开连接");
             socket->disconnectFromHost();
-            return;
+            return; // 立即返回，防止后续访问
         }
 
         // 解析长度 (Little Endian)
         quint16 length = (quint8)buffer[2] | ((quint8)buffer[3] << 8);
 
-        // 如果缓冲区数据不够一个包，停止处理，等待下一次 readyRead
+        // 数据不足一个完整包，停止处理
         if (buffer.size() < length) {
-            return;
+            break;
         }
 
-        // 3. 提取完整包
+        // 提取完整包
         QByteArray packet = buffer.mid(0, length);
 
-        // 4. 从缓冲区移除已处理的数据
+        // 先从缓冲区移除数据
         buffer.remove(0, length);
 
-        // 5. 处理逻辑
+        // 准备函数参数
         quint8 msgId = (quint8)packet[1];
         QByteArray payload = packet.mid(4);
+
+        // 调用处理函数
         handleW3GSPacket(socket, msgId, payload);
+
+        if (!m_playerBuffers.contains(socket)) {
+            return; // 玩家已断开，立即停止处理
+        }
     }
 }
 
