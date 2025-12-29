@@ -1,3 +1,286 @@
+
+
+## 逆向入口
+** 在拦截的数据中会收到一个 0x42 数据包，此包的发送必然会触发 ws2_32.dll 的 send 函数，在这里断点等待触发。 **
+```
+[2025-12-30 00:04:32.717] === send调用开始 (C->S) ===
+[2025-12-30 00:04:32.717] Socket: 18972
+[2025-12-30 00:04:32.717] 数据长度: 13 bytes
+[2025-12-30 00:04:32.717] 缓冲区地址: 0x0019F654
+[2025-12-30 00:04:32.717] 本地地址: 10.22.20.40:52261
+[2025-12-30 00:04:32.717] === 捕获 W3GS 包 (Socket: 18972, ID: 0x42, Len: 13) ===
+[2025-12-30 00:04:32.717]   未知字段:   0x00000001
+[2025-12-30 00:04:32.717]   大小标志:   0x01
+[2025-12-30 00:04:32.717]   地图大小:   0 字节
+[2025-12-30 00:04:32.717] ** *[C->S] 解析出 W3GS 包: W3GS_MAPSIZE ***
+[2025-12-30 00:04:32.717] 数据内容(Hex):
+F7 42 0D 00 01 00 00 00 01 00 00 00 00 
+[2025-12-30 00:04:32.717] 数据内容(ASCII):
+.B...........
+[2025-12-30 00:04:32.717] 发送到主机 (从映射表): 207.90.237.73:6201
+[2025-12-30 00:04:32.717] 决策: 是游戏主Socket，通过IPC转发并拦截。
+[2025-12-30 00:04:32.717] 通过IPC将数据包转发给主程序...
+[2025-12-30 00:04:32.717] IPC写入成功！
+[2025-12-30 00:04:32.717] IPC转发完成，正在执行物理发送...
+[2025-12-30 00:04:32.717] 游戏Socket真实发送结果: 13
+[2025-12-30 00:04:32.717] === send调用结束 ===
+```
+** Win32 ws2_32.dll send 函数原型 **
+
+
+```c
+int send(
+  SOCKET     s,
+  const char *buf,
+  int        len,
+  int        flags
+);
+```
+
+### 参数说明
+
+| 参数 | 类型 | 描述 | 必需 |
+|------|------|------|------|
+| `s` | `SOCKET` | 已连接的套接字描述符 | 是 |
+| `buf` | `const char*` | 待发送数据的缓冲区指针 | 是 |
+| `len` | `int` | 缓冲区数据的字节长度 | 是 |
+| `flags` | `int` | 控制发送行为的标志位 | 否（默认0） |
+
+### 返回值
+
+- **成功**：返回实际发送的字节数（可能小于 `len`）
+- **失败**：返回 `SOCKET_ERROR`（-1）
+  - 使用 `WSAGetLastError()` 获取详细错误代码
+
+
+** 断点后查看调用栈的第二个参数，查看内存数据的数据包是不是以 ****42F7 开始，如果不是直接 F9 跳过，或者直接看调用栈有没有 "Maps\\Download\\DotA" 这样的字样。 ** 
+
+
+## 数据发送
+- **地址**：`6F6DF040`
+- **偏移**：`game.dll + 6DF040`
+
+```
+6F6DF040  | 51                      | push ecx                            |
+6F6DF041  | 56                      | push esi                            |
+6F6DF042  | 57                      | push edi                            |
+6F6DF043  | 8BF1                    | mov esi,ecx                         |
+6F6DF045  | 8D7E 44                 | lea edi,dword ptr ds:[esi+44]       |
+6F6DF048  | 57                      | push edi                            |
+6F6DF049  | 897C24 0C               | mov dword ptr ss:[esp+C],edi        |
+6F6DF04D  | FF15 74D1866F           | call dword ptr ds:[<EnterCriticalSe |
+6F6DF053  | 8B4E 04                 | mov ecx,dword ptr ds:[esi+4]        |
+6F6DF056  | 83F9 FF                 | cmp ecx,FFFFFFFF                    |
+6F6DF059  | 75 0D                   | jne game.6F6DF068                   |
+6F6DF05B  | 57                      | push edi                            |
+6F6DF05C  | FF15 70D1866F           | call dword ptr ds:[<LeaveCriticalSe |
+6F6DF062  | 5F                      | pop edi                             |
+6F6DF063  | 5E                      | pop esi                             |
+6F6DF064  | 59                      | pop ecx                             |
+6F6DF065  | C2 0800                 | ret 8                               |
+6F6DF068  | 8B46 70                 | mov eax,dword ptr ds:[esi+70]       |
+6F6DF06B  | 33D2                    | xor edx,edx                         |
+6F6DF06D  | 8B7C24 14               | mov edi,dword ptr ss:[esp+14]       |
+6F6DF071  | 85C0                    | test eax,eax                        |
+6F6DF073  | 0F9EC2                  | setle dl                            |
+6F6DF076  | 53                      | push ebx                            |
+6F6DF077  | 8B5C24 14               | mov ebx,dword ptr ss:[esp+14]       |
+6F6DF07B  | 55                      | push ebp                            |
+6F6DF07C  | 83EA 01                 | sub edx,1                           |
+6F6DF07F  | 23C2                    | and eax,edx                         |
+6F6DF081  | 33D2                    | xor edx,edx                         |
+6F6DF083  | 85C0                    | test eax,eax                        |
+6F6DF085  | 0F95C2                  | setne dl                            |
+6F6DF088  | 8BEA                    | mov ebp,edx                         |
+6F6DF08A  | 85ED                    | test ebp,ebp                        |
+6F6DF08C  | 75 2A                   | jne game.6F6DF0B8                   |
+6F6DF08E  | 52                      | push edx                            |
+6F6DF08F  | 57                      | push edi                            |
+6F6DF090  | 53                      | push ebx                            |
+6F6DF091  | 51                      | push ecx                            |
+6F6DF092  | FF15 C0D8866F           | call dword ptr ds:[<Ordinal#19>]    | <--- 调用 send 发送 #42 包
+6F6DF098  | 83F8 FF                 | cmp eax,FFFFFFFF                    |
+6F6DF09B  | 74 3E                   | je game.6F6DF0DB                    |
+6F6DF09D  | 3BC7                    | cmp eax,edi                         |
+6F6DF09F  | 7C 13                   | jl game.6F6DF0B4                    |
+6F6DF0A1  | 8B4424 10               | mov eax,dword ptr ss:[esp+10]       |
+6F6DF0A5  | 50                      | push eax                            |
+6F6DF0A6  | FF15 70D1866F           | call dword ptr ds:[<LeaveCriticalSe |
+6F6DF0AC  | 5D                      | pop ebp                             |
+6F6DF0AD  | 5B                      | pop ebx                             |
+6F6DF0AE  | 5F                      | pop edi                             |
+6F6DF0AF  | 5E                      | pop esi                             |
+6F6DF0B0  | 59                      | pop ecx                             |
+6F6DF0B1  | C2 0800                 | ret 8                               |
+6F6DF0B4  | 03D8                    | add ebx,eax                         |
+6F6DF0B6  | 2BF8                    | sub edi,eax                         |
+6F6DF0B8  | 57                      | push edi                            |
+6F6DF0B9  | 53                      | push ebx                            |
+6F6DF0BA  | 8BCE                    | mov ecx,esi                         |
+6F6DF0BC  | E8 FFFDFFFF             | call game.6F6DEEC0                  |
+6F6DF0C1  | 85ED                    | test ebp,ebp                        |
+6F6DF0C3  | 75 2C                   | jne game.6F6DF0F1                   |
+6F6DF0C5  | 85C0                    | test eax,eax                        |
+6F6DF0C7  | 74 28                   | je game.6F6DF0F1                    |
+6F6DF0C9  | 8B16                    | mov edx,dword ptr ds:[esi]          |
+6F6DF0CB  | 50                      | push eax                            |
+6F6DF0CC  | 8B42 3C                 | mov eax,dword ptr ds:[edx+3C]       |
+6F6DF0CF  | 8BCE                    | mov ecx,esi                         |
+6F6DF0D1  | FFD0                    | call eax                            |
+6F6DF0D3  | 5D                      | pop ebp                             |
+6F6DF0D4  | 5B                      | pop ebx                             |
+6F6DF0D5  | 5F                      | pop edi                             |
+6F6DF0D6  | 5E                      | pop esi                             |
+6F6DF0D7  | 59                      | pop ecx                             |
+6F6DF0D8  | C2 0800                 | ret 8                               |
+6F6DF0DB  | FF15 9CD8866F           | call dword ptr ds:[<Ordinal#111>]   |
+6F6DF0E1  | 3D 33270000             | cmp eax,2733                        |
+6F6DF0E6  | 74 D0                   | je game.6F6DF0B8                    |
+6F6DF0E8  | 8B16                    | mov edx,dword ptr ds:[esi]          |
+6F6DF0EA  | 8B42 24                 | mov eax,dword ptr ds:[edx+24]       |
+6F6DF0ED  | 8BCE                    | mov ecx,esi                         |
+6F6DF0EF  | FFD0                    | call eax                            |
+6F6DF0F1  | 8B4C24 10               | mov ecx,dword ptr ss:[esp+10]       |
+6F6DF0F5  | 51                      | push ecx                            |
+6F6DF0F6  | FF15 70D1866F           | call dword ptr ds:[<LeaveCriticalSe |
+6F6DF0FC  | 5D                      | pop ebp                             |
+6F6DF0FD  | 5B                      | pop ebx                             |
+6F6DF0FE  | 5F                      | pop edi                             |
+6F6DF0FF  | 5E                      | pop esi                             |
+6F6DF100  | 59                      | pop ecx                             |
+6F6DF101  | C2 0800                 | ret 8                               |
+```
+
+** 调用栈情况 **
+- ** 0019F654 ** 就是缓冲区指针
+- ** 0000000D ** 就是数据大小
+
+```
+0019F5E4  6F6DF098  返回到 game.GameMain+6D5848 自 ???
+0019F5E8  00004E94  
+0019F5EC  0019F654
+0019F5F0  0000000D  
+0019F5F4  00000000  
+0019F5F8  1D9100A4  "Maps\\Download\\DotA v6.83d.w3x"
+0019F5FC  00000002  
+0019F600  0019FC1C  
+0019F604  0000000D  
+0019F608  03B90724  
+0019F60C  6F6DAE3F  返回到 game.GameMain+6D15EF 自 ???
+
+```
+
+** 发送的内容 **
+- ** 42F7 ** 是协议头
+- ** 000D ** 是数据大小
+
+```
+0019F654  000D42F7
+0019F658  00000001
+0019F65C  00000001
+```
+
+** 继续栈追踪 **
+** 6F6DAE20 ** 是一个包装函数，暂时不管它，继续向上追踪。
+
+```
+6F6DAE20  | 85C9                    | test ecx,ecx                        |
+6F6DAE22  | 75 0D                   | jne game.6F6DAE31                   |
+6F6DAE24  | C74424 04 57000000      | mov dword ptr ss:[esp+4],57         |
+6F6DAE2C  | E9 7B070100             | jmp <JMP.&Ordinal#465>              |
+6F6DAE31  | 8B01                    | mov eax,dword ptr ds:[ecx]          |
+6F6DAE33  | 56                      | push esi                            |
+6F6DAE34  | 8B7424 08               | mov esi,dword ptr ss:[esp+8]        |
+6F6DAE38  | 56                      | push esi                            |
+6F6DAE39  | 52                      | push edx                            |
+6F6DAE3A  | 8B50 2C                 | mov edx,dword ptr ds:[eax+2C]       |
+6F6DAE3D  | FFD2                    | call edx                            |
+6F6DAE3F  | 5E                      | pop esi                             |
+6F6DAE40  | C2 0400                 | ret 4                               |
+```
+
+## 发包逻辑
+- **地址**：`6F678A70`
+- **偏移**：`game.dll + 678A70`
+- **关键发现**：注意观察反汇编中是不是有 `F7` 和 `42` 这样的字符，很显然这是发送 `C>S 0x42 W3GS_MAPSIZE` 的逻辑。
+- **参考文档**：[参考文档](https://bnetdocs.org/packet/467/w3gs-mapsize)
+```
+(UINT32) Unknown
+(UINT8) Size Flag
+(UINT32) Map Size
+```
+
+
+```assembly
+6F678A70  | 6A FF                   | push FFFFFFFF                       |
+6F678A72  | 68 DB46846F             | push game.6F8446DB                  |
+6F678A77  | 64:A1 00000000          | mov eax,dword ptr fs:[0]            |
+6F678A7D  | 50                      | push eax                            |
+6F678A7E  | 81EC D8050000           | sub esp,5D8                         |
+6F678A84  | A1 40E1AA6F             | mov eax,dword ptr ds:[6FAAE140]     |
+6F678A89  | 33C4                    | xor eax,esp                         |
+6F678A8B  | 898424 D4050000         | mov dword ptr ss:[esp+5D4],eax      |
+6F678A92  | 53                      | push ebx                            |
+6F678A93  | 56                      | push esi                            |
+6F678A94  | 57                      | push edi                            |
+6F678A95  | A1 40E1AA6F             | mov eax,dword ptr ds:[6FAAE140]     |
+6F678A9A  | 33C4                    | xor eax,esp                         |
+6F678A9C  | 50                      | push eax                            |
+6F678A9D  | 8D8424 E8050000         | lea eax,dword ptr ss:[esp+5E8]      |
+6F678AA4  | 64:A3 00000000          | mov dword ptr fs:[0],eax            |
+6F678AAA  | 8BF1                    | mov esi,ecx                         |
+6F678AAC  | 8D4C24 18               | lea ecx,dword ptr ss:[esp+18]       |
+6F678AB0  | 8BFA                    | mov edi,edx                         |
+6F678AB2  | E8 D907C5FF             | call game.6F2C9290                  |
+6F678AB7  | 68 F7000000             | push F7                             |
+6F678ABC  | 8D4C24 1C               | lea ecx,dword ptr ss:[esp+1C]       |
+6F678AC0  | C78424 F4050000 0000000 | mov dword ptr ss:[esp+5F4],0        |
+6F678ACB  | E8 9096E4FF             | call game.6F4C2160                  |
+6F678AD0  | 6A 42                   | push 42                             |
+6F678AD2  | 8D4C24 1C               | lea ecx,dword ptr ss:[esp+1C]       |
+6F678AD6  | E8 8596E4FF             | call game.6F4C2160                  |
+6F678ADB  | 8B5C24 28               | mov ebx,dword ptr ss:[esp+28]       |
+6F678ADF  | 6A 00                   | push 0                              |
+6F678AE1  | 8D4C24 1C               | lea ecx,dword ptr ss:[esp+1C]       |
+6F678AE5  | E8 2697E4FF             | call game.6F4C2210                  |
+6F678AEA  | 8BD7                    | mov edx,edi                         |
+6F678AEC  | 8D4C24 18               | lea ecx,dword ptr ss:[esp+18]       |
+6F678AF0  | E8 EBB90000             | call game.6F6844E0                  |
+6F678AF5  | 8B4424 28               | mov eax,dword ptr ss:[esp+28]       |
+6F678AF9  | 50                      | push eax                            |
+6F678AFA  | 53                      | push ebx                            |
+6F678AFB  | 8D4C24 20               | lea ecx,dword ptr ss:[esp+20]       |
+6F678AFF  | E8 6C93E4FF             | call game.6F4C1E70                  |
+6F678B04  | 6A 00                   | push 0                              |
+6F678B06  | 8D4C24 14               | lea ecx,dword ptr ss:[esp+14]       |
+6F678B0A  | 51                      | push ecx                            |
+6F678B0B  | 8D5424 1C               | lea edx,dword ptr ss:[esp+1C]       |
+6F678B0F  | 52                      | push edx                            |
+6F678B10  | 8D4C24 24               | lea ecx,dword ptr ss:[esp+24]       |
+6F678B14  | E8 9790E4FF             | call game.6F4C1BB0                  |
+6F678B19  | 8B4424 10               | mov eax,dword ptr ss:[esp+10]       |
+6F678B1D  | 8B5424 14               | mov edx,dword ptr ss:[esp+14]       |
+6F678B21  | 50                      | push eax                            |
+6F678B22  | 8BCE                    | mov ecx,esi                         |
+6F678B24  | E8 F7220600             | call game.6F6DAE20                  | 发送 0x42 包
+6F678B29  | 8B7424 10               | mov esi,dword ptr ss:[esp+10]       |
+6F678B2D  | 8D4C24 18               | lea ecx,dword ptr ss:[esp+18]       |
+6F678B31  | C78424 F0050000 FFFFFFF | mov dword ptr ss:[esp+5F0],FFFFFFFF |
+6F678B3C  | E8 6F0AC5FF             | call game.6F2C95B0                  |
+6F678B41  | 8BC6                    | mov eax,esi                         |
+6F678B43  | 8B8C24 E8050000         | mov ecx,dword ptr ss:[esp+5E8]      |
+6F678B4A  | 64:890D 00000000        | mov dword ptr fs:[0],ecx            |
+6F678B51  | 59                      | pop ecx                             |
+6F678B52  | 5F                      | pop edi                             |
+6F678B53  | 5E                      | pop esi                             |
+6F678B54  | 5B                      | pop ebx                             |
+6F678B55  | 8B8C24 D4050000         | mov ecx,dword ptr ss:[esp+5D4]      |
+6F678B5C  | 33CC                    | xor ecx,esp                         |
+6F678B5E  | E8 F6841600             | call game.6F7E1059                  |
+6F678B63  | 81C4 E4050000           | add esp,5E4                         |
+6F678B69  | C3                      | ret                                 |
+```
+
 ```assembly
 6F657C10  | 81EC 70040000           | sub esp,470                         |
 6F657C16  | A1 40E1AA6F             | mov eax,dword ptr ds:[6FAAE140]     |
@@ -22,7 +305,7 @@
 6F657C6E  | 8B8424 9C040000         | mov eax,dword ptr ss:[esp+49C]      |
 6F657C75  | 57                      | push edi                            |
 6F657C76  | 8BBC24 84040000         | mov edi,dword ptr ss:[esp+484]      | <--- Maps\\Download\\DotA v6.83d.w3x
-6F657C7D  | 894C24 1C               | mov dword ptr ss:[esp+1C],ecx       | <--- NetProviderBNET: 内存数据在下面
+6F657C7D  | 894C24 1C               | mov dword ptr ss:[esp+1C],ecx       | <--- NetProviderBNET
 6F657C81  | 894424 14               | mov dword ptr ss:[esp+14],eax       |
 6F657C85  | 895424 18               | mov dword ptr ss:[esp+18],edx       |
 6F657C89  | C700 00000000           | mov dword ptr ds:[eax],0            |
@@ -43,11 +326,11 @@
 6F657CCF  | BA 04010000             | mov edx,104                         | <--- edx=104
 6F657CD4  | 2BD6                    | sub edx,esi                         |
 6F657CD6  | 52                      | push edx                            | <--- edx=E5
-6F657CD7  | 57                      | push edi                            | <--- Maps\\Download\\DotA v6.83d.w3x
+6F657CD7  | 57                      | push edi                            | <--- 相对路径（Maps\\Download\\DotA v6.83d.w3x）
 6F657CD8  | 8D8434 7C020000         | lea eax,dword ptr ss:[esp+esi+27C]  |
 6F657CDF  | 50                      | push eax                            |
-6F657CE0  | E8 DF380900             | call <JMP.&Ordinal#501>             | <--- 通过 SStrPrintf (Storm.dll Ordinal #501) 拼接成完整的本地绝对路径
-6F657CE5  | 8B8C24 AC040000         | mov ecx,dword ptr ss:[esp+4AC]      |
+6F657CE0  | E8 DF380900             | call <JMP.&Ordinal#501>             | <--- SStrPrintf (Storm.dll Ordinal #501)
+6F657CE5  | 8B8C24 AC040000         | mov ecx,dword ptr ss:[esp+4AC]      | <--- 拼接成完整的本地绝对路径
 6F657CEC  | 8B5424 18               | mov edx,dword ptr ss:[esp+18]       |
 6F657CF0  | 8B4424 14               | mov eax,dword ptr ss:[esp+14]       |
 6F657CF4  | 51                      | push ecx                            |
@@ -164,208 +447,6 @@
 6F657E78  | C2 2C00                 | ret 2C                              |
 ```
 
-内存示例1
-
-```
-
-0216006C  654E5C2E  .\Ne
-02160070  6F725074  tPro
-02160074  65646976  vide
-02160078  454E4272  rBNE
-0216007C  70632E54  T.cp
-02160080  00000070  p...
-02160084  00000000  ....
-02160088  000407E8  è...
-0216008C  6F6D0216  ..mo
-02160090  6F9711F4  ô..o
-02160094  6FACEC10  .ì¬o
-02160098  905313EF  ï.S.
-0216009C  00000002  ....
-021600A0  00000001  ....
-021600A4  00000001  ....
-021600A8  424C495A  ZILB
-021600AC  49583836  68XI
-021600B0  57335850  PX3W
-021600B4  57335850  PX3W
-021600B8  0000001A  ....
-021600BC  656E5553  SUne
-021600C0  FFFFFE20   þÿÿ
-021600C4  00000804  ....
-021600C8  00000804  ....
-021600CC  004E4843  CHN.
-021600D0  6E696843  Chin
-021600D4  6F5C0061  a.\o
-021600D8  1A2A0230  0.*.
-021600DC  6F5CD3A4  ¤Ó\o
-021600E0  00000000  ....
-021600E4  04F2C180  .Áò.
-021600E8  04F2C180  .Áò.
-021600EC  1FC7B950  P¹Ç.
-021600F0  6F5CD4C9  ÉÔ\o
-021600F4  172E1D04  ....
-021600F8  00000000  ....
-021600FC  00000010  ....
-02160100  00000000  ....
-02160104  1FC7B950  P¹Ç.
-02160108  6F5FF511  .õ_o
-0216010C  172E1D04  ....
-02160110  1FC7B950  P¹Ç.
-02160114  6F5FF592  .õ_o
-02160118  1FC7B950  P¹Ç.
-0216011C  0000000C  ....
-02160120  00000000  ....
-02160124  00000006  ....
-02160128  00000000  ....
-0216012C  6F5FF76B  k÷_o
-02160130  00000008  ....
-02160134  1FC7B950  P¹Ç.
-02160138  6F600829  ).`o
-0216013C  1A2A0230  0.*.
-02160140  00000001  ....
-02160144  00000001  ....
-02160148  172E1354  T...
-0216014C  6F4C1B3D  =.Lo
-02160150  172E1354  T...
-02160154  00000000  ....
-02160158  00000010  ....
-0216015C  00000000  ....
-02160160  005E3218  .2^.
-02160164  6F5FF511  .õ_o
-02160168  172E1354  T...
-0216016C  005E3218  .2^.
-02160170  6F5FF592  .õ_o
-02160174  005E3218  .2^.
-02160178  0000000C  ....
-0216017C  00000000  ....
-02160180  00000007  ....
-02160184  15025A24  $Z..
-02160188  0019F7C8  È÷..
-0216018C  0019F7D0  Ð÷..
-02160190  00000265  e...
-02160194  020B0000  ....
-02160198  00000016  ....
-0216019C  0019F81C  .ø..
-021601A0  00000020   ...
-021601A4  00000000  ....
-021601A8  00000002  ....
-021601AC  00000000  ....
-021601B0  020B0558  X...
-021601B4  020B0000  ....
-021601B8  0019F81C  .ø..
-021601BC  15025DE2  â]..
-021601C0  00000265  e...
-021601C4  020B0000  ....
-021601C8  66AAA913  .©ªf
-021601CC  66AAA913  .©ªf
-021601D0  00000002  ....
-021601D4  00000002  ....
-021601D8  020A0130  0...
-021601DC  00000000  ....
-021601E0  6E656B61  aken
-021601E4  00737365  ess.
-021601E8  0019F82C  ,ø..
-021601EC  00008000  ....
-021601F0  15055580  .U..
-021601F4  0019F834  4ø..
-021601F8  00000210  ....
-021601FC  02350000  ..5.
-02160200  150563E0  àc..
-02160204  00010000  ....
-02160208  6F6294F7  ÷.bo
-0216020C  0019F840  @ø..
-02160210  00000000  ....
-02160214  77992D8C  .-.w
-02160218  6F6294F7  ÷.bo
-0216021C  0019F850  Pø..
-02160220  0000000C  ....
-02160224  63726157  Warc
-02160228  74666172  raft
-0216022C  49494920   III
-02160230  1FC7BA00  .ºÇ.
-02160234  3E99999A  ...>
-02160238  1FC7BA04  .ºÇ.
-0216023C  6F605405  .T`o
-02160240  7F800000  ....
-02160244  63726157  Warc
-02160248  74666172  raft
-0216024C  49494920   III
-02160250  6552203A  : Re
-02160254  206E6769  ign 
-02160258  4320666F  of C
-0216025C  736F6168  haos
-02160260  6F605700  .W`o
-02160264  7F800000  ....
-02160268  7F800000  ....
-0216026C  BE99999A  ...¾
-02160270  1FC7BA04  .ºÇ.
-02160274  7F800000  ....
-02160278  6F60580A  .X`o
-0216027C  1FC7BA04  .ºÇ.
-02160280  1FC7BA04  .ºÇ.
-02160284  7F800000  ....
-02160288  6F605912  .Y`o
-0216028C  0019F8BC  ¼ø..
-02160290  1FC7B950  P¹Ç.
-02160294  00000000  ....
-02160298  7F800000  ....
-0216029C  00000000  ....
-021602A0  00000000  ....
-021602A4  1FC7B950  P¹Ç.
-021602A8  0019F8F4  ôø..
-021602AC  6F611E14  ..ao
-021602B0  00000001  ....
-021602B4  179508AC  ¬...
-021602B8  020200B0  °...
-021602BC  14F40374  t.ô.
-021602C0  6F57DE1C  .ÞWo
-021602C4  0019F8F4  ôø..
-021602C8  6F57DE2B  +ÞWo
-021602CC  74696E49  Init
-021602D0  69746169  iati
-021602D4  6320676E  ng c
-021602D8  656E6E6F  onne
-021602DC  6F697463  ctio
-021602E0  6F74206E  n to
-021602E4  74614220   Bat
-021602E8  2E656C74  tle.
-021602EC  2E74656E  net.
-021602F0  00002E2E  ....
-021602F4  15026344  Dc..
-021602F8  0019F950  Pù..
-021602FC  14F60404  ..ö.
-02160300  00000000  ....
-02160304  6F62A909  .©bo
-02160308  00000000  ....
-0216030C  6FA9B370  p³©o
-02160310  FFFFFFFE  þÿÿÿ
-02160314  400900C8  È..@
-02160318  0000001B  ....
-0216031C  14F61394  ..ö.
-02160320  14F40374  t.ô.
-02160324  14F61064  d.ö.
-02160328  14F4010C  ..ô.
-0216032C  00000000  ....
-02160330  00000001  ....
-02160334  6F53F380  .óSo
-02160338  400900C8  È..@
-0216033C  0000001B  ....
-02160340  020200B0  °...
-02160344  020C0090  ....
-02160348  00000000  ....
-0216034C  00000000  ....
-02160350  FFFF17E0  à.ÿÿ
-02160354  FFFFFFFF  ÿÿÿÿ
-02160358  0000FFFF  ÿÿ..
-0216035C  00000000  ....
-02160360  00000000  ....
-02160364  07D00000  ..Ð.
-02160368  772E0200  ...w
-0216036C  2E3B6D33  3m;.
-02160370  00783377  w3x.
-02160374  00000000  ....
-
-```
-
 ```assembly
 6F657930  | 83EC 44                 | sub esp,44                          |
 6F657933  | A1 40E1AA6F             | mov eax,dword ptr ds:[6FAAE140]     |
@@ -457,15 +538,15 @@
 6F657A30  | 0FB611                  | movzx edx,byte ptr ds:[ecx]         |
 6F657A33  | 2BF2                    | sub esi,edx                         |
 6F657A35  | 74 0E                   | je game.6F657A45                    |
-6F657A37  | 85F6                    | test esi,esi                        | <--- esi=62
+6F657A37  | 85F6                    | test esi,esi                        |
 6F657A39  | B8 01000000             | mov eax,1                           |
-6F657A3E  | 7F 07                   | jg game.6F657A47                    | <--- 跳转将要执行
+6F657A3E  | 7F 07                   | jg game.6F657A47                    |
 6F657A40  | 83C8 FF                 | or eax,FFFFFFFF                     |
 6F657A43  | EB 02                   | jmp game.6F657A47                   |
 6F657A45  | 33C0                    | xor eax,eax                         |
-6F657A47  | 85C0                    | test eax,eax                        | <--- eax=1
-6F657A49  | 5D                      | pop ebp                             | <--- ebp=2E
-6F657A4A  | 75 25                   | jne game.6F657A71                   | <--- 跳转将要执行
+6F657A47  | 85C0                    | test eax,eax                        |
+6F657A49  | 5D                      | pop ebp                             |
+6F657A4A  | 75 25                   | jne game.6F657A71                   |
 6F657A4C  | 8B4C24 14               | mov ecx,dword ptr ss:[esp+14]       |
 6F657A50  | 8D70 01                 | lea esi,dword ptr ds:[eax+1]        |
 6F657A53  | 8B4424 7C               | mov eax,dword ptr ss:[esp+7C]       |
@@ -479,33 +560,32 @@
 6F657A6B  | 8913                    | mov dword ptr ds:[ebx],edx          |
 6F657A6D  | 8901                    | mov dword ptr ds:[ecx],eax          |
 6F657A6F  | EB 0F                   | jmp game.6F657A80                   |
-6F657A71  | 8D5424 0C               | lea edx,dword ptr ss:[esp+C]        | <--- dword ptr ss:[esp+0C]=[0019F708]=007E9836
-6F657A75  | 8D4C24 10               | lea ecx,dword ptr ss:[esp+10]       | <--- dword ptr ss:[esp+10]=[0019F70C]=21A90010 "HM3W"
-6F657A79  | 33F6                    | xor esi,esi                         | <--- esi=62
+6F657A71  | 8D5424 0C               | lea edx,dword ptr ss:[esp+C]        |
+6F657A75  | 8D4C24 10               | lea ecx,dword ptr ss:[esp+10]       |
+6F657A79  | 33F6                    | xor esi,esi                         |
 6F657A7B  | E8 80F3FFFF             | call game.6F656E00                  |
-6F657A80  | 8B4C24 4C               | mov ecx,dword ptr ss:[esp+4C]       | <--- dword ptr ss:[esp+4C]=[0019F748]=7E47A5FD
-6F657A84  | 5F                      | pop edi                             | <--- edi=180200A4 "Maps\\Download\\DotA v6.83d.w3x"
-6F657A85  | 8BC6                    | mov eax,esi                         | <--- esi=0
-6F657A87  | 5E                      | pop esi                             | <--- esi=0
-6F657A88  | 5B                      | pop ebx                             | <--- ebx=180202D0
+6F657A80  | 8B4C24 4C               | mov ecx,dword ptr ss:[esp+4C]       |
+6F657A84  | 5F                      | pop edi                             |
+6F657A85  | 8BC6                    | mov eax,esi                         |
+6F657A87  | 5E                      | pop esi                             |
+6F657A88  | 5B                      | pop ebx                             |
 6F657A89  | 33CC                    | xor ecx,esp                         |
 6F657A8B  | E8 C9951800             | call game.6F7E1059                  |
 6F657A90  | 83C4 44                 | add esp,44                          |
 6F657A93  | C2 2C00                 | ret 2C                              |
 ```
 
-内存示列2
 
-```
-180202A8  00000000
 
-180202AC  007E9836
-180202B0  007E9836
-180202B4  91FA5A45
-180202B8  3AEBCEF3 -> CRC
-180202BC  0AA52F2E
-180202C0  E3FF9B37
-180202C4  E74C5752
-180202C8  A7B9F545
-180202CC  5FA4DF1A
-```
+
+
+
+
+
+
+
+
+
+
+
+
