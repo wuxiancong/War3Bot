@@ -1156,9 +1156,9 @@ QByteArray Client::createW3GSSlotInfoJoinPacket(quint8 playerID, const QHostAddr
     LOG_INFO(QString("   -> Num Slots   : %1 (Hex: 0x%2)").arg(m_slots.size()).arg(QString::number(m_slots.size(), 16).toUpper()));
     LOG_INFO(QString("   -> Player ID   : %1").arg(playerID));
 
-    out << (quint32)m_randomSeed;                                   // 随机种子
-    out << (quint8)m_baseGameType;                                  // 游戏类型
-    out << (quint8)m_slots.size();                                  // 槽位总数
+    // out << (quint32)m_randomSeed;                                // 随机种子 ❌ 删除
+    // out << (quint8)m_baseGameType;                               // 游戏类型 ❌ 删除
+    // out << (quint8)m_slots.size();                               // 槽位总数 ❌ 删除
     out << (quint8)playerID;                                        // 玩家的ID
 
     // 5. 写入网络信息

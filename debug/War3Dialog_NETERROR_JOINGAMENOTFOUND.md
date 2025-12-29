@@ -1281,28 +1281,28 @@ eax=game.6F62A9A0
 6F4C2D2B | C2 0400                  	 | ret 4                                 |
 6F4C2D2E | CC                       	 | int3                                  |
 6F4C2D2F | CC                       	 | int3                                  |
-<pre style="background-color: darkgray; padding: 5px;">
+
 ; ===============================================================================|
-6F4C2D30 | 56                       	 | push esi                              |
-6F4C2D31 | 8BF1                     	 | mov esi,ecx                           |
-6F4C2D33 | 8B46 14                  	 | mov eax,dword ptr ds:[esi+14]         |
-6F4C2D36 | 6A 04                    	 | push 4                                |
-6F4C2D38 | 50                       	 | push eax                              |
-6F4C2D39 | E8 F2FDFFFF              	 | call game.6F4C2B30                    |
-6F4C2D3E | 85C0                     	 | test eax,eax                          |
-6F4C2D40 | 74 16                    	 | je game.6F4C2D58                      |
-6F4C2D42 | 8B4E 04                  	 | mov ecx,dword ptr ds:[esi+4]          |
-6F4C2D45 | 2B4E 08                  	 | sub ecx,dword ptr ds:[esi+8]          |
-6F4C2D48 | 8B56 14                  	 | mov edx,dword ptr ds:[esi+14]         |
-6F4C2D4B | 8B0411                   	 | mov eax,dword ptr ds:[ecx+edx]        |
-6F4C2D4E | 8B4C24 08                	 | mov ecx,dword ptr ss:[esp+8]          |
-6F4C2D52 | 8901                     	 | mov dword ptr ds:[ecx],eax            | 暂停条件(ecx==19F770)
-6F4C2D54 | 8346 14 04               	 | add dword ptr ds:[esi+14],4           |
-6F4C2D58 | 8BC6                     	 | mov eax,esi                           |
-6F4C2D5A | 5E                       	 | pop esi                               |
-6F4C2D5B | C2 0400                  	 | ret 4                                 |
+##### 6F4C2D30 | 56                       	 | push esi                          |
+##### 6F4C2D31 | 8BF1                     	 | mov esi,ecx                       |
+##### 6F4C2D33 | 8B46 14                  	 | mov eax,dword ptr ds:[esi+14]     |
+##### 6F4C2D36 | 6A 04                    	 | push 4                            |
+##### 6F4C2D38 | 50                       	 | push eax                          |
+##### 6F4C2D39 | E8 F2FDFFFF              	 | call game.6F4C2B30                |
+##### 6F4C2D3E | 85C0                     	 | test eax,eax                      |
+##### 6F4C2D40 | 74 16                    	 | je game.6F4C2D58                  |
+##### 6F4C2D42 | 8B4E 04                  	 | mov ecx,dword ptr ds:[esi+4]      |
+##### 6F4C2D45 | 2B4E 08                  	 | sub ecx,dword ptr ds:[esi+8]      |
+##### 6F4C2D48 | 8B56 14                  	 | mov edx,dword ptr ds:[esi+14]     |
+##### 6F4C2D4B | 8B0411                   	 | mov eax,dword ptr ds:[ecx+edx]    |
+##### 6F4C2D4E | 8B4C24 08                	 | mov ecx,dword ptr ss:[esp+8]      |
+##### 6F4C2D52 | 8901                     	 | mov dword ptr ds:[ecx],eax        | 暂停条件(ecx==19F770)
+##### 6F4C2D54 | 8346 14 04               	 | add dword ptr ds:[esi+14],4       |
+##### 6F4C2D58 | 8BC6                     	 | mov eax,esi                       |
+##### 6F4C2D5A | 5E                       	 | pop esi                           |
+##### 6F4C2D5B | C2 0400                  	 | ret 4                             |
 ; ===============================================================================|
-</pre>
+
 6F4C2D5E | CC                       	 | int3                                  |
 6F4C2D5F | CC                       	 | int3                                  |
 6F4C2D60 | 56                       	 | push esi                              |
@@ -4229,3 +4229,282 @@ QByteArray Client::createW3GSSlotInfoJoinPacket(quint8 playerID, const QHostAddr
 }
 ```
 </details>
+
+
+### 核心修改点
+1.  **删除中间的 6 字节**：不要发送 `RandomSeed`(4) + `GameType`(1) + `NumSlots`(1)。
+2.  **保留尾部的 8 字节**：这 8 字节属于 `sockaddr_in` 结构体的标准填充（为了凑齐 16 字节），必须保留，否则 IP 解析会越界。
+
+---
+
+
+- ✅ 正确的代码示列
+<details open>
+  <summary>点击查看详情</summary>
+
+**源文件**: [client.cpp](https://github.com/wuxiancong/War3Bot/blob/main/include/client.cpp)
+```cpp
+QByteArray Client::createW3GSSlotInfoJoinPacket(quint8 playerID, const QHostAddress& externalIp, quint16 localPort)
+{
+    LOG_INFO("=== 开始构建 W3GS_SLOTINFOJOIN (0x04) 包 ===");
+
+    QByteArray packet;
+    QDataStream out(&packet, QIODevice::WriteOnly);
+    out.setByteOrder(QDataStream::LittleEndian);
+
+    // 1. 获取槽位数据
+    QByteArray slotData = serializeSlotData();
+
+    // 2. 写入 Header
+    out << (quint8)0xF7 << (quint8)0x04 << (quint16)0;
+
+    // 3. 写入槽位数据块长度 & 内容
+    quint16 slotDataLen = (quint16)slotData.size();
+    out << slotDataLen;
+    out.writeRawData(slotData.data(), slotData.size());
+
+    // -------------------------------------------------------------
+    // 🔴 [关键修改] 删除中间的 6 字节！
+    // 汇编分析证实：客户端解析完 SlotData 后直接读取 PID。
+    // 如果发送下面这 3 项，客户端会把 Seed 的第一个字节当成 PID 读取，导致数值错误且包长度溢出。
+    // -------------------------------------------------------------
+    // out << (quint32)m_randomSeed;                                // ❌ 删除
+    // out << (quint8)10;                                           // ❌ 删除
+    // out << (quint8)m_slots.size();                               // ❌ 删除
+
+    // 4. 直接写入 PID
+    // 此时写入位置紧跟在 SlotData 之后
+    out << (quint8)playerID;
+
+    // 5. 写入网络信息 (标准 sockaddr_in 结构，共 16 字节)
+    out << (quint16)2;                                              // Family (2)
+    out << (quint16)qToBigEndian(localPort);                        // Port (2)
+    writeIpToStreamWithLog(out, externalIp);                        // IP (4)
+
+    // 6. 填充尾部 (sockaddr padding - 8 字节)
+    // 汇编 call game.2B308C0 读取 16 字节 IP 结构。
+    // 前面写了 2+2+4=8字节，这里必须补齐剩下的 8 字节零填充。
+    // 加上这 8 字节后，Payload 总长度正好是 2(Len) + 91(Slot) + 1(PID) + 16(Addr) = 110 字节。
+    // 与汇编校验逻辑 (cmp ecx, 6E) 完美匹配。
+    out << (quint32)0;
+    out << (quint32)0;
+
+    // 7. 回填包总长度
+    quint16 totalSize = (quint16)packet.size();
+    QDataStream lenStream(&packet, QIODevice::ReadWrite);
+    lenStream.setByteOrder(QDataStream::LittleEndian);
+    lenStream.skipRawData(2);
+    lenStream << totalSize;
+
+    LOG_INFO(QString("✅ [0x04] 包构建完成，总长度: %1 (Payload预测: 110)").arg(totalSize));
+    return packet;
+}
+```
+</details>
+
+**验证逻辑：**
+1.  **数据对齐**：删除中间 6 字节后，`playerID` 将直接紧跟在 `SlotData` 之后，符合汇编 `02B64D14` 的读取逻辑。
+2.  **长度校验**：
+    *   的 `SlotData` = 91 字节。
+    *   `Length` 字段 = 2 字节。
+    *   `PID` = 1 字节。
+    *   `sockaddr` = 16 字节。
+    *   **Payload 总和** = 2 + 91 + 1 + 16 = **110 字节** (`0x6E`)。
+    *   这与汇编代码 `02B551E7` 处 `mov ecx, 0x6E` 完全一致，长度校验将通过！
+	
+### 3.3 后续代码
+```assembly
+6F684D19 | 8D97 83000000                 | lea edx,dword ptr ds:[edi+83]         	 |
+6F684D1F | 8BCE                          | mov ecx,esi                           	 |
+6F684D21 | E8 9ABBFCFF                   | call game.6F6508C0                    	 |
+6F684D26 | 5F                            | pop edi                               	 |
+6F684D27 | 8BC6                          | mov eax,esi                           	 |
+6F684D29 | 5E                            | pop esi                               	 |
+6F684D2A | C3                            | ret                                   	 |
+```
+````assembly
+
+6F6508C0 | 56                            | push esi                                  |
+6F6508C1 | 6A 10                         | push 10                                   |
+6F6508C3 | 52                            | push edx                                  |
+6F6508C4 | 8BF1                          | mov esi,ecx                               |
+6F6508C6 | E8 552BE7FF                   | call game.6F4C3420                        |
+6F6508CB | 8BC6                          | mov eax,esi                               |
+6F6508CD | 5E                            | pop esi                                   |
+6F6508CE | C3                            | ret                                       |
+```
+````assembly
+6F4C3420 | E9 ABFBFFFF                   | jmp game.6F4C2FD0                         |
+```
+````assembly
+6F4C2FD0 | 55                            | push ebp                                  |
+6F4C2FD1 | 8B6C24 08                     | mov ebp,dword ptr ss:[esp+8]              |
+6F4C2FD5 | 85ED                          | test ebp,ebp                              |
+6F4C2FD7 | 57                            | push edi                                  |
+6F4C2FD8 | 8BF9                          | mov edi,ecx                               |
+6F4C2FDA | 8B4C24 10                     | mov ecx,dword ptr ss:[esp+10]             |
+6F4C2FDE | 75 08                         | jne game.6F4C2FE8                          |
+6F4C2FE0 | 85C9                          | test ecx,ecx                              |
+6F4C2FE2 | 74 04                         | je game.6F4C2FE8                           |
+6F4C2FE4 | 33C0                          | xor eax,eax                               |
+6F4C2FE6 | EB 03                         | jmp game.6F4C2FEB                          |
+6F4C2FE8 | 83C8 FF                       | or eax,FFFFFFFF                           |
+6F4C2FEB | 85C0                          | test eax,eax                              |
+6F4C2FED | 75 0E                         | jne game.6F4C2FFD                          |
+6F4C2FEF | 6A 57                         | push 57                                   |
+6F4C2FF1 | E8 B6852200                   | call <JMP.&Ordinal#465>                   |
+6F4C2FF6 | 8BC7                          | mov eax,edi                               |
+6F4C2FF8 | 5F                            | pop edi                                   |
+6F4C2FF9 | 5D                            | pop ebp                                   |
+6F4C2FFA | C2 0800                       | ret 8                                     |
+6F4C2FFD | 8B47 14                       | mov eax,dword ptr ds:[edi+14]             |
+6F4C3000 | 3B47 10                       | cmp eax,dword ptr ds:[edi+10]             |
+6F4C3003 | 77 5C                         | ja game.6F4C3061                           |
+6F4C3005 | 85C9                          | test ecx,ecx                              |
+6F4C3007 | 53                            | push ebx                                  |
+6F4C3008 | 8BD9                          | mov ebx,ecx                               |
+6F4C300A | 74 54                         | je game.6F4C3060                           |
+6F4C300C | 56                            | push esi                                  |
+6F4C300D | 8D49 00                       | lea ecx,dword ptr ds:[ecx]                |
+6F4C3010 | 8B4F 14                       | mov ecx,dword ptr ds:[edi+14]             |
+6F4C3013 | 8B77 10                       | mov esi,dword ptr ds:[edi+10]             |
+6F4C3016 | 2BF1                          | sub esi,ecx                               |
+6F4C3018 | 3BF3                          | cmp esi,ebx                               |
+6F4C301A | 72 02                         | jb game.6F4C301E                           |
+6F4C301C | 8BF3                          | mov esi,ebx                               |
+6F4C301E | 8B47 0C                       | mov eax,dword ptr ds:[edi+C]              |
+6F4C3021 | 3BF0                          | cmp esi,eax                               |
+6F4C3023 | 72 02                         | jb game.6F4C3027                           |
+6F4C3025 | 8BF0                          | mov esi,eax                               |
+6F4C3027 | 83FE 01                       | cmp esi,1                                 |
+6F4C302A | 77 05                         | ja game.6F4C3031                           |
+6F4C302C | BE 01000000                   | mov esi,1                                 |
+6F4C3031 | 56                            | push esi                                  |
+6F4C3032 | 51                            | push ecx                                  |
+6F4C3033 | 8BCF                          | mov ecx,edi                               |
+6F4C3035 | E8 F6FAFFFF                   | call game.6F4C2B30                         |
+6F4C303A | 85C0                          | test eax,eax                              |
+6F4C303C | 74 21                         | je game.6F4C305F                           |
+6F4C303E | 8B47 04                       | mov eax,dword ptr ds:[edi+4]              |
+6F4C3041 | 2B47 08                       | sub eax,dword ptr ds:[edi+8]              |
+6F4C3044 | 0347 14                       | add eax,dword ptr ds:[edi+14]             |
+6F4C3047 | 3BE8                          | cmp ebp,eax                               |
+6F4C3049 | 74 0B                         | je game.6F4C3056                           |
+6F4C304B | 56                            | push esi                                  |
+6F4C304C | 50                            | push eax                                  |
+6F4C304D | 55                            | push ebp                                  |
+6F4C304E | E8 99E53100                   | call <JMP.&memcpy>                        |
+6F4C3053 | 83C4 0C                       | add esp,C                                 |
+6F4C3056 | 0177 14                       | add dword ptr ds:[edi+14],esi             |
+6F4C3059 | 03EE                          | add ebp,esi                               |
+6F4C305B | 2BDE                          | sub ebx,esi                               |
+6F4C305D | 75 B1                         | jne game.6F4C3010                          |
+6F4C305F | 5E                            | pop esi                                   |
+6F4C3060 | 5B                            | pop ebx                                   |
+6F4C3061 | 8BC7                          | mov eax,edi                               |
+6F4C3063 | 5F                            | pop edi                                   |
+6F4C3064 | 5D                            | pop ebp                                   |
+6F4C3065 | C2 0800                       | ret 8                                     |
+```
+```
+6F4C2B30 | 53                            | push ebx                                  |
+6F4C2B31 | 8B5C24 0C                     | mov ebx,dword ptr ss:[esp+C]              |
+6F4C2B35 | 56                            | push esi                                  |
+6F4C2B36 | 8BF1                          | mov esi,ecx                               |
+6F4C2B38 | 8B4C24 0C                     | mov ecx,dword ptr ss:[esp+C]              |
+6F4C2B3C | 8B46 10                       | mov eax,dword ptr ds:[esi+10]             |
+6F4C2B3F | 8D1419                        | lea edx,dword ptr ds:[ecx+ebx]            |
+6F4C2B42 | 3BD0                          | cmp edx,eax                               |
+6F4C2B44 | 76 0D                         | jbe game.6F4C2B53                          |
+6F4C2B46 | 83C0 01                       | add eax,1                                 |
+6F4C2B49 | 8946 14                       | mov dword ptr ds:[esi+14],eax             |
+6F4C2B4C | 5E                            | pop esi                                   |
+6F4C2B4D | 33C0                          | xor eax,eax                               |
+6F4C2B4F | 5B                            | pop ebx                                   |
+6F4C2B50 | C2 0800                       | ret 8                                     |
+```
+这段汇编代码完全证实了我们的分析：**`game.2B308C0` 确实是在读取 16 字节的网络地址**。
+
+### 证据链
+
+#### 1. 调用 `ReadBytes`
+```assembly
+02B308C1 | 6A 10             | push 10        ; 压入参数 0x10 (16 字节)
+...
+02B308C6 | call game.29A3420 | call ReadBytes ; 调用读取函数
+```
+这表明它要从包里读 16 个字节。
+
+#### 2. `ReadBytes` 内部执行
+```assembly
+029A2FDA | 8B4C24 10         | mov ecx,...    ; ecx = 10 (16)
+029A3013 | mov esi, ...      ; esi = PacketLength (0x74 = 116)
+029A3016 | sub esi,ecx       ; 计算剩余字节数 (CurrentOffset 0x5E)
+029A3018 | cmp esi,ebx       ; 检查是否越界。 116 - 94 = 22 > 16 (Safe)
+...
+029A304E | call <JMP.&memcpy>; ★ 拷贝 16 字节
+029A3056 | add ..., esi      ; CurrentOffset += 16
+                             ; New Offset = 0x5E + 0x10 = 0x6E (110)
+```
+
+### 完美的算术验证
+
+让我们算一下偏移量：
+1.  **初始状态**:
+    *   Total Length: `0x74` (116)
+    *   Current Offset: `0x5E` (94)
+    *   Remaining: `116 - 94 = 22` 字节
+
+2.  **读取操作**:
+    *   读取 IP (16 字节)。
+    *   Current Offset 变为 `94 + 16 = 110` (`0x6E`)。
+
+3.  **剩余数据**:
+    *   `116 - 110 = 6` 字节。
+
+4.  **回到最外层校验 (`02B551ED`)**:
+    *   `cmp ecx(110), total(116)` -> **不相等**。
+    *   **Fail**。
+
+### 结论已定
+
+汇编代码已经明明白白地告诉了：
+**War3 客户端读完了它想要的所有数据（SlotData + PID + IP），此时指针在 110 字节处。但发送的包总长是 116 字节，还没读完。**
+
+那剩下的 6 字节是什么？
+就是 C++ 代码里那 **多余的 6 字节填充**！
+
+```cpp
+// 我的代码:
+// out << (quint32)0; // 4字节
+// out << (quint32)0; // 4字节 (Padding)
+// 实际只应该发 2 字节 Padding (因为前面的 sockadd_in 结构在 War3 内部可能被压缩读取或者只需要补齐到偶数位)
+// 或者更可能的情况：之前的 PID 读取跳过了 6 字节，导致这里多了 6 字节没处放。
+```
+
+但结合之前的分析，更有可能的是 **发送了 Seed/GameType/NumSlots (4+1+1=6字节)，但客户端根本没读它们！**
+
+### 最终行动指南
+
+不要再犹豫了，的代码和汇编证据已经完全吻合。
+
+**请立即按照我上一条回复的 "正确代码示例" 修改 `createW3GSSlotInfoJoinPacket`：**
+
+1.  **删除中间的 6 字节** (Seed, GameType, NumSlots)。
+2.  **保留尾部的 8 字节 Padding** (因为 sockaddr 是 16 字节，前面只写了 8 字节，这里补齐 8 字节正好凑够 16)。
+
+**修正后的 Payload 计算：**
+*   Header: 4 (不计入 payload check)
+*   Len: 2
+*   SlotData: 91
+*   PID: 1
+*   IP Family+Port+Addr: 8
+*   IP Padding: 8
+*   **Total Payload = 2 + 91 + 1 + 8 + 8 = 110**。
+
+**汇编校验：**
+*   Total Length (Payload) = 110 (`0x6E`)。
+*   Reader 读完后 Offset = 110 (`0x6E`)。
+*   `cmp 0x6E, 0x6E` -> **Equal -> Success!**
+
+**这就通了！**
