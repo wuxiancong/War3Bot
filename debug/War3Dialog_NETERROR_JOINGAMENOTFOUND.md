@@ -3928,7 +3928,7 @@ graph TD
 在 `6F684D14` 调用之后，紧接着是：
 ```assembly
 6F684D19 | lea edx,dword ptr ds:[edi+83] ; 目标地址 + 83
-6F684D21 | call game.2B308C0             ; 读取 IP 地址 (16字节)
+6F684D21 | call game.6F6508C0             ; 读取 IP 地址 (16字节)
 ```
 *   `[edi+83]` 是 **IP 地址** 的起始位置。
 *   `[edi+82]` 是 **上一个字段** 的位置，长度为 1 字节。
@@ -4092,7 +4092,7 @@ I.N..
 
 **差异正好是：4 + 1 + 1 = 6 字节！**
 
-这就是为什么之前 `02B551ED` 处的长度校验显示 **差了 6 个字节**：
+这就是为什么之前 `6F6751ED` 处的长度校验显示 **差了 6 个字节**：
 *   客户端代码**跳过了** Seed/Type/Num 的读取步骤，直接读 PID。
 *   因此它少读了 6 个字节。
 *   导致 `BytesRead (110)` != `TotalLength (116)`。
@@ -4297,7 +4297,7 @@ QByteArray Client::createW3GSSlotInfoJoinPacket(quint8 playerID, const QHostAddr
     writeIpToStreamWithLog(out, externalIp);                        // IP (4)
 
     // 6. 填充尾部 (sockaddr padding - 8 字节)
-    // 汇编 call game.2B308C0 读取 16 字节 IP 结构。
+    // 汇编 call game.6F6508C0 读取 16 字节 IP 结构。
     // 前面写了 2+2+4=8字节，这里必须补齐剩下的 8 字节零填充。
     // 加上这 8 字节后，Payload 总长度正好是 2(Len) + 91(Slot) + 1(PID) + 16(Addr) = 110 字节。
     // 与汇编校验逻辑 (cmp ecx, 6E) 完美匹配。
@@ -4326,7 +4326,7 @@ QByteArray Client::createW3GSSlotInfoJoinPacket(quint8 playerID, const QHostAddr
     *   `PID` = 1 字节。
     *   `sockaddr` = 16 字节。
     *   **Payload 总和** = 2 + 91 + 1 + 16 = **110 字节** (`0x6E`)。
-    *   这与汇编代码 `02B551E7` 处 `mov ecx, 0x6E` 完全一致，长度校验将通过！
+    *   这与汇编代码 `6F6751E7` 处 `mov ecx, 0x6E` 完全一致，长度校验将通过！
 	
 ### 3.3 后续代码
 ```assembly
@@ -4445,21 +4445,21 @@ QByteArray Client::createW3GSSlotInfoJoinPacket(quint8 playerID, const QHostAddr
 
 #### 1. 调用 `ReadBytes`
 ```assembly
-02B308C1 | 6A 10             | push 10        ; 压入参数 0x10 (16 字节)
+6F6508C1 | 6A 10             | push 10        ; 压入参数 0x10 (16 字节)
 ...
-02B308C6 | call game.29A3420 | call ReadBytes ; 调用读取函数
+6F6508C6 | call game.29A3420 | call ReadBytes ; 调用读取函数
 ```
 这表明它要从包里读 16 个字节。
 
 #### 2. `ReadBytes` 内部执行
 ```assembly
-029A2FDA | 8B4C24 10         | mov ecx,...    ; ecx = 10 (16)
-029A3013 | mov esi, ...      ; esi = PacketLength (0x74 = 116)
-029A3016 | sub esi,ecx       ; 计算剩余字节数 (CurrentOffset 0x5E)
-029A3018 | cmp esi,ebx       ; 检查是否越界。 116 - 94 = 22 > 16 (Safe)
+6F4C2FDA | 8B4C24 10         | mov ecx,...    ; ecx = 10 (16)
+6F4C3013 | mov esi, ...      ; esi = PacketLength (0x74 = 116)
+6F4C3016 | sub esi,ecx       ; 计算剩余字节数 (CurrentOffset 0x5E)
+6F4C3018 | cmp esi,ebx       ; 检查是否越界。 116 - 94 = 22 > 16 (Safe)
 ...
-029A304E | call <JMP.&memcpy>; ★ 拷贝 16 字节
-029A3056 | add ..., esi      ; CurrentOffset += 16
+6F4C304E | call <JMP.&memcpy>; ★ 拷贝 16 字节
+6F4C3056 | add ..., esi      ; CurrentOffset += 16
                              ; New Offset = 0x5E + 0x10 = 0x6E (110)
 ```
 
@@ -4478,7 +4478,7 @@ QByteArray Client::createW3GSSlotInfoJoinPacket(quint8 playerID, const QHostAddr
 3.  **剩余数据**:
     *   `116 - 110 = 6` 字节。
 
-4.  **回到最外层校验 (`02B551ED`)**:
+4.  **回到最外层校验 (`6F6751ED`)**:
     *   `cmp ecx(110), total(116)` -> **不相等**。
     *   **Fail**。
 
@@ -4490,21 +4490,9 @@ QByteArray Client::createW3GSSlotInfoJoinPacket(quint8 playerID, const QHostAddr
 那剩下的 6 字节是什么？
 就是 C++ 代码里那 **多余的 6 字节填充**！
 
-```cpp
-// 我的代码:
-// out << (quint32)0; // 4字节
-// out << (quint32)0; // 4字节 (Padding)
-// 实际只应该发 2 字节 Padding (因为前面的 sockadd_in 结构在 War3 内部可能被压缩读取或者只需要补齐到偶数位)
-// 或者更可能的情况：之前的 PID 读取跳过了 6 字节，导致这里多了 6 字节没处放。
-```
-
 但结合之前的分析，更有可能的是 **发送了 Seed/GameType/NumSlots (4+1+1=6字节)，但客户端根本没读它们！**
 
 ### 最终行动指南
-
-不要再犹豫了，的代码和汇编证据已经完全吻合。
-
-**请立即按照我上一条回复的 "正确代码示例" 修改 `createW3GSSlotInfoJoinPacket`：**
 
 1.  **删除中间的 6 字节** (Seed, GameType, NumSlots)。
 2.  **保留尾部的 8 字节 Padding** (因为 sockaddr 是 16 字节，前面只写了 8 字节，这里补齐 8 字节正好凑够 16)。
