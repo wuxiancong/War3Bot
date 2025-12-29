@@ -512,10 +512,10 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         // Step D: 发送地图校验 (0x3D)
         finalPacket.append(createW3GSMapCheckPacket());
 
-        // Step E: 发送地图大小 (0x42) [关键修正：紧随0x3D发送]
-        finalPacket.append(createW3GSMapSizePacket());
+        // Step E: 发送地图大小 (0x42)
+        // finalPacket.append(createW3GSMapSizePacket());
 
-        // Step F: 发送槽位信息 (0x09) 刷新新人 UI
+        // Step F: 发送槽位信息 (0x09)
         finalPacket.append(createW3GSSlotInfoPacket());
 
         // 执行物理发送
@@ -1146,9 +1146,9 @@ QByteArray Client::createW3GSSlotInfoJoinPacket(quint8 playerID, const QHostAddr
     LOG_INFO(QString("   -> Num Slots   : %1 (Hex: 0x%2)").arg(m_slots.size()).arg(QString::number(m_slots.size(), 16).toUpper()));
     LOG_INFO(QString("   -> Player ID   : %1").arg(playerID));
 
-    out << (quint32)m_randomSeed;                                   // 随机种子
-    out << (quint8)m_baseGameType;                                  // 游戏类型
-    out << (quint8)m_slots.size();                                  // 槽位总数
+    // out << (quint32)m_randomSeed;                                // 随机种子 ❌删除
+    // out << (quint8)m_baseGameType;                               // 游戏类型 ❌删除
+    // out << (quint8)m_slots.size();                               // 槽位总数 ❌删除
     out << (quint8)playerID;                                        // 玩家的ID
 
     // 5. 写入网络信息
@@ -1390,13 +1390,12 @@ void Client::broadcastPacket(const QByteArray &packet, quint8 excludePid)
 {
     for (auto it = m_players.begin(); it != m_players.end(); ++it) {
         const PlayerData &p = it.value();
-        // 如果指定了排除 PID，则跳过（比如发给除了新人以外的老玩家）
+        // 如果 PID 匹配排除项，或者 Socket 无效，则跳过
         if (excludePid != 0 && p.pid == excludePid) continue;
+        if (!p.socket || p.socket->state() != QAbstractSocket::ConnectedState) continue;
 
-        if (p.socket && p.socket->state() == QAbstractSocket::ConnectedState) {
-            p.socket->write(packet);
-            p.socket->flush();
-        }
+        p.socket->write(packet);
+        p.socket->flush();
     }
 }
 
@@ -1404,7 +1403,8 @@ void Client::broadcastSlotInfo(quint8 excludePid)
 {
     QByteArray slotPacket = createW3GSSlotInfoPacket();
     broadcastPacket(slotPacket, excludePid);
-    LOG_INFO("📢 广播槽位更新 (0x09)");
+    LOG_INFO(QString("📢 广播槽位更新 (0x09)%1")
+                 .arg(excludePid != 0 ? QString(" (排除 PID: %1)").arg(excludePid) : ""));
 }
 
 // =========================================================
