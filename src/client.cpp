@@ -436,6 +436,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
             return;
         }
 
+        // 恢复你原始的详细日志输出
         LOG_INFO("------------------------------------------------");
         LOG_INFO("📥 [0x1E] 客户端加入请求解析结果:");
         LOG_INFO(QString("(UINT32) Host Counter: %1").arg(clientHostCounter));
@@ -461,7 +462,6 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
         if (slotIndex == -1) {
             LOG_WARNING("⚠️ 房间已满，拒绝加入");
-            // 发送拒绝包 (0x09 = Game Full)
             socket->write(createW3GSRejectJoinPacket(0x09));
             socket->flush();
             socket->disconnectFromHost();
@@ -471,7 +471,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         // 分配 PID
         quint8 hostId = slotIndex + 1;
 
-        // 更新槽位状态
+        // 更新内存中的槽位状态
         m_slots[slotIndex].pid = hostId;
         m_slots[slotIndex].slotStatus = 2;          // Occupied
         m_slots[slotIndex].downloadStatus = 255;    // Unknown
@@ -490,86 +490,52 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         m_players.insert(hostId, newPlayer);
         LOG_INFO(QString("💾 已注册玩家: [%1] PID: %2").arg(clientPlayerName).arg(hostId));
 
-        // 3. 构建握手响应包序列
+        // 3. 构建握手响应包序列 (发送给新玩家)
         QByteArray finalPacket;
-
         QHostAddress hostIp = socket->peerAddress();
         quint16 hostPort = m_udpSocket->localPort();
 
-        // --- Step A: 发送 0x04 (SlotInfoJoin) ---
-        finalPacket.append(createW3GSSlotInfoJoinPacket(
-            hostId,
-            hostIp,                     // 玩家的外网IP
-            hostPort                    // 主机的UDP端口
-            ));
+        // Step A: 发送 0x04 (SlotInfoJoin)
+        finalPacket.append(createW3GSSlotInfoJoinPacket(hostId, hostIp, hostPort));
 
-        // --- Step B: 发送 0x06 (PlayerInfo) ---
+        // Step B: 发送 Host 信息 (PID 1)
         finalPacket.append(createPlayerInfoPacket(
-            1,                          // Host PID
-            m_user,                     // Host Name
-            QHostAddress("0.0.0.0"),    // Host Ext IP
-            0,                          // Host Ext Port
-            QHostAddress("0.0.0.0"),    // Host Int IP
-            0                           // Host Int Port
-            ));
+            1, m_user, QHostAddress("0.0.0.0"), 0, QHostAddress("0.0.0.0"), 0));
 
-        // 循环发送已存在的其他玩家信息给新玩家
+        // Step C: 发送已存在的其他老玩家信息给新玩家
         for (auto it = m_players.begin(); it != m_players.end(); ++it) {
             const PlayerData &p = it.value();
-
-            // 跳过新玩家自己 (不需要发给自己)
-            if (p.pid == hostId) continue;
-            if (p.pid == 1) continue;
-
-            finalPacket.append(createPlayerInfoPacket(
-                p.pid,
-                p.name,
-                p.extIp,
-                p.extPort,
-                p.intIp,
-                p.intPort
-                ));
+            if (p.pid == hostId || p.pid == 1) continue; // 跳过新人自己和房主
+            finalPacket.append(createPlayerInfoPacket(p.pid, p.name, p.extIp, p.extPort, p.intIp, p.intPort));
         }
 
-        // --- Step C: 发送 0x3D (MapCheck) ---
+        // Step D: 发送地图校验 (0x3D)
         finalPacket.append(createW3GSMapCheckPacket());
 
-        // --- Step D: 发送 0x42 (MapSize) ---
+        // Step E: 发送地图大小 (0x42) [关键修正：紧随0x3D发送]
         finalPacket.append(createW3GSMapSizePacket());
 
-        // --- Step E: 发送 0x09 (SlotInfo) ---
+        // Step F: 发送槽位信息 (0x09) 刷新新人 UI
         finalPacket.append(createW3GSSlotInfoPacket());
 
-        // 4. 发送数据
+        // 执行物理发送
         socket->write(finalPacket);
         socket->flush();
 
-        LOG_INFO(QString("✅ 加入成功: 发送握手序列 (0x04 -> 0x06 -> 0x3D -> 0x09) PID: %1").arg(hostId));
+        LOG_INFO(QString("✅ 加入成功: 发送握手序列 (0x04 -> 0x06 -> 0x3D -> 0x42 -> 0x09) PID: %1").arg(hostId));
 
-        // 广播新玩家加入给房间内老玩家
+        // 4. 广播逻辑
+
+        // A. 广播新玩家加入信息 (0x06) 给所有老玩家 (排除新人自己)
         QByteArray newPlayerInfoPacket = createPlayerInfoPacket(
-            newPlayer.pid,
-            newPlayer.name,
-            newPlayer.extIp,
-            newPlayer.extPort,
-            newPlayer.intIp,
-            newPlayer.intPort
-            );
+            newPlayer.pid, newPlayer.name, newPlayer.extIp, newPlayer.extPort, newPlayer.intIp, newPlayer.intPort);
+        broadcastPacket(newPlayerInfoPacket, hostId);
 
-        // 广播 0x06 (新玩家信息) 和 0x09 (最新槽位图)
-        QByteArray slotInfoPacket = createW3GSSlotInfoPacket();
+        // B. 广播最新槽位图 (0x09) 给房间所有人 (不排除任何人，确保所有人的 UI 刷新)
+        // 如果你的 Bot 虚拟主机不需要收包，broadcastPacket 内部会因为没有 socket 而自动跳过 PID 1
+        broadcastSlotInfo();
 
-        for (auto it = m_players.begin(); it != m_players.end(); ++it) {
-            const PlayerData &p = it.value();
-            if (p.pid == hostId) continue;
-
-            if (p.socket && p.socket->state() == QAbstractSocket::ConnectedState) {
-                p.socket->write(newPlayerInfoPacket); // 告诉老玩家有人来了
-                p.socket->write(slotInfoPacket);      // 更新老玩家的槽位界面
-                p.socket->flush();
-            }
-        }
-        LOG_INFO("📢 已向其他玩家广播新玩家加入信息 (0x06 + 0x09)");
+        LOG_INFO("📢 已向老玩家同步新成员并广播 UI 刷新");
     }
     break;
 
@@ -633,13 +599,12 @@ void Client::onPlayerDisconnected() {
     quint8 pidToRemove = 0;
     QString nameToRemove;
 
-    // 1. 在 m_players 中找到是谁断开了
+    // 1. 查找玩家
     auto it = m_players.begin();
     while (it != m_players.end()) {
         if (it.value().socket == socket) {
             pidToRemove = it.key();
             nameToRemove = it.value().name;
-            // 从玩家列表移除
             it = m_players.erase(it);
             break;
         } else {
@@ -647,40 +612,30 @@ void Client::onPlayerDisconnected() {
         }
     }
 
-    // 清理 Socket 缓存
     m_playerSockets.removeAll(socket);
     m_playerBuffers.remove(socket);
-    socket->deleteLater(); // 确保释放内存
+    socket->deleteLater();
 
     if (pidToRemove != 0) {
-        LOG_INFO(QString("🔌 玩家 [%1] (PID: %2) 断开连接 - 开始清理").arg(nameToRemove).arg(pidToRemove));
+        LOG_INFO(QString("🔌 玩家 [%1] (PID: %2) 断开连接 - 执行广播清理").arg(nameToRemove).arg(pidToRemove));
 
-        // 2. 恢复槽位状态 (Slot)
+        // 2. 释放槽位
         for (int i = 0; i < m_slots.size(); ++i) {
             if (m_slots[i].pid == pidToRemove) {
                 m_slots[i].pid = 0;
                 m_slots[i].slotStatus = 0; // Open
                 m_slots[i].downloadStatus = 255;
-                m_slots[i].computer = 0;
                 break;
             }
         }
 
-        // 3. 广播通知给剩余的所有玩家
-        QByteArray leftPacket = createW3GSPlayerLeftPacket(pidToRemove, 0x08); // 0x08 = Left
-        QByteArray slotInfoPacket = createW3GSSlotInfoPacket(); // 0x09 = Update Slots
+        // 3. 广播给所有人：有人离开了 (0x07) + 刷新 UI (0x09)
+        // 注意：0x0D 是 BnetDocs 里的 PLAYERLEAVE_LOBBY (在房里离开)
+        QByteArray leftPacket = createW3GSPlayerLeftPacket(pidToRemove, 0x0D);
+        broadcastPacket(leftPacket, pidToRemove);
+        broadcastSlotInfo(pidToRemove);             // 内部包含 0x09
 
-        for (auto& p : m_players) {
-            if (p.socket && p.socket->state() == QAbstractSocket::ConnectedState) {
-                // 告诉大家：某人走了 (0x07)
-                p.socket->write(leftPacket);
-                // 告诉大家：槽位空出来了 (0x09)
-                p.socket->write(slotInfoPacket);
-                p.socket->flush();
-            }
-        }
-
-        LOG_INFO("📢 已广播玩家离开消息 (0x07 + 0x09)");
+        LOG_INFO("📢 已向全房间广播玩家离开 (0x07) 和槽位更新 (0x09)");
     }
 }
 
@@ -1431,19 +1386,25 @@ QByteArray Client::createW3GSMapSizePacket()
     return packet;
 }
 
-void Client::broadcastSlotInfo()
+void Client::broadcastPacket(const QByteArray &packet, quint8 excludePid)
 {
-    // 生成最新的槽位包
-    QByteArray slotPacket = createW3GSSlotInfoPacket();
+    for (auto it = m_players.begin(); it != m_players.end(); ++it) {
+        const PlayerData &p = it.value();
+        // 如果指定了排除 PID，则跳过（比如发给除了新人以外的老玩家）
+        if (excludePid != 0 && p.pid == excludePid) continue;
 
-    // 假设 m_players 存储了所有连接的 socket
-    for (QTcpSocket* s : qAsConst(m_playerSockets)) {
-        if (s->state() == QAbstractSocket::ConnectedState) {
-            s->write(slotPacket);
-            s->flush();
+        if (p.socket && p.socket->state() == QAbstractSocket::ConnectedState) {
+            p.socket->write(packet);
+            p.socket->flush();
         }
     }
-    LOG_INFO("📢 已向所有玩家广播最新的槽位信息 (0x09)");
+}
+
+void Client::broadcastSlotInfo(quint8 excludePid)
+{
+    QByteArray slotPacket = createW3GSSlotInfoPacket();
+    broadcastPacket(slotPacket, excludePid);
+    LOG_INFO("📢 广播槽位更新 (0x09)");
 }
 
 // =========================================================

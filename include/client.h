@@ -241,10 +241,11 @@ private slots:
 
 private:
     // --- 游戏槽位处理 ---
+    void broadcastPacket(const QByteArray &packet, quint8 excludePid);
+    void broadcastSlotInfo(quint8 excludePid = 1);
     void initSlots(quint8 maxPlayers = 10);
     QByteArray serializeSlotData();
     GameSlot *findEmptySlot();
-    void broadcastSlotInfo();
 
     // --- W3GS 协议包生成函数 ---
 
