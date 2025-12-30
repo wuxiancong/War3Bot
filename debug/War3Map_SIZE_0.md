@@ -2186,6 +2186,7 @@ bool War3Map::load(const QString &mapPath)
 ```
 ## 修正错误
 
+```cpp
 // 辅助函数：将 uint32 以小端序写入 SHA1
 static void sha1UpdateInt32(QCryptographicHash &sha1, quint32 value) {
     quint32 le = qToLittleEndian(value);
@@ -2393,7 +2394,7 @@ bool War3Map::load(const QString &mapPath)
     m_valid = true;
     return true;
 }
-
+```
 
 
 
