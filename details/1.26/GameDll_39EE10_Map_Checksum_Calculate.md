@@ -7,6 +7,7 @@
 
 ---
 
+```mermaid
 graph TD
     Level1[Layer 1: 主控逻辑 6F39EE10] --> Init[SHA1_Init]
     Level1 --> LoadEnv[Layer 2: 环境校验 6F3B1D00]
@@ -457,7 +458,8 @@ QByteArray CalculateMapSHA1_Qt(const QString &mapPath)
 ```
 
 ### 文档提示
-*   **关于路径**: 代码中假定了 `war3files/` 目录存放 `common.j` 和 `blizzard.j`。在文档中请注明，这需要用户从魔兽客户端的 `War3Patch.mpq` 或 `War3x.mpq` 中提取这两个文件，并放在指定目录。
+*   **关于路径**: 代码中假定了 `war3files/` 目录存放 `common.j` 和 `blizzard.j`。在文档中请注明，这需要用户从魔兽客户端的 `War3Patch.mpq` 或 `War3x.mpq` 
+中提取这两个文件，并放在指定目录。
 *   **关于 StormLib**: 需要在项目中链接 `StormLib.lib` (Windows) 或 `libstorm.a` (Linux)。
 *   **关于结果**: 返回的 20 字节二进制数据即为 `StatString` 协议中所需的 `Map SHA1`。
 
