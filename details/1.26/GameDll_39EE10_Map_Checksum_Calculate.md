@@ -11,7 +11,8 @@ graph TD
     Level1[Layer 1: 主控逻辑 6F39EE10] --> Init[SHA1_Init]
     Level1 --> LoadEnv[Layer 2: 环境校验 6F3B1D00]
     
-    subgraph Layer2_Environment [Layer 2: 环境与盐值]
+    %% 修改点：使用双引号包裹子图标题，兼容性更好
+    subgraph "Layer 2: 环境与盐值"
         LoadEnv --> Salt[输入 Salt: 0x03F1379E]
         LoadEnv --> HashCommon[Hash: common.j]
         LoadEnv --> HashBlizz[Hash: blizzard.j]
@@ -20,7 +21,7 @@ graph TD
 
     Level1 --> LoopComp[Layer 1: 组件遍历 6F39ED00]
     
-    subgraph Layer1_Loop [组件遍历]
+    subgraph "组件遍历"
         LoopComp --> ExtCheck{检查后缀}
         ExtCheck --> HashW3E[.w3e 地形]
         ExtCheck --> HashWPM[.wpm 路径]
