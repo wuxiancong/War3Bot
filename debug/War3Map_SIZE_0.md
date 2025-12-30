@@ -1783,9 +1783,6 @@ Warcraft III 是一个多线程游戏：
 
 ### 1. `6F6D96B0`: 确实是 Signal / SetEvent (带死锁检测)
 
-我问的：**"这里是 setEvent 对么？"**
-**答案：是的，这是触发信号的函数。**
-
 ```assembly
 6F6D9703  | FF25 CCD1866F           | jmp dword ptr ds:[<SetEvent>]                   |
 ```
