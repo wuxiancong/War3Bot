@@ -162,6 +162,22 @@ enum class SlotRace {
     Observer                    = Random
 };
 
+enum ChatFlag {
+    Message                     = 0x10,
+    TeamChange                  = 0x11,
+    ColorChange                 = 0x12,
+    RaceChange                  = 0x13,
+    HandicapChange              = 0x14,
+    Scope                       = 0x20
+};
+
+enum ChatScope {
+    All                         = 0x00,
+    Allies                      = 0x01,
+    Observers                   = 0x02,
+    Directed                    = 0x03
+};
+
 struct GameSlot {
     quint8 pid                  = 0;
     quint8 downloadStatus       = 0;
@@ -276,6 +292,18 @@ private:
     QByteArray createW3GSPingFromHostPacket();
 
     /**
+     * @brief 生成 0x01 (Chat From Host) 数据包
+     * 用于向客户端玩家发送消息
+     * toPID: 接收者PID，255(0xFF) 代表广播给所有人
+     * extraData: 根据 Flag 类型传入 Team/Color/Race 或者是 Scope
+     */
+    QByteArray createW3GSChatPacket(const QString &message,
+                                    quint8 senderPid = 1,
+                                    quint8 toPid = 255,
+                                    ChatFlag flag = Message,
+                                    quint32 extraData = 0);
+
+    /**
      * @brief 生成 0x05 (RejectJoin) 数据包
      * 用于拒绝玩家加入
      */
@@ -340,7 +368,6 @@ private:
     // 游戏/环境相关
     War3Map m_war3Map;
     quint32 m_randomSeed = 0;
-    quint32 m_hostCounter = 1;
     QVector<GameSlot> m_slots;
     QStringList m_channelList;
     QMap<quint8, PlayerData> m_players;
@@ -359,8 +386,10 @@ private:
     quint32 m_logonType = 0;
     LoginProtocol m_loginProtocol;
 
-    // 定时器
+    // 定时器 /计数器
     QTimer *m_pingTimer;
+    quint32 m_hostCounter = 1;
+    quint32 m_chatIntervalCounter{0};
 
     // 状态
     bool m_gameStarted = false;

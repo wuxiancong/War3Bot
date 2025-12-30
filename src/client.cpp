@@ -385,7 +385,6 @@ void Client::onPlayerReadyRead()
         quint8 header = (quint8)buffer[0];
         if (header != 0xF7) {
             LOG_WARNING("❌ 非法协议头，断开连接");
-            socket->disconnectFromHost();
             return; // 立即返回，防止后续访问
         }
 
@@ -1135,6 +1134,69 @@ QByteArray Client::createW3GSPingFromHostPacket()
     return packet;
 }
 
+QByteArray Client::createW3GSChatPacket(const QString& message, quint8 senderPid, quint8 toPid, ChatFlag flag, quint32 extraData)
+{
+    QByteArray packet;
+    QDataStream out(&packet, QIODevice::WriteOnly);
+    out.setByteOrder(QDataStream::LittleEndian);
+
+    // 1. Header (F7 0F [Len])
+    out << (quint8)0xF7 << (quint8)0x0F << (quint16)0;
+
+    // 2. Num Receivers (1 byte)
+    // 这里我们固定填 1，然后指定 ToPID。
+    // 如果 ToPID 是 255 (0xFF)，客户端通常会将其视为广播消息。
+    out << (quint8)1;
+
+    // 3. Receiver PID (1 byte)
+    out << (quint8)toPid;
+
+    // 4. Sender PID (1 byte)
+    // 即 Host PID，默认为 1
+    out << (quint8)senderPid;
+
+    // 5. Flag (1 byte)
+    out << (quint8)flag;
+
+    // 6. Extra Data (Based on Flag)
+    switch (flag) {
+    case Message:     // 0x10
+        // 无额外字段
+        break;
+
+    case TeamChange:  // 0x11
+    case ColorChange: // 0x12
+    case RaceChange:  // 0x13
+    case HandicapChange:    // 0x14
+        // 这些类型只需要 1 字节的额外数据
+        out << (quint8)(extraData & 0xFF);
+        break;
+
+    case Scope:       // 0x20
+        // 需要 4 字节的 Scope (如 ChatScope::All = 0)
+        out << (quint32)extraData;
+        break;
+
+    default:
+        // 未知类型，不做处理
+        break;
+    }
+
+    // 7. Message String
+    // 使用 Local8Bit (GBK) 兼容老版本魔兽中文，如果乱码请改回 toUtf8()
+    QByteArray msgBytes = message.toLocal8Bit();
+    out.writeRawData(msgBytes.data(), msgBytes.length());
+    out << (quint8)0; // Null Terminator
+
+    // 8. 回填长度
+    QDataStream lenStream(&packet, QIODevice::ReadWrite);
+    lenStream.setByteOrder(QDataStream::LittleEndian);
+    lenStream.skipRawData(2);
+    lenStream << (quint16)packet.size();
+
+    return packet;
+}
+
 QByteArray Client::createW3GSSlotInfoJoinPacket(quint8 playerID, const QHostAddress& externalIp, quint16 localPort)
 {
     LOG_INFO("=== 开始构建 W3GS_SLOTINFOJOIN (0x04) 包 ===");
@@ -1461,6 +1523,19 @@ void Client::sendPingLoop()
     if (m_players.isEmpty()) return;
 
     QByteArray pingPacket = createW3GSPingFromHostPacket();
+
+    QByteArray chatPacket;
+    m_chatIntervalCounter++;
+
+    if (m_chatIntervalCounter >= 3) {
+        int playerCount = m_players.size();
+        QString msg = QString("请耐心等待，当前已有 %1 个玩家...").arg(playerCount);
+
+        // 使用新函数的默认参数：Host(1) -> All(255) | Type: Message(0x10)
+        chatPacket = createW3GSChatPacket(msg);
+
+        m_chatIntervalCounter = 0;
+    }
 
     // 遍历所有连接的玩家 Socket 发送
     for (auto it = m_players.begin(); it != m_players.end(); ++it) {
