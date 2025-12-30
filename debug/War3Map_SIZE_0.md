@@ -1,11 +1,11 @@
-# War3 机器人主机创建房间后加入房间槽位界面空白调试日志
+# War3 机器人主机创建房间后加入房间地图验证失败调试日志
 
 ![x64dbg调试截图](https://github.com/wuxiancong/War3Bot/raw/main/debug/images/War3Create_MAPERROR_NOSOLTSANDSEND42PACKET.PNG)
 
 ## 问题描述 (Issue Description)
 
 **现象:**
-在使用自定义 C++ 编写的 War3Bot 创建房间后，点击加入房间后槽位界面一片空白，拦截的数据显示发送 `0x42` 数据包，报告给服务器地图大小为0。
+在使用自定义 C++ 编写的 War3Bot 创建房间后，点击加入房间后拦截的数据显示发送 `0x42` 数据包，报告给服务器地图大小为0。
 
 **环境 (Environment):**
 - **客户端:** Warcraft III (v1.26.0.6401 / Game.dll)
