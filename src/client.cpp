@@ -553,18 +553,6 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         broadcastSlotInfo();
 
         LOG_INFO("📢 已向老玩家同步新成员并广播 UI 刷新");
-
-        // 握手完成后立即 Ping 一次，防止客户端 5 秒超时
-        // 构造 0x01 Ping 包: F7 01 08 00 [Timestamp]
-        QByteArray pingPacket;
-        QDataStream pingOut(&pingPacket, QIODevice::WriteOnly);
-        pingOut.setByteOrder(QDataStream::LittleEndian);
-        pingOut << (quint8)0xF7 << (quint8)0x01 << (quint16)8;
-        pingOut << (quint32)QDateTime::currentMSecsSinceEpoch();
-
-        socket->write(pingPacket);
-        socket->flush();
-        LOG_INFO("💓 [Anti-Timeout] 握手完成，立即发送首个 Ping 包");
     }
     break;
 
@@ -1127,108 +1115,83 @@ QByteArray Client::createW3GSSlotInfoJoinPacket(quint8 playerID, const QHostAddr
 
     QByteArray packet;
     QDataStream out(&packet, QIODevice::WriteOnly);
-    // ⚠️ 关键：War3 协议强制要求 Little-Endian (小端序)
+    // 必须强制显式设置为 LittleEndian，War3 协议要求小端序
     out.setByteOrder(QDataStream::LittleEndian);
 
-    // -----------------------------------------------------------
-    // 1. 准备槽位数据
-    // -----------------------------------------------------------
+    // 1. 获取槽位数据
     QByteArray slotData = serializeSlotData();
 
-    // -----------------------------------------------------------
-    // 2. 写入包头 (Header)
-    // -----------------------------------------------------------
-    out << (quint8)0xF7 << (quint8)0x04 << (quint16)0; // 长度稍后回填
+    // 打印槽位数据详情
+    QString firstByteHex = slotData.isEmpty() ? "Empty" : QString::number((quint8)slotData.at(0), 16).toUpper();
+    LOG_INFO(QString("[Step 1] 生成槽位数据: 大小=%1 字节, 第1个字节(NumSlots)=0x%2")
+                 .arg(slotData.size())
+                 .arg(firstByteHex));
 
-    // -----------------------------------------------------------
-    // 3. 写入槽位数据块 (Slot Data Block)
-    // -----------------------------------------------------------
+    // 2. 写入 Header (长度稍后回填)
+    out << (quint8)0xF7 << (quint8)0x04 << (quint16)0;
+    LOG_INFO("[Step 2] 写入包头: F7 04 00 00 (长度占位)");
+
+    // 3. 写入槽位数据块长度 & 内容
     quint16 slotDataLen = (quint16)slotData.size();
     out << slotDataLen;
+
+    // 如果这里写错，客户端就会读错偏移
+    // 手动拆解高低字节打印，确认写入顺序
+    quint8 lenLow = slotDataLen & 0xFF;
+    quint8 lenHigh = (slotDataLen >> 8) & 0xFF;
+    LOG_INFO(QString("[Step 3] 写入槽位数据长度: %1 (Hex期望: %2 %3)")
+                 .arg(slotDataLen)
+                 .arg(QString::number(lenLow, 16).toUpper(), 2, '0')
+                 .arg(QString::number(lenHigh, 16).toUpper(), 2, '0'));
+
     out.writeRawData(slotData.data(), slotData.size());
+    LOG_INFO(QString("[Step 3] 写入槽位数据体 (共%1字节)").arg(slotData.size()));
 
-    LOG_INFO(QString("[Step 1-3] 写入槽位数据: 长度=%1 字节").arg(slotDataLen));
-
-    // -----------------------------------------------------------
-    // 4. 写入游戏状态核心字段 (Game State) [修复空白房间的关键]
-    // -----------------------------------------------------------
-
-    // [A] Random Seed (4 bytes)
-    // 如果种子尚未生成或为0，必须重新生成，否则客户端会拒绝连接
-    if (m_randomSeed == 0) {
-        m_randomSeed = QRandomGenerator::global()->generate();
-        LOG_WARNING("⚠️ 检测到 RandomSeed 为 0，已自动重新生成");
-    }
-    out << (quint32)m_randomSeed;
-
-    // [B] Game Type (1 byte)
-    // 0x0A (10) = Melee/Custom (推荐用于 DotA)
-    // 0x09 (9)  = Custom
-    // 0x01 (1)  = Private
-    quint8 gameType = 10;
-    out << (quint8)gameType;
-
-    // [C] Num Slots (1 byte)
-    out << (quint8)m_slots.size();
-
-    // [D] Player ID (1 byte)
-    // 必须与 SlotInfo 中分配给该玩家的 PID 一致
-    out << (quint8)playerID;
-
-    // --- 日志记录关键状态 ---
-    LOG_INFO("------------------------------------------------");
-    LOG_INFO(QString("[Step 4] 写入关键状态字段 (Hex Dump 焦点):"));
+    // 4. 写入游戏状态信息
+    LOG_INFO(QString("[Step 4] 写入游戏状态 (Expect Seed at this offset):"));
     LOG_INFO(QString("   -> Random Seed : 0x%1").arg(QString::number(m_randomSeed, 16).toUpper()));
-    LOG_INFO(QString("   -> Game Type   : %1 (0x%2)").arg(gameType).arg(QString::number(gameType, 16).toUpper()));
-    LOG_INFO(QString("   -> Num Slots   : %1").arg(m_slots.size()));
+    LOG_INFO(QString("   -> Game Type   : %1").arg(m_baseGameType));
+    LOG_INFO(QString("   -> Num Slots   : %1 (Hex: 0x%2)").arg(m_slots.size()).arg(QString::number(m_slots.size(), 16).toUpper()));
     LOG_INFO(QString("   -> Player ID   : %1").arg(playerID));
-    LOG_INFO("------------------------------------------------");
 
-    // -----------------------------------------------------------
-    // 5. 写入网络信息 (Network Info)
-    // -----------------------------------------------------------
-    out << (quint16)2; // AF_INET
-    out << (quint16)qToBigEndian(localPort); // 端口通常是大端序，但在 0x04 包中有时会有变种，标准做法是 BigEndian
+    // out << (quint32)m_randomSeed;                                // 随机种子 ❌删除
+    // out << (quint8)m_baseGameType;                               // 游戏类型 ❌删除
+    // out << (quint8)m_slots.size();                               // 槽位总数 ❌删除
+    out << (quint8)playerID;                                        // 玩家的ID
 
-    // 写入 IP 地址
+    // 5. 写入网络信息
+    out << (quint16)2;                                              // AF_INET
+    out << (quint16)qToBigEndian(localPort);                        // Port (注意：网络端口通常是 BigEndian，但War3协议里有时混用)
+
+    LOG_INFO(QString("[Step 5] 写入网络信息: Port=%1, IP=%2").arg(localPort).arg(externalIp.toString()));
     writeIpToStreamWithLog(out, externalIp);
 
-    // 写入两个 0 (可能是 Internal IP 占位或填充)
+    // 6. 填充尾部
     out << (quint32)0;
     out << (quint32)0;
+    LOG_INFO("[Step 6] 写入尾部填充: 00 00 00 00 00 00 00 00");
 
-    LOG_INFO(QString("[Step 5] 网络信息写入完毕: Port=%1 IP=%2").arg(localPort).arg(externalIp.toString()));
-
-    // -----------------------------------------------------------
-    // 6. 回填包长度 (Patch Length)
-    // -----------------------------------------------------------
+    // 7. 回填包总长度
     quint16 totalSize = (quint16)packet.size();
     QDataStream lenStream(&packet, QIODevice::ReadWrite);
     lenStream.setByteOrder(QDataStream::LittleEndian);
     lenStream.skipRawData(2); // 跳过 F7 04
     lenStream << totalSize;
 
-    // -----------------------------------------------------------
-    // 7. 最终校验日志 (Hex Dump Verification)
-    // -----------------------------------------------------------
-    LOG_INFO(QString("=== [0x04] 包构建完成 (总长: %1) ===").arg(totalSize));
+    LOG_INFO(QString("[Step 7] 回填包总长度: %1 字节").arg(totalSize));
+
+    // === 终极检查：打印整个包的 Hex ===
     QString hexStr = packet.toHex(' ').toUpper();
+    LOG_INFO(QString("=== [0x04] 最终包 Hex Dump ==="));
     LOG_INFO(hexStr);
 
-    // 验证：计算 RandomSeed 在包中的绝对偏移量
-    // Header(4) + SlotLen(2) + SlotData(N) = 6 + N
-    int seedOffset = 6 + slotDataLen;
-    if (packet.size() >= seedOffset + 4) {
-        QByteArray actualSeedBytes = packet.mid(seedOffset, 4);
-        // 手动转回 Int 验证
-        QDataStream verify(actualSeedBytes);
-        verify.setByteOrder(QDataStream::LittleEndian);
-        quint32 verifySeed;
-        verify >> verifySeed;
-
-        QString status = (verifySeed == m_randomSeed) ? "✅ 匹配" : "❌ 不匹配";
-        LOG_INFO(QString("   🔍 偏移校验 [Offset %1]: 0x%2 -> %3").arg(seedOffset)
-                     .arg(QString(actualSeedBytes.toHex().toUpper()), status));
+    // 重点标出 Random Seed 的位置
+    // Header(4) + SlotLen(2) + SlotData(N) + Seed(4)
+    // 偏移 = 6 + N
+    if (packet.size() > 6 + slotDataLen) {
+        int seedOffset = 6 + slotDataLen;
+        QByteArray seedBytes = packet.mid(seedOffset, 4);
+        LOG_INFO(QString("   -> 校验: 偏移 %1 处的 4 字节 (Seed) 为: %2").arg(QString::number(seedOffset), seedBytes.toHex(' ').toUpper()));
     }
 
     return packet;
