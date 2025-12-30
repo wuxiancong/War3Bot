@@ -28,11 +28,13 @@ Client::Client(QObject *parent)
 {
     initSlots();
 
+    m_pingTimer = new QTimer(this);
     m_udpSocket = new QUdpSocket(this);
     m_tcpServer = new QTcpServer(this);
     m_tcpSocket = new QTcpSocket(this);
 
     // 信号槽连接
+    connect(m_pingTimer, &QTimer::timeout, this, &Client::sendPingLoop);
     connect(m_tcpSocket, &QTcpSocket::connected, this, &Client::onConnected);
     connect(m_tcpSocket, &QTcpSocket::readyRead, this, &Client::onTcpReadyRead);
     connect(m_tcpSocket, &QTcpSocket::disconnected, this, &Client::onDisconnected);
@@ -483,10 +485,14 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
         if (slotIndex == -1) {
             LOG_WARNING("⚠️ 房间已满，拒绝加入");
-            socket->write(createW3GSRejectJoinPacket(0x09));
+            socket->write(createW3GSRejectJoinPacket(FULL));
             socket->flush();
             socket->disconnectFromHost();
             return;
+        }
+
+        if (m_gameStarted) {
+            socket->write(createW3GSRejectJoinPacket(STARTED));
         }
 
         // 分配 PID
@@ -1027,6 +1033,7 @@ void Client::createGame(const QString &gameName, const QString &password, Provid
 
     sendPacket(SID_STARTADVEX3, payload);
     LOG_INFO("📤 房间创建请求发送完毕");
+
 }
 
 // =========================================================
@@ -1061,26 +1068,26 @@ void Client::initSlots(quint8 maxPlayers)
             // === 近卫军团 (Sentinel) : Slots 0-4 ===
             m_slots[i].team = (quint8)SlotTeam::Sentinel;           // Team 1
             m_slots[i].race = (quint8)SlotRace::Sentinel;           // 4 = Night Elf (暗夜精灵)
-            m_slots[i].slotStatus = (quint8)SlotStatus::Open;       // 0 = Open
-        }
+                    m_slots[i].slotStatus = Open;                   // 0 = Open
+                }
         else if (i < 10) {
             // === 天灾军团 (Scourge) : Slots 5-9 ===
             m_slots[i].team = (quint8)SlotTeam::Scourge;            // Team 2
             m_slots[i].race = (quint8)SlotRace::Scourge;            // 8 = Undead (不死族)
-            m_slots[i].slotStatus = (quint8)SlotStatus::Open;       // 0 = Open
+            m_slots[i].slotStatus = Open;                           // 0 = Open
         }
         else {
             // === 裁判/观察者 : Slots 10-11 ===
             m_slots[i].team = (quint8)SlotTeam::Observer;           // Team 3 (裁判)
             m_slots[i].race = (quint8)SlotRace::Observer;           // Random
-            m_slots[i].slotStatus = (quint8)SlotStatus::Close;      // 1 = Closed (默认关闭，只开10个位置)
+            m_slots[i].slotStatus = Close;                          // 1 = Closed (默认关闭，只开10个位置)
         }
 
         // --- 主机特殊覆盖 (Slot 0) ---
         if (i == 0) {
             m_slots[i].pid = 1;                                     // 主机初始槽位编号
             m_slots[i].downloadStatus = 100;                        // 主机肯定有地图
-            m_slots[i].slotStatus = (quint8)SlotStatus::Occupied;   // 被占领
+            m_slots[i].slotStatus = (quint8)Occupied;               // 被占领
             m_slots[i].computer = 0;                                // 人类
         }
     }
@@ -1107,6 +1114,25 @@ QByteArray Client::serializeSlotData() {
         ds << slot.handicap;
     }
     return data;
+}
+
+QByteArray Client::createW3GSPingFromHostPacket()
+{
+    QByteArray packet;
+    QDataStream out(&packet, QIODevice::WriteOnly);
+    out.setByteOrder(QDataStream::LittleEndian);
+
+    // 1. Header (F7 01 08 00)
+    // ID: 0x01 (W3GS_PING_FROM_HOST)
+    // Length: 8 bytes
+    out << (quint8)0xF7 << (quint8)0x01 << (quint16)8;
+
+    // 2. Payload (4 bytes)
+    // 通常使用当前系统运行时间 (毫秒)
+    // 客户端收到后会在 0x46 (Pong) 包里原样发回来，用于计算延迟
+    out << (quint32)QDateTime::currentMSecsSinceEpoch();
+
+    return packet;
 }
 
 QByteArray Client::createW3GSSlotInfoJoinPacket(quint8 playerID, const QHostAddress& externalIp, quint16 localPort)
@@ -1193,7 +1219,7 @@ QByteArray Client::createW3GSSlotInfoJoinPacket(quint8 playerID, const QHostAddr
     return packet;
 }
 
-QByteArray Client::createW3GSRejectJoinPacket(quint32 reason)
+QByteArray Client::createW3GSRejectJoinPacket(RejectReason reason)
 {
     QByteArray packet;
     QDataStream out(&packet, QIODevice::WriteOnly);
@@ -1202,12 +1228,6 @@ QByteArray Client::createW3GSRejectJoinPacket(quint32 reason)
     // Header: F7 05 [Length]
     out << (quint8)0xF7 << (quint8)0x05 << (quint16)0;
 
-    // Reason Code (4 bytes)
-    // 0x06 = Invalid
-    // 0x07 = Game Full
-    // 0x09 = Game Full
-    // 0x10 = Bad Password
-    // 0x0A = Started
     out << (quint32)reason;
 
     // 回填长度
@@ -1437,17 +1457,21 @@ bool Client::isBlackListedPort(quint16 port)
 
 void Client::sendPingLoop()
 {
-    // 构造 0x01 Ping 包
-    // F7 01 08 00 [Timestamp(4)]
-    QByteArray pingPacket;
-    QDataStream out(&pingPacket, QIODevice::WriteOnly);
-    out.setByteOrder(QDataStream::LittleEndian);
-    out << (quint8)0xF7 << (quint8)0x01 << (quint16)8;
-    out << (quint32)QDateTime::currentMSecsSinceEpoch();
+    // 如果没有玩家，就不需要广播 Ping
+    if (m_players.isEmpty()) return;
 
-    for (auto socket : qAsConst(m_playerSockets)) {
-        socket->write(pingPacket);
+    QByteArray pingPacket = createW3GSPingFromHostPacket();
+
+    // 遍历所有连接的玩家 Socket 发送
+    for (auto it = m_players.begin(); it != m_players.end(); ++it) {
+        QTcpSocket *socket = it.value().socket;
+
+        if (socket && socket->state() == QAbstractSocket::ConnectedState) {
+            socket->write(pingPacket);
+            socket->flush();
+        }
     }
+    LOG_INFO(QString("💓 已向 %1 名玩家发送 Ping").arg(m_players.size()));
 }
 
 void Client::writeIpToStreamWithLog(QDataStream &out, const QHostAddress &ip)

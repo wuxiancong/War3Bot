@@ -128,7 +128,27 @@ enum LadderType {
     Ladder_IronMan              = 0x00000003
 };
 
-enum class SlotRace : quint8 {
+enum RejectReason {
+    INVALID                     = 0x06,
+    FULL_OLD                    = 0x07,
+    FULL                        = 0x09,
+    STARTED                     = 0x10,
+    WRONGPASS                   = 0x27
+};
+
+enum SlotStatus {
+    Open                        = 0,
+    Close                       = 1,
+    Occupied                    = 2
+};
+
+enum class SlotTeam {
+    Sentinel                    = 0,
+    Scourge                     = 1,
+    Observer                    = 2
+};
+
+enum class SlotRace {
     Human                       = 0x01,
     Orc                         = 0x02,
     NightElf                    = 0x04,
@@ -140,18 +160,6 @@ enum class SlotRace : quint8 {
     Sentinel                    = NightElf,
     Scourge                     = Undead,
     Observer                    = Random
-};
-
-enum class SlotTeam : quint8 {
-    Sentinel                    = 0,
-    Scourge                     = 1,
-    Observer                    = 2
-};
-
-enum class SlotStatus : quint8 {
-    Open                        = 0,
-    Close                       = 1,
-    Occupied                    = 2
 };
 
 struct GameSlot {
@@ -251,22 +259,27 @@ private:
 
     /**
      * @brief 生成 0x09 (SlotInfo) 数据包
-     * 包含: Header + SlotData + RandomSeed + GameType + NumSlots
      * 用于握手最后一步，或房间信息变更时广播
      */
     QByteArray createW3GSSlotInfoPacket();
 
     /**
      * @brief 生成 0x3D (Map Check) 数据包
-     * 包含: 地图路径、大小、CRC 和 **修复后的20字节SHA1**
+     * 用于向玩家发送地图信息，用于客户端验证
      */
     QByteArray createW3GSMapCheckPacket();
+
+    /**
+     * @brief 生成 0x01 (Ping From Host) 数据包
+     * 用于定期向客户端发送 Ping，防止断开连接战网
+     */
+    QByteArray createW3GSPingFromHostPacket();
 
     /**
      * @brief 生成 0x05 (RejectJoin) 数据包
      * 用于拒绝玩家加入
      */
-    QByteArray createW3GSRejectJoinPacket(quint32 reason);
+    QByteArray createW3GSRejectJoinPacket(RejectReason reason);
 
     /**
      * @brief 生成 0x04 (PlayerLeft) 数据包
@@ -345,6 +358,12 @@ private:
     quint32 m_clientToken = 0;
     quint32 m_logonType = 0;
     LoginProtocol m_loginProtocol;
+
+    // 定时器
+    QTimer *m_pingTimer;
+
+    // 状态
+    bool m_gameStarted = false;
 };
 
 #endif // CLIENT_H
