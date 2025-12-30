@@ -180,67 +180,287 @@ graph TD
 
 基于上述基址偏移的详细分析，我们可以构建出精确的逻辑模型：
 
+这是我准备的两个版本的代码实现。
+
+这两个版本都实现了完全相同的逻辑：**魔兽争霸 1.26a 逆向校验算法 (Game.dll 0x6F39EE10)**。
+
+---
+
+### 前置依赖说明 (Dependencies)
+1.  **StormLib**: 用于读取 `.w3x` (MPQ) 档案 (两个版本都需要)。
+2.  **OpenSSL** (仅纯 C++ 版本): 用于 SHA-1 计算。
+3.  **Qt Core** (仅 Qt 版本): 用于 `QCryptographicHash` 和文件操作。
+
+---
+
+## 版本一：纯 C++ 实现 (Pure C++ Implementation)
+
+适用于底层服务、无 GUI 的控制台程序或不依赖 Qt 的环境。
+
 ```cpp
-// Game.dll Base: 0x6F000000
-// Logic reconstruction based on offset analysis
+#include <iostream>
+#include <vector>
+#include <string>
+#include <cstdint>
+#include <fstream>
 
-void CalculateMapChecksum_126a(const char* mapPath) {
-    SHA1_CTX ctx;
-    
-    // [Offset +00B850]
-    SHA1_Init(&ctx); 
+// 依赖库
+#include <openssl/sha.h> // OpenSSL crypto library
+#include "StormLib.h"    // StormLib MPQ library
 
-    // --- Phase 1: Environment & Salt (Offset +3B1D00) ---
-    
-    // 1. Common.j
-    // String at +933118
-    void* pCommon = LoadFile("common.j"); 
-    SHA1_Update(&ctx, pCommon, size);
-    
-    // 2. Blizzard.j
-    // String at +9425C8
-    void* pBlizz = LoadFile("blizzard.j");
-    SHA1_Update(&ctx, pBlizz, size);
-    
-    // 3. The Salt (Magic Number)
-    // Code at +3B1DBB
-    DWORD salt = 0x03F1379E; 
-    SHA1_Update(&ctx, &salt, 4);
+// ---------------------------------------------------------
+// 常量定义 (Derived from Game.dll Reverse Engineering)
+// ---------------------------------------------------------
+static const uint32_t MAP_CHECKSUM_SALT = 0x03F1379E; // Offset: 0x3B1DBB
 
-    // 4. Map Script
-    // Code at +3B1DEF
-    void* pMapScript = LoadFileFromMPQ(mapPath, "war3map.j");
-    SHA1_Update(&ctx, pMapScript, size);
+// ---------------------------------------------------------
+// 辅助工具
+// ---------------------------------------------------------
 
-    // --- Phase 2: Component Loop (Offset +39ED00) ---
+// 读取本地文件到 buffer
+std::vector<uint8_t> ReadLocalFile(const std::string& path) {
+    std::ifstream file(path, std::ios::binary | std::ios::ate);
+    if (!file.is_open()) return {};
     
-    const char* extList[] = {
-        ".w3e", // [+876A2C]
-        ".wpm", // [+876A24]
-        ".doo", // [+941928]
-        ".w3u", // [+92C560]
-        ".w3b", // [+92C650]
-        ".w3d", // [+92C680]
-        ".w3a", // [+92C5C0]
-        ".w3q"  // [+92C620]
+    std::streamsize size = file.tellg();
+    file.seekg(0, std::ios::beg);
+    
+    std::vector<uint8_t> buffer(size);
+    if (file.read(reinterpret_cast<char*>(buffer.data()), size)) {
+        return buffer;
+    }
+    return {};
+}
+
+// 从 MPQ 读取文件到 buffer
+std::vector<uint8_t> ReadMpqFile(HANDLE hMpq, const std::string& filename) {
+    HANDLE hFile = NULL;
+    if (!SFileOpenFileEx(hMpq, filename.c_str(), 0, &hFile)) {
+        return {};
+    }
+
+    DWORD fileSize = SFileGetFileSize(hFile, NULL);
+    if (fileSize == INVALID_FILE_SIZE) {
+        SFileCloseFile(hFile);
+        return {};
+    }
+
+    std::vector<uint8_t> buffer(fileSize);
+    DWORD bytesRead = 0;
+    SFileReadFile(hFile, buffer.data(), fileSize, &bytesRead, NULL);
+    SFileCloseFile(hFile);
+
+    if (bytesRead != fileSize) return {};
+    return buffer;
+}
+
+// 将 uint32 转换为小端序字节数组 (SHA1 Update 需要)
+void SHA1_Update_Int32(SHA_CTX* ctx, uint32_t value) {
+    uint8_t bytes[4];
+    bytes[0] = value & 0xFF;
+    bytes[1] = (value >> 8) & 0xFF;
+    bytes[2] = (value >> 16) & 0xFF;
+    bytes[3] = (value >> 24) & 0xFF;
+    SHA1_Update(ctx, bytes, 4);
+}
+
+// ---------------------------------------------------------
+// 核心算法实现
+// ---------------------------------------------------------
+bool CalculateMapSHA1_Cpp(const std::string& mapPath, uint8_t outputHash[20]) {
+    // 1. 准备本地环境文件
+    auto dataCommon = ReadLocalFile("war3files/common.j");
+    auto dataBlizzard = ReadLocalFile("war3files/blizzard.j");
+
+    if (dataCommon.empty() || dataBlizzard.empty()) {
+        std::cerr << "[Error] Missing common.j or blizzard.j" << std::endl;
+        return false;
+    }
+
+    // 2. 打开 MPQ
+    HANDLE hMpq = NULL;
+    // StormLib 需要宽字符或根据系统编码，这里假设简单的 ASCII 路径
+    if (!SFileOpenArchive(mapPath.c_str(), 0, MPQ_OPEN_READ_ONLY, &hMpq)) {
+        std::cerr << "[Error] Failed to open map MPQ" << std::endl;
+        return false;
+    }
+
+    // 3. 读取地图脚本
+    // Game.dll 逻辑：优先读 war3map.j，失败读 scripts\war3map.j
+    auto dataScript = ReadMpqFile(hMpq, "war3map.j");
+    if (dataScript.empty()) dataScript = ReadMpqFile(hMpq, "scripts\\war3map.j");
+    
+    if (dataScript.empty()) {
+        SFileCloseArchive(hMpq);
+        return false;
+    }
+
+    // =========================================================
+    // 算法开始 (Algorithm Start)
+    // =========================================================
+    SHA_CTX ctx;
+    SHA1_Init(&ctx);
+
+    // Step 1: 注入环境 (Environment Injection)
+    SHA1_Update(&ctx, dataCommon.data(), dataCommon.size());
+    SHA1_Update(&ctx, dataBlizzard.data(), dataBlizzard.size());
+
+    // Step 2: 注入盐值 (Salt Injection)
+    // 关键点：反作弊盐值 0x03F1379E
+    SHA1_Update_Int32(&ctx, MAP_CHECKSUM_SALT);
+
+    // Step 3: 注入地图脚本 (Map Script)
+    SHA1_Update(&ctx, dataScript.data(), dataScript.size());
+
+    // Step 4: 遍历组件 (Component Loop)
+    // 顺序必须严格一致：Offset 0x39ED00
+    const char* components[] = {
+        "war3map.w3e", "war3map.wpm", "war3map.doo", "war3map.w3u",
+        "war3map.w3b", "war3map.w3d", "war3map.w3a", "war3map.w3q"
     };
 
-    for (const char* ext : extList) {
-        // [Offset +39EC70]
-        char filename[32];
-        sprintf(filename, "war3map%s", ext); // String format at +92C6F0
-        
-        if (FileExistsInMPQ(mapPath, filename)) {
-            void* data = LoadFileFromMPQ(mapPath, filename);
-            SHA1_Update(&ctx, data, size);
+    for (const char* compName : components) {
+        auto compData = ReadMpqFile(hMpq, compName);
+        if (!compData.empty()) {
+            SHA1_Update(&ctx, compData.data(), compData.size());
+            std::cout << "[Info] Added component: " << compName << std::endl;
         }
     }
 
-    // --- Phase 3: Finalize (Offset +00B9B0) ---
-    BYTE checksum[20];
-    SHA1_Final(checksum, &ctx);
+    // =========================================================
+    // 结算 (Finalize)
+    // =========================================================
+    SHA1_Final(outputHash, &ctx);
+
+    SFileCloseArchive(hMpq);
+    return true;
 }
 ```
+
+---
+
+## 版本二：Qt C++ 实现 (Qt Implementation)
+
+适用于基于 Qt 的对战平台客户端或地图管理器，代码更简洁，利用了 Qt 的便捷类。
+
+```cpp
+#include <QFile>
+#include <QByteArray>
+#include <QCryptographicHash>
+#include <QtEndian>
+#include <QDebug>
+#include <QDir>
+
+// 依赖库
+#include "StormLib.h"
+
+// ---------------------------------------------------------
+// 常量定义
+// ---------------------------------------------------------
+static const quint32 MAP_CHECKSUM_SALT = 0x03F1379E; // Game.dll + 0x3B1DBB
+
+// ---------------------------------------------------------
+// 核心算法实现
+// ---------------------------------------------------------
+QByteArray CalculateMapSHA1_Qt(const QString &mapPath) 
+{
+    // 1. 辅助 Lambda：读取 MPQ 文件
+    HANDLE hMpq = NULL;
+    // 路径处理 (Windows 兼容)
+    QString nativePath = QDir::toNativeSeparators(mapPath);
+#ifdef UNICODE
+    const wchar_t *pathStr = (const wchar_t*)nativePath.utf16();
+#else
+    const char *pathStr = nativePath.toLocal8Bit().constData();
+#endif
+
+    if (!SFileOpenArchive(pathStr, 0, MPQ_OPEN_READ_ONLY, &hMpq)) {
+        qCritical() << "[Error] Cannot open MPQ:" << mapPath;
+        return QByteArray();
+    }
+
+    auto readMpqFile = [&](const QString &fileName) -> QByteArray {
+        HANDLE hFile = NULL;
+        QByteArray buffer;
+        if (SFileOpenFileEx(hMpq, fileName.toLocal8Bit().constData(), 0, &hFile)) {
+            DWORD s = SFileGetFileSize(hFile, NULL);
+            if (s > 0 && s != INVALID_FILE_SIZE) {
+                buffer.resize(s);
+                DWORD read = 0;
+                SFileReadFile(hFile, buffer.data(), s, &read, NULL);
+            }
+            SFileCloseFile(hFile);
+        }
+        return buffer;
+    };
+
+    auto readLocalFile = [](const QString &path) -> QByteArray {
+        QFile f(path);
+        if (f.open(QIODevice::ReadOnly)) return f.readAll();
+        return QByteArray();
+    };
+
+    // 2. 准备数据
+    // 警告：common.j/blizzard.j 必须从平台本地读取，不能从地图内读取！
+    QByteArray dataCommon = readLocalFile("war3files/common.j");
+    QByteArray dataBlizzard = readLocalFile("war3files/blizzard.j");
+    
+    // 读取地图脚本 (容错处理)
+    QByteArray dataScript = readMpqFile("war3map.j");
+    if (dataScript.isEmpty()) dataScript = readMpqFile("scripts\\war3map.j");
+
+    if (dataCommon.isEmpty() || dataBlizzard.isEmpty() || dataScript.isEmpty()) {
+        qCritical() << "[Error] Missing environment files or map script.";
+        SFileCloseArchive(hMpq);
+        return QByteArray();
+    }
+
+    // =========================================================
+    // 算法开始 (Algorithm Start)
+    // =========================================================
+    QCryptographicHash sha1(QCryptographicHash::Sha1);
+
+    // Step 1: 注入环境 (Environment)
+    sha1.addData(dataCommon);
+    sha1.addData(dataBlizzard);
+
+    // Step 2: 注入盐值 (Salt)
+    // 必须确保是 Little-Endian 写入
+    quint32 saltLE = qToLittleEndian(MAP_CHECKSUM_SALT);
+    sha1.addData((const char*)&saltLE, 4);
+
+    // Step 3: 注入地图脚本 (Map Script)
+    sha1.addData(dataScript);
+
+    // Step 4: 遍历组件 (Component Loop)
+    // 严格顺序：Game.dll 0x39ED00
+    const QStringList components = {
+        "war3map.w3e", "war3map.wpm", "war3map.doo", "war3map.w3u",
+        "war3map.w3b", "war3map.w3d", "war3map.w3a", "war3map.w3q"
+    };
+
+    for (const QString &ext : components) {
+        QByteArray compData = readMpqFile(ext);
+        if (!compData.isEmpty()) {
+            sha1.addData(compData);
+            // qDebug() << "Added component:" << ext << "Size:" << compData.size();
+        }
+    }
+
+    // =========================================================
+    // 结算 (Finalize)
+    // =========================================================
+    SFileCloseArchive(hMpq);
+    
+    // 返回 20 字节的哈希
+    return sha1.result();
+}
+```
+
+### 文档提示
+*   **关于路径**: 代码中假定了 `war3files/` 目录存放 `common.j` 和 `blizzard.j`。在文档中请注明，这需要用户从魔兽客户端的 `War3Patch.mpq` 或 `War3x.mpq` 中提取这两个文件，并放在指定目录。
+*   **关于 StormLib**: 需要在项目中链接 `StormLib.lib` (Windows) 或 `libstorm.a` (Linux)。
+*   **关于结果**: 返回的 20 字节二进制数据即为 `StatString` 协议中所需的 `Map SHA1`。
 
 ## 6. 总结 (Conclusion)
 
