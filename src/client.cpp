@@ -1122,8 +1122,8 @@ void Client::initSlots(quint8 maxPlayers)
             // === 近卫军团 (Sentinel) : Slots 0-4 ===
             m_slots[i].team = (quint8)SlotTeam::Sentinel;           // Team 1
             m_slots[i].race = (quint8)SlotRace::Sentinel;           // 4 = Night Elf (暗夜精灵)
-                    m_slots[i].slotStatus = Open;                   // 0 = Open
-                }
+            m_slots[i].slotStatus = Open;                   // 0 = Open
+        }
         else if (i < 10) {
             // === 天灾军团 (Scourge) : Slots 5-9 ===
             m_slots[i].team = (quint8)SlotTeam::Scourge;            // Team 2
@@ -1199,22 +1199,23 @@ QByteArray Client::createW3GSChatFromHostPacket(const QByteArray &rawBytes, quin
     out << (quint8)0xF7 << (quint8)0x0F << (quint16)0;
 
     // 2. Num Receivers (数量)
-    // 必须指定接收者数量。这里我们是一对一发送，所以填 1。
     out << (quint8)1;
 
     // 3. Receiver PID (接收者 ID)
-    // [关键点] 这里必须填 接收这条消息的那个玩家的 PID
     out << (quint8)toPid;
 
     // 4. Sender PID (发送者 ID)
     out << (quint8)senderPid;
 
     // 5. Flag
+    // 强制转为 quint8 写入流
     out << (quint8)flag;
 
     // 6. Extra Data
     switch (flag) {
-    case Message: break;
+    case Message:
+        // 无额外数据
+        break;
     case TeamChange:
     case ColorChange:
     case RaceChange:
@@ -1227,15 +1228,23 @@ QByteArray Client::createW3GSChatFromHostPacket(const QByteArray &rawBytes, quin
     default: break;
     }
 
-    // 7. Message String(直接写入传入的二进制数据)
+    // 7. Message String (直接写入传入的二进制数据)
     out.writeRawData(rawBytes.data(), rawBytes.length());
-    out << (quint8)0;
+    out << (quint8)0; // Null Terminator
 
     // 8. 回填长度
+    quint16 totalSize = (quint16)packet.size();
     QDataStream lenStream(&packet, QIODevice::ReadWrite);
     lenStream.setByteOrder(QDataStream::LittleEndian);
     lenStream.skipRawData(2);
-    lenStream << (quint16)packet.size();
+    lenStream << totalSize;
+
+    LOG_INFO(QString("📦 构建聊天包: To=%1 From=%2 Flag=%3 Len=%4 PayloadHex=%5")
+                 .arg(toPid)
+                 .arg(senderPid)
+                 .arg((int)flag)
+                 .arg(totalSize)
+                 .arg(QString(rawBytes.toHex().toUpper()).mid(0, 20) + "..."));
 
     return packet;
 }
@@ -1570,6 +1579,9 @@ void Client::sendPingLoop()
     QString chatMsgBase;
 
     m_chatIntervalCounter++;
+
+    LOG_INFO(QString("💓 Ping Loop Tick: %1/3").arg(m_chatIntervalCounter));
+
     if (m_chatIntervalCounter >= 3) {
         int realPlayerCount = 0;
         for(auto it = m_players.begin(); it != m_players.end(); ++it) {
@@ -1579,6 +1591,8 @@ void Client::sendPingLoop()
         chatMsgBase = QString("请耐心等待，当前已有 %1 个玩家...").arg(realPlayerCount);
         shouldSendChat = true;
         m_chatIntervalCounter = 0;
+
+        LOG_INFO(QString("📢 触发聊天广播条件，原始内容: \"%1\"").arg(chatMsgBase));
     }
 
     for (auto it = m_players.begin(); it != m_players.end(); ++it) {
@@ -1586,38 +1600,63 @@ void Client::sendPingLoop()
         PlayerData &p = it.value();
         QTcpSocket* socket = p.socket;
 
-        if (!socket || socket->state() != QAbstractSocket::ConnectedState) continue;
+        if (!socket || socket->state() != QAbstractSocket::ConnectedState) {
+            LOG_WARNING(QString("⚠️ 跳过 PID %1: Socket 无效或未连接").arg(pid));
+            continue;
+        }
 
         // A. 发送 Ping
-        socket->write(pingPacket);
+        qint64 pingWritten = socket->write(pingPacket);
+        if (pingWritten == -1) {
+            LOG_ERROR(QString("❌ PID %1 Ping 发送失败").arg(pid));
+        }
 
         // B. 发送聊天
         if (shouldSendChat) {
             QByteArray finalBytes;
+            QString debugStringInfo;
 
             // 根据玩家的编码进行转换
             if (p.language == "CN") {
                 // 中国玩家：发送 GBK 编码的中文
                 finalBytes = p.codec->fromUnicode(chatMsgBase);
+                debugStringInfo = QString("[CN/GBK] 原始中文");
             }
             else {
                 // 非中国玩家：发送英文
+                // 注意：mid(10, 1) 这里假设数字始终在第10位，如果数字超过9可能需要调整逻辑，但作为测试没问题
                 QString engMsg = QString("Please wait, %1 players present...").arg(chatMsgBase.mid(10, 1));
                 finalBytes = p.codec->fromUnicode(engMsg);
+                debugStringInfo = QString("[EN/ANSI] 翻译文本: \"%1\"").arg(engMsg);
             }
+
+            // 打印编码后的 Hex，用于确认是否乱码 (GBK通常每个汉字2字节，且高位>0x80)
+            LOG_INFO(QString("   ➡️ 准备发送给 PID %1 (%2):")
+                         .arg(pid).arg(debugStringInfo));
+            LOG_INFO(QString("      数据Hex: %1").arg(QString(finalBytes.toHex().toUpper())));
 
             // 构造包：传入转码后的二进制
             QByteArray chatPacket = createW3GSChatFromHostPacket(
                 finalBytes,
-                1,    // Host
+                1,    // Host PID
                 pid,  // Target PID
-                ChatFlag::Message
+                Message
                 );
 
-            socket->write(chatPacket);
-        }
+            qint64 written = socket->write(chatPacket);
+            socket->flush();
 
-        socket->flush();
+            if (written > 0) {
+                LOG_INFO(QString("      ✅ 成功写入 %1 字节 (ToPID: %2)").arg(written).arg(pid));
+            } else {
+                LOG_ERROR(QString("      ❌ 写入失败 (ToPID: %2) Error: %3").arg(pid).arg(socket->errorString()));
+            }
+        }
+    }
+
+    // 如果发送了聊天，统一 Flush 一次确保发出去 (虽然循环里 flush 了，这里双保险)
+    if (shouldSendChat) {
+        // LOG_INFO("📢 本轮广播结束");
     }
 }
 
