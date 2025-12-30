@@ -657,7 +657,7 @@ void Client::onPlayerDisconnected() {
     if (!socket) return;
 
     quint8 pidToRemove = 0;
-    QString nameToRemove;
+    QString nameToRemove = "Unknown";
 
     // 1. 查找玩家
     auto it = m_players.begin();
@@ -677,25 +677,33 @@ void Client::onPlayerDisconnected() {
     socket->deleteLater();
 
     if (pidToRemove != 0) {
-        LOG_INFO(QString("🔌 玩家 [%1] (PID: %2) 断开连接 - 执行广播清理").arg(nameToRemove).arg(pidToRemove));
+        LOG_INFO(QString("🔌 玩家 [%1] (PID: %2) 断开连接").arg(nameToRemove).arg(pidToRemove));
 
-        // 2. 释放槽位
+        // 2. 释放槽位逻辑 (保持你原有的不变)
         for (int i = 0; i < m_slots.size(); ++i) {
             if (m_slots[i].pid == pidToRemove) {
                 m_slots[i].pid = 0;
-                m_slots[i].slotStatus = 0; // Open
+                m_slots[i].slotStatus = 0;
                 m_slots[i].downloadStatus = 255;
                 break;
             }
         }
 
-        // 3. 广播给所有人：有人离开了 (0x07) + 刷新 UI (0x09)
-        // 注意：0x0D 是 BnetDocs 里的 PLAYERLEAVE_LOBBY (在房里离开)
-        QByteArray leftPacket = createW3GSPlayerLeftPacket(pidToRemove, 0x0D);
-        broadcastPacket(leftPacket, pidToRemove);
-        broadcastSlotInfo(pidToRemove);             // 内部包含 0x09
+        // 3. 广播协议层离开包 (W3GS_PLAYERLEAVE_OTHERS 0x07)
+        QByteArray leftPacket = createW3GSPlayerLeftPacket(pidToRemove, 0x0D); // 0x0D = Left Lobby
+        broadcastPacket(leftPacket, pidToRemove); // 排除掉已经断开的那个人
 
-        LOG_INFO("📢 已向全房间广播玩家离开 (0x07) 和槽位更新 (0x09)");
+        // 4. 广播聊天消息：玩家离开
+        MultiLangMsg leaveMsg;
+        leaveMsg.add("CN", QString("玩家 [%1] 离开了游戏。").arg(nameToRemove))
+            .add("EN", QString("Player [%1] has left the game.").arg(nameToRemove));
+
+        broadcastChatMessage(leaveMsg, pidToRemove);
+
+        // 5. 广播槽位更新 (0x09)
+        broadcastSlotInfo(pidToRemove);
+
+        LOG_INFO("📢 已广播玩家离开消息及槽位更新");
     }
 }
 
@@ -1507,6 +1515,40 @@ QByteArray Client::createW3GSMapCheckPacket()
     return packet;
 }
 
+void Client::broadcastChatMessage(const MultiLangMsg& msg, quint8 excludePid)
+{
+    for (auto it = m_players.begin(); it != m_players.end(); ++it) {
+        quint8 pid = it.key();
+
+        // 排除 PID 1 (Host) 和 指定排除的 PID
+        if (pid == excludePid || pid == 1) continue;
+
+        PlayerData &p = it.value();
+        QTcpSocket* socket = p.socket;
+
+        if (!socket || socket->state() != QAbstractSocket::ConnectedState) continue;
+
+        // 1. 根据玩家的语言标记 (CN/EN/RU...) 获取对应文本
+        QString textToSend = msg.get(p.language);
+
+        // 2. 转码 (根据玩家特定的 Codec)
+        // 注意：这里 textToSend 已经是对应语言的 Unicode 字符串了
+        // 例如俄语玩家获取到了俄文，然后用 CP1251 转码
+        QByteArray finalBytes = p.codec->fromUnicode(textToSend);
+
+        // 3. 造包并发送
+        QByteArray chatPacket = createW3GSChatFromHostPacket(
+            finalBytes,
+            1,    // From Host
+            pid,  // To Target Player
+            ChatFlag::Message
+            );
+
+        socket->write(chatPacket);
+        socket->flush();
+    }
+}
+
 void Client::broadcastPacket(const QByteArray &packet, quint8 excludePid)
 {
     for (auto it = m_players.begin(); it != m_players.end(); ++it) {
@@ -1576,23 +1618,22 @@ void Client::sendPingLoop()
     QByteArray pingPacket = createW3GSPingFromHostPacket();
 
     bool shouldSendChat = false;
-    QString chatMsgBase;
+
+    MultiLangMsg waitMsg;
 
     m_chatIntervalCounter++;
-
-    LOG_INFO(QString("💓 Ping Loop Tick: %1/3").arg(m_chatIntervalCounter));
-
     if (m_chatIntervalCounter >= 3) {
         int realPlayerCount = 0;
         for(auto it = m_players.begin(); it != m_players.end(); ++it) {
             if (it.key() != 1) realPlayerCount++;
         }
-        // 原始消息使用中文
-        chatMsgBase = QString("请耐心等待，当前已有 %1 个玩家...").arg(realPlayerCount);
+
+        // 填充多语言内容
+        waitMsg.add("CN", QString("请耐心等待，当前已有 %1 个玩家...").arg(realPlayerCount))
+            .add("EN", QString("Please wait, %1 players present...").arg(realPlayerCount));
+
         shouldSendChat = true;
         m_chatIntervalCounter = 0;
-
-        LOG_INFO(QString("📢 触发聊天广播条件，原始内容: \"%1\"").arg(chatMsgBase));
     }
 
     for (auto it = m_players.begin(); it != m_players.end(); ++it) {
@@ -1600,63 +1641,22 @@ void Client::sendPingLoop()
         PlayerData &p = it.value();
         QTcpSocket* socket = p.socket;
 
-        if (!socket || socket->state() != QAbstractSocket::ConnectedState) {
-            LOG_WARNING(QString("⚠️ 跳过 PID %1: Socket 无效或未连接").arg(pid));
-            continue;
-        }
+        if (!socket || socket->state() != QAbstractSocket::ConnectedState) continue;
 
         // A. 发送 Ping
-        qint64 pingWritten = socket->write(pingPacket);
-        if (pingWritten == -1) {
-            LOG_ERROR(QString("❌ PID %1 Ping 发送失败").arg(pid));
-        }
+        socket->write(pingPacket);
 
         // B. 发送聊天
         if (shouldSendChat) {
-            QByteArray finalBytes;
-            QString debugStringInfo;
+            // 获取对应语言文本
+            QString text = waitMsg.get(p.language);
+            QByteArray finalBytes = p.codec->fromUnicode(text);
 
-            // 根据玩家的编码进行转换
-            if (p.language == "CN") {
-                // 中国玩家：发送 GBK 编码的中文
-                finalBytes = p.codec->fromUnicode(chatMsgBase);
-                debugStringInfo = QString("[CN/GBK] 原始中文");
-            }
-            else {
-                // 非中国玩家：发送英文
-                // 注意：mid(10, 1) 这里假设数字始终在第10位，如果数字超过9可能需要调整逻辑，但作为测试没问题
-                QString engMsg = QString("Please wait, %1 players present...").arg(chatMsgBase.mid(10, 1));
-                finalBytes = p.codec->fromUnicode(engMsg);
-                debugStringInfo = QString("[EN/ANSI] 翻译文本: \"%1\"").arg(engMsg);
-            }
-
-            // 打印编码后的 Hex，用于确认是否乱码 (GBK通常每个汉字2字节，且高位>0x80)
-            LOG_INFO(QString("   ➡️ 准备发送给 PID %1 (%2):")
-                         .arg(pid).arg(debugStringInfo));
-            LOG_INFO(QString("      数据Hex: %1").arg(QString(finalBytes.toHex().toUpper())));
-
-            // 构造包：传入转码后的二进制
-            QByteArray chatPacket = createW3GSChatFromHostPacket(
-                finalBytes,
-                1,    // Host PID
-                pid,  // Target PID
-                Message
-                );
-
-            qint64 written = socket->write(chatPacket);
-            socket->flush();
-
-            if (written > 0) {
-                LOG_INFO(QString("      ✅ 成功写入 %1 字节 (ToPID: %2)").arg(written).arg(pid));
-            } else {
-                LOG_ERROR(QString("      ❌ 写入失败 (ToPID: %2) Error: %3").arg(pid).arg(socket->errorString()));
-            }
+            QByteArray chatPacket = createW3GSChatFromHostPacket(finalBytes, 1, pid, ChatFlag::Message);
+            socket->write(chatPacket);
         }
-    }
 
-    // 如果发送了聊天，统一 Flush 一次确保发出去 (虽然循环里 flush 了，这里双保险)
-    if (shouldSendChat) {
-        // LOG_INFO("📢 本轮广播结束");
+        socket->flush();
     }
 }
 

@@ -202,6 +202,36 @@ struct PlayerData {
     QTextCodec *codec = nullptr;
 };
 
+struct MultiLangMsg {
+    QMap<QString, QString> msgs;
+    QString defaultMsg; // 兜底消息 (通常是英文)
+
+    // 默认构造
+    MultiLangMsg() {}
+
+    // 便捷构造函数 (支持最常用的中英双语)
+    MultiLangMsg(const QString& cn, const QString& en) {
+        msgs["CN"] = cn;
+        msgs["EN"] = en;
+        defaultMsg = en;
+    }
+
+    // 链式添加方法 (方便添加 RU, KR 等)
+    MultiLangMsg& add(const QString& langCode, const QString& msg) {
+        msgs[langCode] = msg;
+        if (defaultMsg.isEmpty()) defaultMsg = msg; // 第一个添加的作为默认
+        return *this;
+    }
+
+    // 获取消息 (自动回退)
+    QString get(const QString& langCode) const {
+        if (msgs.contains(langCode)) {
+            return msgs.value(langCode);
+        }
+        return defaultMsg; // 如果没找到对应语言，返回默认(英文)
+    }
+};
+
 // 前置声明
 class BnetSRP3;
 
@@ -267,6 +297,7 @@ private slots:
 
 private:
     // --- 游戏槽位处理 ---
+    void broadcastChatMessage(const MultiLangMsg &msg,  quint8 excludePid = 0);
     void broadcastPacket(const QByteArray &packet, quint8 excludePid);
     void broadcastSlotInfo(quint8 excludePid = 1);
     void initSlots(quint8 maxPlayers = 10);
@@ -300,10 +331,10 @@ private:
      * extraData: 根据 Flag 类型传入 Team/Color/Race 或者是 Scope
      */
     QByteArray createW3GSChatFromHostPacket(const QByteArray &rawBytes,
-                                    quint8 senderPid = 1,
-                                    quint8 toPid = 255,
-                                    ChatFlag flag = Message,
-                                    quint32 extraData = 0);
+                                            quint8 senderPid = 1,
+                                            quint8 toPid = 255,
+                                            ChatFlag flag = Message,
+                                            quint32 extraData = 0);
 
     /**
      * @brief 生成 0x05 (RejectJoin) 数据包
