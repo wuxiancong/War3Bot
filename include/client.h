@@ -200,6 +200,8 @@ struct PlayerData {
     quint16 intPort;            // 内网 Port
     QString language = "EN";
     QTextCodec *codec = nullptr;
+    bool isDownloading = false;
+    quint32 downloadOffset = 0;
 };
 
 struct MultiLangMsg {
@@ -296,10 +298,12 @@ private slots:
     void onPlayerDisconnected();                                                        // 玩家断开
 
 private:
-    // --- 游戏槽位处理 ---
+    // --- 消息广播处理 ---
     void broadcastChatMessage(const MultiLangMsg &msg,  quint8 excludePid = 0);
     void broadcastPacket(const QByteArray &packet, quint8 excludePid);
     void broadcastSlotInfo(quint8 excludePid = 1);
+
+    // --- 游戏槽位处理 ---
     void initSlots(quint8 maxPlayers = 10);
     QByteArray serializeSlotData();
     GameSlot *findEmptySlot();
@@ -337,6 +341,12 @@ private:
                                             quint32 extraData = 0);
 
     /**
+     * @brief 生成 0x3F (Start Download) 数据包
+     * 用于玩家没图的情况，开始下载地图。
+     */
+    QByteArray createW3GSStartDownloadPacket(quint8 toPid);
+
+    /**
      * @brief 生成 0x05 (RejectJoin) 数据包
      * 用于拒绝玩家加入
      */
@@ -355,6 +365,12 @@ private:
     QByteArray createW3GSSlotInfoJoinPacket(quint8 playerID, const QHostAddress& externalIp, quint16 localPort);
 
     /**
+     * @brief 生成 0x04 (Map Part) 数据包
+     * 用于地图下载的分块传输
+     */
+    QByteArray createW3GSMapPartPacket(quint8 toPid, quint8 fromPid, quint32 offset, const QByteArray& chunkData);
+
+    /**
      * @brief 生成 0x06 (PlayerInfo) 数据包
      * 用于向客户端发送房间内某位玩家(通常是房主)的详细信息
      */
@@ -363,6 +379,7 @@ private:
                                       const QHostAddress& internalIp, quint16 internalPort);
 
     // --- 内部网络处理 ---
+    void sendNextMapPart(quint8 pid, quint8 from = 1);
     void sendPacket(TCPPacketID id, const QByteArray &payload);
     void handleTcpPacket(TCPPacketID id, const QByteArray &data);
     void handleUdpPacket(const QByteArray &data, const QHostAddress &sender, quint16 senderPort);

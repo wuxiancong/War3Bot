@@ -125,15 +125,15 @@ bool War3Map::load(const QString &mapPath)
 
     // [修改开始] ==============================================
     // 读取所有数据以计算 CRC (修复 MapInfo 为 0 的问题)
-    QByteArray mapRawData = file.readAll();
+    m_mapRawData = file.readAll();
     file.close();
 
     // 1. 设置地图大小
-    m_mapSize = toBytes((quint32)mapRawData.size());
+    m_mapSize = toBytes((quint32)m_mapRawData.size());
 
     // 2. 计算 CRC32 并赋值给 m_mapInfo (解决 NETERROR 关键点)
     uLong crc = crc32(0L, Z_NULL, 0);
-    crc = crc32(crc, (const Bytef*)mapRawData.constData(), mapRawData.size());
+    crc = crc32(crc, (const Bytef*)m_mapRawData.constData(), m_mapRawData.size());
 
     // 赋值!
     m_mapInfo = toBytes((quint32)crc);

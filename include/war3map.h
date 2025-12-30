@@ -70,6 +70,7 @@ public:
     QString getMapPath() const                  { return m_mapPath; }
     QByteArray getMapWidth() const              { return m_mapWidth; }
     QByteArray getMapHeight() const             { return m_mapHeight; }
+    QByteArray getMapRawData() const            { return m_mapRawData; }
     QByteArray getMapSHA1Bytes() const          { return m_mapSHA1Bytes; }
 
     // === Getters (协议专用) ===
@@ -114,6 +115,7 @@ private:
     quint32 m_mapOptions;
     QByteArray m_mapWidth;
     QByteArray m_mapHeight;
+    QByteArray m_mapRawData;
     int m_numPlayers;
     int m_numTeams;
 

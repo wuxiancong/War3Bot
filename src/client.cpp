@@ -16,6 +16,8 @@
 #include <QNetworkInterface>
 #include <QCryptographicHash>
 
+#include <zlib.h>
+
 // =========================================================
 // 1. 生命周期 (构造与析构)
 // =========================================================
@@ -167,6 +169,55 @@ void Client::sendPacket(TCPPacketID id, const QByteArray &payload)
                  .arg(QString::number(id, 16))
                  .arg(packet.size())
                  .arg(hexStr));
+}
+
+void Client::sendNextMapPart(quint8 pid, quint8 from)
+{
+    if (!m_players.contains(pid)) return;
+
+    PlayerData &p = m_players[pid];
+    if (!p.isDownloading) return;
+
+    const QByteArray &fullMapData = m_war3Map.getMapRawData();
+    quint32 mapSize = (quint32)fullMapData.size();
+
+    // 检查是否传输完成
+    if (p.downloadOffset >= mapSize) {
+        LOG_INFO(QString("✅ 玩家 [%1] 地图下载完成").arg(p.name));
+        p.isDownloading = false;
+
+        // 更新槽位状态为 100% 并广播
+        for (int i = 0; i < m_slots.size(); ++i) {
+            if (m_slots[i].pid == pid) {
+                m_slots[i].downloadStatus = 100;
+                break;
+            }
+        }
+        broadcastSlotInfo();
+        return;
+    }
+
+    // 计算本次分片大小 (标准是 1442 字节)
+    quint32 chunkSize = 1442;
+    if (p.downloadOffset + chunkSize > mapSize) {
+        chunkSize = mapSize - p.downloadOffset;
+    }
+
+    // 截取数据
+    QByteArray chunk = fullMapData.mid(p.downloadOffset, chunkSize);
+
+    // 构造并发送包
+    QByteArray packet = createW3GSMapPartPacket(pid, from, p.downloadOffset, chunk);
+    p.socket->write(packet);
+    p.socket->flush();
+
+    p.downloadOffset += chunkSize;
+
+    // 打印进度日志 (每 1MB 打印一次，防止刷屏)
+    if (p.downloadOffset % (1024 * 1024) < 2000) {
+        int percent = (int)((double)p.downloadOffset / mapSize * 100);
+        LOG_INFO(QString("   -> 正在发送地图给 [%1]: %2%").arg(p.name).arg(percent));
+    }
 }
 
 void Client::onTcpReadyRead()
@@ -609,6 +660,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
         // 2. 验证地图大小并更新槽位
         quint32 hostMapSize = m_war3Map.getMapSize();
+        PlayerData playerData = m_players[currentPid];
 
         bool slotUpdated = false;
 
@@ -628,6 +680,16 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
                         m_slots[i].downloadStatus = 0;   // 0% 需要下载
                         slotUpdated = true;
                         LOG_WARNING(QString("⚠️ 玩家 [%1] 地图大小不匹配 (C:%2 vs S:%3) -> 需下载").arg(playerName).arg(clientMapSize).arg(hostMapSize));
+
+                        // 1. 发送 StartDownload (0x3F)
+                        socket->write(createW3GSStartDownloadPacket(currentPid));
+
+                        // 2. 初始化下载状态
+                        playerData.isDownloading = true;
+                        playerData.downloadOffset = 0;
+
+                        // 3. 立即发送第一块数据！
+                        sendNextMapPart(currentPid);
                     }
                 }
                 break;
@@ -645,6 +707,30 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         }
     }
     break;
+
+    case 0x44: // W3GS_MAPPARTOK (客户端确认收到分片)
+    {
+        if (payload.size() < 9) return;
+        QDataStream in(payload);
+        in.setByteOrder(QDataStream::LittleEndian);
+        quint8 fromPid, toPid; quint32 clientOffset;
+        in >> fromPid >> toPid >> clientOffset; // Client Ack Offset
+
+        // 找到玩家
+        quint8 currentPid = 0;
+        for (auto it = m_players.begin(); it != m_players.end(); ++it) {
+            if (it.value().socket == socket) { currentPid = it.key(); break; }
+        }
+        if (currentPid == 0) return;
+
+        // 继续发送下一块
+        sendNextMapPart(currentPid);
+    }
+    break;
+
+    case 0x45: // W3GS_MAPPARTNOTOK
+        LOG_ERROR("❌ 玩家报告地图分片 CRC 校验失败！下载可能损坏。");
+        break;
 
     default:
         LOG_INFO(QString("❓ 未处理的 TCP 包 ID: 0x%1").arg(QString::number(id, 16)));
@@ -1512,6 +1598,65 @@ QByteArray Client::createW3GSMapCheckPacket()
     lenStream << totalSize;
 
     LOG_INFO("================================================");
+    return packet;
+}
+
+QByteArray Client::createW3GSStartDownloadPacket(quint8 toPid)
+{
+    QByteArray packet;
+    QDataStream out(&packet, QIODevice::WriteOnly);
+    out.setByteOrder(QDataStream::LittleEndian);
+
+    // Header: F7 3F [Len]
+    out << (quint8)0xF7 << (quint8)0x3F << (quint16)0;
+
+    // Unknown (Always 1)
+    out << (quint32)1;
+
+    // Player ID (接收者)
+    out << (quint8)toPid;
+
+    // 回填长度
+    QDataStream lenStream(&packet, QIODevice::ReadWrite);
+    lenStream.setByteOrder(QDataStream::LittleEndian);
+    lenStream.skipRawData(2);
+    lenStream << (quint16)packet.size();
+
+    return packet;
+}
+
+QByteArray Client::createW3GSMapPartPacket(quint8 toPid, quint8 fromPid, quint32 offset, const QByteArray &chunkData)
+{
+    QByteArray packet;
+    QDataStream out(&packet, QIODevice::WriteOnly);
+    out.setByteOrder(QDataStream::LittleEndian);
+
+    // Header: F7 43 [Len]
+    out << (quint8)0xF7 << (quint8)0x43 << (quint16)0;
+
+    out << (quint8)toPid;   // To
+    out << (quint8)fromPid; // From (Host PID: 1)
+    out << (quint32)1;      // Unknown (Always 1)
+    out << (quint32)offset; // 当前分片在文件中的偏移量
+    out << (quint32)0;      // 占位 CRC32 (稍后回填)
+
+    // 写入地图数据分片
+    out.writeRawData(chunkData.data(), chunkData.size());
+
+    // 回填长度
+    quint16 totalSize = (quint16)packet.size();
+    QDataStream ds(&packet, QIODevice::ReadWrite);
+    ds.setByteOrder(QDataStream::LittleEndian);
+    ds.skipRawData(2);
+    ds << totalSize;
+
+    uLong crc = crc32(0L, Z_NULL, 0);
+    crc = crc32(crc, (const Bytef*)chunkData.constData(), chunkData.size());
+
+    // 回填 CRC (偏移量：Header(4) + To(1) + From(1) + Unk(4) + Offset(4) = 14)
+    ds.device()->seek(14);
+    ds << (quint32)crc;
+
     return packet;
 }
 
