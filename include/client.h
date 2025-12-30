@@ -331,7 +331,6 @@ private:
     QVector<GameSlot> m_slots;
     QStringList m_channelList;
     QMap<quint8, PlayerData> m_players;
-    BaseGameType m_baseGameType = BaseGameType::Type_UMS;
 
     // 路径配置
     QString m_war3ExePath;

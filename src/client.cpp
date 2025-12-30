@@ -1147,11 +1147,7 @@ QByteArray Client::createW3GSSlotInfoJoinPacket(quint8 playerID, const QHostAddr
     out.writeRawData(slotData.data(), slotData.size());
     LOG_INFO(QString("[Step 3] 写入槽位数据体 (共%1字节)").arg(slotData.size()));
 
-    // 4. 写入游戏状态信息
-    LOG_INFO(QString("[Step 4] 写入游戏状态 (Expect Seed at this offset):"));
-    LOG_INFO(QString("   -> Random Seed : 0x%1").arg(QString::number(m_randomSeed, 16).toUpper()));
-    LOG_INFO(QString("   -> Game Type   : %1").arg(m_baseGameType));
-    LOG_INFO(QString("   -> Num Slots   : %1 (Hex: 0x%2)").arg(m_slots.size()).arg(QString::number(m_slots.size(), 16).toUpper()));
+    // 4. 写入玩家编号
     LOG_INFO(QString("   -> Player ID   : %1").arg(playerID));
 
     // out << (quint32)m_randomSeed;                                // 随机种子 ❌删除
