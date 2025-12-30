@@ -1,7 +1,7 @@
 # War3 Game StatString 解析逻辑逆向分析 (Game.dll)
 
 **环境 (Environment):**
-- **客户端:** Warcraft III (1.26a / Game.dll)
+- **客户端:** Warcraft III (v1.26.0.6401 / Game.dll)
 - **服务端:** PVPGN
 - **调试工具:** x64dbg
 - **基地址:** 6F000000

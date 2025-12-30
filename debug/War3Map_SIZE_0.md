@@ -1,4 +1,23 @@
+# War3 机器人主机创建房间后加入房间槽位界面空白调试日志
 
+![x64dbg调试截图](https://github.com/wuxiancong/War3Bot/raw/main/debug/images/War3Create_MAPERROR_NOSOLTSANDSEND42PACKET.PNG)
+
+## 问题描述 (Issue Description)
+
+**现象:**
+在使用自定义 C++ 编写的 War3Bot 创建房间后，点击加入房间后槽位界面一片空白，拦截的数据显示发送 `0x42` 数据包，报告给服务器地图大小为0。
+
+**环境 (Environment):**
+- **客户端:** Warcraft III (v1.26.0.6401 / Game.dll)
+- **服务端:** PVPGN
+- **调试工具:** x64dbg
+- **基地址:** 6F000000
+- **关键函数地址:** 
+    - 字符处理逻辑: `Game.dll + 5C9650`
+    - 错误分发逻辑: `Game.dll + 5B51D0`
+    - 界面处理逻辑: `Game.dll + 5BABF0`
+	- 事件处理逻辑: `Game.dll + 62A5D0`
+    - 状态解析逻辑: `Game.dll + 5BE710`
 
 ## 逆向入口
 **日志拦截**
@@ -306,7 +325,7 @@ int send(
 6F656E30  | 5E                      | pop esi                             |
 6F656E31  | C3                      | ret                                 |
 
-## 对比数据
+## 核心函数
 - **地址**：`6F657C10`
 - **偏移**：`game.dll + 657930`
 
@@ -362,7 +381,7 @@ int send(
 6F6579CD  | 8D49 00                 | lea ecx,dword ptr ds:[ecx]          |
 6F6579D0  | 8B32                    | mov esi,dword ptr ds:[edx]          | <--- 读取远程服务端 SHA1 的前 4 字节
 6F6579D2  | 3B31                    | cmp esi,dword ptr ds:[ecx]          | <--- 对比本地客户端 SHA1 的前 4 字节
-6F6579D4  | 75 12                   | jne game.6F6579E8                   | <--- 跳转将要执行（结果: Fail）
+6F6579D4  | 75 12                   | jne game.6F6579E8                   | <--- 跳转将要执行（结果: Sha1不匹配）
 6F6579D6  | 83E8 04                 | sub eax,4                           | 
 6F6579D9  | 83C1 04                 | add ecx,4                           | 
 6F6579DC  | 83C2 04                 | add edx,4                           | 
@@ -426,7 +445,7 @@ int send(
 6F657A71  | 8D5424 0C               | lea edx,dword ptr ss:[esp+C]        |
 6F657A75  | 8D4C24 10               | lea ecx,dword ptr ss:[esp+10]       |
 6F657A79  | 33F6                    | xor esi,esi                         |
-6F657A7B  | E8 80F3FFFF             | call game.6F656E00                  | <--- SHA1对比失败，报告给服务器。
+6F657A7B  | E8 80F3FFFF             | call game.6F656E00                  | <--- SHA1对比失败，报告给服务器，发送 0x42 包。
 6F657A80  | 8B4C24 4C               | mov ecx,dword ptr ss:[esp+4C]       |
 6F657A84  | 5F                      | pop edi                             |
 6F657A85  | 8BC6                    | mov eax,esi                         |
@@ -437,6 +456,7 @@ int send(
 6F657A90  | 83C4 44                 | add esp,44                          |
 6F657A93  | C2 2C00                 | ret 2C                              |
 ```
+
 ## 地图路径
 - **地址**：`6F657C10`
 - **偏移**：`game.dll + 657C10`
@@ -609,11 +629,15 @@ int send(
 6F657E78  | C2 2C00                 | ret 2C                              |
 ```
 
+---
+
 ## 处理分支
 - **地址**：`6F682300`
 - **偏移**：`game.dll + 682300`
 
-下面的反汇编是魔兽争霸1.26a 处理数据包的分支的逻辑，详细内容请参考[https://github.com/wuxiancong/War3Bot/blob/main/details/1.26/GameDll_682300_CustomGame_W3GSPacket_Dispatch.md](https://github.com/wuxiancong/War3Bot/blob/main/details/1.26/GameDll_682300_CustomGame_W3GSPacket_Dispatch.md)
+下面的反汇编是魔兽争霸v1.26.0.6401 处理数据包的分支的逻辑，是上面函数的顶层函数。
+
+详细内容请参考[https://github.com/wuxiancong/War3Bot/blob/main/details/1.26/GameDll_682300_CustomGame_W3GSPacket_Dispatch.md](https://github.com/wuxiancong/War3Bot/blob/main/details/1.26/GameDll_682300_CustomGame_W3GSPacket_Dispatch.md)
 
 <details>
 	<summary>头部</summary>
@@ -2163,70 +2187,215 @@ bool War3Map::load(const QString &mapPath)
     return true;
 }
 ```
-## 错误定位
+## 修正错误
 
-SHA1 计算逻辑中有一个**关键错误**，这直接导致了客户端无法匹配地图。
+// 辅助函数：将 uint32 以小端序写入 SHA1
+static void sha1UpdateInt32(QCryptographicHash &sha1, quint32 value) {
+    quint32 le = qToLittleEndian(value);
+    sha1.addData((const char*)&le, 4);
+}
 
-### 结论
-**问题不在于算法本身**（`QCryptographicHash::Sha1` 是标准的，暴雪用的也是标准 SHA1），**问题在于我多加了“魔法字节”**。
+// =========================================================
+// 核心加载函数 (最终整理版)
+// =========================================================
+bool War3Map::load(const QString &mapPath)
+{
+    m_valid = false;
+    m_mapPath = mapPath;
 
-在 **W3GS 0x3D (Map Check)** 数据包中，SHA1 必须是 **`.w3x` 文件原始内容的标准 SHA1**，**绝对不能**添加任何魔法字节（Magic Bytes）。
+    LOG_INFO(QString("[War3Map] 开始加载地图: %1").arg(mapPath));
 
-在代码 `War3Map::load` 中：
-
-```cpp
-    // 计算 SHA1 (Map Data + Magic String)
-    // 这是标准的 Map SHA1 计算方式，替代原本基于 combinedData 的逻辑
-    QCryptographicHash sha1(QCryptographicHash::Sha1);
-    sha1.addData(mapRawData);
+    // -------------------------------------------------------
+    // 1. 基础文件检查与 MPQ 打开
+    // -------------------------------------------------------
+    QFile file(mapPath);
+    if (!file.open(QIODevice::ReadOnly)) {
+        LOG_ERROR(QString("[War3Map] ❌ 无法打开地图文件: %1").arg(mapPath));
+        return false;
+    }
     
-    // ❌❌❌ 错误在这里 ❌❌❌
-    // 0x3D 包是用于检查“本地文件是否匹配”的。
-    // 客户端检查时，只会计算本地磁盘上文件的 SHA1，它不会在内存里拼这4个字节再去算。
-    // 我加了这4个字节，导致服务端算出来的 Hash 和客户端算出来的永远不一样。
-    sha1.addData("\x9E\x37\xF1\x03", 4); // War3 Map SHA1 Magic
+    // 计算文件物理大小 (StatString 需要)
+    m_mapSize = toBytes((quint32)file.size());
+    file.close();
+
+    // 打开 MPQ
+    HANDLE hMpq = NULL;
+    QString nativePath = QDir::toNativeSeparators(mapPath);
     
-    m_mapSHA1Bytes = sha1.result();
-```
+#ifdef UNICODE
+    const wchar_t *pathStr = (const wchar_t*)nativePath.utf16();
+#else
+    const char *pathStr = nativePath.toLocal8Bit().constData();
+#endif
 
-## 修正方法
+    if (!SFileOpenArchive(pathStr, 0, MPQ_OPEN_READ_ONLY, &hMpq)) {
+        LOG_ERROR(QString("[War3Map] ❌ 无法打开 MPQ: %1").arg(nativePath));
+        return false;
+    }
 
-请直接删除那行添加 Magic 的代码：
+    // -------------------------------------------------------
+    // 2. 定义读取辅助 Lambda
+    // -------------------------------------------------------
+    
+    // 从本地 war3 目录读取环境文件
+    auto readLocalScript = [&](const QString &fileName) -> QByteArray {
+        if (!s_priorityCrcDir.isEmpty()) {
+            QFile f(s_priorityCrcDir + "/" + fileName);
+            if (f.exists() && f.open(QIODevice::ReadOnly)) return f.readAll();
+        }
+        QFile fDefault("war3files/" + fileName);
+        if (fDefault.open(QIODevice::ReadOnly)) return fDefault.readAll();
+        return QByteArray();
+    };
 
-```cpp
-    // 修正后的 SHA1 计算
-    QCryptographicHash sha1(QCryptographicHash::Sha1);
-    sha1.addData(mapRawData); // 只计算文件原始内容
-    // sha1.addData("\x9E\x37\xF1\x03", 4); // <--- 删除这一行
-    m_mapSHA1Bytes = sha1.result();
-```
+    // 从 MPQ 读取文件
+    auto readMpqFile = [&](const QString &fileName) -> QByteArray {
+        HANDLE hFile = NULL;
+        QByteArray buffer;
+        if (SFileOpenFileEx(hMpq, fileName.toLocal8Bit().constData(), 0, &hFile)) {
+            DWORD s = SFileGetFileSize(hFile, NULL);
+            if (s > 0 && s != 0xFFFFFFFF) {
+                buffer.resize(s);
+                DWORD read = 0;
+                SFileReadFile(hFile, buffer.data(), s, &read, NULL);
+            }
+            SFileCloseFile(hFile);
+        }
+        return buffer;
+    };
 
-## 原理解析
+    // -------------------------------------------------------
+    // 3. 准备核心数据 (Script & Env)
+    // -------------------------------------------------------
+    
+    // 读取环境脚本
+    QByteArray dataCommon = readLocalScript("common.j");
+    QByteArray dataBlizzard = readLocalScript("blizzard.j");
 
-我解释一下为什么这里会有混淆，以及这几个校验码的区别：
+    if (dataCommon.isEmpty() || dataBlizzard.isEmpty()) {
+        LOG_ERROR("[War3Map] ❌ 严重错误: 缺少 common.j 或 blizzard.j，校验无法进行！");
+        SFileCloseArchive(hMpq);
+        return false;
+    }
 
-1.  **Map SHA1 (用于 0x3D 包)**
-    *   **用途**：文件完整性校验、缓存命中检查。
-    *   **逻辑**：客户端收到 0x3D 包后，提取里面的 SHA1。然后客户端去自己的 `Maps/Download` 目录找同名文件，计算**本地文件的标准 SHA1**。如果不一致，客户端认为地图已损坏或版本不对，从而触发下载。
-    *   **算法**：`Standard_SHA1(Raw_File_Data)`。
+    // 读取地图脚本 (支持 war3map.j / scripts\war3map.j / war3map.lua)
+    QByteArray dataMapScript = readMpqFile("war3map.j");
+    if (dataMapScript.isEmpty()) dataMapScript = readMpqFile("scripts\\war3map.j");
+    if (dataMapScript.isEmpty()) dataMapScript = readMpqFile("war3map.lua"); // 兼容 Lua
 
-2.  **Map CRC (XCRC / Game Checksum) (用于 0x3D 和 0x2F/0x30 包)**
-    *   **用途**：游戏同步校验（防止 Desync）。
-    *   **逻辑**：这就是我代码后半部分写的 `calcBlizzardHash` + `rotateLeft` + `xor` 那个极其复杂的逻辑。它不仅校验地图文件，还校验 `common.j`、`blizzard.j` 等环境脚本。
-    *   **我的代码状态**：这部分逻辑看起来是**正确**的（它是暴雪自定义的哈希算法，我的实现符合 Ghost++ 等成熟项目的逻辑）。这个值通常赋给 `0x3D` 包里的 `Map CRC` 字段，以及 `0x2F` (Create Game) 包里的校验字段。
+    if (dataMapScript.isEmpty()) {
+        LOG_ERROR("[War3Map] ❌ 严重错误: 无法在地图中找到脚本文件");
+        SFileCloseArchive(hMpq);
+        return false;
+    }
 
-3.  **那 `\x9E\x37\xF1\x03` 是什么？**
-    *   这个魔法数字确实存在于魔兽争霸的历史中，但它通常用于 **Warden（反作弊）** 或者 **旧版本/特殊版本** 的某些内部校验，或者是计算上述第2点（Game Checksum）时混入计算过程的（见我代码里的 `val = val ^ 0x03F1379E;`，这其实就是那个魔法数字的变体）。但在计算单纯的文件指纹（SHA1）给客户端下载用时，不需要它。
+    // -------------------------------------------------------
+    // 4. 初始化校验算法 (Legacy CRC & New SHA1)
+    // -------------------------------------------------------
 
-### 再次验证我的其他字段
+    // === A. 初始化 SHA-1 (1.26a 核心逻辑) ===
+    QCryptographicHash sha1Ctx(QCryptographicHash::Sha1);
+    
+    sha1Ctx.addData(dataCommon);          // 1. common.j
+    sha1Ctx.addData(dataBlizzard);        // 2. blizzard.j
+    sha1UpdateInt32(sha1Ctx, 0x03F1379E); // 3. Salt (0x03F1379E)
+    sha1Ctx.addData(dataMapScript);       // 4. war3map.j
 
-*   `m_mapInfo`: 我使用的是 `zlib` 的 `crc32`。
-    *   在 Ghost++ 等实现中，0x3D 包的 `MapInfo` 字段确实通常填入文件的标准 CRC32（即 `crc32(0, data, len)`）。**这部分是正确的。**
-*   `m_mapCRC`: 我使用的是复杂的暴雪自定义哈希。
-    *   在 0x3D 包的 `MapCRC` 字段填入这个复杂哈希是标准的做法，以便客户端在进入游戏大厅前就能预先校验同步状态。**这部分也是正确的。**
+    // === B. 初始化 Legacy CRC (XORO 算法, 兼容旧平台) ===
+    quint32 crcVal = 0;
+    quint32 hCommon = calcBlizzardHash(dataCommon);
+    quint32 hBlizz = calcBlizzardHash(dataBlizzard);
+    quint32 hScript = calcBlizzardHash(dataMapScript);
 
-### 总结
-我被那些网上的旧资料或者反作弊相关的逻辑误导了。**0x3D 地图下载/验证包只认纯文件的 SHA1。** 去掉那行代码，我的地图就能秒速通过验证（Map Check Pass）了。
+    crcVal = hBlizz ^ hCommon;      // Xor
+    crcVal = rotateLeft(crcVal, 3); // Rol 1
+    crcVal = crcVal ^ 0x03F1379E;   // Salt
+    crcVal = rotateLeft(crcVal, 3); // Rol 2
+    crcVal = hScript ^ crcVal;      // Mix Map
+    crcVal = rotateLeft(crcVal, 3); // Rol 3
+
+    // -------------------------------------------------------
+    // 5. 统一遍历组件 (同时更新两个算法)
+    // -------------------------------------------------------
+    const char *componentFiles[] = {
+        "war3map.w3e", "war3map.wpm", "war3map.doo", "war3map.w3u",
+        "war3map.w3b", "war3map.w3d", "war3map.w3a", "war3map.w3q"
+    };
+
+    for (const char *compName : componentFiles) {
+        // 读取组件数据
+        QByteArray compData = readMpqFile(compName);
+
+        // 如果文件存在，同时加入两个算法的计算
+        if (!compData.isEmpty()) {
+            // A. Update SHA-1
+            sha1Ctx.addData(compData);
+
+            // B. Update Legacy CRC
+            quint32 hComp = calcBlizzardHash(compData);
+            crcVal = crcVal ^ hComp;
+            crcVal = rotateLeft(crcVal, 3);
+            
+            LOG_INFO(QString("   + [Checksum] 组件已加入: %1 (Size: %2)").arg(compName).arg(compData.size()));
+        }
+    }
+
+    // -------------------------------------------------------
+    // 6. 结算与保存结果
+    // -------------------------------------------------------
+    
+    // 保存 SHA-1 (StatString 真正用到的 20 字节)
+    m_mapSHA1Bytes = sha1Ctx.result();
+    
+    // 保存 CRC (兼容字段)
+    m_mapCRC = toBytes(crcVal);
+
+    LOG_INFO(QString("[War3Map] ✅ SHA1 Checksum: %1").arg(QString(m_mapSHA1Bytes.toHex().toUpper())));
+    LOG_INFO(QString("[War3Map] ✅ CRC  Checksum: %1").arg(QString(m_mapCRC.toHex().toUpper())));
+
+    // -------------------------------------------------------
+    // 7. 解析 war3map.w3i (获取地图信息)
+    // -------------------------------------------------------
+    QByteArray w3iData = readMpqFile("war3map.w3i");
+    if (!w3iData.isEmpty()) {
+        QDataStream in(w3iData);
+        in.setByteOrder(QDataStream::LittleEndian);
+
+        quint32 fileFormat;
+        in >> fileFormat;
+
+        if (fileFormat == 18 || fileFormat == 25) {
+            in.skipRawData(4); // saves
+            in.skipRawData(4); // editor ver
+
+            // 跳过变长字符串
+            auto skipStr = [&]() {
+                char c;
+                do { in >> (quint8&)c; } while(c != 0 && !in.atEnd());
+            };
+            skipStr(); skipStr(); skipStr(); skipStr();
+
+            in.skipRawData(32); // camera bounds
+            in.skipRawData(16); // camera complements
+
+            quint32 rawW, rawH, rawFlags;
+            in >> rawW >> rawH >> rawFlags;
+
+            m_mapWidth = toBytes16((quint16)rawW);
+            m_mapHeight = toBytes16((quint16)rawH);
+            m_mapOptions = rawFlags;
+        }
+    } else {
+        LOG_WARNING("[War3Map] ⚠️ 无法读取 war3map.w3i，将使用默认参数");
+    }
+
+    // -------------------------------------------------------
+    // 8. 清理与完成
+    // -------------------------------------------------------
+    SFileCloseArchive(hMpq);
+    m_valid = true;
+    return true;
+}
 
 
 

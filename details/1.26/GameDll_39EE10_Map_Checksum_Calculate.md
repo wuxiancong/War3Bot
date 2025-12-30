@@ -1,4 +1,4 @@
-# 魔兽争霸 III (1.26a) 地图校验算法逆向核心文档
+# 魔兽争霸 III (v1.26.0.6401) 地图校验算法逆向核心文档
 **Warcraft III Map Checksum Algorithm Reverse Engineering**
 
 *   **目标模块**: `Game.dll` (v1.26.0.6401)
@@ -35,7 +35,6 @@ graph TD
     
     Level1 --> Final[Layer 1: SHA1_Final 6F00B9B0]
 	
----
 
 ## 1. 核心架构与偏移概览 (Architecture & Offsets)
 
@@ -182,7 +181,7 @@ graph TD
 
 这是我准备的两个版本的代码实现。
 
-这两个版本都实现了完全相同的逻辑：**魔兽争霸 1.26a 逆向校验算法 (Game.dll 0x6F39EE10)**。
+这两个版本都实现了完全相同的逻辑：**魔兽争霸 v1.26.0.6401 逆向校验算法 (Game.dll 0x6F39EE10)**。
 
 ---
 

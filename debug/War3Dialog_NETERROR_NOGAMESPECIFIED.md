@@ -11,7 +11,7 @@
 3.  尝试点击“加入游戏”时，客户端弹出错误提示：**"You must specify a game to join."** (你必须指定一个要加入的游戏)。
 
 **环境 (Environment):**
-- **客户端:** Warcraft III (1.26a / Game.dll)
+- **客户端:** Warcraft III (v1.26.0.6401 / Game.dll)
 - **服务端:** PVPGN (C++)
 - **调试工具:** x64dbg
 - **基地址:** 6F000000
