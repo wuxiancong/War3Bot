@@ -8,6 +8,7 @@
 #include <QtEndian>
 #include <QFileInfo>
 #include <QDateTime>
+#include <QTextCodec>
 #include <QDataStream>
 #include <QRandomGenerator>
 #include <QCoreApplication>
@@ -512,6 +513,8 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         newPlayer.extPort = socket->peerPort();
         newPlayer.intIp = QHostAddress(qToBigEndian(clientInternalIP));
         newPlayer.intPort = clientInternalPort;
+        newPlayer.language = "EN";
+        newPlayer.codec = QTextCodec::codecForName("Windows-1252");
 
         m_players.insert(hostId, newPlayer);
         LOG_INFO(QString("💾 已注册玩家: [%1] PID: %2").arg(clientPlayerName).arg(hostId));
@@ -1186,59 +1189,47 @@ QByteArray Client::createW3GSPingFromHostPacket()
     return packet;
 }
 
-QByteArray Client::createW3GSChatPacket(const QString& message, quint8 senderPid, quint8 toPid, ChatFlag flag, quint32 extraData)
+QByteArray Client::createW3GSChatFromHostPacket(const QByteArray &rawBytes, quint8 senderPid, quint8 toPid, ChatFlag flag, quint32 extraData)
 {
     QByteArray packet;
     QDataStream out(&packet, QIODevice::WriteOnly);
     out.setByteOrder(QDataStream::LittleEndian);
 
-    // 1. Header (F7 0F [Len])
+    // 1. Header
     out << (quint8)0xF7 << (quint8)0x0F << (quint16)0;
 
-    // 2. Num Receivers (1 byte)
-    // 这里我们固定填 1，然后指定 ToPID。
-    // 如果 ToPID 是 255 (0xFF)，客户端通常会将其视为广播消息。
+    // 2. Num Receivers (数量)
+    // 必须指定接收者数量。这里我们是一对一发送，所以填 1。
     out << (quint8)1;
 
-    // 3. Receiver PID (1 byte)
+    // 3. Receiver PID (接收者 ID)
+    // [关键点] 这里必须填 接收这条消息的那个玩家的 PID
     out << (quint8)toPid;
 
-    // 4. Sender PID (1 byte)
-    // 即 Host PID，默认为 1
+    // 4. Sender PID (发送者 ID)
     out << (quint8)senderPid;
 
-    // 5. Flag (1 byte)
+    // 5. Flag
     out << (quint8)flag;
 
-    // 6. Extra Data (Based on Flag)
+    // 6. Extra Data
     switch (flag) {
-    case Message:     // 0x10
-        // 无额外字段
-        break;
-
-    case TeamChange:  // 0x11
-    case ColorChange: // 0x12
-    case RaceChange:  // 0x13
-    case HandicapChange:    // 0x14
-        // 这些类型只需要 1 字节的额外数据
+    case Message: break;
+    case TeamChange:
+    case ColorChange:
+    case RaceChange:
+    case HandicapChange:
         out << (quint8)(extraData & 0xFF);
         break;
-
-    case Scope:       // 0x20
-        // 需要 4 字节的 Scope (如 ChatScope::All = 0)
+    case Scope:
         out << (quint32)extraData;
         break;
-
-    default:
-        // 未知类型，不做处理
-        break;
+    default: break;
     }
 
-    // 7. Message String
-    // 使用 Local8Bit (GBK) 兼容老版本魔兽中文，如果乱码请改回 toUtf8()
-    QByteArray msgBytes = message.toLocal8Bit();
-    out.writeRawData(msgBytes.data(), msgBytes.length());
-    out << (quint8)0; // Null Terminator
+    // 7. Message String(直接写入传入的二进制数据)
+    out.writeRawData(rawBytes.data(), rawBytes.length());
+    out << (quint8)0;
 
     // 8. 回填长度
     QDataStream lenStream(&packet, QIODevice::ReadWrite);
@@ -1571,34 +1562,63 @@ bool Client::isBlackListedPort(quint16 port)
 
 void Client::sendPingLoop()
 {
-    // 如果没有玩家，就不需要广播 Ping
     if (m_players.isEmpty()) return;
 
     QByteArray pingPacket = createW3GSPingFromHostPacket();
 
-    QByteArray chatPacket;
+    bool shouldSendChat = false;
+    QString chatMsgBase;
+
     m_chatIntervalCounter++;
-
     if (m_chatIntervalCounter >= 3) {
-        int playerCount = m_players.size();
-        QString msg = QString("请耐心等待，当前已有 %1 个玩家...").arg(playerCount);
-
-        // 使用新函数的默认参数：Host(1) -> All(255) | Type: Message(0x10)
-        chatPacket = createW3GSChatPacket(msg);
-
+        int realPlayerCount = 0;
+        for(auto it = m_players.begin(); it != m_players.end(); ++it) {
+            if (it.key() != 1) realPlayerCount++;
+        }
+        // 原始消息使用中文
+        chatMsgBase = QString("请耐心等待，当前已有 %1 个玩家...").arg(realPlayerCount);
+        shouldSendChat = true;
         m_chatIntervalCounter = 0;
     }
 
-    // 遍历所有连接的玩家 Socket 发送
     for (auto it = m_players.begin(); it != m_players.end(); ++it) {
-        QTcpSocket *socket = it.value().socket;
+        quint8 pid = it.key();
+        PlayerData &p = it.value();
+        QTcpSocket* socket = p.socket;
 
-        if (socket && socket->state() == QAbstractSocket::ConnectedState) {
-            socket->write(pingPacket);
-            socket->flush();
+        if (!socket || socket->state() != QAbstractSocket::ConnectedState) continue;
+
+        // A. 发送 Ping
+        socket->write(pingPacket);
+
+        // B. 发送聊天
+        if (shouldSendChat) {
+            QByteArray finalBytes;
+
+            // 根据玩家的编码进行转换
+            if (p.language == "CN") {
+                // 中国玩家：发送 GBK 编码的中文
+                finalBytes = p.codec->fromUnicode(chatMsgBase);
+            }
+            else {
+                // 非中国玩家：发送英文
+                QString engMsg = QString("Please wait, %1 players present...").arg(chatMsgBase.mid(10, 1));
+                finalBytes = p.codec->fromUnicode(engMsg);
+            }
+
+            // 构造包：传入转码后的二进制
+            QByteArray chatPacket = createW3GSChatFromHostPacket(
+                finalBytes,
+                1,    // Host
+                pid,  // Target PID
+                ChatFlag::Message
+                );
+
+            socket->write(chatPacket);
         }
+
+        socket->flush();
     }
-    LOG_INFO(QString("💓 已向 %1 名玩家发送 Ping").arg(m_players.size()));
 }
 
 void Client::writeIpToStreamWithLog(QDataStream &out, const QHostAddress &ip)

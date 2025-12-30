@@ -198,6 +198,8 @@ struct PlayerData {
     quint16 extPort;            // 外网 Port
     QHostAddress intIp;         // 内网 IP (来自 0x1E)
     quint16 intPort;            // 内网 Port
+    QString language = "EN";
+    QTextCodec *codec = nullptr;
 };
 
 // 前置声明
@@ -297,7 +299,7 @@ private:
      * toPID: 接收者PID，255(0xFF) 代表广播给所有人
      * extraData: 根据 Flag 类型传入 Team/Color/Race 或者是 Scope
      */
-    QByteArray createW3GSChatPacket(const QString &message,
+    QByteArray createW3GSChatFromHostPacket(const QByteArray &rawBytes,
                                     quint8 senderPid = 1,
                                     quint8 toPid = 255,
                                     ChatFlag flag = Message,
