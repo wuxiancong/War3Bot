@@ -540,7 +540,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         socket->write(finalPacket);
         socket->flush();
 
-        LOG_INFO(QString("✅ 加入成功: 发送握手序列 (0x04 -> 0x06 -> 0x3D -> 0x42 -> 0x09) PID: %1").arg(hostId));
+        LOG_INFO(QString("✅ 加入成功: 发送握手序列 (0x04 -> 0x06 -> 0x3D -> 0x09) PID: %1").arg(hostId));
 
         // 4. 广播逻辑
 
@@ -550,10 +550,21 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         broadcastPacket(newPlayerInfoPacket, hostId);
 
         // B. 广播最新槽位图 (0x09) 给房间所有人 (不排除任何人，确保所有人的 UI 刷新)
-        // 如果你的 Bot 虚拟主机不需要收包，broadcastPacket 内部会因为没有 socket 而自动跳过 PID 1
         broadcastSlotInfo();
 
         LOG_INFO("📢 已向老玩家同步新成员并广播 UI 刷新");
+
+        // 握手完成后立即 Ping 一次，防止客户端 5 秒超时
+        // 构造 0x01 Ping 包: F7 01 08 00 [Timestamp]
+        QByteArray pingPacket;
+        QDataStream pingOut(&pingPacket, QIODevice::WriteOnly);
+        pingOut.setByteOrder(QDataStream::LittleEndian);
+        pingOut << (quint8)0xF7 << (quint8)0x01 << (quint16)8;
+        pingOut << (quint32)QDateTime::currentMSecsSinceEpoch();
+
+        socket->write(pingPacket);
+        socket->flush();
+        LOG_INFO("💓 [Anti-Timeout] 握手完成，立即发送首个 Ping 包");
     }
     break;
 
