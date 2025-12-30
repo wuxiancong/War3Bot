@@ -7,9 +7,8 @@
 
 ---
 
-```mermaid
+%% 1. 核心架构与偏移概览 (Architecture Overview)
 graph TD
-```
     Level1[Layer 1: 主控逻辑 6F39EE10] --> Init[SHA1_Init]
     Level1 --> LoadEnv[Layer 2: 环境校验 6F3B1D00]
     
@@ -28,7 +27,7 @@ graph TD
         ExtCheck --> HashWPM[.wpm 路径]
         ExtCheck --> HashDOO[.doo 装饰物]
         ExtCheck --> HashW3U[.w3u 单位]
-        ExtCheck --> HashRest[... 其他数据文件]
+        ExtCheck --> HashRest[其他数据文件]
     end
 
     LoopComp --> Helper[Layer 2: 组件读取 6F39EC70]
@@ -36,6 +35,7 @@ graph TD
     SHA1Upd --> SHA1Trans[Layer 3: SHA1_Transform 6F00B3A0]
     
     Level1 --> Final[Layer 1: SHA1_Final 6F00B9B0]
+
 	
 
 ## 1. 核心架构与偏移概览 (Architecture & Offsets)
