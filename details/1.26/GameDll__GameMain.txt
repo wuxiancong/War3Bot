@@ -1,0 +1,42 @@
+
+
+```assembly
+6F009850  | 81EC 08010000           | sub esp,108                                     |
+6F009856  | A1 40E1AA6F             | mov eax,dword ptr ds:[6FAAE140]                 |
+6F00985B  | 33C4                    | xor eax,esp                                     |
+6F00985D  | 898424 04010000         | mov dword ptr ss:[esp+104],eax                  |
+6F009864  | 56                      | push esi                                        |
+6F009865  | 8BB424 10010000         | mov esi,dword ptr ss:[esp+110]                  |
+6F00986C  | E8 3F220000             | call game.6F00BAB0                              |
+6F009871  | E8 8AB56B00             | call <JMP.&GetTickCount>                        |
+6F009876  | 8BC8                    | mov ecx,eax                                     |
+6F009878  | E8 23B46B00             | call game.6F6C4CA0                              |
+6F00987D  | 8BD6                    | mov edx,esi                                     |
+6F00987F  | B9 656D6167             | mov ecx,67616D65                                |
+6F009884  | E8 37C06B00             | call game.6F6C58C0                              |
+6F009889  | BA 04010000             | mov edx,104                                     |
+6F00988E  | 8D4C24 04               | lea ecx,dword ptr ss:[esp+4]                    |
+6F009892  | E8 69C76B00             | call game.6F6C6000                              |
+6F009897  | 68 04010000             | push 104                                        |
+6F00989C  | 68 A860876F             | push game.6F8760A8                              | <--- Logs
+6F0098A1  | 8D4424 0C               | lea eax,dword ptr ss:[esp+C]                    |
+6F0098A5  | 50                      | push eax                                        |
+6F0098A6  | E8 131D6E00             | call <JMP.&Ordinal#503>                         |
+6F0098AB  | 8D4C24 04               | lea ecx,dword ptr ss:[esp+4]                    |
+6F0098AF  | 51                      | push ecx                                        |
+6F0098B0  | E8 A51D6E00             | call <JMP.&Ordinal#585>                         |
+6F0098B5  | E8 66FEFFFF             | call game.6F009720                              |
+6F0098BA  | 85C0                    | test eax,eax                                    |
+6F0098BC  | 5E                      | pop esi                                         |
+6F0098BD  | 74 14                   | je game.6F0098D3                                |
+6F0098BF  | E8 0C136200             | call game.6F62ABD0                              |
+6F0098C4  | E8 37E2FFFF             | call game.6F007B00                              |
+6F0098C9  | B9 656D6167             | mov ecx,67616D65                                |
+6F0098CE  | E8 3DC06B00             | call game.6F6C5910                              |
+6F0098D3  | 8B8C24 04010000         | mov ecx,dword ptr ss:[esp+104]                  |
+6F0098DA  | 33CC                    | xor ecx,esp                                     |
+6F0098DC  | 33C0                    | xor eax,eax                                     |
+6F0098DE  | E8 76777D00             | call game.6F7E1059                              |
+6F0098E3  | 81C4 08010000           | add esp,108                                     |
+6F0098E9  | C2 0400                 | ret 4                                           |
+```

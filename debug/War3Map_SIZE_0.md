@@ -609,7 +609,7 @@ int send(
 6F657E78  | C2 2C00                 | ret 2C                              |
 ```
 
-## 数据来源
+## 处理分支
 - **地址**：`6F682300`
 - **偏移**：`game.dll + 682300`
 
@@ -1095,16 +1095,22 @@ esi=1A，跳转到这里处理服务器发过来的 '0x3D' 地图数据包
 ```
 </details>
 
-```
+
+## 处理数据
+- **地址**：`6F67EC10`
+- **偏移**：`game.dll + 67EC10`
+
+
+```assembly
 6F67EC10  | 81EC 3C020000           | sub esp,23C                         |
 6F67EC16  | A1 40E1AA6F             | mov eax,dword ptr ds:[6FAAE140]     |
 6F67EC1B  | 33C4                    | xor eax,esp                         |
 6F67EC1D  | 898424 38020000         | mov dword ptr ss:[esp+238],eax      |
-6F67EC24  | 8B8C24 44020000         | mov ecx,dword ptr ss:[esp+244]      |
+6F67EC24  | 8B8C24 44020000         | mov ecx,dword ptr ss:[esp+244]      | <--- 地图路径   指针（Maps\Download\DotA v6.83d.w3x）
 6F67EC2B  | 8B9424 48020000         | mov edx,dword ptr ss:[esp+248]      |
-6F67EC32  | 57                      | push edi                            |
-6F67EC33  | 8BBC24 44020000         | mov edi,dword ptr ss:[esp+244]      |
-6F67EC3A  | 8D4424 10               | lea eax,dword ptr ss:[esp+10]       |
+6F67EC32  | 57                      | push edi                            | <--- 旧的 网络客户端 指针（NetClient）
+6F67EC33  | 8BBC24 44020000         | mov edi,dword ptr ss:[esp+244]      | <--- 新的 网络客户端 指针（NetClient）
+6F67EC3A  | 8D4424 10               | lea eax,dword ptr ss:[esp+10]       | <--- 指向 DataRecycler 的指针
 6F67EC3E  | 50                      | push eax                            |
 6F67EC3F  | C64424 18 00            | mov byte ptr ss:[esp+18],0          |
 6F67EC44  | E8 A771FFFF             | call game.6F675DF0                  |
@@ -1221,13 +1227,1007 @@ esi=1A，跳转到这里处理服务器发过来的 '0x3D' 地图数据包
 6F67EE04  | C2 0C00                 | ret C                               |
 ```
 
+这段反汇编代码属于 **Warcraft III (Game.dll)** 的网络处理模块，具体逻辑是 **解析来自主机发送的地图信息数据包 (Packet 0x3D)**，并根据解析结果验证本地是否拥有该地图，或者是否需要下载。
+
+根据我提供的反汇编和堆栈数据，以下是详细的逻辑分析：
+
+### 1. 核心功能概述
+这段代码的主要功能是：
+1.  **接收数据包**：获取地图的文件路径、大小、CRC校验码、SHA1哈希值。
+2.  **安全性检查**：检查地图大小是否超过限制（此处硬编码检查是否超过 8MB，`0x800000`）。
+3.  **对象构造**：创建一个 `FileInfo`（或类似名称）的网络对象，将解析出的地图元数据填入其中。
+4.  **本地验证**：调用文件系统接口，检查本地 `Maps\Download` 目录下是否存在该地图，且校验码是否匹配。
+
+### 2. 数据包结构还原 (W3GS 0x3D Payload)
+根据代码中 `mov` 指令从栈中取值（`esp+xxx`）并存入对象（`esi+xxx`）的行为，可以还原数据包的载荷结构：
+
+*   **Map File Path (字符串)**: `"Maps\\Download\\DotA v6.83d.w3x"`
+*   **Unknown (DWORD)**: `1` (可能代表地图类型或状态)
+*   **Map Size (DWORD)**: `0x007E9836` (8,296,502 字节)
+*   **Map Info (DWORD)**: `0x91FA5A45` (通常包含玩家数量、地图标志等)
+*   **Map CRC32 (DWORD)**: `0x3AEBCEF3`
+*   **Map SHA1 (20 Bytes)**: `0x0AA52F2E...` (由5个DWORD组成)
+
+### 3. 详细代码逻辑分析
+
+#### 第一阶段：初始化与安全检查
+```assembly
+6F67EC24  | mov ecx,dword ptr ss:[esp+244]  ; 获取地图路径指针
+...
+6F67EC51  | mov eax,dword ptr ss:[esp+118]  ; 从栈中获取地图大小 [007E9836]
+6F67EC60  | cmp eax,800000                  ; 比较大小是否 > 8,388,608 (8MB)
+6F67EC65  | ja game.6F67EDEA                ; 如果大于8MB，跳转到错误处理/拒绝
+```
+*   **分析**：这里有一个硬编码的限制。如果是旧版本的魔兽争霸，地图传输有 4MB 或 8MB 的限制。`0x7E9836` (约 7.9MB) 小于 `0x800000`，所以检查通过。
+
+#### 第二阶段：分配网络对象
+```assembly
+6F67EC6B  | mov edx,dword ptr ds:[edi+40]   ; edx = 4 (类型ID?)
+...
+6F67EC7C  | mov ecx,game.6FACFF70           ; 数据回收器/内存池对象
+6F67EC81  | call game.6F679B80              ; 申请一个新的 Packet/Event 对象
+6F67EC86  | mov edi,eax                     ; edi 指向新对象
+```
+*   **分析**：申请内存准备存放解析后的数据。
+
+#### 第三阶段：处理地图路径字符串
+```assembly
+6F67EC90  | push ebp
+6F67EC91  | mov ebp,dword ptr ds:[edi+58]   ; 获取 NetProvider 指针
+6F67EC94  | lea eax,dword ptr ss:[esp+1C]   ; 指向栈上的字符串 "Maps\\Download\\DotA v6.83d.w3x"
+6F67EC9B  | call game.6F656D70              ; 规范化路径或安全检查
+```
+*   **分析**：确保地图路径合法，防止目录遍历攻击（如 `..\..\windows`）。
+
+#### 第四阶段：填充 FileInfo 对象 (核心解析逻辑)
+代码在 `6F67ECE8` 处调用 `game.6F67C700` 创建了一个对象（存在 `esi` 中），随后开始大量填充数据。这是**逆向协议结构的关键点**：
+
+```assembly
+; [esi] 是 FileInfo@NetClient 对象
+
+; 1. 填充路径 (略过部分字符串拷贝代码)
+...
+; 2. 填充地图大小 (Size)
+6F67ED06  | mov edx,dword ptr ss:[esp+120]  ; 取栈数据: 007E9836
+6F67ED0D  | mov dword ptr ds:[esi+214],edx  ; 存入对象偏移 0x214
+6F67ED13  | mov eax,dword ptr ss:[esp+120]  ; 再次取大小
+6F67ED1A  | mov dword ptr ds:[esi+218],eax  ; 存入对象偏移 0x218 (可能分别表示压缩前/压缩后大小，或者当前下载进度/总大小)
+
+; 3. 填充地图属性 (Map Info/Flags)
+6F67ED20  | mov ecx,dword ptr ss:[esp+124]  ; 取栈数据: 91FA5A45
+6F67ED27  | mov dword ptr ds:[esi+21C],ecx  ; 存入对象偏移 0x21C
+
+; 4. 填充 CRC32
+6F67ED2D  | mov edx,dword ptr ss:[esp+128]  ; 取栈数据: 3AEBCEF3
+6F67ED34  | mov dword ptr ds:[esi+220],edx  ; 存入对象偏移 0x220
+
+; 5. 填充 SHA1 (20字节 = 5 * 4字节)
+; SHA1 Part 1
+6F67ED3A  | mov eax,dword ptr ss:[esp+12C]  ; 0AA52F2E
+6F67ED41  | mov dword ptr ds:[esi+224],eax
+; SHA1 Part 2
+6F67ED47  | mov ecx,dword ptr ss:[esp+130]  ; E3FF9B37
+6F67ED4E  | mov dword ptr ds:[esi+228],ecx
+; SHA1 Part 3
+6F67ED54  | mov edx,dword ptr ss:[esp+134]  ; E74C5752
+6F67ED5B  | mov dword ptr ds:[esi+22C],edx
+; SHA1 Part 4
+6F67ED61  | mov eax,dword ptr ss:[esp+138]  ; A7B9F545
+6F67ED68  | mov dword ptr ds:[esi+230],eax
+; SHA1 Part 5
+6F67ED6E  | mov ecx,dword ptr ss:[esp+13C]  ; 5FA4DF1A
+6F67ED75  | mov dword ptr ds:[esi+234],ecx
+```
+
+#### 第五阶段：本地文件校验与回调
+
+```assembly
+6F656FD0  | 8B41 14                 | mov eax,dword ptr ds:[ecx+14]                   | ecx+14:GameMain+AC5258
+6F656FD3  | C3                      | ret                                             |
+```
+
+```assembly
+6F62B250  | 83EC 08                 | sub esp,8                                       |
+6F62B253  | 53                      | push ebx                                        |
+6F62B254  | 8BC1                    | mov eax,ecx                                     |
+6F62B256  | 33DB                    | xor ebx,ebx                                     |
+6F62B258  | 85C0                    | test eax,eax                                    |
+6F62B25A  | 56                      | push esi                                        |
+6F62B25B  | 895424 08               | mov dword ptr ss:[esp+8],edx                    |
+6F62B25F  | 75 05                   | jne game.6F62B266                               |
+6F62B261  | E8 6A82E9FF             | call game.6F4C34D0                              |
+6F62B266  | 6A 01                   | push 1                                          |
+6F62B268  | 6A 00                   | push 0                                          |
+6F62B26A  | 8D4C24 14               | lea ecx,dword ptr ss:[esp+14]                   |
+6F62B26E  | 51                      | push ecx                                        |
+6F62B26F  | 6A 00                   | push 0                                          |
+6F62B271  | 50                      | push eax                                        |
+6F62B272  | B9 68EAAC6F             | mov ecx,game.6FACEA68                           |
+6F62B277  | E8 94FCFFFF             | call game.6F62AF10                              |
+6F62B27C  | 8BF0                    | mov esi,eax                                     |
+6F62B27E  | 85F6                    | test esi,esi                                    |
+6F62B280  | 74 62                   | je game.6F62B2E4                                |
+6F62B282  | 55                      | push ebp                                        |
+6F62B283  | 57                      | push edi                                        |
+6F62B284  | 8D7E 10                 | lea edi,dword ptr ds:[esi+10]                   |
+6F62B287  | 8BCF                    | mov ecx,edi                                     |
+6F62B289  | E8 12D10A00             | call game.6F6D83A0                              |
+6F62B28E  | 33D2                    | xor edx,edx                                     |
+6F62B290  | 837E 2C 02              | cmp dword ptr ds:[esi+2C],2                     |
+6F62B294  | 8BCF                    | mov ecx,edi                                     |
+6F62B296  | 0F94C2                  | sete dl                                         |
+6F62B299  | 8BEA                    | mov ebp,edx                                     |
+6F62B29B  | E8 10D10A00             | call game.6F6D83B0                              |
+6F62B2A0  | 5F                      | pop edi                                         |
+6F62B2A1  | 85ED                    | test ebp,ebp                                    |
+6F62B2A3  | 5D                      | pop ebp                                         |
+6F62B2A4  | 75 1A                   | jne game.6F62B2C0                               |
+6F62B2A6  | 8B4424 18               | mov eax,dword ptr ss:[esp+18]                   |
+6F62B2AA  | 8B4C24 14               | mov ecx,dword ptr ss:[esp+14]                   |
+6F62B2AE  | 8B5424 08               | mov edx,dword ptr ss:[esp+8]                    |
+6F62B2B2  | 50                      | push eax                                        |
+6F62B2B3  | 51                      | push ecx                                        |
+6F62B2B4  | 8BCE                    | mov ecx,esi                                     |
+6F62B2B6  | E8 156D0000             | call game.6F631FD0                              |
+6F62B2BB  | BB 01000000             | mov ebx,1                                       |
+6F62B2C0  | 8B4424 0C               | mov eax,dword ptr ss:[esp+C]                    |
+6F62B2C4  | 83F8 FF                 | cmp eax,FFFFFFFF                                |
+6F62B2C7  | 74 1B                   | je game.6F62B2E4                                |
+6F62B2C9  | 83F8 08                 | cmp eax,8                                       |
+6F62B2CC  | 1BD2                    | sbb edx,edx                                     |
+6F62B2CE  | 83E0 07                 | and eax,7                                       |
+6F62B2D1  | 83C2 01                 | add edx,1                                       |
+6F62B2D4  | 8D0C40                  | lea ecx,dword ptr ds:[eax+eax*2]                |
+6F62B2D7  | 52                      | push edx                                        |
+6F62B2D8  | 8D0C8D 88EAAC6F         | lea ecx,dword ptr ds:[ecx*4+6FACEA88]           |
+6F62B2DF  | E8 6CD60A00             | call game.6F6D8950                              |
+6F62B2E4  | 5E                      | pop esi                                         |
+6F62B2E5  | 8BC3                    | mov eax,ebx                                     |
+6F62B2E7  | 5B                      | pop ebx                                         |
+6F62B2E8  | 83C4 08                 | add esp,8                                       |
+6F62B2EB  | C2 0800                 | ret 8                                           |
+```
 
 
+#### `6F656FD0` (Getter / 状态获取器)
+```assembly
+6F656FD0  | 8B41 14   | mov eax,dword ptr ds:[ecx+14]  |
+6F656FD3  | C3        | ret                            |
+```
+*   **功能**：这确实只是一个极其简单的 **Getter** 函数。
+*   **上下文**：这里的 `ecx` 是 `NetProvider` 对象。偏移 `0x14` 存储的是 **"地图是否匹配/是否存在"** 的状态位（Boolean）。
+*   **作用**：它只是把之前负责计算 SHA1 和 CRC 比较的结果（存放在对象里的）取出来，放到 `eax` 里返回。`1` 代表有地图且匹配，`0` 代表没有或不匹配。
+
+---
+
+#### `6F62B250` (Event Dispatcher / 状态机处理)
+**关键逻辑控制函数**，它负责根据地图检查的结果（EAX=1 或 0），触发后续的游戏逻辑（是发送 "我有地图" 包，还是触发 "开始下载"）。
+
+我们来逐段拆解这个函数：
+
+**输入参数**:
+*   `ECX`: **MapStatus** (来自上面的 Getter，1=Found, 0=Missing)。
+*   `EDX`: **EventID** (之前代码传入的是 `12`，代表 `EVENT_MAP_CHECK_RESULT`)。
+
+```assembly
+; 1. 检查状态
+6F62B254  | mov eax,ecx                     ; EAX = MapStatus (0 or 1)
+6F62B25B  | mov dword ptr ss:[esp+8],edx    ; 保存 EventID (12) 到栈上
+6F62B25F  | jne game.6F62B266               ; 如果 MapStatus == 1 (有地图)，跳转处理
+6F62B261  | call game.6F4C34D0              ; 如果 MapStatus == 0 (无地图)，调用这个函数 (可能是重置状态或记录日志)
+
+; 2. 查找事件处理器 (Event Handler)
+6F62B266  | ...                             ; 压入参数
+6F62B272  | mov ecx,game.6FACEA68           ; 获取全局网络控制器单例
+6F62B277  | call game.6F62AF10              ; 根据 EventID 查找对应的处理器对象
+6F62B27C  | mov esi,eax                     ; ESI = 处理器对象 (Handler)
+6F62B27E  | test esi,esi                    ; 如果没找到处理器，直接退出
+6F62B280  | je game.6F62B2E4
+
+; 3. 线程安全锁 (Mutex Lock)
+6F62B284  | lea edi,dword ptr ds:[esi+10]   ; EDI 指向锁对象
+6F62B289  | call game.6F6D83A0              ; 进入临界区 (EnterCriticalSection)
+
+; 4. 检查处理器当前状态
+6F62B290  | cmp dword ptr ds:[esi+2C],2     ; 检查状态是否为 2 (例如：正在忙/已完成?)
+6F62B296  | sete dl                         ; 设置标志位
+6F62B29B  | call game.6F6D83B0              ; 离开临界区
+
+; 5. 执行核心逻辑 (Callback)
+6F62B2A4  | jne game.6F62B2C0               ; 如果状态不对，跳过执行
+6F62B2B2  | push eax                        ; 参数
+6F62B2B3  | push ecx                        ; 参数
+6F62B2B4  | mov ecx,esi                     ; ECX = 处理器对象
+6F62B2B6  | call game.6F631FD0              ; ProcessEvent(EventID, Data)
+                                            ; 这里是真正根据“有地图”还是“没地图”去干活的地方！
+                                            ; 如果有地图，这里会构建 0x3D 回包说 "OK"
+                                            ; 如果没地图，这里会初始化下载流程
+
+; 6. 信号通知 (Signal)
+6F62B2C0  | ...                             ; 计算信号量索引
+6F62B2DF  | call game.6F6D8950              ; 发送系统信号/事件，通知主线程网络状态已更新
+```
+
+### 总结与我的问题关联
+
+1.  **Getter (`6F656FD0`) 返回了 0**：
+    因为我的服务端发来的 SHA1 带有魔法字节，客户端计算本地文件 SHA1 后发现不匹配。所以 `NetProvider` 里的状态被置为 `0`。
+
+2.  **Dispatcher (`6F62B250`) 接收到 0**：
+    它拿着这个 `0`，调用了内部的 `6F631FD0`。
+
+3.  **结果**：
+    `6F631FD0` 发现状态是 0，判定为 **Map Check Failed**。它**不会**发送 "我已拥有地图" 的确认包，而是会尝试进入地图下载阶段（这也是为什么我可能会看到客户端卡住，或者请求下载，或者提示找不到地图）。
+
+4.  **分析**：
+    *   如果 `6F656FD0` 返回 1，说明玩家已经有这张图了，游戏将发送 "Map Check Pass" 包给主机。
+    *   如果返回 0，将触发地图下载流程。
+
+### 总结
+这段代码是 W3GS 协议中 **客户端处理主机下发的地图元数据** 的逻辑。它验证地图大小是否合法（<=8MB），解析地图的 CRC 和 SHA1 签名，并立即检查本地磁盘缓存中是否已有匹配的文件，最后将结果（有地图/无地图）通过内部事件总线分发出去，以决定是进入游戏加载画面还是开始下载地图。
+
+## 线程通知
+```
+6F631FD0  | 56                      | push esi                                        |
+6F631FD1  | 8BF1                    | mov esi,ecx                                     |
+6F631FD3  | 8BC6                    | mov eax,esi                                     |
+6F631FD5  | F7D8                    | neg eax                                         |
+6F631FD7  | 1BC0                    | sbb eax,eax                                     |
+6F631FD9  | 57                      | push edi                                        |
+6F631FDA  | 8BFA                    | mov edi,edx                                     |
+6F631FDC  | 75 0C                   | jne game.6F631FEA                               |
+6F631FDE  | 6A 57                   | push 57                                         |
+6F631FE0  | E8 C7950B00             | call <JMP.&Ordinal#465>                         |
+6F631FE5  | 5F                      | pop edi                                         |
+6F631FE6  | 5E                      | pop esi                                         |
+6F631FE7  | C2 0800                 | ret 8                                           |
+6F631FEA  | 53                      | push ebx                                        |
+6F631FEB  | 55                      | push ebp                                        |
+6F631FEC  | 8B6C24 18               | mov ebp,dword ptr ss:[esp+18]                   |
+6F631FF0  | 8BC5                    | mov eax,ebp                                     |
+6F631FF2  | E8 B9FFFFFF             | call game.6F631FB0                              |
+6F631FF7  | 8BD8                    | mov ebx,eax                                     |
+6F631FF9  | 8B4424 14               | mov eax,dword ptr ss:[esp+14]                   |
+6F631FFD  | 85C0                    | test eax,eax                                    |
+6F631FFF  | 897B 0C                 | mov dword ptr ds:[ebx+C],edi                    |
+6F632002  | 74 0E                   | je game.6F632012                                |
+6F632004  | 55                      | push ebp                                        |
+6F632005  | 50                      | push eax                                        |
+6F632006  | 8D43 10                 | lea eax,dword ptr ds:[ebx+10]                   |
+6F632009  | 50                      | push eax                                        |
+6F63200A  | E8 DDF51A00             | call <JMP.&memcpy>                              |
+6F63200F  | 83C4 0C                 | add esp,C                                       |
+6F632012  | 8D6E 10                 | lea ebp,dword ptr ds:[esi+10]                   |
+6F632015  | 8BCD                    | mov ecx,ebp                                     |
+6F632017  | E8 84630A00             | call game.6F6D83A0                              |
+6F63201C  | 8B86 B8010000           | mov eax,dword ptr ds:[esi+1B8]                  |
+6F632022  | 8B1418                  | mov edx,dword ptr ds:[eax+ebx]                  |
+6F632025  | 03C3                    | add eax,ebx                                     |
+6F632027  | 85D2                    | test edx,edx                                    |
+6F632029  | 74 29                   | je game.6F632054                                |
+6F63202B  | 8B78 04                 | mov edi,dword ptr ds:[eax+4]                    |
+6F63202E  | 85FF                    | test edi,edi                                    |
+6F632030  | 7F 04                   | jg game.6F632036                                |
+6F632032  | F7D7                    | not edi                                         |
+6F632034  | EB 07                   | jmp game.6F63203D                               |
+6F632036  | 8BC8                    | mov ecx,eax                                     |
+6F632038  | 2B4A 04                 | sub ecx,dword ptr ds:[edx+4]                    |
+6F63203B  | 03F9                    | add edi,ecx                                     |
+6F63203D  | 8917                    | mov dword ptr ds:[edi],edx                      |
+6F63203F  | 8B08                    | mov ecx,dword ptr ds:[eax]                      |
+6F632041  | 8B50 04                 | mov edx,dword ptr ds:[eax+4]                    |
+6F632044  | 8951 04                 | mov dword ptr ds:[ecx+4],edx                    |
+6F632047  | C700 00000000           | mov dword ptr ds:[eax],0                        |
+6F63204D  | C740 04 00000000        | mov dword ptr ds:[eax+4],0                      |
+6F632054  | 8B8E BC010000           | mov ecx,dword ptr ds:[esi+1BC]                  |
+6F63205A  | 8908                    | mov dword ptr ds:[eax],ecx                      |
+6F63205C  | 8B51 04                 | mov edx,dword ptr ds:[ecx+4]                    |
+6F63205F  | 8950 04                 | mov dword ptr ds:[eax+4],edx                    |
+6F632062  | 8959 04                 | mov dword ptr ds:[ecx+4],ebx                    |
+6F632065  | 8BCD                    | mov ecx,ebp                                     |
+6F632067  | 8986 BC010000           | mov dword ptr ds:[esi+1BC],eax                  |
+6F63206D  | E8 3E630A00             | call game.6F6D83B0                              |
+6F632072  | 5D                      | pop ebp                                         |
+6F632073  | 5B                      | pop ebx                                         |
+6F632074  | 5F                      | pop edi                                         |
+6F632075  | 5E                      | pop esi                                         |
+6F632076  | C2 0800                 | ret 8                                           |
+```
+
+这是一个非常经典的 **多线程消息队列（Producer-Consumer）** 的入队函数。
+
+**结论：**
+这个函数**并没有**执行“下载地图”或“发送已有地图包”的具体业务逻辑。
+它的作用是：**把“地图检查结果”这个消息，打包并安全地放入一个队列中，等待主线程去处理。**
+
+打个比方：之前分析的函数是写信的人，这个函数是**邮筒**，主线程才是**邮递员**（真正去送信办事的人）。
+
+### 详细代码分析
+
+这个函数做了三件事：**打包消息**、**加锁**、**入队**。
+
+#### 1. 检查与分配内存 (打包)
+```assembly
+; 检查事件ID (EDX) 是否有效
+6F631FDA  | mov edi,edx                     ; EDX 是事件ID (12)
+6F631FDC  | jne game.6F631FEA               ; 如果 ID != 0，跳转继续
+6F631FDE  | ...                             ; 如果 ID == 0，报错返回
+
+; 分配内存块 (创建一个 Event 对象)
+6F631FEA  | push ebx
+6F631FEB  | push ebp
+6F631FEC  | mov ebp,dword ptr ss:[esp+18]   ; 获取数据长度 (Payload Size)
+6F631FF0  | mov eax,ebp
+6F631FF2  | call game.6F631FB0              ; 申请内存 -> new EventNode()
+6F631FF7  | mov ebx,eax                     ; EBX = 新申请的事件节点指针
+
+; 填充数据
+6F631FF9  | mov eax,dword ptr ss:[esp+14]   ; 获取数据指针 (MapStatus: 0 or 1)
+6F631FFF  | mov dword ptr ds:[ebx+C],edi    ; 将事件ID (12) 写入节点偏移 +0xC
+6F632002  | je game.6F632012                ; 如果数据为空，跳过拷贝
+6F632004  | push ebp                        ; Size
+6F632005  | push eax                        ; Source
+6F632006  | lea eax,dword ptr ds:[ebx+10]   ; Dest (节点偏移 +0x10)
+6F632009  | push eax
+6F63200A  | call <JMP.&memcpy>              ; 复制数据 -> 把 0 或 1 存进节点里
+```
+**解读**：这里创建了一个结构体，把 `EventID=12` 和 `Data=0/1` 存了起来。
+
+#### 2. 线程加锁 (Thread Safety)
+```assembly
+6F632012  | lea ebp,dword ptr ds:[esi+10]   ; ESI 是网络管理器对象
+6F632015  | mov ecx,ebp
+6F632017  | call game.6F6D83A0              ; 进入临界区 -> EnterCriticalSection
+```
+**解读**：因为网络线程（当前线程）和主线程（游戏逻辑线程）都会访问这个队列，所以必须加锁，防止数据竞争。
+
+#### 3. 插入链表 (Enqueue)
+```assembly
+; 下面是一堆复杂的指针操作，典型的双向链表尾部插入操作
+6F63201C  | mov eax,dword ptr ds:[esi+1B8]  ; 获取队列尾部指针?
+6F632022  | mov edx,dword ptr ds:[eax+ebx]  ; ...
+; ... (中间省略链表指针调整逻辑) ...
+6F63205A  | mov dword ptr ds:[eax],ecx      ; prev->next = node
+6F63205C  | mov dword ptr ds:[ecx+4],edx    ; node->prev = ...
+6F632067  | mov dword ptr ds:[esi+1BC],eax  ; 更新队列头/尾信息
+```
+**解读**：把刚才创建的那个“信件”（Event节点）挂到了链表的末尾。
+
+#### 4. 解锁与通知
+```assembly
+6F63206D  | call game.6F6D83B0              ; 离开临界区 -> LeaveCriticalSection
+6F632076  | ret 8
+```
+**解读**：解锁。注意，这里没有调用 `Signal` 或 `SetEvent`，因为那个信号通知的动作在**上一层函数**（`6F62B250` 的末尾 `call game.6F6D8950`）已经做过了。
+
+---
+
+### 全局视野：为什么这么设计？
+
+Warcraft III 是一个多线程游戏：
+1.  **网络线程**（我现在分析的代码）：负责收包、解包、校验。它不能直接修改游戏状态（比如不能直接加载地图、不能直接弹窗），因为这不安全，会导致崩溃。
+2.  **主线程**：负责渲染画面、更新游戏逻辑。
+
+**流程如下**：
+1.  **网络线程**收到 `0x3D` 包 -> 解析 -> 发现 SHA1 不匹配 (MapStatus=0)。
+2.  **网络线程**调用 `6F631FD0`（本函数） -> 把 `{ID:12, Status:0}` 扔进**消息队列**。
+3.  **网络线程**调用 `SetEvent` 通知主线程：“嘿，有新消息了”。
+4.  **主线程**在下一帧循环中，看到信号，锁住队列，取出 `{ID:12, Status:0}`。
+5.  **主线程**根据 ID=12 执行 `HandleMapCheckResult` -> **此时才会真正触发地图下载界面或者发送 "I Have Map" 包**。
+
+### 对我排错的意义
+
+既然我已经修好了 SHA1 的计算逻辑（去掉了魔法字节）：
+1.  网络线程现在计算出的 SHA1 应该匹配了。
+2.  Getter 会返回 `1`。
+3.  本函数会把 `{ID:12, Status:1}` 扔进队列。
+4.  主线程取出消息，看到 `Status=1`，就会认为地图校验通过，**发送 `0x23` 或 `0x2F` 包告诉服务端 "我准备好了"**。
+
+所以，这个函数只要没崩溃，就不用管它，它是底层的搬运工。**核心还是在于那个 SHA1 到底算对没有。**
 
 
+## 设置事件
+
+```assembly
+6F62AF10  | 53                      | push ebx                                        |
+6F62AF11  | 55                      | push ebp                                        |
+6F62AF12  | 56                      | push esi                                        |
+6F62AF13  | 8B7424 10               | mov esi,dword ptr ss:[esp+10]                   |
+6F62AF17  | 85F6                    | test esi,esi                                    |
+6F62AF19  | 57                      | push edi                                        |
+6F62AF1A  | 8BD9                    | mov ebx,ecx                                     |
+6F62AF1C  | 74 4A                   | je game.6F62AF68                                |
+6F62AF1E  | 8B7C24 18               | mov edi,dword ptr ss:[esp+18]                   |
+6F62AF22  | 83E6 07                 | and esi,7                                       |
+6F62AF25  | 8D0476                  | lea eax,dword ptr ds:[esi+esi*2]                |
+6F62AF28  | 8D6C83 20               | lea ebp,dword ptr ds:[ebx+eax*4+20]             |
+6F62AF2C  | 57                      | push edi                                        |
+6F62AF2D  | 8BCD                    | mov ecx,ebp                                     |
+6F62AF2F  | E8 ECE80A00             | call game.6F6D9820                              |
+6F62AF34  | 8D4C76 21               | lea ecx,dword ptr ds:[esi+esi*2+21]             |
+6F62AF38  | 8D048B                  | lea eax,dword ptr ds:[ebx+ecx*4]                |
+6F62AF3B  | 8B40 04                 | mov eax,dword ptr ds:[eax+4]                    |
+6F62AF3E  | 33D2                    | xor edx,edx                                     |
+6F62AF40  | 85C0                    | test eax,eax                                    |
+6F62AF42  | 0F9EC2                  | setle dl                                        |
+6F62AF45  | 83EA 01                 | sub edx,1                                       |
+6F62AF48  | 23C2                    | and eax,edx                                     |
+6F62AF4A  | 85C0                    | test eax,eax                                    |
+6F62AF4C  | 7E 12                   | jle game.6F62AF60                               |
+6F62AF4E  | 8BFF                    | mov edi,edi                                     |
+6F62AF50  | 8B4C24 14               | mov ecx,dword ptr ss:[esp+14]                   |
+6F62AF54  | 3948 0C                 | cmp dword ptr ds:[eax+C],ecx                    |
+6F62AF57  | 74 22                   | je game.6F62AF7B                                |
+6F62AF59  | 8B40 08                 | mov eax,dword ptr ds:[eax+8]                    |
+6F62AF5C  | 85C0                    | test eax,eax                                    |
+6F62AF5E  | 7F F0                   | jg game.6F62AF50                                |
+6F62AF60  | 57                      | push edi                                        |
+6F62AF61  | 8BCD                    | mov ecx,ebp                                     |
+6F62AF63  | E8 E8D90A00             | call game.6F6D8950                              |
+6F62AF68  | 8B4424 1C               | mov eax,dword ptr ss:[esp+1C]                   |
+6F62AF6C  | 5F                      | pop edi                                         |
+6F62AF6D  | 5E                      | pop esi                                         |
+6F62AF6E  | 5D                      | pop ebp                                         |
+6F62AF6F  | C700 FFFFFFFF           | mov dword ptr ds:[eax],FFFFFFFF                 |
+6F62AF75  | 33C0                    | xor eax,eax                                     |
+6F62AF77  | 5B                      | pop ebx                                         |
+6F62AF78  | C2 1400                 | ret 14                                          |
+6F62AF7B  | 8B5424 1C               | mov edx,dword ptr ss:[esp+1C]                   |
+6F62AF7F  | F7DF                    | neg edi                                         |
+6F62AF81  | 1BFF                    | sbb edi,edi                                     |
+6F62AF83  | 83E7 08                 | and edi,8                                       |
+6F62AF86  | 03FE                    | add edi,esi                                     |
+6F62AF88  | 893A                    | mov dword ptr ds:[edx],edi                      |
+6F62AF8A  | 5F                      | pop edi                                         |
+6F62AF8B  | 5E                      | pop esi                                         |
+6F62AF8C  | 5D                      | pop ebp                                         |
+6F62AF8D  | 5B                      | pop ebx                                         |
+6F62AF8E  | C2 1400                 | ret 14                                          |
+```
+```assembly
+6F6D9820  | 8BC1                    | mov eax,ecx                                     |
+6F6D9822  | E9 89FEFFFF             | jmp game.6F6D96B0                               |
+```
+```assembly
+6F6D96B0  | 837C24 04 00            | cmp dword ptr ss:[esp+4],0                      |
+6F6D96B5  | 57                      | push edi                                        |
+6F6D96B6  | 8BF8                    | mov edi,eax                                     |
+6F6D96B8  | 74 0A                   | je game.6F6D96C4                                |
+6F6D96BA  | 57                      | push edi                                        |
+6F6D96BB  | E8 10FFFFFF             | call game.6F6D95D0                              |
+6F6D96C0  | 5F                      | pop edi                                         |
+6F6D96C1  | C2 0400                 | ret 4                                           |
+6F6D96C4  | 53                      | push ebx                                        |
+6F6D96C5  | 56                      | push esi                                        |
+6F6D96C6  | 6A 02                   | push 2                                          |
+6F6D96C8  | 8D5F 08                 | lea ebx,dword ptr ds:[edi+8]                    |
+6F6D96CB  | 6A 01                   | push 1                                          |
+6F6D96CD  | E8 0EEBFFFF             | call game.6F6D81E0                              |
+6F6D96D2  | 8BF0                    | mov esi,eax                                     |
+6F6D96D4  | 25 0000E0FF             | and eax,FFE00000                                |
+6F6D96D9  | 3BF0                    | cmp esi,eax                                     |
+6F6D96DB  | 75 2C                   | jne game.6F6D9709                               |
+6F6D96DD  | 57                      | push edi                                        |
+6F6D96DE  | E8 EDFEFFFF             | call game.6F6D95D0                              |
+6F6D96E3  | 8BCB                    | mov ecx,ebx                                     |
+6F6D96E5  | E8 76A9FEFF             | call game.6F6C4060                              |
+6F6D96EA  | 85F6                    | test esi,esi                                    |
+6F6D96EC  | 0F84 7C000000           | je game.6F6D976E                                |
+6F6D96F2  | C1EE 15                 | shr esi,15                                      |
+6F6D96F5  | 8B0CB5 8C6DAD6F         | mov ecx,dword ptr ds:[esi*4+6FAD6D8C]           |
+6F6D96FC  | 5E                      | pop esi                                         |
+6F6D96FD  | 5B                      | pop ebx                                         |
+6F6D96FE  | 5F                      | pop edi                                         |
+6F6D96FF  | 894C24 04               | mov dword ptr ss:[esp+4],ecx                    |
+6F6D9703  | FF25 CCD1866F           | jmp dword ptr ds:[<SetEvent>]                   |
+6F6D9709  | 55                      | push ebp                                        |
+6F6D970A  | 8B2D 84D1866F           | mov ebp,dword ptr ds:[<WaitForSingleObject>]    |
+6F6D9710  | 8B3D 04FFA96F           | mov edi,dword ptr ds:[6FA9FF04]                 |
+6F6D9716  | F603 01                 | test byte ptr ds:[ebx],1                        |
+6F6D9719  | 75 52                   | jne game.6F6D976D                               |
+6F6D971B  | E8 D047FFFF             | call game.6F6CDEF0                              |
+6F6D9720  | 83EF 01                 | sub edi,1                                       |
+6F6D9723  | 75 F1                   | jne game.6F6D9716                               |
+6F6D9725  | 8BD6                    | mov edx,esi                                     |
+6F6D9727  | C1EA 15                 | shr edx,15                                      |
+6F6D972A  | 8B0495 8C6DAD6F         | mov eax,dword ptr ds:[edx*4+6FAD6D8C]           |
+6F6D9731  | 68 60EA0000             | push EA60                                       |
+6F6D9736  | 50                      | push eax                                        |
+6F6D9737  | FFD5                    | call ebp                                        |
+6F6D9739  | 85C0                    | test eax,eax                                    |
+6F6D973B  | 74 30                   | je game.6F6D976D                                |
+6F6D973D  | B9 08A6AD6F             | mov ecx,game.6FADA608                           |
+6F6D9742  | E8 19A9FEFF             | call game.6F6C4060                              |
+6F6D9747  | FF15 50D1866F           | call dword ptr ds:[<GetCurrentThreadId>]        |
+6F6D974D  | 50                      | push eax                                        |
+6F6D974E  | A1 08A6AD6F             | mov eax,dword ptr ds:[6FADA608]                 |
+6F6D9753  | 50                      | push eax                                        |
+6F6D9754  | 68 B054976F             | push game.6F9754B0                              |
+6F6D9759  | E8 0225B3FF             | call game.6F20BC60                              |
+6F6D975E  | 83C4 0C                 | add esp,C                                       |
+6F6D9761  | E8 9AFDFFFF             | call game.6F6D9500                              |
+6F6D9766  | E8 A5FDFFFF             | call game.6F6D9510                              |
+6F6D976B  | EB A3                   | jmp game.6F6D9710                               |
+6F6D976D  | 5D                      | pop ebp                                         |
+6F6D976E  | 5E                      | pop esi                                         |
+6F6D976F  | 5B                      | pop ebx                                         |
+6F6D9770  | 5F                      | pop edi                                         |
+6F6D9771  | C2 0400                 | ret 4                                           |
+```
+这几段代码揭示了 Warcraft III 内部封装的 **同步对象（Synchronization Object）** 机制，类似于 C++ 的 `CEvent` 或 `CMutex` 封装类。暴雪为了防止死锁（Deadlock）和方便调试，在标准的 Windows API 外面包裹了一层逻辑。
+
+我们一段一段来拆解确认：
+
+### 1. `6F6D96B0`: 确实是 Signal / SetEvent (带死锁检测)
+
+我问的：**"这里是 setEvent 对么？"**
+**答案：是的，这是触发信号的函数。**
+
+```assembly
+6F6D9703  | FF25 CCD1866F           | jmp dword ptr ds:[<SetEvent>]                   |
+```
+这一行直接跳转到了 Windows API `SetEvent`。
+
+但是，注意看它下面的 `6F6D9709` 及其后的代码：
+```assembly
+6F6D970A  | 8B2D 84D1866F           | mov ebp,dword ptr ds:[<WaitForSingleObject>]    |
+...
+6F6D9731  | 68 60EA0000             | push EA60                                       | ; 60000 ms = 60秒
+6F6D9737  | FFD5                    | call ebp                                        | ; WaitForSingleObject
+...
+6F6D9754  | 68 B054976F             | push game.6F9754B0                              | ; "[%u] Suspected deadlock, thread %u\n"
+```
+**分析：**
+这是一个高级的封装。它不只是简单的 `SetEvent`。
+1.  它首先尝试获取某种锁或状态。
+2.  如果一切正常，它调用 `SetEvent` 唤醒等待的线程。
+3.  如果发现状态异常（可能是为了实现 `SignalAndWait` 或者某种互斥逻辑），它会调用 `WaitForSingleObject` 等待。
+4.  **关键点：** 它设置了 `0xEA60` (60秒) 的超时时间。如果 60秒还没等到，它会打印 **"Suspected deadlock"**（疑似死锁）。这是游戏开发中非常典型的调试手段。
+
+```assembly
+6F6D8950  | 8B4424 04               | mov eax,dword ptr ss:[esp+4]                    |
+6F6D8954  | 56                      | push esi                                        |
+6F6D8955  | 50                      | push eax                                        |
+6F6D8956  | 8BF1                    | mov esi,ecx                                     |
+6F6D8958  | E8 E3F9FFFF             | call game.6F6D8340                              |
+6F6D895D  | 5E                      | pop esi                                         |
+6F6D895E  | C2 0400                 | ret 4                                           |
+```
+```assembly
+6F6D8340  | 837C24 04 00            | cmp dword ptr ss:[esp+4],0                      |
+6F6D8345  | 75 20                   | jne game.6F6D8367                               |
+6F6D8347  | 53                      | push ebx                                        |
+6F6D8348  | 57                      | push edi                                        |
+6F6D8349  | 8B7E 08                 | mov edi,dword ptr ds:[esi+8]                    |
+6F6D834C  | 8D5E 08                 | lea ebx,dword ptr ds:[esi+8]                    |
+6F6D834F  | 6A 02                   | push 2                                          |
+6F6D8351  | 81E7 0000E0FF           | and edi,FFE00000                                |
+6F6D8357  | 83C7 01                 | add edi,1                                       |
+6F6D835A  | 6A 01                   | push 1                                          |
+6F6D835C  | E8 DFFEFFFF             | call game.6F6D8240                              |
+6F6D8361  | 85C0                    | test eax,eax                                    |
+6F6D8363  | 5F                      | pop edi                                         |
+6F6D8364  | 5B                      | pop ebx                                         |
+6F6D8365  | 74 07                   | je game.6F6D836E                                |
+6F6D8367  | 8BC6                    | mov eax,esi                                     |
+6F6D8369  | E8 72FFFFFF             | call game.6F6D82E0                              |
+6F6D836E  | C2 0400                 | ret 4                                           |
+```
+```assembly
+6F6D8240  | 55                      | push ebp                                        |
+6F6D8241  | 8B6C24 0C               | mov ebp,dword ptr ss:[esp+C]                    |
+6F6D8245  | 56                      | push esi                                        |
+6F6D8246  | 57                      | push edi                                        |
+6F6D8247  | 33D2                    | xor edx,edx                                     |
+6F6D8249  | 8BCB                    | mov ecx,ebx                                     |
+6F6D824B  | E8 60BEFEFF             | call game.6F6C40B0                              |
+6F6D8250  | 8BF0                    | mov esi,eax                                     |
+6F6D8252  | 3BF7                    | cmp esi,edi                                     |
+6F6D8254  | 74 20                   | je game.6F6D8276                                |
+6F6D8256  | 8BD6                    | mov edx,esi                                     |
+6F6D8258  | 56                      | push esi                                        |
+6F6D8259  | 2BD5                    | sub edx,ebp                                     |
+6F6D825B  | 8BCB                    | mov ecx,ebx                                     |
+6F6D825D  | E8 4EBEFEFF             | call game.6F6C40B0                              |
+6F6D8262  | 3BF0                    | cmp esi,eax                                     |
+6F6D8264  | 74 27                   | je game.6F6D828D                                |
+6F6D8266  | 57                      | push edi                                        |
+6F6D8267  | 33D2                    | xor edx,edx                                     |
+6F6D8269  | 8BCB                    | mov ecx,ebx                                     |
+6F6D826B  | E8 40BEFEFF             | call game.6F6C40B0                              |
+6F6D8270  | 8BF0                    | mov esi,eax                                     |
+6F6D8272  | 3BF7                    | cmp esi,edi                                     |
+6F6D8274  | 75 E0                   | jne game.6F6D8256                               |
+6F6D8276  | 8B4C24 0C               | mov ecx,dword ptr ss:[esp+C]                    |
+6F6D827A  | 6A 01                   | push 1                                          |
+6F6D827C  | 8BC7                    | mov eax,edi                                     |
+6F6D827E  | E8 6DFEFFFF             | call game.6F6D80F0                              |
+6F6D8283  | 5E                      | pop esi                                         |
+6F6D8284  | B8 01000000             | mov eax,1                                       |
+6F6D8289  | 5D                      | pop ebp                                         |
+6F6D828A  | C2 0800                 | ret 8                                           |
+6F6D828D  | 5E                      | pop esi                                         |
+6F6D828E  | 33C0                    | xor eax,eax                                     |
+6F6D8290  | 5D                      | pop ebp                                         |
+6F6D8291  | C2 0800                 | ret 8                                           |
+```
+```assembly
+6F6D80F0  | 53                      | push ebx                                        |
+6F6D80F1  | 56                      | push esi                                        |
+6F6D80F2  | 8BF1                    | mov esi,ecx                                     |
+6F6D80F4  | 57                      | push edi                                        |
+6F6D80F5  | 8D0CB5 781DAD6F         | lea ecx,dword ptr ds:[esi*4+6FAD1D78]           |
+6F6D80FC  | 8BD8                    | mov ebx,eax                                     |
+6F6D80FE  | E8 5DBFFEFF             | call game.6F6C4060                              |
+6F6D8103  | 837C24 10 00            | cmp dword ptr ss:[esp+10],0                     |
+6F6D8108  | 74 1A                   | je game.6F6D8124                                |
+6F6D810A  | 8BC3                    | mov eax,ebx                                     |
+6F6D810C  | 8BCE                    | mov ecx,esi                                     |
+6F6D810E  | C1E8 15                 | shr eax,15                                      |
+6F6D8111  | C1E1 0A                 | shl ecx,A                                       |
+6F6D8114  | 03C1                    | add eax,ecx                                     |
+6F6D8116  | 8B1485 8C5DAD6F         | mov edx,dword ptr ds:[eax*4+6FAD5D8C]           |
+6F6D811D  | 52                      | push edx                                        |
+6F6D811E  | FF15 80D1866F           | call dword ptr ds:[<ResetEvent>]                |
+6F6D8124  | 8D0CB5 801DAD6F         | lea ecx,dword ptr ds:[esi*4+6FAD1D80]           |
+6F6D812B  | E8 30BFFEFF             | call game.6F6C4060                              |
+6F6D8130  | 25 FF070000             | and eax,7FF                                     |
+6F6D8135  | C1E6 0B                 | shl esi,B                                       |
+6F6D8138  | 03F0                    | add esi,eax                                     |
+6F6D813A  | 8D3CB5 901DAD6F         | lea edi,dword ptr ds:[esi*4+6FAD1D90]           |
+6F6D8141  | 8BD3                    | mov edx,ebx                                     |
+6F6D8143  | 81E2 0000E0FF           | and edx,FFE00000                                |
+6F6D8149  | 8BCF                    | mov ecx,edi                                     |
+6F6D814B  | E8 50BFFEFF             | call game.6F6C40A0                              |
+6F6D8150  | 8BF0                    | mov esi,eax                                     |
+6F6D8152  | 85F6                    | test esi,esi                                    |
+6F6D8154  | 74 2C                   | je game.6F6D8182                                |
+6F6D8156  | 8B1D 04FFA96F           | mov ebx,dword ptr ds:[6FA9FF04]                 |
+6F6D815C  | 8D6424 00               | lea esp,dword ptr ss:[esp]                      |
+6F6D8160  | 8BD6                    | mov edx,esi                                     |
+6F6D8162  | 8BCF                    | mov ecx,edi                                     |
+6F6D8164  | E8 37BFFEFF             | call game.6F6C40A0                              |
+6F6D8169  | 8BF0                    | mov esi,eax                                     |
+6F6D816B  | 85F6                    | test esi,esi                                    |
+6F6D816D  | 74 13                   | je game.6F6D8182                                |
+6F6D816F  | E8 7C5DFFFF             | call game.6F6CDEF0                              |
+6F6D8174  | 83EB 01                 | sub ebx,1                                       |
+6F6D8177  | 75 E7                   | jne game.6F6D8160                               |
+6F6D8179  | 33C9                    | xor ecx,ecx                                     |
+6F6D817B  | E8 205DFFFF             | call game.6F6CDEA0                              |
+6F6D8180  | EB D4                   | jmp game.6F6D8156                               |
+6F6D8182  | 5F                      | pop edi                                         |
+6F6D8183  | 5E                      | pop esi                                         |
+6F6D8184  | 5B                      | pop ebx                                         |
+6F6D8185  | C2 0400                 | ret 4                                           |
+```
+
+### 2. `6F6D8950`: 包含 ResetEvent (设置状态)
 
 
+它的逻辑是根据传入的参数（`0` 或 `1`）来决定是 `Set` 还是 `Reset`。
 
+**调用链分析：**
+
+1.  **入口** `6F6D8950`:
+    ```assembly
+    6F6D8950  | 8B4424 04   | mov eax,dword ptr ss:[esp+4] ; 获取参数 (bool)
+    6F6D8958  | call game.6F6D8340
+    ```
+
+2.  **分发** `6F6D8340`:
+    ```assembly
+    6F6D8340  | cmp dword ptr ss:[esp+4],0  ; 检查参数是 0 还是 1
+    6F6D8345  | jne game.6F6D8367           ; 如果是 1 (True)，跳转去 SetEvent
+    ; --- 如果是 0 (False)，走下面 ---
+    6F6D835C  | call game.6F6D8240          ; 准备 Reset
+    ```
+
+3.  **准备 Reset** `6F6D8240`:
+    ```assembly
+    6F6D827E  | call game.6F6D80F0
+    ```
+
+4.  **最终执行 Reset** `6F6D80F0`:
+    ```assembly
+    6F6D811E  | call dword ptr ds:[<ResetEvent>] ; <--- 就在这里！
+    ```
+
+5.  **反之，如果是 Set** (`6F6D8367` -> `6F6D82E0`):
+    ```assembly
+    6F6D82F8  | call dword ptr ds:[<SetEvent>]
+    ```
+
+**结论：**
+*   `6F6D8950(0)`  == `ResetEvent` (清除信号，设为无信号状态)
+*   `6F6D8950(1)`  == `SetEvent` (触发信号，设为有信号状态)
+
+---
+
+### 3. `6F62AF10`: 这是一个事件分发循环 (Event Dispatcher)
+
+这段代码展示了主线程如何处理这些事件：
+
+```assembly
+6F62AF63  | call game.6F6D8950  ; 更新事件状态
+```
+这里调用了上面的 `SetState` 函数。
+
+**整体流程总结 (结合我之前的分析)：**
+
+1.  **网络线程** (Producer):
+    *   收包 -> 校验 SHA1 -> 结果不对。
+    *   调用 `6F631FD0` 把消息 `{ID:12, Status:0}` 入队。
+    *   调用 `6F6D96B0` (`SetEvent`) -> **唤醒主线程**。
+
+2.  **主线程** (Consumer):
+    *   平时卡在 `WaitForSingleObject` (在 `6F6D9710` 那个位置附近)。
+    *   收到信号，醒来。
+    *   执行 `6F62AF10` 这样的函数，检查队列。
+    *   取出 `{ID:12, Status:0}`。
+    *   处理完后，可能会调用 `6F6D8950(0)` 即 `ResetEvent`，把信号灭掉，表示“我处理完了，继续睡，等下一个信号”。
+	
+
+## 错误代码
+
+```cpp
+bool War3Map::load(const QString &mapPath)
+{
+    m_valid = false;
+    m_mapPath = mapPath;
+
+    LOG_INFO(QString("[War3Map] 开始加载地图: %1").arg(mapPath));
+
+    QFile file(mapPath);
+    if (!file.open(QIODevice::ReadOnly)) {
+        LOG_ERROR(QString("[War3Map] ❌ 无法打开地图文件: %1").arg(mapPath));
+        return false;
+    }
+
+    // 1. 读取地图基础信息 (Size & CRC32 & SHA1)
+    QByteArray mapRawData = file.readAll();
+    file.close();
+
+    quint32 mapSizeInt = mapRawData.size();
+    m_mapSize = toBytes(mapSizeInt);
+
+    // 标准 Zip CRC32 (用于 MPQ 完整性)
+    uLong crc = crc32(0L, Z_NULL, 0);
+    crc = crc32(crc, (const Bytef*)mapRawData.constData(), mapRawData.size());
+    m_mapInfo = toBytes((quint32)crc);
+
+    // 计算 SHA1 (Map Data + Magic String)
+    // 这是标准的 Map SHA1 计算方式，替代原本基于 combinedData 的逻辑
+    QCryptographicHash sha1(QCryptographicHash::Sha1);
+    sha1.addData(mapRawData);
+    sha1.addData("\x9E\x37\xF1\x03", 4); // War3 Map SHA1 Magic
+    m_mapSHA1Bytes = sha1.result();
+
+    // 2. 打开 MPQ 档案
+    HANDLE hMpq = NULL;
+    QString nativePath = QDir::toNativeSeparators(mapPath);
+    DWORD flags = MPQ_OPEN_READ_ONLY;
+
+#ifdef UNICODE
+    const wchar_t *pathStr = (const wchar_t*)nativePath.utf16();
+#else
+    const char *pathStr = nativePath.toLocal8Bit().constData();
+#endif
+
+    if (!SFileOpenArchive(pathStr, 0, flags, &hMpq)) {
+        LOG_ERROR(QString("[War3Map] ❌ 无法打开 MPQ: %1").arg(nativePath));
+        return false;
+    }
+
+    // -------------------------------------------------------------
+    // ★★★ 地图一致性校验 (Map Checksum) - Stage 1 & 2 ★★★
+    // -------------------------------------------------------------
+
+    // Helper: 从本地磁盘读取环境脚本 (common.j / blizzard.j)
+    auto readLocalScript = [&](const QString &fileName) -> QByteArray {
+        // A. 优先目录
+        if (!s_priorityCrcDir.isEmpty()) {
+            QFile f(s_priorityCrcDir + "/" + fileName);
+            if (f.exists() && f.open(QIODevice::ReadOnly)) return f.readAll();
+        }
+        // B. 默认目录
+        QFile fDefault("war3files/" + fileName);
+        if (fDefault.open(QIODevice::ReadOnly)) return fDefault.readAll();
+        return QByteArray();
+    };
+
+    // Helper: 从 MPQ 读取文件
+    auto readMpqFile = [&](const QString &fileName) -> QByteArray {
+        HANDLE hFile = NULL;
+        QByteArray buffer;
+        if (SFileOpenFileEx(hMpq, fileName.toLocal8Bit().constData(), 0, &hFile)) {
+            DWORD s = SFileGetFileSize(hFile, NULL);
+            if (s > 0 && s != 0xFFFFFFFF) {
+                buffer.resize(s);
+                DWORD read = 0;
+                SFileReadFile(hFile, buffer.data(), s, &read, NULL);
+            }
+            SFileCloseFile(hFile);
+        }
+        return buffer;
+    };
+
+    // --- Step 1: 准备环境数据 ---
+    QByteArray dataCommon = readLocalScript("common.j");
+    QByteArray dataBlizzard = readLocalScript("blizzard.j");
+
+    // 尝试读取 war3map.j，如果是 Lua 地图则尝试 war3map.lua
+    QByteArray dataMapScript = readMpqFile("war3map.j");
+    if (dataMapScript.isEmpty()) dataMapScript = readMpqFile("scripts\\war3map.j");
+    if (dataMapScript.isEmpty()) dataMapScript = readMpqFile("war3map.lua");
+
+    if (dataCommon.isEmpty()) {
+        LOG_ERROR("[War3Map] ❌ 严重错误: 无法读取 common.j (路径: war3files/common.j)");
+    }
+    if (dataBlizzard.isEmpty()) {
+        LOG_ERROR("[War3Map] ❌ 严重错误: 无法读取 blizzard.j (路径: war3files/blizzard.j)");
+    }
+    if (dataMapScript.isEmpty()) {
+        LOG_ERROR("[War3Map] ❌ 严重错误: 无法在地图中找到脚本文件");
+    }
+
+    quint32 hCommon = calcBlizzardHash(dataCommon);
+    quint32 hBlizzard = calcBlizzardHash(dataBlizzard);
+    quint32 hMapScript = calcBlizzardHash(dataMapScript);
+
+    LOG_INFO(QString("🔹 Common.j Hash:   %1 (Size: %2)").arg(QString::number(hCommon, 16).toUpper()).arg(dataCommon.size()));
+    LOG_INFO(QString("🔹 Blizzard.j Hash: %1 (Size: %2)").arg(QString::number(hBlizzard, 16).toUpper()).arg(dataBlizzard.size()));
+    LOG_INFO(QString("🔹 War3Map.j Hash:  %1 (Size: %2)").arg(QString::number(hMapScript, 16).toUpper()).arg(dataMapScript.size()));
+
+    // --- Step 2: 脚本环境混合 (Stage 1) ---
+    // 公式: ROL(ROL(Bliz ^ Com, 3) ^ Magic, 3) ^ MapScript
+    quint32 val = 0;
+
+    val = hBlizzard ^ hCommon;      // Xor
+    val = rotateLeft(val, 3);       // Rol 1
+    val = val ^ 0x03F1379E;         // Salt
+    val = rotateLeft(val, 3);       // Rol 2
+    val = hMapScript ^ val;         // Mix Map
+    val = rotateLeft(val, 3);       // Rol 3
+
+    LOG_INFO(QString("[War3Map] Stage 1 Checksum: %1").arg(QString::number(val, 16).toUpper()));
+
+    // --- Step 3: 组件校验 (Stage 2) ---
+    // 严格顺序: w3e, wpm, doo, w3u, w3b, w3d, w3a, w3q
+    const char *componentFiles[] = {
+        "war3map.w3e", "war3map.wpm", "war3map.doo", "war3map.w3u",
+        "war3map.w3b", "war3map.w3d", "war3map.w3a", "war3map.w3q"
+    };
+
+    for (const char *compName : componentFiles) {
+        QByteArray compData = readMpqFile(compName);
+
+        // 文件不存在或为空则跳过 (不混入0)
+        if (compData.isEmpty()) continue;
+
+        quint32 hComp = calcBlizzardHash(compData);
+
+        // Mix Component
+        val = val ^ hComp;
+        val = rotateLeft(val, 3);
+
+        LOG_INFO(QString("   + Mixed Component: %1 (Hash: %2)").arg(compName, QString::number(hComp, 16).toUpper()));
+    }
+
+    // 保存最终 CRC
+    m_mapCRC = toBytes(val);
+
+    LOG_INFO(QString("[War3Map] Final Checksum: %1").arg(QString(m_mapCRC.toHex().toUpper())));
+    LOG_INFO(QString("[War3Map] Map SHA1:       %1").arg(QString(m_mapSHA1Bytes.toHex().toUpper())));
+
+
+    // 3. 解析 war3map.w3i (获取地图信息)
+    QByteArray w3iData = readMpqFile("war3map.w3i");
+    if (!w3iData.isEmpty()) {
+        QDataStream in(w3iData);
+        in.setByteOrder(QDataStream::LittleEndian);
+
+        quint32 fileFormat;
+        in >> fileFormat;
+
+        // 支持版本 18 (RoC) 和 25 (TFT)
+        if (fileFormat == 18 || fileFormat == 25) {
+            in.skipRawData(4); // saves
+            in.skipRawData(4); // editor ver
+
+            // 跳过地图名称/作者/描述/建议玩家 (4个字符串)
+            auto skipStr = [&]() {
+                char c;
+                do { in >> (quint8&)c; } while(c != 0 && !in.atEnd());
+            };
+            skipStr(); skipStr(); skipStr(); skipStr();
+
+            in.skipRawData(32); // camera bounds
+            in.skipRawData(16); // camera complements
+
+            quint32 rawW, rawH, rawFlags;
+            in >> rawW >> rawH >> rawFlags;
+
+            m_mapWidth = toBytes16((quint16)rawW);
+            m_mapHeight = toBytes16((quint16)rawH);
+            m_mapOptions = rawFlags;
+
+            LOG_INFO(QString("[War3Map] w3i 解析成功. Size: %1x%2 Flags: 0x%3")
+                         .arg(rawW).arg(rawH).arg(QString::number(m_mapOptions, 16).toUpper()));
+        }
+    } else {
+        LOG_WARNING("[War3Map] ⚠️ 无法读取 war3map.w3i (可能是受保护的地图)");
+    }
+
+    SFileCloseArchive(hMpq);
+    m_valid = true;
+    return true;
+}
+```
+## 错误定位
+
+SHA1 计算逻辑中有一个**关键错误**，这直接导致了客户端无法匹配地图。
+
+### 结论
+**问题不在于算法本身**（`QCryptographicHash::Sha1` 是标准的，暴雪用的也是标准 SHA1），**问题在于我多加了“魔法字节”**。
+
+在 **W3GS 0x3D (Map Check)** 数据包中，SHA1 必须是 **`.w3x` 文件原始内容的标准 SHA1**，**绝对不能**添加任何魔法字节（Magic Bytes）。
+
+在代码 `War3Map::load` 中：
+
+```cpp
+    // 计算 SHA1 (Map Data + Magic String)
+    // 这是标准的 Map SHA1 计算方式，替代原本基于 combinedData 的逻辑
+    QCryptographicHash sha1(QCryptographicHash::Sha1);
+    sha1.addData(mapRawData);
+    
+    // ❌❌❌ 错误在这里 ❌❌❌
+    // 0x3D 包是用于检查“本地文件是否匹配”的。
+    // 客户端检查时，只会计算本地磁盘上文件的 SHA1，它不会在内存里拼这4个字节再去算。
+    // 我加了这4个字节，导致服务端算出来的 Hash 和客户端算出来的永远不一样。
+    sha1.addData("\x9E\x37\xF1\x03", 4); // War3 Map SHA1 Magic
+    
+    m_mapSHA1Bytes = sha1.result();
+```
+
+## 修正方法
+
+请直接删除那行添加 Magic 的代码：
+
+```cpp
+    // 修正后的 SHA1 计算
+    QCryptographicHash sha1(QCryptographicHash::Sha1);
+    sha1.addData(mapRawData); // 只计算文件原始内容
+    // sha1.addData("\x9E\x37\xF1\x03", 4); // <--- 删除这一行
+    m_mapSHA1Bytes = sha1.result();
+```
+
+## 原理解析
+
+我解释一下为什么这里会有混淆，以及这几个校验码的区别：
+
+1.  **Map SHA1 (用于 0x3D 包)**
+    *   **用途**：文件完整性校验、缓存命中检查。
+    *   **逻辑**：客户端收到 0x3D 包后，提取里面的 SHA1。然后客户端去自己的 `Maps/Download` 目录找同名文件，计算**本地文件的标准 SHA1**。如果不一致，客户端认为地图已损坏或版本不对，从而触发下载。
+    *   **算法**：`Standard_SHA1(Raw_File_Data)`。
+
+2.  **Map CRC (XCRC / Game Checksum) (用于 0x3D 和 0x2F/0x30 包)**
+    *   **用途**：游戏同步校验（防止 Desync）。
+    *   **逻辑**：这就是我代码后半部分写的 `calcBlizzardHash` + `rotateLeft` + `xor` 那个极其复杂的逻辑。它不仅校验地图文件，还校验 `common.j`、`blizzard.j` 等环境脚本。
+    *   **我的代码状态**：这部分逻辑看起来是**正确**的（它是暴雪自定义的哈希算法，我的实现符合 Ghost++ 等成熟项目的逻辑）。这个值通常赋给 `0x3D` 包里的 `Map CRC` 字段，以及 `0x2F` (Create Game) 包里的校验字段。
+
+3.  **那 `\x9E\x37\xF1\x03` 是什么？**
+    *   这个魔法数字确实存在于魔兽争霸的历史中，但它通常用于 **Warden（反作弊）** 或者 **旧版本/特殊版本** 的某些内部校验，或者是计算上述第2点（Game Checksum）时混入计算过程的（见我代码里的 `val = val ^ 0x03F1379E;`，这其实就是那个魔法数字的变体）。但在计算单纯的文件指纹（SHA1）给客户端下载用时，不需要它。
+
+### 再次验证我的其他字段
+
+*   `m_mapInfo`: 我使用的是 `zlib` 的 `crc32`。
+    *   在 Ghost++ 等实现中，0x3D 包的 `MapInfo` 字段确实通常填入文件的标准 CRC32（即 `crc32(0, data, len)`）。**这部分是正确的。**
+*   `m_mapCRC`: 我使用的是复杂的暴雪自定义哈希。
+    *   在 0x3D 包的 `MapCRC` 字段填入这个复杂哈希是标准的做法，以便客户端在进入游戏大厅前就能预先校验同步状态。**这部分也是正确的。**
+
+### 总结
+我被那些网上的旧资料或者反作弊相关的逻辑误导了。**0x3D 地图下载/验证包只认纯文件的 SHA1。** 去掉那行代码，我的地图就能秒速通过验证（Map Check Pass）了。
 
 
 

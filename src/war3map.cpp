@@ -130,7 +130,6 @@ bool War3Map::load(const QString &mapPath)
     // 这是标准的 Map SHA1 计算方式，替代原本基于 combinedData 的逻辑
     QCryptographicHash sha1(QCryptographicHash::Sha1);
     sha1.addData(mapRawData);
-    sha1.addData("\x9E\x37\xF1\x03", 4); // War3 Map SHA1 Magic
     m_mapSHA1Bytes = sha1.result();
 
     // 2. 打开 MPQ 档案
