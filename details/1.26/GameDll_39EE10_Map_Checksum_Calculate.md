@@ -9,6 +9,7 @@
 
 ```mermaid
 graph TD
+```
     Level1[Layer 1: 主控逻辑 6F39EE10] --> Init[SHA1_Init]
     Level1 --> LoadEnv[Layer 2: 环境校验 6F3B1D00]
     
