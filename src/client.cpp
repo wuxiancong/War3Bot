@@ -585,17 +585,61 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         quint32 unknown; quint8 sizeFlag; quint32 clientMapSize;
         in >> unknown >> sizeFlag >> clientMapSize;
 
-        LOG_INFO(QString("🗺️ [0x42] 收到玩家地图报告: %1 字节").arg(clientMapSize));
+        LOG_INFO(QString("🗺️ [0x42] 收到玩家地图报告: %1 字节 (Flag: %2)").arg(clientMapSize).arg(sizeFlag));
 
-        if (clientMapSize == 0) {
-            // ⚠️ 重点警告：如果这里是 0，说明玩家在 Maps\Download\ 下找不到地图
-            // 因为没写地图下载逻辑，玩家会一直卡在等待中，最终超时断开。
-            LOG_WARNING("⚠️ 玩家找不到地图！请检查 Maps\\Download\\ 路径是否正确。");
+        // 1. 寻找当前玩家的 PID
+        quint8 currentPid = 0;
+        QString playerName = "Unknown";
+
+        for (auto it = m_players.begin(); it != m_players.end(); ++it) {
+            if (it.value().socket == socket) {
+                currentPid = it.key();
+                playerName = it.value().name;
+                break;
+            }
         }
 
-        // 发送 0x09 尝试刷新 UI
-        socket->write(createW3GSSlotInfoPacket());
-        socket->flush();
+        if (currentPid == 0) {
+            LOG_WARNING("⚠️ 收到未知 Socket 的地图报告，无法更新状态");
+            return;
+        }
+
+        // 2. 验证地图大小并更新槽位
+        quint32 hostMapSize = m_war3Map.getMapSize();
+
+        bool slotUpdated = false;
+
+        for (int i = 0; i < m_slots.size(); ++i) {
+            if (m_slots[i].pid == currentPid) {
+                // 校验大小：如果客户端报告的大小与主机一致，说明拥有地图
+                if (clientMapSize == hostMapSize) {
+                    // 仅当状态改变时才标记更新，避免不必要的广播
+                    if (m_slots[i].downloadStatus != 100) {
+                        m_slots[i].downloadStatus = 100; // 100% 下载完成
+                        slotUpdated = true;
+                        LOG_INFO(QString("✅ 玩家 [%1] 已拥有地图 (Slot %2 -> 100%)").arg(playerName).arg(i));
+                    }
+                } else {
+                    // 大小不匹配，说明没有地图
+                    if (m_slots[i].downloadStatus != 0) {
+                        m_slots[i].downloadStatus = 0;   // 0% 需要下载
+                        slotUpdated = true;
+                        LOG_WARNING(QString("⚠️ 玩家 [%1] 地图大小不匹配 (C:%2 vs S:%3) -> 需下载").arg(playerName).arg(clientMapSize).arg(hostMapSize));
+                    }
+                }
+                break;
+            }
+        }
+
+        // 3. 广播更新
+        if (slotUpdated) {
+            // 状态变了（例如从 未知->100%），必须广播给所有人看
+            broadcastSlotInfo();
+        } else {
+            // 状态没变，只回复当前玩家，维持握手协议流程
+            socket->write(createW3GSSlotInfoPacket());
+            socket->flush();
+        }
     }
     break;
 
@@ -965,6 +1009,10 @@ void Client::cancelGame() {
     stopAdv();
     enterChat();
     LOG_INFO("❌ 取消游戏，返回大厅");
+    if (m_pingTimer->isActive()) {
+        m_pingTimer->stop();
+        LOG_INFO("🛑 Ping 循环已停止");
+    }
 }
 
 void Client::createGame(const QString &gameName, const QString &password, ProviderVersion providerVersion, ComboGameType comboGameType, SubGameType subGameType, LadderType ladderType)
@@ -1033,6 +1081,10 @@ void Client::createGame(const QString &gameName, const QString &password, Provid
     sendPacket(SID_STARTADVEX3, payload);
     LOG_INFO("📤 房间创建请求发送完毕");
 
+    if (!m_pingTimer->isActive()) {
+        m_pingTimer->start(5000);
+        LOG_INFO("💓 Ping 循环已启动 (间隔: 5秒)");
+    }
 }
 
 // =========================================================
