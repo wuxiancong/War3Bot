@@ -106,9 +106,9 @@ private:
 
     // --- 核心校验数据 ---
     QByteArray m_mapSize;
-    QByteArray m_mapInfo; // MPQ Header CRC
-    QByteArray m_mapCRC;  // 游戏逻辑 CRC (XORO)
-    QByteArray m_mapSHA1Bytes; // 地图文件 SHA1
+    QByteArray m_mapInfo;               // 地图信息 CRC
+    QByteArray m_mapCRC;                // 游戏逻辑 CRC
+    QByteArray m_mapSHA1Bytes;          // 地图文件 SHA1
 
     // --- 地图信息 (w3i) ---
     quint32 m_mapOptions;

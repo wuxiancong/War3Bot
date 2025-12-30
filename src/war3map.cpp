@@ -27,6 +27,12 @@ static inline quint32 rotateLeft(quint32 value, int shift) {
     return (value << shift) | (value >> (32 - shift));
 }
 
+// 以 Little-Endian 模式将 uint32 写入 SHA1
+void sha1UpdateInt32(QCryptographicHash &sha1, quint32 value) {
+    quint32 le = qToLittleEndian(value);
+    sha1.addData((const char*)&le, 4);
+}
+
 // =========================================================
 // War3Map 类实现
 // =========================================================
@@ -108,34 +114,22 @@ bool War3Map::load(const QString &mapPath)
 
     LOG_INFO(QString("[War3Map] 开始加载地图: %1").arg(mapPath));
 
+    // -------------------------------------------------------
+    // 1. 基础文件检查与 MPQ 打开
+    // -------------------------------------------------------
     QFile file(mapPath);
     if (!file.open(QIODevice::ReadOnly)) {
         LOG_ERROR(QString("[War3Map] ❌ 无法打开地图文件: %1").arg(mapPath));
         return false;
     }
 
-    // 1. 读取地图基础信息 (Size & CRC32 & SHA1)
-    QByteArray mapRawData = file.readAll();
+    // 计算文件物理大小 (StatString 需要)
+    m_mapSize = toBytes((quint32)file.size());
     file.close();
 
-    quint32 mapSizeInt = mapRawData.size();
-    m_mapSize = toBytes(mapSizeInt);
-
-    // 标准 Zip CRC32 (用于 MPQ 完整性)
-    uLong crc = crc32(0L, Z_NULL, 0);
-    crc = crc32(crc, (const Bytef*)mapRawData.constData(), mapRawData.size());
-    m_mapInfo = toBytes((quint32)crc);
-
-    // 计算 SHA1 (Map Data + Magic String)
-    // 这是标准的 Map SHA1 计算方式，替代原本基于 combinedData 的逻辑
-    QCryptographicHash sha1(QCryptographicHash::Sha1);
-    sha1.addData(mapRawData);
-    m_mapSHA1Bytes = sha1.result();
-
-    // 2. 打开 MPQ 档案
+    // 打开 MPQ
     HANDLE hMpq = NULL;
     QString nativePath = QDir::toNativeSeparators(mapPath);
-    DWORD flags = MPQ_OPEN_READ_ONLY;
 
 #ifdef UNICODE
     const wchar_t *pathStr = (const wchar_t*)nativePath.utf16();
@@ -143,29 +137,27 @@ bool War3Map::load(const QString &mapPath)
     const char *pathStr = nativePath.toLocal8Bit().constData();
 #endif
 
-    if (!SFileOpenArchive(pathStr, 0, flags, &hMpq)) {
+    if (!SFileOpenArchive(pathStr, 0, MPQ_OPEN_READ_ONLY, &hMpq)) {
         LOG_ERROR(QString("[War3Map] ❌ 无法打开 MPQ: %1").arg(nativePath));
         return false;
     }
 
-    // -------------------------------------------------------------
-    // ★★★ 地图一致性校验 (Map Checksum) - Stage 1 & 2 ★★★
-    // -------------------------------------------------------------
+    // -------------------------------------------------------
+    // 2. 定义读取辅助 Lambda
+    // -------------------------------------------------------
 
-    // Helper: 从本地磁盘读取环境脚本 (common.j / blizzard.j)
+    // 从本地 war3 目录读取环境文件
     auto readLocalScript = [&](const QString &fileName) -> QByteArray {
-        // A. 优先目录
         if (!s_priorityCrcDir.isEmpty()) {
             QFile f(s_priorityCrcDir + "/" + fileName);
             if (f.exists() && f.open(QIODevice::ReadOnly)) return f.readAll();
         }
-        // B. 默认目录
         QFile fDefault("war3files/" + fileName);
         if (fDefault.open(QIODevice::ReadOnly)) return fDefault.readAll();
         return QByteArray();
     };
 
-    // Helper: 从 MPQ 读取文件
+    // 从 MPQ 读取文件
     auto readMpqFile = [&](const QString &fileName) -> QByteArray {
         HANDLE hFile = NULL;
         QByteArray buffer;
@@ -181,76 +173,98 @@ bool War3Map::load(const QString &mapPath)
         return buffer;
     };
 
-    // --- Step 1: 准备环境数据 ---
+    // -------------------------------------------------------
+    // 3. 准备核心数据 (Script & Env)
+    // -------------------------------------------------------
+
+    // 读取环境脚本
     QByteArray dataCommon = readLocalScript("common.j");
     QByteArray dataBlizzard = readLocalScript("blizzard.j");
 
-    // 尝试读取 war3map.j，如果是 Lua 地图则尝试 war3map.lua
+    if (dataCommon.isEmpty() || dataBlizzard.isEmpty()) {
+        LOG_ERROR("[War3Map] ❌ 严重错误: 缺少 common.j 或 blizzard.j，校验无法进行！");
+        SFileCloseArchive(hMpq);
+        return false;
+    }
+
+    // 读取地图脚本 (支持 war3map.j / scripts\war3map.j / war3map.lua)
     QByteArray dataMapScript = readMpqFile("war3map.j");
     if (dataMapScript.isEmpty()) dataMapScript = readMpqFile("scripts\\war3map.j");
-    if (dataMapScript.isEmpty()) dataMapScript = readMpqFile("war3map.lua");
+    if (dataMapScript.isEmpty()) dataMapScript = readMpqFile("war3map.lua"); // 兼容 Lua
 
-    if (dataCommon.isEmpty()) {
-        LOG_ERROR("[War3Map] ❌ 严重错误: 无法读取 common.j (路径: war3files/common.j)");
-    }
-    if (dataBlizzard.isEmpty()) {
-        LOG_ERROR("[War3Map] ❌ 严重错误: 无法读取 blizzard.j (路径: war3files/blizzard.j)");
-    }
     if (dataMapScript.isEmpty()) {
         LOG_ERROR("[War3Map] ❌ 严重错误: 无法在地图中找到脚本文件");
+        SFileCloseArchive(hMpq);
+        return false;
     }
 
+    // -------------------------------------------------------
+    // 4. 初始化校验算法 (Legacy CRC & New SHA1)
+    // -------------------------------------------------------
+
+    // === A. 初始化 SHA-1 (1.26a 核心逻辑) ===
+    QCryptographicHash sha1Ctx(QCryptographicHash::Sha1);
+
+    sha1Ctx.addData(dataCommon);          // 1. common.j
+    sha1Ctx.addData(dataBlizzard);        // 2. blizzard.j
+    sha1UpdateInt32(sha1Ctx, 0x03F1379E); // 3. Salt (0x03F1379E)
+    sha1Ctx.addData(dataMapScript);       // 4. war3map.j
+
+    // === B. 初始化 Legacy CRC (XORO 算法, 兼容旧平台) ===
+    quint32 crcVal = 0;
     quint32 hCommon = calcBlizzardHash(dataCommon);
-    quint32 hBlizzard = calcBlizzardHash(dataBlizzard);
-    quint32 hMapScript = calcBlizzardHash(dataMapScript);
+    quint32 hBlizz = calcBlizzardHash(dataBlizzard);
+    quint32 hScript = calcBlizzardHash(dataMapScript);
 
-    LOG_INFO(QString("🔹 Common.j Hash:   %1 (Size: %2)").arg(QString::number(hCommon, 16).toUpper()).arg(dataCommon.size()));
-    LOG_INFO(QString("🔹 Blizzard.j Hash: %1 (Size: %2)").arg(QString::number(hBlizzard, 16).toUpper()).arg(dataBlizzard.size()));
-    LOG_INFO(QString("🔹 War3Map.j Hash:  %1 (Size: %2)").arg(QString::number(hMapScript, 16).toUpper()).arg(dataMapScript.size()));
+    crcVal = hBlizz ^ hCommon;      // Xor
+    crcVal = rotateLeft(crcVal, 3); // Rol 1
+    crcVal = crcVal ^ 0x03F1379E;   // Salt
+    crcVal = rotateLeft(crcVal, 3); // Rol 2
+    crcVal = hScript ^ crcVal;      // Mix Map
+    crcVal = rotateLeft(crcVal, 3); // Rol 3
 
-    // --- Step 2: 脚本环境混合 (Stage 1) ---
-    // 公式: ROL(ROL(Bliz ^ Com, 3) ^ Magic, 3) ^ MapScript
-    quint32 val = 0;
-
-    val = hBlizzard ^ hCommon;      // Xor
-    val = rotateLeft(val, 3);       // Rol 1
-    val = val ^ 0x03F1379E;         // Salt
-    val = rotateLeft(val, 3);       // Rol 2
-    val = hMapScript ^ val;         // Mix Map
-    val = rotateLeft(val, 3);       // Rol 3
-
-    LOG_INFO(QString("[War3Map] Stage 1 Checksum: %1").arg(QString::number(val, 16).toUpper()));
-
-    // --- Step 3: 组件校验 (Stage 2) ---
-    // 严格顺序: w3e, wpm, doo, w3u, w3b, w3d, w3a, w3q
+    // -------------------------------------------------------
+    // 5. 统一遍历组件 (同时更新两个算法)
+    // -------------------------------------------------------
     const char *componentFiles[] = {
         "war3map.w3e", "war3map.wpm", "war3map.doo", "war3map.w3u",
         "war3map.w3b", "war3map.w3d", "war3map.w3a", "war3map.w3q"
     };
 
     for (const char *compName : componentFiles) {
+        // 读取组件数据
         QByteArray compData = readMpqFile(compName);
 
-        // 文件不存在或为空则跳过 (不混入0)
-        if (compData.isEmpty()) continue;
+        // 如果文件存在，同时加入两个算法的计算
+        if (!compData.isEmpty()) {
+            // A. Update SHA-1
+            sha1Ctx.addData(compData);
 
-        quint32 hComp = calcBlizzardHash(compData);
+            // B. Update Legacy CRC
+            quint32 hComp = calcBlizzardHash(compData);
+            crcVal = crcVal ^ hComp;
+            crcVal = rotateLeft(crcVal, 3);
 
-        // Mix Component
-        val = val ^ hComp;
-        val = rotateLeft(val, 3);
-
-        LOG_INFO(QString("   + Mixed Component: %1 (Hash: %2)").arg(compName, QString::number(hComp, 16).toUpper()));
+            LOG_INFO(QString("   + [Checksum] 组件已加入: %1 (Size: %2)").arg(compName).arg(compData.size()));
+        }
     }
 
-    // 保存最终 CRC
-    m_mapCRC = toBytes(val);
+    // -------------------------------------------------------
+    // 6. 结算与保存结果
+    // -------------------------------------------------------
 
-    LOG_INFO(QString("[War3Map] Final Checksum: %1").arg(QString(m_mapCRC.toHex().toUpper())));
-    LOG_INFO(QString("[War3Map] Map SHA1:       %1").arg(QString(m_mapSHA1Bytes.toHex().toUpper())));
+    // 保存 SHA-1 (StatString 真正用到的 20 字节)
+    m_mapSHA1Bytes = sha1Ctx.result();
 
+    // 保存 CRC (兼容字段)
+    m_mapCRC = toBytes(crcVal);
 
-    // 3. 解析 war3map.w3i (获取地图信息)
+    LOG_INFO(QString("[War3Map] ✅ CRC  Checksum: %1").arg(QString(m_mapCRC.toHex().toUpper())));
+    LOG_INFO(QString("[War3Map] ✅ SHA1 Checksum: %1").arg(QString(m_mapSHA1Bytes.toHex().toUpper())));
+
+    // -------------------------------------------------------
+    // 7. 解析 war3map.w3i (获取地图信息)
+    // -------------------------------------------------------
     QByteArray w3iData = readMpqFile("war3map.w3i");
     if (!w3iData.isEmpty()) {
         QDataStream in(w3iData);
@@ -259,12 +273,11 @@ bool War3Map::load(const QString &mapPath)
         quint32 fileFormat;
         in >> fileFormat;
 
-        // 支持版本 18 (RoC) 和 25 (TFT)
         if (fileFormat == 18 || fileFormat == 25) {
             in.skipRawData(4); // saves
             in.skipRawData(4); // editor ver
 
-            // 跳过地图名称/作者/描述/建议玩家 (4个字符串)
+            // 跳过变长字符串
             auto skipStr = [&]() {
                 char c;
                 do { in >> (quint8&)c; } while(c != 0 && !in.atEnd());
@@ -280,14 +293,14 @@ bool War3Map::load(const QString &mapPath)
             m_mapWidth = toBytes16((quint16)rawW);
             m_mapHeight = toBytes16((quint16)rawH);
             m_mapOptions = rawFlags;
-
-            LOG_INFO(QString("[War3Map] w3i 解析成功. Size: %1x%2 Flags: 0x%3")
-                         .arg(rawW).arg(rawH).arg(QString::number(m_mapOptions, 16).toUpper()));
         }
     } else {
-        LOG_WARNING("[War3Map] ⚠️ 无法读取 war3map.w3i (可能是受保护的地图)");
+        LOG_WARNING("[War3Map] ⚠️ 无法读取 war3map.w3i，将使用默认参数");
     }
 
+    // -------------------------------------------------------
+    // 8. 清理与完成
+    // -------------------------------------------------------
     SFileCloseArchive(hMpq);
     m_valid = true;
     return true;
