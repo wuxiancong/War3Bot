@@ -43,7 +43,7 @@ void BotManager::initializeBots(int count, const QString &configPath)
         Bot *bot = new Bot(i, fullUsername, password);
 
         // 创建 Client 实例
-        bot->client = new Client(this);
+        bot->client = new class Client(this);
 
         // 设置凭据 (默认使用 SRP 0x53)
         bot->client->setCredentials(fullUsername, password, Protocol_SRP_0x53);
@@ -61,7 +61,7 @@ void BotManager::initializeBots(int count, const QString &configPath)
         });
 
         // 3. 房间创建成功
-        connect(bot->client, &Client::gameListRegistered, this, [this, bot]() {
+        connect(bot->client, &Client::gameCreated, this, [this, bot]() {
             this->onBotGameCreated(bot);
         });
 
@@ -75,7 +75,7 @@ void BotManager::initializeBots(int count, const QString &configPath)
     LOG_INFO(QString("初始化完成，共创建 %1 个机器人对象").arg(m_bots.size()));
 }
 
-bool BotManager::requestCreateGame(const QString& creatorName, const QString& gameName)
+bool BotManager::onRequestCreateGame(const QString &creatorName, const QString &gameName, CommandSource commandSource)
 {
     Bot *targetBot = nullptr;
 
@@ -100,14 +100,14 @@ bool BotManager::requestCreateGame(const QString& creatorName, const QString& ga
         LOG_INFO(QString("⚠️ 无空闲机器人，动态扩容: [%1]").arg(newUsername));
 
         targetBot = new Bot(newId, newUsername, m_defaultPassword);
-        targetBot->client = new Client(this);
+        targetBot->client = new class Client(this);
         targetBot->client->setCredentials(newUsername, m_defaultPassword, Protocol_SRP_0x53);
 
         // === 绑定信号 ===
         // 使用 Lambda 捕获 bot 指针，确保槽函数知道是哪个 bot
         connect(targetBot->client, &Client::authenticated, this, [this, targetBot]() { this->onBotAuthenticated(targetBot); });
         connect(targetBot->client, &Client::accountCreated, this, [this, targetBot]() { this->onBotAccountCreated(targetBot); });
-        connect(targetBot->client, &Client::gameListRegistered, this, [this, targetBot]() { this->onBotGameCreated(targetBot); });
+        connect(targetBot->client, &Client::gameCreated, this, [this, targetBot]() { this->onBotGameCreated(targetBot); });
         connect(targetBot->client, &Client::socketError, this, [this, targetBot](QString e) { this->onBotError(targetBot, e); });
         connect(targetBot->client, &Client::disconnected, this, [this, targetBot]() { this->onBotDisconnected(targetBot); });
 
@@ -137,7 +137,7 @@ bool BotManager::requestCreateGame(const QString& creatorName, const QString& ga
         targetBot->client->setHost(creatorName);
 
         // 发送创建命令
-        targetBot->client->createGame(gameName, "", Provider_TFT_New, Game_TFT_Custom, SubType_None, Ladder_None);
+        targetBot->client->createGame(gameName, "", Provider_TFT_New, Game_TFT_Custom, SubType_None, Ladder_None, commandSource);
         return true;
     }
 
@@ -181,7 +181,7 @@ const QVector<Bot*>& BotManager::getAllBots() const
 
 // === 槽函数实现 ===
 
-void BotManager::onBotAuthenticated(Bot* bot)
+void BotManager::onBotAuthenticated(Bot *bot)
 {
     if (!bot) return;
     bot->state = BotState::Idle;
@@ -189,13 +189,13 @@ void BotManager::onBotAuthenticated(Bot* bot)
     emit botStateChanged(bot->id, bot->username, bot->state);
 }
 
-void BotManager::onBotAccountCreated(Bot* bot)
+void BotManager::onBotAccountCreated(Bot *bot)
 {
     if (!bot) return;
     LOG_INFO(QString("🆕 [%1] 账号注册成功，正在尝试登录...").arg(bot->username));
 }
 
-void BotManager::onBotGameCreated(Bot* bot)
+void BotManager::onBotGameCreated(Bot *bot)
 {
     if (!bot) return;
     bot->state = BotState::Waiting;
@@ -203,7 +203,7 @@ void BotManager::onBotGameCreated(Bot* bot)
     emit botStateChanged(bot->id, bot->username, bot->state);
 }
 
-void BotManager::onBotError(Bot* bot, QString error)
+void BotManager::onBotError(Bot *bot, QString error)
 {
     if (!bot) return;
 
@@ -223,7 +223,7 @@ void BotManager::onBotError(Bot* bot, QString error)
     }
 }
 
-void BotManager::onBotDisconnected(Bot* bot)
+void BotManager::onBotDisconnected(Bot *bot)
 {
     if (!bot) return;
     bot->state = BotState::Disconnected;

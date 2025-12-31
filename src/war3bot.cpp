@@ -8,10 +8,10 @@ War3Bot::War3Bot(QObject *parent)
     , m_p2pServer(nullptr)
     , m_client(nullptr)
 {
-    m_client = new Client(this);
+    m_client = new class Client(this);
     m_botManager = new BotManager(this);
     connect(m_client, &Client::authenticated, this, &War3Bot::onBnetAuthenticated);
-    connect(m_client, &Client::gameListRegistered, this, &War3Bot::onGameListRegistered);
+    connect(m_client, &Client::gameCreated, this, &War3Bot::onGameCreateSuccess);
 }
 
 War3Bot::~War3Bot()
@@ -125,8 +125,8 @@ void War3Bot::createGame(const QString &gameName, const QString &gamePassword,
             ProviderVersion::Provider_TFT_New,
             ComboGameType::Game_TFT_Custom,
             SubGameType::SubType_Internet,
-            LadderType::Ladder_None
-            );
+            LadderType::Ladder_None,
+            CommandSource::From_Server);
 
         // 清空可能残留的挂起任务
         m_pendingGameName.clear();
@@ -216,8 +216,8 @@ void War3Bot::onBnetAuthenticated()
             ProviderVersion::Provider_TFT_New,
             ComboGameType::Game_TFT_Custom,
             SubGameType::SubType_Internet,
-            LadderType::Ladder_None
-            );
+            LadderType::Ladder_None,
+            CommandSource::From_Server);
 
         m_pendingGameName.clear();
         m_pendingGamePassword.clear();
@@ -229,7 +229,7 @@ void War3Bot::onBnetAuthenticated()
     }
 }
 
-void War3Bot::onGameListRegistered()
+void War3Bot::onGameCreateSuccess()
 {
     LOG_INFO("房间创建成功");
 }

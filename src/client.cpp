@@ -363,7 +363,7 @@ void Client::handleBNETTcpPacket(BNETPacketID id, const QByteArray &data)
                             gameName = QString("%1's Game").arg(username);
                         }
 
-                        emit requestCreateGame(username, gameName);
+                        emit requestCreateGame(username, gameName, From_Client);
                     }
 
                     // --- 指令 2: /unhost (取消房间) ---
@@ -491,9 +491,32 @@ void Client::handleBNETTcpPacket(BNETPacketID id, const QByteArray &data)
     break;
 
     case SID_STARTADVEX3:
-        LOG_INFO("✅ 房间创建成功！");
-        emit gameListRegistered();
-        break;
+    {
+        // 确保数据长度足够读取状态码 (UINT32)
+        if (data.size() < 4) return;
+
+        quint32 status;
+        QDataStream ds(data);
+        ds.setByteOrder(QDataStream::LittleEndian);
+        ds >> status;
+
+        if (status == GameCreate_Ok) {
+            LOG_INFO("✅ 房间创建成功！(广播已启动)");
+            emit gameCreated(From_Client);
+        }
+        else {
+            // 处理创建失败的情况
+            QString errStr;
+            switch (status) {
+            case GameCreate_NameExists:      errStr = "房间名已存在"; break;
+            case GameCreate_TypeUnavailable: errStr = "游戏类型不可用"; break;
+            case GameCreate_Error:           errStr = "未知错误"; break;
+            default:                         errStr = QString("错误码 0x%1").arg(QString::number(status, 16)); break;
+            }
+            LOG_ERROR(QString("❌ 房间创建失败: %1").arg(errStr));
+        }
+    }
+    break;
 
     default: break;
     }
@@ -1315,7 +1338,7 @@ void Client::cancelGame() {
     }
 }
 
-void Client::createGame(const QString &gameName, const QString &password, ProviderVersion providerVersion, ComboGameType comboGameType, SubGameType subGameType, LadderType ladderType)
+void Client::createGame(const QString &gameName, const QString &password, ProviderVersion providerVersion, ComboGameType comboGameType, SubGameType subGameType, LadderType ladderType, CommandSource commandSource)
 {
     initSlots();
 
@@ -1379,7 +1402,7 @@ void Client::createGame(const QString &gameName, const QString &password, Provid
     out.writeRawData(finalStatString.constData(), finalStatString.size()); out << (quint8)0;
 
     sendPacket(SID_STARTADVEX3, payload);
-    LOG_INFO("📤 房间创建请求发送完毕");
+    LOG_INFO(QString("📤 来自%1端的房间创建请求发送完毕").arg(commandSource == From_Server ? "服务" : "客户"));
 
     if (!m_pingTimer->isActive()) {
         m_pingTimer->start(5000);

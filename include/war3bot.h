@@ -25,7 +25,7 @@ public:
 
 private slots:
     void onBnetAuthenticated();
-    void onGameListRegistered();
+    void onGameCreateSuccess();
     void onPeerRemoved(const QString &peerId);
     void onPeerRegistered(const QString &peerId, const QString &gameId, int size);
     void onPunchRequested(const QString &sourcePeerId, const QString &targetPeerId);

@@ -45,19 +45,7 @@ public:
     explicit BotManager(QObject *parent = nullptr);
     ~BotManager();
 
-    /**
-     * @brief 请求创建一个新游戏
-     * @param creatorName 发起请求的玩家名字 (将成为房主)
-     * @param gameName 游戏房间名
-     * @return 成功返回 true，否则 false
-     */
-    bool requestCreateGame(const QString& creatorName, const QString &gameName);
-
-    /**
-      *@brief 初始化机器人
-      *@param count 要创建的机器人数量
-      *@param configPath 配置文件路径 (.ini)
-     */
+    // 初始化机器人
     void initializeBots(int count, const QString& configPath);
 
     // 启动所有机器人连接
@@ -80,6 +68,7 @@ private slots:
     void onBotGameCreated(Bot *bot);
     void onBotDisconnected(Bot *bot);
     void onBotError(Bot *bot, QString error);
+    bool onRequestCreateGame(const QString& creatorName, const QString &gameName, CommandSource commandSource);
 
 private:
     // 容器存储所有机器人指针

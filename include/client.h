@@ -134,6 +134,14 @@ enum BaseGameType {
     Type_PGL                    = 0x20  // 专业联赛
 };
 
+// 房间创建/广播状态 (SID_STARTADVEX3 响应)
+enum GameCreationStatus {
+    GameCreate_Ok               = 0x00, // 创建成功
+    GameCreate_NameExists       = 0x01, // 失败：房间名已存在
+    GameCreate_TypeUnavailable  = 0x02, // 失败：游戏类型不可用
+    GameCreate_Error            = 0x03  // 失败：通用错误
+};
+
 // 游戏布局/队伍设置
 enum GameLayoutStyle {
     Melee                       = 0x00, // 标准 (可换队)
@@ -276,6 +284,11 @@ enum ChatScope {
     Directed                    = 0x03  // 指定玩家
 };
 
+enum CommandSource {
+    From_Client                 = 0x00, // 服务端输入命令
+    From_Server                 = 0x01  // 客户端输入命令
+};
+
 // =========================================================
 // 1. 游戏槽位数据 (Game Slot)
 // =========================================================
@@ -384,7 +397,7 @@ public:
     void setHost(QString creatorName) { m_host = creatorName; };
     void createGame(const QString &gameName, const QString &password,
                     ProviderVersion providerVersion, ComboGameType comboGameType,
-                    SubGameType subGameType, LadderType ladderType);
+                    SubGameType subGameType, LadderType ladderType,CommandSource commandSource);
     void cancelGame();                                  // 取消/解散游戏
     void stopAdv();                                     // 停止广播
 
@@ -404,9 +417,9 @@ signals:
     void disconnected();
     void authenticated();
     void accountCreated();
-    void gameListRegistered();
     void socketError(const QString &error);
-    void requestCreateGame(const QString &username, const QString &gameName);
+    void gameCreated(CommandSource commandSource);
+    void requestCreateGame(const QString &username, const QString &gameName, CommandSource commandSource);
 
 private slots:
     // --- 网络事件 ---
