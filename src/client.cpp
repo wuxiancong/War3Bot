@@ -657,28 +657,28 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         LOG_INFO("💓 收到玩家 TCP Pong");
         break;
 
-    // case 0x3F: // W3GS_STARTDOWNLOAD
-    // {
-    //     quint8 currentPid = 0;
-    //     for (auto it = m_players.begin(); it != m_players.end(); ++it) {
-    //         if (it.value().socket == socket) {
-    //             currentPid = it.key();
-    //             break;
-    //         }
-    //     }
+    case 0x3F: // W3GS_STARTDOWNLOAD
+    {
+        quint8 currentPid = 0;
+        for (auto it = m_players.begin(); it != m_players.end(); ++it) {
+            if (it.value().socket == socket) {
+                currentPid = it.key();
+                break;
+            }
+        }
 
-    //     if (currentPid == 0) return;
+        if (currentPid == 0) return;
 
-    //     LOG_INFO(QString("⏬ 收到 [0x3F] 客户端下载就绪信号 (PID: %1)").arg(currentPid));
+        LOG_INFO(QString("⏬ 收到 [0x3F] 客户端下载就绪信号 (PID: %1)").arg(currentPid));
 
-    //     // 检查状态是否合法
-    //     if (m_players[currentPid].isDownloading) {
-    //         sendNextMapPart(currentPid);
-    //     } else {
-    //         LOG_WARNING("📪 收到 [0x3F] 但玩家未处于下载状态，忽略");
-    //     }
-    // }
-    // break;
+        // 检查状态是否合法
+        if (m_players[currentPid].isDownloading) {
+            sendNextMapPart(currentPid);
+        } else {
+            LOG_WARNING("📪 收到 [0x3F] 但玩家未处于下载状态，忽略");
+        }
+    }
+    break;
 
     case 0x42: // W3GS_MAPSIZE
     {
@@ -737,17 +737,6 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
                         // 2. 初始化下载状态
                         playerData.isDownloading = true;
                         playerData.downloadOffset = 0;
-
-                        // 3. 延时 100ms 发送第一块数据
-                        // 作用A：物理上切断 TCP 流，防止 0x3F 和 0x43 粘包
-                        // 作用B：给客户端 100ms 时间在硬盘上创建 .w3z 临时文件
-                        QTimer::singleShot(100, this, [this, currentPid]() {
-                            // 再次检查玩家是否还在
-                            if (m_players.contains(currentPid)) {
-                                LOG_INFO("🚀 延时触发：发送第一块地图数据 (Offset 0)");
-                                sendNextMapPart(currentPid);
-                            }
-                        });
                     }
                 }
                 break;
