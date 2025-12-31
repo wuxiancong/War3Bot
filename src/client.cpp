@@ -727,7 +727,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
                         // 3. 主动发送第一块地图数据 (Offset 0)
                         //    不要等待客户端，它不会理你的，直到你给它数据！
                         // =======================================================
-                        sendNextMapPart(currentPid, 1); // 1 是 Host 的 PID
+                        sendNextMapPart(currentPid); // 1 是 Host 的 PID
                     }
                 }
                 break;
