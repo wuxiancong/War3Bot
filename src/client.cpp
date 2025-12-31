@@ -497,7 +497,7 @@ void Client::onPlayerReadyRead()
 void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &payload)
 {
     switch (id) {
-    case 0x1E: // W3GS_REQJOIN
+    case W3GS_REQJOIN: // W3GS_REQJOIN
     {
         // 1. 解析客户端请求
         QDataStream in(payload);
@@ -555,7 +555,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         // 2. 槽位与PID分配逻辑
         int slotIndex = -1;
         for (int i = 0; i < m_slots.size(); ++i) {
-            if (m_slots[i].slotStatus == 0) { // 0 = Open
+            if (m_slots[i].slotStatus == Open) {
                 slotIndex = i;
                 break;
             }
@@ -578,9 +578,9 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
         // 更新内存中的槽位状态
         m_slots[slotIndex].pid = hostId;
-        m_slots[slotIndex].slotStatus = 2;          // Occupied
-        m_slots[slotIndex].downloadStatus = 255;    // Unknown
-        m_slots[slotIndex].computer = 0;
+        m_slots[slotIndex].slotStatus = Occupied;
+        m_slots[slotIndex].downloadStatus = NotStarted;
+        m_slots[slotIndex].computer = Human;
 
         // 保存玩家数据到列表
         PlayerData playerData;
@@ -642,18 +642,14 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
     }
     break;
 
-    case 0x06: // W3GS_MAPPART
-        LOG_INFO("🗺️ 收到地图下载请求 (0x06)");
-        break;
-
-    case 0x21: // W3GS_LEAVEREQ
+    case W3GS_LEAVEREQ: // W3GS_LEAVEREQ
     {
         LOG_INFO(QString("👋 收到主动离开请求 (0x21) 来自: %1").arg(socket->peerAddress().toString()));
         socket->disconnectFromHost();
     }
     break;
 
-    case 0x28: // W3GS_PONG_TO_HOST
+    case W3GS_CHAT_TO_HOST: // W3GS_PONG_TO_HOST
         LOG_INFO("💓 收到玩家 TCP Pong");
         break;
 
@@ -691,8 +687,8 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
             if (m_slots[i].pid == currentPid) {
                 // 情况 A: 拥有地图
                 if (clientMapSize == hostMapSize && sizeFlag == 1) {
-                    if (m_slots[i].downloadStatus != 100) {
-                        m_slots[i].downloadStatus = 100;
+                    if (m_slots[i].downloadStatus != Completed) {
+                        m_slots[i].downloadStatus = Completed;
                         slotUpdated = true;
                         playerData.isDownloading = false; // 确保关闭下载状态
                         LOG_INFO(QString("✅ 玩家 [%1] 地图校验通过").arg(playerName));
@@ -701,9 +697,9 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
                 // 情况 B: 需要下载
                 else {
                     // 检查是否需要下载
-                    if (m_slots[i].downloadStatus != 0) {
+                    if (m_slots[i].downloadStatus != Downloading) {
                         // 1. 修改槽位状态
-                        m_slots[i].downloadStatus = 0; // 0% Started
+                        m_slots[i].downloadStatus = Downloading; // 0% Started
 
                         // 2. 修改玩家状态
                         playerData.isDownloading = true;
@@ -819,8 +815,8 @@ void Client::onPlayerDisconnected() {
         for (int i = 0; i < m_slots.size(); ++i) {
             if (m_slots[i].pid == pidToRemove) {
                 m_slots[i].pid = 0;
-                m_slots[i].slotStatus = 0;
-                m_slots[i].downloadStatus = 255;
+                m_slots[i].slotStatus = Open;
+                m_slots[i].downloadStatus = NotStarted;
                 break;
             }
         }
@@ -872,35 +868,6 @@ void Client::handleUdpPacket(const QByteArray &data, const QHostAddress &sender,
                  .arg(data.size()).arg(sender.toString()).arg(senderPort).arg(hexStr));
 
     switch ((UdpPacketID)msgId) {
-    case W3GS_PING_FROM_OTHERS: // 0x35
-    {
-        QByteArray pong = data;
-        pong[1] = (char)W3GS_PONG_TO_OTHERS; // 0x35 -> 0x36
-        m_udpSocket->writeDatagram(pong, sender, senderPort);
-        LOG_INFO("⚡ [UDP] 回复 P2P Ping (0x36)");
-    }
-    break;
-    case W3GS_REQJOIN: // 0x1E
-        LOG_INFO(QString("🚪 [UDP] 收到加入请求 (0x1E) Size: %1").arg(data.size()));
-        break;
-    case W3GS_PING_FROM_HOST: // 0x01
-    {
-        LOG_INFO("💓 [UDP] 收到主机 Ping (0x01) -> 回复 0x46");
-        QByteArray pong = data;
-        pong[1] = (char)W3GS_PONG_TO_HOST; // 0x01 -> 0x46
-        m_udpSocket->writeDatagram(pong, sender, senderPort);
-    }
-    break;
-    case W3GS_PONG_TO_OTHERS: // 0x36
-        LOG_INFO("📶 [UDP] 收到 P2P Pong (0x36) | 延迟检测成功");
-        break;
-    case W3GS_SEARCHGAME: // 0x2F
-        LOG_INFO("🔍 [UDP] 收到局域网搜房请求 (0x2F)");
-        break;
-    case W3GS_GAMEINFO:     // 0x30
-    case W3GS_REFRESHGAME:  // 0x32
-        LOG_INFO(QString("🗺️ [UDP] 收到局域网房间广播 (0x%1)").arg(QString::number(msgId, 16)));
-        break;
     case W3GS_TEST: // 自定义测试包 ID
     {
         // 读取剩余的数据作为字符串打印出来
@@ -1257,36 +1224,36 @@ void Client::initSlots(quint8 maxPlayers)
     for (quint8 i = 0; i < maxPlayers; ++i) {
         m_slots[i] = GameSlot();
         m_slots[i].pid = 0;
-        m_slots[i].downloadStatus = 255;                            // No Map
-        m_slots[i].computer = 0;                                    // No Computer
+        m_slots[i].downloadStatus = NotStarted;
+        m_slots[i].computer = Human;
         m_slots[i].color = i + 1;
 
         // --- 队伍与种族设置 ---
         if (i < 5) {
             // === 近卫军团 (Sentinel) : Slots 0-4 ===
-            m_slots[i].team = (quint8)SlotTeam::Sentinel;           // Team 1
-            m_slots[i].race = (quint8)SlotRace::Sentinel;           // 4 = Night Elf (暗夜精灵)
-            m_slots[i].slotStatus = Open;                   // 0 = Open
+            m_slots[i].team = (quint8)SlotTeam::Sentinel;
+            m_slots[i].race = (quint8)SlotRace::Sentinel;
+            m_slots[i].slotStatus = Open;
         }
         else if (i < 10) {
             // === 天灾军团 (Scourge) : Slots 5-9 ===
-            m_slots[i].team = (quint8)SlotTeam::Scourge;            // Team 2
-            m_slots[i].race = (quint8)SlotRace::Scourge;            // 8 = Undead (不死族)
-            m_slots[i].slotStatus = Open;                           // 0 = Open
+            m_slots[i].team = (quint8)SlotTeam::Scourge;
+            m_slots[i].race = (quint8)SlotRace::Scourge;
+            m_slots[i].slotStatus = Open;
         }
         else {
             // === 裁判/观察者 : Slots 10-11 ===
-            m_slots[i].team = (quint8)SlotTeam::Observer;           // Team 3 (裁判)
-            m_slots[i].race = (quint8)SlotRace::Observer;           // Random
-            m_slots[i].slotStatus = Close;                          // 1 = Closed (默认关闭，只开10个位置)
+            m_slots[i].team = (quint8)SlotTeam::Observer;
+            m_slots[i].race = (quint8)SlotRace::Observer;
+            m_slots[i].slotStatus = Close;
         }
 
         // --- 主机特殊覆盖 (Slot 0) ---
         if (i == 0) {
             m_slots[i].pid = 1;                                     // 主机初始槽位编号
-            m_slots[i].downloadStatus = 100;                        // 主机肯定有地图
+            m_slots[i].downloadStatus = Completed;                  // 主机肯定有地图
             m_slots[i].slotStatus = (quint8)Occupied;               // 被占领
-            m_slots[i].computer = 0;                                // 人类
+            m_slots[i].computer = Human;                            // 人类
         }
     }
 
@@ -1431,17 +1398,20 @@ QByteArray Client::createW3GSSlotInfoJoinPacket(quint8 playerID, const QHostAddr
     out.writeRawData(slotData.data(), slotData.size());
     LOG_INFO(QString("[Step 3] 写入槽位数据体 (共%1字节)").arg(slotData.size()));
 
-    // 4. 写入玩家编号
-    LOG_INFO(QString("💻 Player ID   : %1").arg(playerID));
 
-    // out << (quint32)m_randomSeed;                                // 随机种子 ❌删除
-    // out << (quint8)m_baseGameType;                               // 游戏类型 ❌删除
-    // out << (quint8)m_slots.size();                               // 槽位总数 ❌删除
-    out << (quint8)playerID;                                        // 玩家的ID
+    // 4. 写入随机种子、布局样式、槽位总数
+    out << (quint32)m_randomSeed;                           // 随机种子
+    out << (quint8)m_layoutStyle;                           // 布局样式
+    out << (quint8)m_slots.size();                          // 槽位总数
+
+
+    // 5. 写入玩家编号
+    LOG_INFO(QString("💻 Player ID   : %1").arg(playerID));
+    out << (quint8)playerID;                                // 玩家的ID
 
     // 5. 写入网络信息
-    out << (quint16)2;                                              // AF_INET
-    out << (quint16)qToBigEndian(localPort);                        // Port (注意：网络端口通常是 BigEndian，但War3协议里有时混用)
+    out << (quint16)2;                                      // AF_INET
+    out << (quint16)qToBigEndian(localPort);                // Port
 
     LOG_INFO(QString("[Step 5] 写入网络信息: Port=%1, IP=%2").arg(localPort).arg(externalIp.toString()));
     writeIpToStreamWithLog(out, externalIp);
@@ -1575,16 +1545,28 @@ QByteArray Client::createW3GSSlotInfoPacket()
     // 1. 写入 Header (长度稍后回填)
     out << (quint8)0xF7 << (quint8)0x09 << (quint16)0;
 
-    // 2. 写入槽位数据块长度 & 内容
+    // 2. 获取槽位数据 (包含 numSlots 和所有 slot 的 9字节数据)
+    // 注意：serializeSlotData 应该返回 [NumSlots(1)][Slot1(9)]...[SlotN(9)]
     QByteArray slotData = serializeSlotData();
 
-    out << (quint16)slotData.size();                    // 写入数据块长度
-    out.writeRawData(slotData.data(), slotData.size()); // 写入数据块内容
+    // 长度 = slotData.size() + 4(Seed) + 1(Layout) + 1(NumPlayers)
+    quint16 internalDataLen = (quint16)slotData.size() + 6;
 
-    // 4. 回填包总长度
+    // 3. 写入内部数据长度
+    out << internalDataLen;
+
+    // 4. 写入槽位数据
+    out.writeRawData(slotData.data(), slotData.size());
+
+    // 5. 写入随机种子、布局样式、槽位总数
+    out << (quint32)m_randomSeed;                           // 随机种子
+    out << (quint8)m_layoutStyle;                           // 布局样式
+    out << (quint8)m_slots.size();                          // 槽位总数
+
+    // 6. 回填包总长度
     QDataStream lenStream(&packet, QIODevice::ReadWrite);
     lenStream.setByteOrder(QDataStream::LittleEndian);
-    lenStream.skipRawData(2); // 跳过 F7 09
+    lenStream.skipRawData(2);
     lenStream << (quint16)packet.size();
 
     return packet;

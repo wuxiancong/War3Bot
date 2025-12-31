@@ -1,96 +1,162 @@
 #ifndef CLIENT_H
 #define CLIENT_H
 
-#include <QObject>
+#include <QSet>
 #include <QTimer>
+#include <QObject>
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QUdpSocket>
+#include <QDataStream>
 #include <QHostAddress>
-#include <QSet>
-#include <QDataStream> // 建议添加，因为成员函数中经常用到流操作
+
 #include "war3map.h"
 
 // =========================================================
-// 协议与枚举定义
+// 1. 网络协议与认证 (Protocol & Auth)
 // =========================================================
 
-// 登录协议类型
+// 登录协议版本
 enum LoginProtocol {
-    Protocol_Old_0x29           = 0x29, /* 旧版协议 (DoubleHash BrokenSHA1) */
-    Protocol_Logon2_0x3A        = 0x3A, /* 中期协议 (同 0x29 算法，ID 不同) */
-    Protocol_SRP_0x53           = 0x53  /* 新版协议 (SRP NLS) */
+    Protocol_Old_0x29           = 0x29, // 旧版 (DoubleHash)
+    Protocol_Logon2_0x3A        = 0x3A, // 中期 (同0x29算法)
+    Protocol_SRP_0x53           = 0x53  // 新版 (SRP NLS)
 };
 
 // TCP 协议 ID (BNET)
 enum TCPPacketID {
-    SID_NULL                    = 0x00,
-    SID_STOPADV                 = 0x02,
-    SID_ENTERCHAT               = 0x0A,
-    SID_GETCHANNELLIST          = 0x0B,
-    SID_JOINCHANNEL             = 0x0C,
-    SID_CHATEVENT               = 0x0F,
-    SID_STARTADVEX3             = 0x1C,
-    SID_PING                    = 0x25,
-    SID_LOGONRESPONSE           = 0x29,
-    SID_LOGONRESPONSE2          = 0x3A,
-    SID_NETGAMEPORT             = 0x45,
-    SID_AUTH_INFO               = 0x50,
-    SID_AUTH_CHECK              = 0x51,
-    SID_AUTH_ACCOUNTCREATE      = 0x52,
-    SID_AUTH_ACCOUNTLOGON       = 0x53,
-    SID_AUTH_ACCOUNTLOGONPROOF  = 0x54
+    SID_NULL                    = 0x00, // [C->S] 空包
+    SID_STOPADV                 = 0x02, // [C->S] 停止广播
+    SID_ENTERCHAT               = 0x0A, // [C->S] 进入聊天
+    SID_GETCHANNELLIST          = 0x0B, // [C->S] 获取频道列表
+    SID_JOINCHANNEL             = 0x0C, // [C->S] 加入频道
+    SID_CHATEVENT               = 0x0F, // [C->S] 聊天事件
+    SID_STARTADVEX3             = 0x1C, // [C->S] 创建房间(TFT)
+    SID_PING                    = 0x25, // [C->S] 心跳包
+    SID_LOGONRESPONSE           = 0x29, // [C->S] 登录响应(旧)
+    SID_LOGONRESPONSE2          = 0x3A, // [C->S] 登录响应(中)
+    SID_NETGAMEPORT             = 0x45, // [C->S] 游戏端口通知
+    SID_AUTH_INFO               = 0x50, // [C->S] 认证信息
+    SID_AUTH_CHECK              = 0x51, // [C->S] 版本检查
+    SID_AUTH_ACCOUNTCREATE      = 0x52, // [C->S] 账号创建
+    SID_AUTH_ACCOUNTLOGON       = 0x53, // [C->S] SRP登录请求
+    SID_AUTH_ACCOUNTLOGONPROOF  = 0x54  // [C->S] SRP登录验证
 };
 
-// UDP 协议 ID (W3GS / LAN)
-enum UdpPacketID {
-    W3GS_PING_FROM_HOST         = 0x01,
-    W3GS_INCOMING_ACTION        = 0x0C,
-    W3GS_REQJOIN                = 0x1E,
-    W3GS_SEARCHGAME             = 0x2F,
-    W3GS_GAMEINFO               = 0x30,
-    W3GS_REFRESHGAME            = 0x32,
-    W3GS_DECREATEGAME           = 0x33,
-    W3GS_PING_FROM_OTHERS       = 0x35,
-    W3GS_PONG_TO_OTHERS         = 0x36,
-    W3GS_MAPCHECK               = 0x3D,
-    W3GS_PONG_TO_HOST           = 0x46,
-    W3GS_TEST                   = 0x88
+// W3GS 协议 ID 定义 (TCP 游戏逻辑 & UDP 局域网广播)
+enum W3GS_PacketID {
+    // --- 基础握手与心跳 (TCP) ---
+    W3GS_PING_FROM_HOST         = 0x01, // [S->C] 主机发送的心跳包 (每30秒)
+    W3GS_PONG_TO_HOST           = 0x46, // [C->S] 客户端回复的心跳包
+
+    // --- 房间/大厅信息 (TCP) ---
+    W3GS_SLOTINFOJOIN           = 0x04, // [S->C] 玩家加入时发送的完整槽位信息
+    W3GS_REJECTJOIN             = 0x05, // [S->C] 拒绝加入 (房间满/游戏开始)
+    W3GS_PLAYERINFO             = 0x06, // [S->C] 玩家详细信息 (PID, IP, 端口等)
+    W3GS_PLAYERLEFT             = 0x07, // [S->C] 通知某玩家离开
+    W3GS_PLAYERLOADED           = 0x08, // [S->C] 通知某玩家加载完毕
+    W3GS_SLOTINFO               = 0x09, // [S->C] 槽位状态更新 (Slot Update)
+    W3GS_REQJOIN                = 0x1E, // [C->S] 客户端请求加入房间
+    W3GS_LEAVEREQ               = 0x21, // [C->S] 客户端请求离开
+    W3GS_GAMELOADED_SELF        = 0x23, // [C->S] 客户端通知自己加载完毕
+    W3GS_CLIENTINFO             = 0x37, // [C->S] 客户端发送自身信息 (端口等)
+    W3GS_LEAVERS                = 0x1B, // [S->C] 离开者列表 / 踢人响应 (部分版本)
+    W3GS_HOST_KICK_PLAYER       = 0x1C, // [S->C] 主机踢人
+
+    // --- 游戏流程控制 (TCP) ---
+    W3GS_COUNTDOWN_START        = 0x0A, // [S->C] 开始倒计时
+    W3GS_COUNTDOWN_END          = 0x0B, // [S->C] 倒计时结束 (游戏开始)
+    W3GS_START_LAG              = 0x10, // [S->C] 开始等待界面 (有人卡顿)
+    W3GS_STOP_LAG               = 0x11, // [S->C] 停止等待界面
+    W3GS_OUTGOING_KEEPALIVE     = 0x27, // [C->S] 客户端保持连接
+    W3GS_DROPREQ                = 0x29, // [C->S] 请求断开连接 (掉线/强退)
+
+    // --- 游戏内动作与同步 (TCP) ---
+    W3GS_INCOMING_ACTION        = 0x0C, // [S->C] 广播玩家动作 (核心同步包)
+    W3GS_OUTGOING_ACTION        = 0x26, // [C->S] 客户端发送动作 (点击/技能)
+    W3GS_INCOMING_ACTION2       = 0x48, // [S->C] 扩展动作包 (通常用于录像/裁判)
+
+    // --- 聊天系统 (TCP) ---
+    W3GS_CHAT_FROM_HOST         = 0x0F, // [S->C] 主机转发的聊天消息
+    W3GS_CHAT_TO_HOST           = 0x28, // [C->S] 客户端发送的聊天消息
+
+    // --- 地图下载与校验 (TCP) ---
+    W3GS_MAPCHECK               = 0x3D, // [S->C] 主机发起地图校验请求
+    W3GS_STARTDOWNLOAD          = 0x3F, // [S->C] 主机通知开始下载 / [C->S] 客户端请求开始
+    W3GS_MAPSIZE                = 0x42, // [C->S] 客户端报告地图大小/CRC状态
+    W3GS_MAPPART                = 0x43, // [S->C] 地图文件分片数据
+    W3GS_MAPPARTOK              = 0x44, // [C->S] 客户端确认收到分片 (ACK)
+    W3GS_MAPPARTNOTOK           = 0x45, // [C->S] 客户端报告分片错误 (NACK)
+
+    // --- 局域网发现与 P2P (UDP) ---
+    W3GS_SEARCHGAME             = 0x2F, // [UDP] 搜索局域网游戏
+    W3GS_GAMEINFO               = 0x30, // [UDP] 游戏信息广播 (Game Info)
+    W3GS_CREATEGAME             = 0x31, // [UDP] 创建游戏广播
+    W3GS_REFRESHGAME            = 0x32, // [UDP] 刷新游戏信息 (Refresh)
+    W3GS_DECREATEGAME           = 0x33, // [UDP] 取消/销毁游戏
+    W3GS_PING_FROM_OTHERS       = 0x35, // [UDP] P2P Ping
+    W3GS_PONG_TO_OTHERS         = 0x36, // [UDP] P2P Pong
+    W3GS_TEST                   = 0x88  // [UDP] 测试/私有包
 };
 
-// 游戏类型枚举
+// 拒绝加入原因
+enum RejectReason {
+    INVALID                     = 0x06, // 无效请求
+    FULL_OLD                    = 0x07, // 房间已满(旧)
+    FULL                        = 0x09, // 房间已满
+    STARTED                     = 0x10, // 游戏已开始
+    WRONGPASS                   = 0x27  // 密码错误
+};
+
+// =========================================================
+// 2. 游戏配置 (Game Settings)
+// =========================================================
+
+// 基础游戏类型
 enum BaseGameType {
-    Type_All                    = 0x00,
-    Type_Melee                  = 0x02,
-    Type_FFA                    = 0x03,
-    Type_1v1                    = 0x04,
-    Type_CTF                    = 0x05,
-    Type_Greed                  = 0x06,
-    Type_Slaughter              = 0x07,
-    Type_SuddenDeath            = 0x08,
-    Type_Ladder                 = 0x09,
-    Type_IronManLadder          = 0x10,
-    Type_UMS                    = 0x0A,
-    Type_TeamMelee              = 0x0B,
-    Type_TeamFFA                = 0x0C,
-    Type_TeamCTF                = 0x0D,
-    Type_TopVsBottom            = 0x0F,
-    Type_PGL                    = 0x20
+    Type_All                    = 0x00, // 所有类型
+    Type_Melee                  = 0x02, // 常规对战
+    Type_FFA                    = 0x03, // 混战
+    Type_1v1                    = 0x04, // 单挑
+    Type_CTF                    = 0x05, // 夺旗
+    Type_Greed                  = 0x06, // 贪婪
+    Type_Slaughter              = 0x07, // 屠宰
+    Type_SuddenDeath            = 0x08, // 猝死模式
+    Type_Ladder                 = 0x09, // 天梯
+    Type_UMS                    = 0x0A, // 自定义地图(UMS)
+    Type_TeamMelee              = 0x0B, // 团队对战
+    Type_TeamFFA                = 0x0C, // 团队混战
+    Type_TeamCTF                = 0x0D, // 团队夺旗
+    Type_TopVsBottom            = 0x0F, // 上下半场
+    Type_IronManLadder          = 0x10, // 铁人天梯
+    Type_PGL                    = 0x20  // 专业联赛
 };
 
+// 游戏布局/队伍设置
+enum GameLayoutStyle {
+    Melee                       = 0x00, // 标准 (可换队)
+    FreeForAll                  = 0x01, // 混战
+    OneVsOne                    = 0x02, // 1v1
+    CustomForces                = 0x03, // 自定义 (DotA/RPG必选)
+    Ladder                      = 0x04  // 天梯
+};
+
+// 游戏类型标志位
 enum GameTypeFlags {
     Flag_None                   = 0x0000,
-    Flag_Expansion              = 0x2000,
-    Flag_FixedTeams             = 0x4000,
-    Flag_Official               = 0x8000
+    Flag_Expansion              = 0x2000, // 冰封王座
+    Flag_FixedTeams             = 0x4000, // 固定队伍
+    Flag_Official               = 0x8000  // 官方地图
 };
 
+// 组合游戏类型 (版本+类型)
 enum ComboGameType {
-    Game_TFT_Custom             = 0x2001,
-    Game_TFT_Official           = 0xC009,
-    Game_RoC_Custom             = 0x0001
+    Game_RoC_Custom             = 0x0001, // 混乱之治 自定义
+    Game_TFT_Custom             = 0x2001, // 冰封王座 自定义
+    Game_TFT_Official           = 0xC009  // 冰封王座 官方对战
 };
 
+// 子游戏类型
 enum SubGameType {
     SubType_None                = 0x00,
     SubType_Blizzard            = 0x42,
@@ -100,61 +166,72 @@ enum SubGameType {
     SubType_Save                = 0x53
 };
 
+// 游戏状态标志
 enum GameState {
     State_None                  = 0x00,
-    State_Private               = 0x01,
-    State_Full                  = 0x02,
-    State_HasOtherPlayers       = 0x04,
-    State_InProgress            = 0x08,
-    State_DisconnectIsLoss      = 0x10,
-    State_Replay                = 0x80,
+    State_Private               = 0x01, // 私有
+    State_Full                  = 0x02, // 已满
+    State_HasOtherPlayers       = 0x04, // 有其他玩家
+    State_InProgress            = 0x08, // 进行中
+    State_DisconnectIsLoss      = 0x10, // 断线判负
+    State_Replay                = 0x80, // 录像
+
+    // 常用组合状态
     State_Open_Public           = State_HasOtherPlayers,
     State_Open_Private          = State_Private | State_HasOtherPlayers,
-    State_Ladder_InProgress     = State_InProgress | State_DisconnectIsLoss,
     State_Lobby_Full            = State_Full | State_HasOtherPlayers,
-    State_ActiveGame            = State_InProgress | State_HasOtherPlayers
+    State_ActiveGame            = State_InProgress | State_HasOtherPlayers,
+    State_Ladder_InProgress     = State_InProgress | State_DisconnectIsLoss
 };
 
+// 游戏版本提供商
 enum ProviderVersion {
-    Provider_All_Bits           = 0xFFFFFFFF,
-    Provider_RoC                = 0x00000000,
-    Provider_SC_BW              = 0x000000FF,
-    Provider_TFT_New            = 0x000003FF
+    Provider_RoC                = 0x00000000, // 混乱之治
+    Provider_SC_BW              = 0x000000FF, // 星际争霸
+    Provider_TFT_New            = 0x000003FF, // 冰封王座(新)
+    Provider_All_Bits           = 0xFFFFFFFF
 };
 
+// 天梯类型
 enum LadderType {
     Ladder_None                 = 0x00000000,
     Ladder_Standard             = 0x00000001,
     Ladder_IronMan              = 0x00000003
 };
 
-enum RejectReason {
-    INVALID                     = 0x06,
-    FULL_OLD                    = 0x07,
-    FULL                        = 0x09,
-    STARTED                     = 0x10,
-    WRONGPASS                   = 0x27
-};
+// =========================================================
+// 3. 玩家与槽位 (Slots & Players)
+// =========================================================
 
+// 槽位状态
 enum SlotStatus {
-    Open                        = 0,
-    Close                       = 1,
-    Occupied                    = 2
+    Open                        = 0x00, // 开放
+    Close                       = 0x01, // 关闭
+    Occupied                    = 0x02  // 占用
 };
 
-enum class SlotTeam {
-    Sentinel                    = 0,
-    Scourge                     = 1,
-    Observer                    = 2
+// 下载状态
+enum DownloadStatus {
+    Downloading                 = 0,    // 0-99%
+    Completed                   = 100,  // 100%
+    NotStarted                  = 255   // 无地图
 };
 
-enum class SlotRace {
-    Human                       = 0x01,
-    Orc                         = 0x02,
-    NightElf                    = 0x04,
-    Undead                      = 0x08,
-    Random                      = 0x20,
-    Fixed                       = 0x40,
+// 队伍定义
+enum class SlotTeam : quint8 {
+    Sentinel                    = 0,    // 近卫
+    Scourge                     = 1,    // 天灾
+    Observer                    = 2     // 裁判/观众
+};
+
+// 种族定义
+enum class SlotRace : quint8 {
+    Human                       = 0x01, // 人族
+    Orc                         = 0x02, // 兽族
+    NightElf                    = 0x04, // 暗夜
+    Undead                      = 0x08, // 不死
+    Random                      = 0x20, // 随机
+    Selectable                  = 0x40, // 可选
 
     // DotA 专用别名
     Sentinel                    = NightElf,
@@ -162,75 +239,107 @@ enum class SlotRace {
     Observer                    = Random
 };
 
+// 控制类型
+enum  PlayerController {
+    Human                       = 0x00, // 玩家
+    Computer                    = 0x01  // 电脑
+};
+
+// 电脑难度
+enum ComputerLevel {
+    Easy                        = 0x00, // 简单
+    Normal                      = 0x01, // 中等
+    Insane                      = 0x02  // 疯狂
+};
+
+// =========================================================
+// 4. 聊天系统 (Chat System)
+// =========================================================
+
+// 聊天标志
 enum ChatFlag {
-    Message                     = 0x10,
-    TeamChange                  = 0x11,
-    ColorChange                 = 0x12,
-    RaceChange                  = 0x13,
-    HandicapChange              = 0x14,
-    Scope                       = 0x20
+    Message                     = 0x10, // 普通消息
+    TeamChange                  = 0x11, // 队伍变更
+    ColorChange                 = 0x12, // 颜色变更
+    RaceChange                  = 0x13, // 种族变更
+    HandicapChange              = 0x14, // 让步变更
+    Scope                       = 0x20  // 聊天范围
 };
 
+// 聊天范围
 enum ChatScope {
-    All                         = 0x00,
-    Allies                      = 0x01,
-    Observers                   = 0x02,
-    Directed                    = 0x03
+    All                         = 0x00, // 所有人
+    Allies                      = 0x01, // 仅盟友
+    Observers                   = 0x02, // 仅观察者
+    Directed                    = 0x03  // 指定玩家
 };
 
+// =========================================================
+// 1. 游戏槽位数据 (Game Slot)
+// =========================================================
 struct GameSlot {
-    quint8 pid                  = 0;
-    quint8 downloadStatus       = 0;
-    quint8 slotStatus           = 0;
-    quint8 computer             = 0;
-    quint8 team                 = 0;
-    quint8 color                = 0;
-    quint8 race                 = 32;
-    quint8 computerType         = 1;
-    quint8 handicap             = 100;
+    quint8 pid                  = 0;    // 玩家ID
+    quint8 downloadStatus       = 0;    // 下载进度 (0-100, 255=无)
+    quint8 slotStatus           = 0;    // 状态 (Open/Closed/Occupied)
+    quint8 computer             = 0;    // 是否电脑 (0=人, 1=电脑)
+    quint8 team                 = 0;    // 队伍ID
+    quint8 color                = 0;    // 颜色ID
+    quint8 race                 = 32;   // 种族标识 (默认随机)
+    quint8 computerType         = 1;    // 电脑难度
+    quint8 handicap             = 100;  // 生命值百分比
 };
 
+// =========================================================
+// 2. 玩家运行时数据 (Player Runtime Data)
+// =========================================================
 struct PlayerData {
-    QString name;
-    quint8 pid;
-    QTcpSocket *socket;         // 对应的连接
-    QHostAddress extIp;         // 外网 IP (Socket Peer Address)
-    quint16 extPort;            // 外网 Port
-    QHostAddress intIp;         // 内网 IP (来自 0x1E)
-    quint16 intPort;            // 内网 Port
-    QString language = "EN";
-    QTextCodec *codec = nullptr;
-    bool isDownloading = false;
-    quint32 downloadOffset = 0;
+    // 基础信息
+    quint8          pid             = 0;
+    QString         name;
+
+    // 网络连接
+    QTcpSocket*     socket          = nullptr;
+    QHostAddress    extIp;          // 公网IP
+    quint16         extPort         = 0;
+    QHostAddress    intIp;          // 内网IP (0x1E提供)
+    quint16         intPort         = 0;
+
+    // 语言与编码
+    QString         language        = "EN";
+    QTextCodec*     codec           = nullptr;
+
+    // 下载状态
+    bool            isDownloading   = false;
+    quint32         downloadOffset  = 0;
 };
 
+// =========================================================
+// 3. 多语言消息封装 (Multi-Language Message)
+// =========================================================
 struct MultiLangMsg {
     QMap<QString, QString> msgs;
-    QString defaultMsg; // 兜底消息 (通常是英文)
+    QString                defaultMsg;
 
     // 默认构造
     MultiLangMsg() {}
 
-    // 便捷构造函数 (支持最常用的中英双语)
+    // 便捷初始化 (中/英)
     MultiLangMsg(const QString& cn, const QString& en) {
-        msgs["CN"] = cn;
-        msgs["EN"] = en;
-        defaultMsg = en;
+        msgs["CN"]  = cn;
+        msgs["EN"]  = en;
+        defaultMsg  = en;
     }
 
-    // 链式添加方法 (方便添加 RU, KR 等)
-    MultiLangMsg& add(const QString& langCode, const QString& msg) {
-        msgs[langCode] = msg;
-        if (defaultMsg.isEmpty()) defaultMsg = msg; // 第一个添加的作为默认
+    // 链式添加
+    MultiLangMsg& add(const QString& lang, const QString& txt) {
+        msgs[lang] = txt;
+        if (defaultMsg.isEmpty()) defaultMsg = txt;
         return *this;
     }
 
     // 获取消息 (自动回退)
-    QString get(const QString& langCode) const {
-        if (msgs.contains(langCode)) {
-            return msgs.value(langCode);
-        }
-        return defaultMsg; // 如果没找到对应语言，返回默认(英文)
+    QString get(const QString& lang) const {
+        return msgs.value(lang, defaultMsg);
     }
 };
 
@@ -251,33 +360,33 @@ public:
     explicit Client(QObject *parent = nullptr);
     ~Client();
 
-    // --- 连接控制 ---
+    // --- 连接管理 ---
     void connectToHost(const QString &address, quint16 port);
     void disconnectFromHost();
     bool isConnected() const;
     void setCredentials(const QString &user, const QString &pass, LoginProtocol protocol = Protocol_SRP_0x53);
 
-    // --- 战网交互指令 ---
-    void createAccount();                                                               // 注册账号
-    void enterChat();                                                                   // 进入聊天
-    void queryChannelList();                                                            // 请求频道列表
-    void joinChannel(const QString &channelName);                                       // 加入频道
+    // --- 战网交互 ---
+    void createAccount();                               // 注册账号
+    void enterChat();                                   // 进入聊天
+    void queryChannelList();                            // 请求频道列表
+    void joinChannel(const QString &channelName);       // 加入频道
 
-    // --- 游戏主机指令 ---
+    // --- 游戏主机管理 ---
     void createGame(const QString &gameName, const QString &password,
                     ProviderVersion providerVersion, ComboGameType comboGameType,
                     SubGameType subGameType, LadderType ladderType);
-    void cancelGame();                                                                  // 取消游戏/解散
-    void stopAdv();                                                                     // 停止广播
+    void cancelGame();                                  // 取消/解散游戏
+    void stopAdv();                                     // 停止广播
 
-    // --- 工具与状态 ---
-    void sendPingLoop();
-    QString getPrimaryIPv4();
-    bool bindToRandomPort();                                                            // 绑定 UDP 随机端口
-    bool isBlackListedPort(quint16 port);                                               // 端口黑名单检查
+    // --- 工具函数 ---
+    void sendPingLoop();                                // 定时发送Ping
+    bool bindToRandomPort();                            // 绑定随机UDP端口
+    bool isBlackListedPort(quint16 port);               // 检查端口黑名单
+    QString getPrimaryIPv4();                           // 获取本机IPv4
     void writeIpToStreamWithLog(QDataStream &out, const QHostAddress &ip);
 
-    // IP 转换辅助
+    // IP转换辅助
     quint32 ipToUint32(const QString &ipAddress);
     quint32 ipToUint32(const QHostAddress &address);
 
@@ -288,161 +397,100 @@ signals:
     void gameListRegistered();
 
 private slots:
-    // --- 网络事件槽 ---
+    // --- 网络事件 ---
     void onConnected();
     void onDisconnected();
     void onTcpReadyRead();
     void onUdpReadyRead();
-    void onNewConnection();                                                             // TCP Server 有新连接 (玩家加入)
-    void onPlayerReadyRead();                                                           // 玩家 Socket 有数据
-    void onPlayerDisconnected();                                                        // 玩家断开
+    void onNewConnection();                             // 新玩家连接TCP Server
+    void onPlayerReadyRead();                           // 玩家数据可读
+    void onPlayerDisconnected();                        // 玩家断开连接
 
 private:
-    // --- 消息广播处理 ---
-    void broadcastChatMessage(const MultiLangMsg &msg,  quint8 excludePid = 0);
+    // --- 消息广播 ---
+    void broadcastChatMessage(const MultiLangMsg &msg, quint8 excludePid = 0);
     void broadcastPacket(const QByteArray &packet, quint8 excludePid);
     void broadcastSlotInfo(quint8 excludePid = 1);
 
-    // --- 游戏槽位处理 ---
+    // --- 槽位管理 ---
     void initSlots(quint8 maxPlayers = 10);
     QByteArray serializeSlotData();
-    GameSlot *findEmptySlot();
+    GameSlot* findEmptySlot();
 
-    // --- W3GS 协议包生成函数 ---
-
-    /**
-     * @brief 生成 0x09 (SlotInfo) 数据包
-     * 用于握手最后一步，或房间信息变更时广播
-     */
+    // --- W3GS 协议包构建 ---
     QByteArray createW3GSSlotInfoPacket();
-
-    /**
-     * @brief 生成 0x3D (Map Check) 数据包
-     * 用于向玩家发送地图信息，用于客户端验证
-     */
     QByteArray createW3GSMapCheckPacket();
-
-    /**
-     * @brief 生成 0x01 (Ping From Host) 数据包
-     * 用于定期向客户端发送 Ping，防止断开连接战网
-     */
     QByteArray createW3GSPingFromHostPacket();
-
-    /**
-     * @brief 生成 0x01 (Chat From Host) 数据包
-     * 用于向客户端玩家发送消息
-     * toPID: 接收者PID，255(0xFF) 代表广播给所有人
-     * extraData: 根据 Flag 类型传入 Team/Color/Race 或者是 Scope
-     */
-    QByteArray createW3GSChatFromHostPacket(const QByteArray &rawBytes,
-                                            quint8 senderPid = 1,
-                                            quint8 toPid = 255,
-                                            ChatFlag flag = Message,
-                                            quint32 extraData = 0);
-
-    /**
-     * @brief 生成 0x3F (Start Download) 数据包
-     * 用于玩家没图的情况，开始下载地图。
-     */
     QByteArray createW3GSStartDownloadPacket(quint8 toPid);
-
-    /**
-     * @brief 生成 0x05 (RejectJoin) 数据包
-     * 用于拒绝玩家加入
-     */
     QByteArray createW3GSRejectJoinPacket(RejectReason reason);
-
-    /**
-     * @brief 生成 0x04 (PlayerLeft) 数据包
-     * 用于告知老玩家有人离开房间
-     */
     QByteArray createW3GSPlayerLeftPacket(quint8 pid, quint32 reason);
-
-    /**
-     * @brief 生成 0x04 (SlotInfoJoin) 数据包
-     * 用于告知刚加入的玩家当前的槽位信息、他的 PID 以及房间的网络信息
-     */
     QByteArray createW3GSSlotInfoJoinPacket(quint8 playerID, const QHostAddress& externalIp, quint16 localPort);
-
-    /**
-     * @brief 生成 0x04 (Map Part) 数据包
-     * 用于地图下载的分块传输
-     */
     QByteArray createW3GSMapPartPacket(quint8 toPid, quint8 fromPid, quint32 offset, const QByteArray& chunkData);
-
-    /**
-     * @brief 生成 0x06 (PlayerInfo) 数据包
-     * 用于向客户端发送房间内某位玩家(通常是房主)的详细信息
-     */
-    QByteArray createPlayerInfoPacket(quint8 pid, const QString& name,
-                                      const QHostAddress& externalIp, quint16 externalPort,
-                                      const QHostAddress& internalIp, quint16 internalPort);
+    QByteArray createW3GSChatFromHostPacket(const QByteArray &rawBytes, quint8 senderPid = 1, quint8 toPid = 255, ChatFlag flag = Message, quint32 extraData = 0);
+    QByteArray createPlayerInfoPacket(quint8 pid, const QString& name, const QHostAddress& externalIp, quint16 externalPort, const QHostAddress& internalIp, quint16 internalPort);
 
     // --- 内部网络处理 ---
     void sendNextMapPart(quint8 toPid, quint8 fromPid = 1);
     void sendPacket(TCPPacketID id, const QByteArray &payload);
     void handleTcpPacket(TCPPacketID id, const QByteArray &data);
     void handleUdpPacket(const QByteArray &data, const QHostAddress &sender, quint16 senderPort);
-
-    // 处理玩家发来的 W3GS 包 (0x1E ReqJoin 等)
     void handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &payload);
 
-    // --- 认证与登录流程 ---
+    // --- 认证流程 ---
     void sendAuthInfo();
     void handleAuthCheck(const QByteArray &data);
     void sendLoginRequest(LoginProtocol protocol);
 
-    // SRP (0x53) 特定处理
+    // SRP (0x53)
     void handleSRPLoginResponse(const QByteArray &data);
 
-    // DoubleHash (0x29/0x3A) 特定处理
-    QByteArray calculateOldLogonProof(const QString &password, quint32 clientToken, quint32 serverToken);
+    // DoubleHash (0x29/0x3A)
     static QByteArray calculateBrokenSHA1(const QByteArray &data);
+    QByteArray calculateOldLogonProof(const QString &password, quint32 clientToken, quint32 serverToken);
 
 private:
     // --- 成员变量 ---
 
-    // 认证相关
-    BnetSRP3 *m_srp;
+    // 核心组件
+    BnetSRP3                        *m_srp                  = nullptr;
+    QUdpSocket                      *m_udpSocket            = nullptr;
+    QTcpSocket                      *m_tcpSocket            = nullptr;      // 战网连接
+    QTcpServer                      *m_tcpServer            = nullptr;      // 玩家监听
+    QTimer                          *m_pingTimer            = nullptr;
 
-    // 网络相关
-    QString m_serverAddr;
-    quint16 m_serverPort;
-    QUdpSocket *m_udpSocket;
-    QTcpSocket *m_tcpSocket;                        // 连接战网的 TCP
-    QTcpServer *m_tcpServer;                        // 监听玩家的 TCP Server
+    // 连接管理
+    QString                         m_serverAddr;
+    quint16                         m_serverPort            = 0;
 
-    QList<QTcpSocket*> m_playerSockets;             // 已连接的玩家列表
-    QMap<QTcpSocket*, QByteArray> m_playerBuffers;  // 玩家粘包处理缓冲区
+    // 玩家管理
+    QList<QTcpSocket*>              m_playerSockets;
+    QMap<QTcpSocket*, QByteArray>   m_playerBuffers;
+    QMap<quint8, PlayerData>        m_players;
 
-    // 游戏/环境相关
-    War3Map m_war3Map;
-    quint32 m_randomSeed = 0;
-    QVector<GameSlot> m_slots;
-    QStringList m_channelList;
-    QMap<quint8, PlayerData> m_players;
+    // 游戏状态
+    War3Map                         m_war3Map;
+    QVector<GameSlot>               m_slots;
+    QStringList                     m_channelList;
 
-    // 路径配置
-    QString m_war3ExePath;
-    QString m_stormDllPath;
-    QString m_gameDllPath;
-    QString m_dota683dPath;
+    quint8                          m_layoutStyle           = CustomForces;
+    quint32                         m_randomSeed            = 0;
+    quint32                         m_hostCounter           = 1;
+    quint32                         m_chatIntervalCounter   = 0;
+    bool                            m_gameStarted           = false;
 
-    // 登录相关状态
-    QString m_user;
-    QString m_pass;
-    quint32 m_serverToken = 0;
-    quint32 m_clientToken = 0;
-    quint32 m_logonType = 0;
-    LoginProtocol m_loginProtocol;
+    // 认证状态
+    QString                         m_user;
+    QString                         m_pass;
+    quint32                         m_serverToken           = 0;
+    quint32                         m_clientToken           = 0;
+    quint32                         m_logonType             = 0;
+    LoginProtocol                   m_loginProtocol         = Protocol_SRP_0x53;
 
-    // 定时器 /计数器
-    QTimer *m_pingTimer;
-    quint32 m_hostCounter = 1;
-    quint32 m_chatIntervalCounter{0};
-
-    // 状态
-    bool m_gameStarted = false;
+    // 文件路径
+    QString                         m_war3ExePath;
+    QString                         m_stormDllPath;
+    QString                         m_gameDllPath;
+    QString                         m_dota683dPath;
 };
 
 #endif // CLIENT_H
