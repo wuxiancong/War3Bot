@@ -31,6 +31,7 @@ enum BNETPacketID {
     SID_ENTERCHAT               = 0x0A, // [C->S] 进入聊天
     SID_GETCHANNELLIST          = 0x0B, // [C->S] 获取频道列表
     SID_JOINCHANNEL             = 0x0C, // [C->S] 加入频道
+    SID_CHATCOMMAND             = 0x0E, // [C->S] 聊天命令
     SID_CHATEVENT               = 0x0F, // [C->S] 聊天事件
     SID_STARTADVEX3             = 0x1C, // [C->S] 创建房间(TFT)
     SID_PING                    = 0x25, // [C->S] 心跳包
@@ -405,6 +406,7 @@ signals:
     void accountCreated();
     void gameListRegistered();
     void socketError(const QString &error);
+    void requestCreateGame(const QString &username, const QString &gameName);
 
 private slots:
     // --- 网络事件 ---

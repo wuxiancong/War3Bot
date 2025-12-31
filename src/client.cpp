@@ -341,6 +341,57 @@ void Client::handleBNETTcpPacket(BNETPacketID id, const QByteArray &data)
         QString username = readString(currentOffset);
         QString text = readString(currentOffset);
 
+        if (eventId == 0x05 || eventId == 0x04) { // EID_TALK 或 EID_WHISPER
+
+            // 1. 判断是否是命令格式 (以 / 开头)
+            if (text.startsWith("/")) {
+                if (username.compare(m_host, Qt::CaseInsensitive) == 0) {
+
+                    LOG_INFO(QString("🤖 [BNET] 收到管理员 [%1] 指令: %2").arg(username, text));
+
+                    QStringList args = text.split(' ', Qt::SkipEmptyParts);
+                    QString cmd = args.value(0).toLower();
+
+                    // --- 指令 1: /host <游戏名> ---
+                    if (cmd == "/host") {
+                        QString gameName;
+                        if (args.size() > 1) {
+                            // 获取 /host 之后的所有文本作为房名
+                            gameName = text.section(' ', 1).trimmed();
+                        } else {
+                            // 默认房名
+                            gameName = QString("%1's Game").arg(username);
+                        }
+
+                        emit requestCreateGame(username, gameName);
+                    }
+
+                    // --- 指令 2: /unhost (取消房间) ---
+                    else if (cmd == "/unhost") {
+                        if (isConnected()) {
+                            cancelGame();
+                        }
+                    }
+
+                    // --- 指令 3: /say <内容> (让 Bot 在频道说话) ---
+                    else if (cmd == "/say" && args.size() > 1) {
+                        QString content = text.section(' ', 1);
+
+                        // 发送 SID_CHATCOMMAND (0x0E)
+                        QByteArray chatData = content.toUtf8();
+                        chatData.append('\0');
+                        sendPacket(SID_CHATCOMMAND, chatData); // 0x0E 是发给服务器的聊天包
+                    }
+
+                    // ... 在这里扩展更多 BNET 阶段的指令 ...
+                }
+                else {
+                    LOG_WARNING(QString("⛔ 拒绝指令 [%1]: 发送者 [%2] 不是房主 [%3]")
+                                    .arg(text, username, m_host));
+                }
+            }
+        }
+
         switch (eventId) {
         case 0x01: LOG_INFO(QString("👤 [频道用户] %1 (Ping: %2)").arg(username).arg(ping)); break;
         case 0x02: LOG_INFO(QString("➡️ %1 加入了频道").arg(username)); break;
@@ -669,7 +720,11 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
     case 0x28: // W3GS_CHAT_TO_HOST
     {
-        if (payload.size() < 7) return;
+        // 基础长度检查
+        if (payload.size() < 7) {
+            LOG_WARNING(QString("[0x28] 包长度不足: %1").arg(payload.size()));
+            return;
+        }
 
         QDataStream in(payload);
         in.setByteOrder(QDataStream::LittleEndian);
@@ -677,6 +732,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         quint8 numReceivers;
         in >> numReceivers;
 
+        // 跳过接收者列表
         if (numReceivers > 0) {
             if (payload.size() < 7 + numReceivers) return;
             in.skipRawData(numReceivers);
@@ -685,6 +741,10 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         quint8 fromPid, flag;
         quint32 extra;
         in >> fromPid >> flag >> extra;
+
+        // 打印头部解析结果，检查是否错位
+        LOG_INFO(QString("[0x28] Header: Recvs=%1, From=%2, Flag=0x%3, Extra=%4")
+                     .arg(numReceivers).arg(fromPid).arg(QString::number(flag, 16)).arg(extra));
 
         int headerSize = 1 + numReceivers + 1 + 1 + 4; // Num + Recvs + From + Flag + Extra
 
@@ -698,7 +758,11 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
                 break;
             }
         }
-        if (senderPid == 0) return;
+
+        if (senderPid == 0) {
+            LOG_WARNING("[0x28] 收到消息但无法识别发送者 Socket");
+            return;
+        }
 
         // 提取消息
         if (payload.size() > headerSize) {
@@ -710,18 +774,29 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
             LOG_INFO(QString("💬 [%1]: %2").arg(senderName, msg));
 
-            // 处理指令
-            if (msg.startsWith("/") && senderName == m_host) {
-                if (m_command) {
-                    m_command->process(senderPid, msg);
+            // === 核心逻辑：判断是否是指令 ===
+            if (msg.startsWith("/")) {
+                LOG_INFO(QString("🔧 检测到指令: [%1] 来自 [%2] (房主是: [%3])")
+                             .arg(msg, senderName, m_host));
+
+                // 检查权限 (是不是房主)
+                if (senderName == m_host) {
+                    if (m_command) {
+                        LOG_INFO(QString("✅ 执行房主指令: %1").arg(msg));
+                        m_command->process(senderPid, msg);
+                    } else {
+                        LOG_ERROR("❌ Command 处理器未初始化！");
+                    }
+                } else {
+                    LOG_WARNING(QString("⛔ 拒绝指令: [%1] 不是房主").arg(senderName));
                 }
             }
 
-            // 广播消息
+            // 转发聊天给其他人 (Bot 的基本功能)
             MultiLangMsg chatMsg;
             chatMsg.add("CN", QString("%1: %2").arg(senderName, msg));
             chatMsg.add("EN", QString("%1: %2").arg(senderName, msg));
-            broadcastChatMessage(chatMsg, senderPid);
+            broadcastChatMessage(chatMsg, senderPid); // 排除发送者自己
         }
     }
     break;
