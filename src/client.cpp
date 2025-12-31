@@ -117,9 +117,18 @@ void Client::connectToHost(const QString &address, quint16 port)
     m_tcpSocket->connectToHost(address, port);
 }
 
-void Client::disconnectFromHost() { m_tcpSocket->disconnectFromHost(); }
-bool Client::isConnected() const { return m_tcpSocket->state() == QAbstractSocket::ConnectedState; }
-void Client::onDisconnected() { LOG_WARNING("🔌 战网连接断开"); }
+void Client::disconnectFromHost() {
+    m_tcpSocket->disconnectFromHost();
+}
+
+bool Client::isConnected() const {
+    return m_tcpSocket->state() == QAbstractSocket::ConnectedState;
+}
+
+void Client::onDisconnected() {
+    LOG_WARNING("🔌 战网连接断开");
+    emit disconnected();
+}
 
 void Client::onConnected()
 {

@@ -8,21 +8,28 @@
 
 // === 1. 机器人状态枚举 ===
 enum class BotState {
-    Unregistered,   // 未注册 (初始状态或正在注册)
-    Idle,           // 空闲中 (已登录在大厅)
-    Creating,       // 创建中 (正在发送创建房间包)
-    Waiting,        // 等待中 (房间已创建，等待玩家加入)
-    InGame,         // 游戏中 (游戏已开始)
-    Disconnected    // 断开连接
+    Unregistered,               // 未注册 (初始状态或正在注册)
+    Idle,                       // 空闲中 (已登录在大厅)
+    Creating,                   // 创建中 (正在发送创建房间包)
+    Waiting,                    // 等待中 (房间已创建，等待玩家加入)
+    InGame,                     // 游戏中 (游戏已开始)
+    Connecting,                 // 连接中
+    Disconnected                // 断开连接
 };
 
 // === 2. 机器人结构体 ===
 struct Bot {
-    int id;                 // 数字 ID (1, 2, 3...)
-    QString username;       // 完整用户名 (例如 bot1)
-    QString password;       // 密码
-    BotState state;         // 当前状态
-    Client *client;         // 客户端对象
+    int id;                     // 数字 ID (1, 2, 3...)
+    QString username;           // 完整用户名 (例如 bot1)
+    QString password;           // 密码
+    BotState state;             // 当前状态
+    Client *client;             // 客户端对象
+
+    struct Task {
+        bool hasTask = false;   // 是否有任务
+        QString creatorName;    // 谁下的命令 (虚拟房主)
+        QString gameName;       // 房间名
+    } pendingTask;
 
     Bot(int _id, QString _user, QString _pass)
         : id(_id), username(_user), password(_pass), state(BotState::Disconnected), client(nullptr) {}
@@ -37,6 +44,14 @@ class BotManager : public QObject
 public:
     explicit BotManager(QObject *parent = nullptr);
     ~BotManager();
+
+    /**
+     * @brief 请求创建一个新游戏
+     * @param creatorName 发起请求的玩家名字 (将成为房主)
+     * @param gameName 游戏房间名
+     * @return 成功返回 true，否则 false
+     */
+    bool requestCreateGame(const QString& creatorName, const QString &gameName);
 
     /**
       *@brief 初始化机器人
@@ -73,6 +88,9 @@ private:
     // 缓存连接信息
     QString m_targetServer;
     quint16 m_targetPort;
+    QString m_configPath;
+    QString m_userPrefix;
+    QString m_defaultPassword;
 };
 
 #endif // BOTMANAGER_H

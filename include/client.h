@@ -380,6 +380,7 @@ public:
     void joinChannel(const QString &channelName);       // 加入频道
 
     // --- 游戏主机管理 ---
+    void setHost(QString creatorName) { m_host = creatorName; };
     void createGame(const QString &gameName, const QString &password,
                     ProviderVersion providerVersion, ComboGameType comboGameType,
                     SubGameType subGameType, LadderType ladderType);
@@ -399,10 +400,11 @@ public:
     quint32 ipToUint32(const QHostAddress &address);
 
 signals:
-    void socketError(const QString &error);
+    void disconnected();
     void authenticated();
     void accountCreated();
     void gameListRegistered();
+    void socketError(const QString &error);
 
 private slots:
     // --- 网络事件 ---
@@ -423,7 +425,7 @@ private:
     // --- 槽位管理 ---
     void initSlots(quint8 maxPlayers = 10);
     QByteArray serializeSlotData();
-    GameSlot* findEmptySlot();
+    GameSlot *findEmptySlot();
 
     // --- W3GS 协议包构建 ---
     QByteArray createW3GSSlotInfoPacket();
