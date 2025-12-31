@@ -657,6 +657,29 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         LOG_INFO("💓 收到玩家 TCP Pong");
         break;
 
+    case 0x3F: // W3GS_STARTDOWNLOAD
+    {
+        quint8 currentPid = 0;
+        for (auto it = m_players.begin(); it != m_players.end(); ++it) {
+            if (it.value().socket == socket) {
+                currentPid = it.key();
+                break;
+            }
+        }
+
+        if (currentPid == 0) return;
+
+        LOG_INFO(QString("⏬ 收到 [0x3F] 客户端下载就绪信号 (PID: %1)").arg(currentPid));
+
+        // 检查状态是否合法
+        if (m_players[currentPid].isDownloading) {
+            sendNextMapPart(currentPid);
+        } else {
+            LOG_WARNING("📪 收到 [0x3F] 但玩家未处于下载状态，忽略");
+        }
+    }
+    break;
+
     case 0x42: // W3GS_MAPSIZE
     {
         if (payload.size() < 9) return;
@@ -711,13 +734,9 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
                         socket->flush(); // 强制推送到网络层
                         LOG_INFO(QString("⏬ 发送 0x3F StartDownload"));
 
-                        // 2. 初始化下载状态 (直接修改引用对象)
+                        // 2. 初始化下载状态
                         playerData.isDownloading = true;
                         playerData.downloadOffset = 0;
-
-                        // 3. 立即发送第一块数据
-                        LOG_INFO(QString("✉️ 触发首个分片发送..."));
-                        sendNextMapPart(currentPid);
                     }
                 }
                 break;
