@@ -147,7 +147,7 @@ void Client::onNewConnection()
 // 3. TCP 核心处理 (收发包)
 // =========================================================
 
-void Client::sendPacket(TCPPacketID id, const QByteArray &payload)
+void Client::sendPacket(BNETPacketID id, const QByteArray &payload)
 {
     QByteArray packet;
     QDataStream out(&packet, QIODevice::WriteOnly);
@@ -267,11 +267,11 @@ void Client::onTcpReadyRead()
 
         QByteArray packetData = m_tcpSocket->read(length);
         quint8 packetIdVal = (quint8)packetData[1];
-        handleTcpPacket((TCPPacketID)packetIdVal, packetData.mid(4));
+        handleBNETTcpPacket((BNETPacketID)packetIdVal, packetData.mid(4));
     }
 }
 
-void Client::handleTcpPacket(TCPPacketID id, const QByteArray &data)
+void Client::handleBNETTcpPacket(BNETPacketID id, const QByteArray &data)
 {
     LOG_INFO(QString("📥 收到包 ID: 0x%1").arg(QString::number(id, 16)));
 
@@ -847,11 +847,11 @@ void Client::onUdpReadyRead()
 {
     while (m_udpSocket->hasPendingDatagrams()) {
         QNetworkDatagram datagram = m_udpSocket->receiveDatagram();
-        handleUdpPacket(datagram.data(), datagram.senderAddress(), datagram.senderPort());
+        handleW3GSUdpPacket(datagram.data(), datagram.senderAddress(), datagram.senderPort());
     }
 }
 
-void Client::handleUdpPacket(const QByteArray &data, const QHostAddress &sender, quint16 senderPort)
+void Client::handleW3GSUdpPacket(const QByteArray &data, const QHostAddress &sender, quint16 senderPort)
 {
     if (data.size() < 4) return;
     QDataStream in(data);
@@ -867,7 +867,7 @@ void Client::handleUdpPacket(const QByteArray &data, const QHostAddress &sender,
     LOG_INFO(QString("📨 [UDP] 收到 %1 字节来自 %2:%3 | 内容: %4")
                  .arg(data.size()).arg(sender.toString()).arg(senderPort).arg(hexStr));
 
-    switch ((UdpPacketID)msgId) {
+    switch (msgId) {
     case W3GS_TEST: // 自定义测试包 ID
     {
         // 读取剩余的数据作为字符串打印出来

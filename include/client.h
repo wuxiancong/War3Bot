@@ -24,7 +24,7 @@ enum LoginProtocol {
 };
 
 // TCP 协议 ID (BNET)
-enum TCPPacketID {
+enum BNETPacketID {
     SID_NULL                    = 0x00, // [C->S] 空包
     SID_STOPADV                 = 0x02, // [C->S] 停止广播
     SID_ENTERCHAT               = 0x0A, // [C->S] 进入聊天
@@ -44,7 +44,7 @@ enum TCPPacketID {
 };
 
 // W3GS 协议 ID 定义 (TCP 游戏逻辑 & UDP 局域网广播)
-enum W3GS_PacketID {
+enum W3GSPacketID {
     // --- 基础握手与心跳 (TCP) ---
     W3GS_PING_FROM_HOST         = 0x01, // [S->C] 主机发送的心跳包 (每30秒)
     W3GS_PONG_TO_HOST           = 0x46, // [C->S] 客户端回复的心跳包
@@ -431,9 +431,9 @@ private:
 
     // --- 内部网络处理 ---
     void sendNextMapPart(quint8 toPid, quint8 fromPid = 1);
-    void sendPacket(TCPPacketID id, const QByteArray &payload);
-    void handleTcpPacket(TCPPacketID id, const QByteArray &data);
-    void handleUdpPacket(const QByteArray &data, const QHostAddress &sender, quint16 senderPort);
+    void sendPacket(BNETPacketID id, const QByteArray &payload);
+    void handleBNETTcpPacket(BNETPacketID id, const QByteArray &data);
+    void handleW3GSUdpPacket(const QByteArray &data, const QHostAddress &sender, quint16 senderPort);
     void handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &payload);
 
     // --- 认证流程 ---
