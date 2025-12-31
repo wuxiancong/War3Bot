@@ -1362,86 +1362,86 @@ QByteArray Client::createW3GSChatFromHostPacket(const QByteArray &rawBytes, quin
 
 QByteArray Client::createW3GSSlotInfoJoinPacket(quint8 playerID, const QHostAddress& externalIp, quint16 localPort)
 {
-    LOG_INFO("=== 开始构建 W3GS_SLOTINFOJOIN (0x04) 包 ===");
+    LOG_INFO("=== 构建 W3GS_SLOTINFOJOIN (0x04) ===");
 
     QByteArray packet;
     QDataStream out(&packet, QIODevice::WriteOnly);
-    // 必须强制显式设置为 LittleEndian，War3 协议要求小端序
-    out.setByteOrder(QDataStream::LittleEndian);
+    out.setByteOrder(QDataStream::LittleEndian); // War3 协议统一使用小端序
 
-    // 1. 获取槽位数据
+    // -------------------------------------------------
+    // 1. 准备数据
+    // -------------------------------------------------
     QByteArray slotData = serializeSlotData();
 
-    // 打印槽位数据详情
-    QString firstByteHex = slotData.isEmpty() ? "Empty" : QString::number((quint8)slotData.at(0), 16).toUpper();
-    LOG_INFO(QString("[Step 1] 生成槽位数据: 大小=%1 字节, 第1个字节(NumSlots)=0x%2")
-                 .arg(slotData.size())
-                 .arg(firstByteHex));
+    // 【关键】计算 SlotInfoBlock 的总长度
+    // 结构包含: [SlotData (N字节)] + [RandomSeed (4)] + [LayoutStyle (1)] + [NumSlots (1)]
+    // 所以长度 = slotData.size() + 6
+    quint16 slotBlockSize = (quint16)slotData.size() + 6;
 
-    // 2. 写入 Header (长度稍后回填)
-    out << (quint8)0xF7 << (quint8)0x04 << (quint16)0;
-    LOG_INFO("[Step 2] 写入包头: F7 04 00 00 (长度占位)");
+    // -------------------------------------------------
+    // 2. 写入包头 (Header)
+    // -------------------------------------------------
+    out << (quint8)0xF7         // Header
+        << (quint8)0x04         // ID: W3GS_SLOTINFOJOIN
+        << (quint16)0;          // Total Length (稍后回填)
 
-    // 3. 写入槽位数据块长度 & 内容
-    quint16 slotBlockTotalSize = (quint16)slotData.size() + 6;
-    out << slotBlockTotalSize; // <--- 这里写入 97 (0x61 00)
+    // -------------------------------------------------
+    // 3. 写入槽位信息块 (Slot Info Block)
+    // -------------------------------------------------
+    // 3.1 写入块长度 (必须包含尾部的6字节，否则客户端解析错位)
+    out << slotBlockSize;
 
-    // 长度必须包含 槽位数据 + 6字节尾部
-    // 91 + 6 = 97 (0x61)
-    quint8 lenLow = slotBlockTotalSize & 0xFF;
-    quint8 lenHigh = (slotBlockTotalSize >> 8) & 0xFF;
-    LOG_INFO(QString("[Step 3] 写入槽位数据长度: %1 (Hex期望[97字节]: %2 %3 [0x6])")
-                 .arg(slotBlockTotalSize)
-                 .arg(QString::number(lenLow, 16).toUpper(), 2, '0')
-                 .arg(QString::number(lenHigh, 16).toUpper(), 2, '0'));
-
+    // 3.2 写入槽位数据
     out.writeRawData(slotData.data(), slotData.size());
-    LOG_INFO(QString("[Step 3] 写入槽位数据体 (共%1字节)").arg(slotData.size()));
 
+    // 3.3 写入尾部信息 (共6字节)
+    out << (quint32)m_randomSeed;           // 随机种子
+    out << (quint8)m_layoutStyle;           // 布局 (3=Fixed)
+    out << (quint8)m_slots.size();          // 玩家总数
 
-    // 4. 写入随机种子、布局样式、槽位总数
-    out << (quint32)m_randomSeed;                           // 随机种子
-    out << (quint8)m_layoutStyle;                           // 布局样式
-    out << (quint8)m_slots.size();                          // 槽位总数
+    // -------------------------------------------------
+    // 4. 写入玩家连接信息 (Player Join Info)
+    // -------------------------------------------------
+    // 4.1 玩家 ID
+    out << (quint8)playerID;
 
+    // 4.2 网络端口与 IP
+    out << (quint16)2;                      // AF_INET
+    out << (quint16)qToBigEndian(localPort);// Port (网络字节序/大端)
+    writeIpToStreamWithLog(out, externalIp);// IP Address
 
-    // 5. 写入玩家编号
-    LOG_INFO(QString("💻 Player ID   : %1").arg(playerID));
-    out << (quint8)playerID;                                // 玩家的ID
+    // 4.3 填充数据 (Unknown)
+    out << (quint32)0;                      // Unknown 1
+    out << (quint32)0;                      // Unknown 2
 
-    // 5. 写入网络信息
-    out << (quint16)2;                                      // AF_INET
-    out << (quint16)qToBigEndian(localPort);                // Port
-
-    LOG_INFO(QString("[Step 5] 写入网络信息: Port=%1, IP=%2").arg(localPort).arg(externalIp.toString()));
-    writeIpToStreamWithLog(out, externalIp);
-
-    // 6. 填充尾部
-    out << (quint32)0;
-    out << (quint32)0;
-    LOG_INFO("[Step 6] 写入尾部填充: 00 00 00 00 00 00 00 00");
-
-    // 7. 回填包总长度
+    // -------------------------------------------------
+    // 5. 收尾工作
+    // -------------------------------------------------
+    // 回填包总长度 (覆盖偏移 2-3 的位置)
     quint16 totalSize = (quint16)packet.size();
     QDataStream lenStream(&packet, QIODevice::ReadWrite);
     lenStream.setByteOrder(QDataStream::LittleEndian);
-    lenStream.skipRawData(2); // 跳过 F7 04
+    lenStream.skipRawData(2);
     lenStream << totalSize;
 
-    LOG_INFO(QString("[Step 7] 回填包总长度: %1 字节").arg(totalSize));
+    // -------------------------------------------------
+    // 6. 日志记录
+    // -------------------------------------------------
+    LOG_INFO(QString("📦 [0x04] 生成完毕: 总长=%1, 槽位块长=%2, PID=%3")
+                 .arg(totalSize).arg(slotBlockSize).arg(playerID));
 
-    // === 终极检查：打印整个包的 Hex ===
-    QString hexStr = packet.toHex(' ').toUpper();
-    LOG_INFO(QString("=== [0x04] 最终包 Hex Dump ==="));
-    LOG_INFO(hexStr);
+    // 校验日志：打印 PID 及其前一个字节，确保没有错位
+    // 偏移量计算: Header(4) + Len(2) + SlotBlock(slotBlockSize)
+    // PID 应该位于: 4 + 2 + slotBlockSize 的位置
+    if (packet.size() > 6 + slotBlockSize) {
+        int pidOffset = 6 + slotBlockSize;
+        quint8 pidInPacket = (quint8)packet.at(pidOffset);
+        quint8 byteBefore = (quint8)packet.at(pidOffset - 1);
 
-    // 重点标出 Random Seed 的位置
-    // Header(4) + SlotLen(2) + SlotData(N) + Seed(4)
-    // 偏移 = 6 + N
-    if (packet.size() > 6 + slotDataLen) {
-        int seedOffset = 6 + slotDataLen;
-        QByteArray seedBytes = packet.mid(seedOffset, 4);
-        LOG_INFO(QString("👀 校验: 偏移 %1 处的 4 字节 (Seed) 为: %2").arg(QString::number(seedOffset), seedBytes.toHex(' ').toUpper()));
+        LOG_INFO(QString("🔍 偏移校验: 预期PID位置[%1] 值=0x%2 (前一字节=0x%3)")
+                     .arg(pidOffset)
+                     .arg(QString::number(pidInPacket, 16).toUpper())
+                     .arg(QString::number(byteBefore, 16).toUpper())); // 前一字节应该是 NumSlots (0x0A)
     }
 
     return packet;
