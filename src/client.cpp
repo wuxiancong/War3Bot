@@ -1383,15 +1383,15 @@ QByteArray Client::createW3GSSlotInfoJoinPacket(quint8 playerID, const QHostAddr
     LOG_INFO("[Step 2] 写入包头: F7 04 00 00 (长度占位)");
 
     // 3. 写入槽位数据块长度 & 内容
-    quint16 slotDataLen = (quint16)slotData.size();
-    out << slotDataLen;
+    quint16 slotBlockTotalSize = (quint16)slotData.size() + 6;
+    out << slotBlockTotalSize; // <--- 这里写入 97 (0x61 00)
 
-    // 如果这里写错，客户端就会读错偏移
-    // 手动拆解高低字节打印，确认写入顺序
-    quint8 lenLow = slotDataLen & 0xFF;
-    quint8 lenHigh = (slotDataLen >> 8) & 0xFF;
-    LOG_INFO(QString("[Step 3] 写入槽位数据长度: %1 (Hex期望: %2 %3)")
-                 .arg(slotDataLen)
+    // 长度必须包含 槽位数据 + 6字节尾部
+    // 91 + 6 = 97 (0x61)
+    quint8 lenLow = slotBlockTotalSize & 0xFF;
+    quint8 lenHigh = (slotBlockTotalSize >> 8) & 0xFF;
+    LOG_INFO(QString("[Step 3] 写入槽位数据长度: %1 (Hex期望[97字节]: %2 %3 [0x6])")
+                 .arg(slotBlockTotalSize)
                  .arg(QString::number(lenLow, 16).toUpper(), 2, '0')
                  .arg(QString::number(lenHigh, 16).toUpper(), 2, '0'));
 
