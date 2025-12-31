@@ -708,14 +708,15 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
                         // 1. 发送 StartDownload (0x3F)
                         QByteArray startPkt = createW3GSStartDownloadPacket(currentPid);
                         socket->write(startPkt);
-                        LOG_INFO(QString("   -> 发送 0x3F StartDownload"));
+                        socket->flush(); // 强制推送到网络层
+                        LOG_INFO(QString("⏬ 发送 0x3F StartDownload"));
 
                         // 2. 初始化下载状态 (直接修改引用对象)
                         playerData.isDownloading = true;
                         playerData.downloadOffset = 0;
 
                         // 3. 立即发送第一块数据
-                        LOG_INFO(QString("   -> 触发首个分片发送..."));
+                        LOG_INFO(QString("✉️ 触发首个分片发送..."));
                         sendNextMapPart(currentPid);
                     }
                 }
@@ -747,6 +748,8 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
             if (it.value().socket == socket) { currentPid = it.key(); break; }
         }
         if (currentPid == 0) return;
+
+        LOG_INFO(QString("📩 收到 ACK: PID %1 请求 Offset %2").arg(fromPid).arg(clientOffset));
 
         // 继续发送下一块
         sendNextMapPart(currentPid);
@@ -1407,7 +1410,7 @@ QByteArray Client::createW3GSSlotInfoJoinPacket(quint8 playerID, const QHostAddr
     LOG_INFO(QString("[Step 3] 写入槽位数据体 (共%1字节)").arg(slotData.size()));
 
     // 4. 写入玩家编号
-    LOG_INFO(QString("   -> Player ID   : %1").arg(playerID));
+    LOG_INFO(QString("💻 Player ID   : %1").arg(playerID));
 
     // out << (quint32)m_randomSeed;                                // 随机种子 ❌删除
     // out << (quint8)m_baseGameType;                               // 游戏类型 ❌删除
@@ -1446,7 +1449,7 @@ QByteArray Client::createW3GSSlotInfoJoinPacket(quint8 playerID, const QHostAddr
     if (packet.size() > 6 + slotDataLen) {
         int seedOffset = 6 + slotDataLen;
         QByteArray seedBytes = packet.mid(seedOffset, 4);
-        LOG_INFO(QString("   -> 校验: 偏移 %1 处的 4 字节 (Seed) 为: %2").arg(QString::number(seedOffset), seedBytes.toHex(' ').toUpper()));
+        LOG_INFO(QString("👀 校验: 偏移 %1 处的 4 字节 (Seed) 为: %2").arg(QString::number(seedOffset), seedBytes.toHex(' ').toUpper()));
     }
 
     return packet;
