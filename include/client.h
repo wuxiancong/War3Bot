@@ -11,6 +11,7 @@
 #include <QHostAddress>
 
 #include "war3map.h"
+#include "command.h"
 
 // =========================================================
 // 1. 网络协议与认证 (Protocol & Auth)
@@ -358,6 +359,7 @@ class BnetSRP3;
 class Client : public QObject
 {
     Q_OBJECT
+    friend class Command;
 
 public:
     static const quint8 BNET_HEADER = 0xFF;
@@ -457,6 +459,9 @@ private:
 private:
     // --- 成员变量 ---
 
+    // 控制命令
+    Command                         *m_command;
+
     // 核心组件
     BnetSRP3                        *m_srp                  = nullptr;
     QUdpSocket                      *m_udpSocket            = nullptr;
@@ -485,6 +490,7 @@ private:
     bool                            m_gameStarted           = false;
 
     // 认证状态
+    QString                         m_host;
     QString                         m_user;
     QString                         m_pass;
     quint32                         m_serverToken           = 0;

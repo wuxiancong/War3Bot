@@ -1,8 +1,9 @@
 #include "client.h"
 #include "logger.h"
-#include "bncsutil/checkrevision.h"
+#include "command.h"
 #include "bnethash.h"
 #include "bnetsrp3.h"
+#include "bncsutil/checkrevision.h"
 
 #include <QDir>
 #include <QtEndian>
@@ -657,9 +658,64 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
     }
     break;
 
-    case W3GS_CHAT_TO_HOST: // W3GS_PONG_TO_HOST
-        LOG_INFO("💓 收到玩家 TCP Pong");
-        break;
+    case 0x28: // W3GS_CHAT_TO_HOST
+    {
+        if (payload.size() < 7) return;
+
+        QDataStream in(payload);
+        in.setByteOrder(QDataStream::LittleEndian);
+
+        quint8 numReceivers;
+        in >> numReceivers;
+
+        if (numReceivers > 0) {
+            if (payload.size() < 7 + numReceivers) return;
+            in.skipRawData(numReceivers);
+        }
+
+        quint8 fromPid, flag;
+        quint32 extra;
+        in >> fromPid >> flag >> extra;
+
+        int headerSize = 1 + numReceivers + 1 + 1 + 4; // Num + Recvs + From + Flag + Extra
+
+        // 查找发送者
+        quint8 senderPid = 0;
+        QString senderName = "";
+        for (auto it = m_players.begin(); it != m_players.end(); ++it) {
+            if (it.value().socket == socket) {
+                senderPid = it.key();
+                senderName = it.value().name;
+                break;
+            }
+        }
+        if (senderPid == 0) return;
+
+        // 提取消息
+        if (payload.size() > headerSize) {
+            QByteArray msgBytes = payload.mid(headerSize);
+            if (msgBytes.endsWith('\0')) msgBytes.chop(1);
+
+            // 解码
+            QString msg = m_players[senderPid].codec->toUnicode(msgBytes);
+
+            LOG_INFO(QString("💬 [%1]: %2").arg(senderName, msg));
+
+            // 处理指令
+            if (msg.startsWith("/") && senderName == m_host) {
+                if (m_command) {
+                    m_command->process(senderPid, msg);
+                }
+            }
+
+            // 广播消息
+            MultiLangMsg chatMsg;
+            chatMsg.add("CN", QString("%1: %2").arg(senderName, msg));
+            chatMsg.add("EN", QString("%1: %2").arg(senderName, msg));
+            broadcastChatMessage(chatMsg, senderPid);
+        }
+    }
+    break;
 
     case 0x42: // W3GS_MAPSIZE
     {
@@ -1269,41 +1325,38 @@ void Client::initSlots(quint8 maxPlayers)
     // 3. 初始化槽位状态
     for (quint8 i = 0; i < maxPlayers; ++i) {
         m_slots[i] = GameSlot();
-        m_slots[i].pid = 0;
         m_slots[i].downloadStatus = NotStarted;
         m_slots[i].computer = Human;
         m_slots[i].color = i + 1;
 
-        // --- 队伍与种族设置 ---
-        if (i < 5) {
-            // === 近卫军团 (Sentinel) : Slots 0-4 ===
-            m_slots[i].team = (quint8)SlotTeam::Sentinel;
-            m_slots[i].race = (quint8)SlotRace::Sentinel;
-            m_slots[i].slotStatus = Open;
-        }
-        else if (i < 10) {
-            // === 天灾军团 (Scourge) : Slots 5-9 ===
-            m_slots[i].team = (quint8)SlotTeam::Scourge;
-            m_slots[i].race = (quint8)SlotRace::Scourge;
-            m_slots[i].slotStatus = Open;
-        }
-        else {
-            // === 裁判/观察者 : Slots 10-11 ===
-            m_slots[i].team = (quint8)SlotTeam::Observer;
+        // Bot 占据最后一个槽位
+        if (i == 11) {
+            m_slots[i].pid = 1;                             // Bot 的 PID 固定为 1
+            m_slots[i].downloadStatus = Completed;          // Bot 肯定有图
+            m_slots[i].slotStatus = Occupied;               // Occupied
+            m_slots[i].computer = Human;                    // Human
+            m_slots[i].team = (quint8)SlotTeam::Observer;   // 裁判
             m_slots[i].race = (quint8)SlotRace::Observer;
-            m_slots[i].slotStatus = Close;
+            continue;
         }
 
-        // --- 主机特殊覆盖 (Slot 0) ---
-        if (i == 0) {
-            m_slots[i].pid = 1;                                     // 主机初始槽位编号
-            m_slots[i].downloadStatus = Completed;                  // 主机肯定有地图
-            m_slots[i].slotStatus = (quint8)Occupied;               // 被占领
-            m_slots[i].computer = Human;                            // 人类
+        // --- 正常玩家槽位 ---
+        m_slots[i].pid = 0;                                 // 空
+        m_slots[i].slotStatus = Open;                       // Open
+
+        if (i < 5) { // Sentinel
+            m_slots[i].team = (quint8)SlotTeam::Sentinel;
+            m_slots[i].race = (quint8)SlotRace::NightElf;
+        } else if (i < 10) { // Scourge
+            m_slots[i].team = (quint8)SlotTeam::Scourge;
+            m_slots[i].race = (quint8)SlotRace::Undead;
+        } else { // Slot 10 (Observer)
+            m_slots[i].team = (quint8)SlotTeam::Observer;
+            m_slots[i].race = (quint8)SlotRace::Observer;
         }
     }
 
-    LOG_INFO("✨ 房间槽位已初始化 (DotA 5v5 模式, 槽位 10-11 关闭)");
+    LOG_INFO("✨ 房间初始化完成：Bot 已隐藏至 Slot 11 (裁判位)");
 }
 
 QByteArray Client::serializeSlotData() {
