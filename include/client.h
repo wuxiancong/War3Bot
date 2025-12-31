@@ -311,6 +311,11 @@ struct PlayerData {
     // 下载状态
     bool            isDownloading   = false;
     quint32         downloadOffset  = 0;
+
+    // 时间检测
+    qint64 lastDownloadTime         = 0;
+    qint64 lastResponseTime         = 0;
+    quint32 currentLatency          = 0;
 };
 
 // =========================================================
@@ -381,9 +386,10 @@ public:
 
     // --- 工具函数 ---
     void sendPingLoop();                                // 定时发送Ping
+    void checkPlayerTimeouts();                         // 检查玩家超时
+    QString getPrimaryIPv4();                           // 获取本机IPv4
     bool bindToRandomPort();                            // 绑定随机UDP端口
     bool isBlackListedPort(quint16 port);               // 检查端口黑名单
-    QString getPrimaryIPv4();                           // 获取本机IPv4
     void writeIpToStreamWithLog(QDataStream &out, const QHostAddress &ip);
 
     // IP转换辅助

@@ -178,6 +178,9 @@ void Client::sendNextMapPart(quint8 toPid, quint8 fromPid)
         return;
     }
 
+    // 更新下载活跃时间
+    m_players[toPid].lastDownloadTime = QDateTime::currentMSecsSinceEpoch();
+
     PlayerData &playerData = m_players[toPid];
 
     // [检查点 1] 状态检查
@@ -582,6 +585,8 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         m_slots[slotIndex].downloadStatus = NotStarted;
         m_slots[slotIndex].computer = Human;
 
+        qint64 now = QDateTime::currentMSecsSinceEpoch();
+
         // 保存玩家数据到列表
         PlayerData playerData;
         playerData.pid = hostId;
@@ -593,8 +598,11 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         playerData.intPort = clientInternalPort;
         playerData.language = "EN";
         playerData.codec = QTextCodec::codecForName("Windows-1252");
+        playerData.lastResponseTime = now;
+        playerData.lastDownloadTime = now;
 
         m_players.insert(hostId, playerData);
+
         LOG_INFO(QString("💾 已注册玩家: [%1] PID: %2").arg(clientPlayerName).arg(hostId));
 
         // 3. 构建握手响应包序列 (发送给新玩家)
@@ -769,6 +777,9 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
         LOG_INFO(QString("📩 收到 ACK: PID %1 请求 Offset %2").arg(fromPid).arg(clientOffset));
 
+        m_players[currentPid].lastResponseTime = QDateTime::currentMSecsSinceEpoch(); // 确认包也算心跳
+        m_players[currentPid].lastDownloadTime = QDateTime::currentMSecsSinceEpoch(); // 更新下载活跃时间
+
         // 继续发送下一块
         sendNextMapPart(currentPid);
     }
@@ -777,6 +788,41 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
     case 0x45: // W3GS_MAPPARTNOTOK
         LOG_ERROR("❌ 玩家报告地图分片 CRC 校验失败！下载可能损坏。");
         break;
+
+    case 0x46: // W3GS_PONG_TO_HOST
+    {
+        // 结构: Header(4) + TickCount(4)
+        if (payload.size() < 4) return;
+
+        QDataStream in(payload);
+        in.setByteOrder(QDataStream::LittleEndian);
+        quint32 sentTick;
+        in >> sentTick;
+
+        // 查找玩家
+        quint8 currentPid = 0;
+        for (auto it = m_players.begin(); it != m_players.end(); ++it) {
+            if (it.value().socket == socket) {
+                currentPid = it.key();
+                break;
+            }
+        }
+
+        if (currentPid != 0) {
+            qint64 now = QDateTime::currentMSecsSinceEpoch();
+            PlayerData &p = m_players[currentPid];
+
+            // 1. 计算延迟
+            // 注意：这里可能会有溢出回绕的问题，但在短时间会话中通常忽略
+            p.currentLatency = (quint32)(now - sentTick);
+
+            // 2. 更新最后活跃时间
+            p.lastResponseTime = now;
+
+            LOG_INFO(QString("💓 收到 Pong [PID:%1]: 延迟 %2 ms").arg(currentPid).arg(p.currentLatency));
+        }
+    }
+    break;
 
     default:
         LOG_INFO(QString("❓ 未处理的 TCP 包 ID: 0x%1").arg(QString::number(id, 16)));
@@ -1440,8 +1486,8 @@ QByteArray Client::createW3GSSlotInfoJoinPacket(quint8 playerID, const QHostAddr
 
         LOG_INFO(QString("🔍 偏移校验: 预期PID位置[%1] 值=0x%2 (前一字节=0x%3)")
                      .arg(pidOffset)
-                     .arg(QString::number(pidInPacket, 16).toUpper())
-                     .arg(QString::number(byteBefore, 16).toUpper())); // 前一字节应该是 NumSlots (0x0A)
+                     .arg(QString::number(pidInPacket, 16).toUpper(),
+                          QString::number(byteBefore, 16).toUpper())); // 前一字节应该是 NumSlots (0x0A)
     }
 
     return packet;
@@ -1835,6 +1881,55 @@ void Client::sendPingLoop()
         }
 
         socket->flush();
+    }
+}
+
+void Client::checkPlayerTimeouts()
+{
+    qint64 now = QDateTime::currentMSecsSinceEpoch();
+
+    // 定义超时阈值 (毫秒)
+    const qint64 TIMEOUT_CONNECTION = 60000; // 60秒无响应算掉线
+    const qint64 TIMEOUT_DOWNLOAD = 120000;  // 120秒下载卡住算超时
+
+    // 使用迭代器遍历，以便安全删除
+    auto it = m_players.begin();
+    while (it != m_players.end()) {
+        quint8 pid = it.key();
+        PlayerData &playerData = it.value();
+
+        // 跳过主机自己 (PID 1)
+        if (pid == 1) {
+            ++it;
+            continue;
+        }
+
+        bool kick = false;
+        QString kickReason = "";
+
+        // 1. 检查心跳超时
+        if ((now - playerData.lastResponseTime) > TIMEOUT_CONNECTION) {
+            kick = true;
+            kickReason = QString("连接超时 (%1秒无响应)").arg((now - playerData.lastResponseTime)/1000);
+        }
+        // 2. 检查下载超时
+        // 只有当玩家正在下载状态，且距离上次请求分片已经很久了
+        else if (playerData.isDownloading && (now - playerData.lastDownloadTime) > TIMEOUT_DOWNLOAD) {
+            kick = true;
+            kickReason = QString("下载卡死 (%1秒无进度)").arg((now - playerData.lastDownloadTime)/1000);
+        }
+
+        if (kick) {
+            LOG_WARNING(QString("👢 踢出玩家 [%1] (PID:%2): %3")
+                            .arg(playerData.name).arg(pid).arg(kickReason));
+
+            if (playerData.socket) {
+                playerData.socket->disconnectFromHost();
+            }
+            ++it;
+        } else {
+            ++it;
+        }
     }
 }
 
