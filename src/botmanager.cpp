@@ -45,6 +45,9 @@ void BotManager::initializeBots(int count, const QString &configPath)
         // 创建 Client 实例
         bot->client = new class Client(this);
 
+        // 设置命令来源
+        bot->commandSource = From_Server;
+
         // 设置凭据 (默认使用 SRP 0x53)
         bot->client->setCredentials(fullUsername, password, Protocol_SRP_0x53);
 
@@ -100,6 +103,7 @@ bool BotManager::onRequestCreateGame(const QString &creatorName, const QString &
         LOG_INFO(QString("⚠️ 无空闲机器人，动态扩容: [%1]").arg(newUsername));
 
         targetBot = new Bot(newId, newUsername, m_defaultPassword);
+        targetBot->commandSource = commandSource;
         targetBot->client = new class Client(this);
         targetBot->client->setCredentials(newUsername, m_defaultPassword, Protocol_SRP_0x53);
 
@@ -195,11 +199,32 @@ void BotManager::onBotAccountCreated(Bot *bot)
     LOG_INFO(QString("🆕 [%1] 账号注册成功，正在尝试登录...").arg(bot->username));
 }
 
-void BotManager::onBotGameCreated(Bot *bot)
+void BotManager::onBotGameCreated(Bot* bot)
 {
     if (!bot) return;
+
+    // 1. 更新状态
     bot->state = BotState::Waiting;
-    LOG_INFO(QString("🎮 [%1] 房间创建成功").arg(bot->username));
+
+    // 2. 获取房主 UUID
+    QString hostUuid = bot->pendingTask.creatorName;
+
+    LOG_INFO(QString("🎮 [%1] 房间创建成功 (房主UUID: %2)").arg(bot->username, hostUuid));
+
+    // 4. 发送 TCP 控制指令让客户端进入
+    if (m_p2pServer) {
+        bool sent = m_p2pServer->sendControlEnterRoom(hostUuid, m_controlPort);
+
+        if (sent) {
+            LOG_INFO(QString("🚀 [自动进入] 发送指令 -> 目标UUID:[%1] 端口:[%2]").arg(m_controlPort));
+        } else {
+            LOG_WARNING(QString("❌ [自动进入] 发送失败: 目标UUID [%1] 不在线").arg(hostUuid));
+        }
+    } else {
+        LOG_ERROR("❌ BotManager 未绑定 P2PServer，无法发送控制指令");
+    }
+
+    // 5. 广播状态变更
     emit botStateChanged(bot->id, bot->username, bot->state);
 }
 

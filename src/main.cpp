@@ -215,8 +215,8 @@ int main(int argc, char *argv[]) {
         QString action = parts[0].toLower();
 
         // 获取真实的 BotManager (从 War3Bot 实例中获取)
-        BotManager* activeBotManager = war3bot.getBotManager();
-        if (!activeBotManager) {
+        BotManager *botManager = war3bot.getBotManager();
+        if (!botManager) {
             LOG_ERROR("无法获取 BotManager 实例");
             return;
         }
@@ -237,14 +237,14 @@ int main(int argc, char *argv[]) {
 
             // 如果是 Bot 模式 (多机器人)
             if (isBotMode) {
-                const auto &bots = activeBotManager->getAllBots();
+                const auto &bots = botManager->getAllBots();
                 bool foundBot = false;
 
                 // 场景 A: 批量启动
                 if (user.isEmpty()) {
                     LOG_INFO("🤖 收到批量启动指令，正在启动所有机器人...");
                     // startAll 内部已经包含了状态检查和错峰逻辑 (前提是你修改了 BotManager)
-                    activeBotManager->startAll();
+                    botManager->startAll();
                     return;
                 }
 
@@ -300,7 +300,7 @@ int main(int argc, char *argv[]) {
             QString targetUserPass = (parts.size() > 3) ? parts[3] : "";
             QString gameEnterRoomPass = (parts.size() > 4) ? parts[4] : "";
             if (isBotMode) {
-                const auto &bots = activeBotManager->getAllBots(); // 使用正确的 Manager
+                const auto &bots = botManager->getAllBots(); // 使用正确的 Manager
                 bool foundBot = false;
 
                 for (auto *bot : bots) {
@@ -311,7 +311,7 @@ int main(int argc, char *argv[]) {
                         if (bot->username.compare(targetUser, Qt::CaseInsensitive) == 0) {
                             if (bot->client->isConnected()) {
                                 LOG_INFO(QString("🤖 [Bot-%1] 指定调用 %2 创建游戏...").arg(bot->id).arg(bot->username));
-                                bot->client->createGame(gameName, gameEnterRoomPass, ProviderVersion::Provider_TFT_New, ComboGameType::Game_TFT_Custom, SubGameType::SubType_Internet, LadderType::Ladder_None);
+                                bot->client->createGame(gameName, gameEnterRoomPass, Provider_TFT_New, Game_TFT_Custom, SubType_Internet, Ladder_None, From_Server);
                                 bot->state = BotState::Creating;
                                 foundBot = true;
                             } else {
@@ -325,7 +325,7 @@ int main(int argc, char *argv[]) {
                     else {
                         if (bot->client->isConnected() && bot->state == BotState::Idle) {
                             LOG_INFO(QString("🤖 [Bot-%1] 状态空闲，已被选中创建游戏: %2").arg(bot->id).arg(gameName));
-                            bot->client->createGame(gameName, gameEnterRoomPass, ProviderVersion::Provider_TFT_New, ComboGameType::Game_TFT_Custom, SubGameType::SubType_Internet, LadderType::Ladder_None);
+                            bot->client->createGame(gameName, gameEnterRoomPass, Provider_TFT_New, Game_TFT_Custom, SubType_Internet, Ladder_None, From_Server);
                             bot->state = BotState::Creating;
                             foundBot = true;
                             break;
@@ -349,7 +349,7 @@ int main(int argc, char *argv[]) {
             QString targetUser = (parts.size() > 1) ? parts[1] : "";
 
             if (isBotMode) {
-                const auto &bots = activeBotManager->getAllBots();
+                const auto &bots = botManager->getAllBots();
                 int count = 0;
 
                 if (targetUser.isEmpty()) LOG_INFO("❌ 正在 [销毁] 所有机器人的房间...");
@@ -378,7 +378,7 @@ int main(int argc, char *argv[]) {
             QString targetUser = (parts.size() > 1) ? parts[1] : "";
 
             if (isBotMode) {
-                const auto &bots = activeBotManager->getAllBots();
+                const auto &bots = botManager->getAllBots();
                 int count = 0;
 
                 if (targetUser.isEmpty()) LOG_INFO("🛑 正在停止所有机器人的广播...");
@@ -416,10 +416,10 @@ int main(int argc, char *argv[]) {
         QString uptimeStr = QString("运行 %1秒").arg(uptimeSeconds);
 
         // 获取真实状态
-        BotManager* bm = war3bot.getBotManager();
+        BotManager *botManager = war3bot.getBotManager();
         int online = 0, idle = 0;
-        if (bm) {
-            const auto& bots = bm->getAllBots();
+        if (botManager) {
+            const auto &bots = botManager->getAllBots();
             for(auto* b : bots) {
                 if (b->client && b->client->isConnected()) online++;
                 if (b->state == BotState::Idle) idle++;

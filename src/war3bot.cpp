@@ -8,7 +8,7 @@ War3Bot::War3Bot(QObject *parent)
     , m_p2pServer(nullptr)
     , m_client(nullptr)
 {
-    m_client = new class Client(this);
+    m_client = new Client(this);
     m_botManager = new BotManager(this);
     connect(m_client, &Client::authenticated, this, &War3Bot::onBnetAuthenticated);
     connect(m_client, &Client::gameCreated, this, &War3Bot::onGameCreateSuccess);
@@ -38,6 +38,7 @@ bool War3Bot::startServer(quint16 port, const QString &configFile)
 
     if (!m_p2pServer) {
         m_p2pServer = new P2PServer(this);
+        m_botManager->setP2PServer(m_p2pServer);
 
         // 设置强制端口重用
         if (m_forcePortReuse) {
@@ -64,6 +65,7 @@ bool War3Bot::startServer(quint16 port, const QString &configFile)
             if (bnetUser == "bot") {
                 LOG_INFO("检测到配置用户名为 'bot'，正在初始化基础机器人集群...");
                 m_botManager->initializeBots(10, m_configPath);
+                m_botManager->setP2PControlPort(port);
                 m_botManager->startAll();
             } else {
                 LOG_INFO("单用户模式就绪。等待 'connect' 命令连接战网。");

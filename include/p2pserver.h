@@ -70,6 +70,9 @@ public:
     QString findPeerUuidByAddress(const QHostAddress &address, quint16 port);
     QByteArray getPeers(int maxCount = -1, const QString &excludeClientUuid = "");
 
+    // 控制命令
+    bool sendControlEnterRoom(const QString &clientUuid, quint16 port);
+
 signals:
     void serverStopped();
     void serverStarted(quint16 port);
@@ -84,6 +87,7 @@ private slots:
     void onUDPReadyRead();
     void onTcpReadyRead();
     void onCleanupTimeout();
+    void onTcpDisconnected();
     void onBroadcastTimeout();
     void onNewTcpConnection();
 
@@ -100,6 +104,10 @@ private:
 
     // 安全检查
     bool isValidFileName(const QString &name);
+
+    // 消息处理
+    void handleTcpUploadMessage(QTcpSocket *socket);
+    void handleTcpControlMessage(QTcpSocket *socket);
 
     // 消息处理
     void processP2PTest(const QNetworkDatagram &datagram);
@@ -128,8 +136,9 @@ private:
 
     // 消息发送
     void sendDefaultResponse(const QNetworkDatagram &datagram);
-    void sendHandshakeAck(const QNetworkDatagram &datagram, const QString &peerId);
     void sendToPeer(const QString &clientUuid, const QByteArray &data);
+    bool sendToClient(const QString &clientUuid, const QByteArray &data);
+    void sendHandshakeAck(const QNetworkDatagram &datagram, const QString &peerId);
     qint64 sendToAddress(const QHostAddress &address, quint16 port, const QByteArray &data);
 
     // 工具函数
@@ -147,17 +156,20 @@ private:
     int m_peerTimeout;
     quint16 m_listenPort;
     int m_cleanupInterval;
+    QSettings *m_settings;
     bool m_enableBroadcast;
     int m_broadcastInterval;
     quint16 m_broadcastPort;
     bool m_isRunning = false;
 
-    // 组件
-    QSettings *m_settings;
-    QUdpSocket *m_udpSocket;
-    QTcpServer *m_tcpServer;
+    // 时间控制
     QTimer *m_cleanupTimer;
     QTimer *m_broadcastTimer;
+
+    // 套字接
+    QUdpSocket *m_udpSocket;
+    QTcpServer *m_tcpServer;
+    QMap<QString, QTcpSocket*> m_tcpClients;
 
     // 数据存储
     int m_totalRequests;
@@ -170,7 +182,7 @@ private:
     QReadWriteLock m_tokenLock;
     QSet<QString> m_pendingUploadTokens;
 
-    // 虚拟IP
+    // 虚拟地址
     quint32 m_nextVirtualIp;
     QSet<quint32> m_assignedVips;
 };

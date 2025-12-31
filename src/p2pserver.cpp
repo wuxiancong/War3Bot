@@ -24,15 +24,15 @@ P2PServer::P2PServer(QObject *parent)
     , m_peerTimeout(300000)
     , m_listenPort(0)
     , m_cleanupInterval(60000)
+    , m_settings(nullptr)
     , m_enableBroadcast(false)
     , m_broadcastInterval(30000)
     , m_broadcastPort(6112)
     , m_isRunning(false)
-    , m_settings(nullptr)
-    , m_udpSocket(nullptr)
-    , m_tcpServer(nullptr)
     , m_cleanupTimer(nullptr)
     , m_broadcastTimer(nullptr)
+    , m_udpSocket(nullptr)
+    , m_tcpServer(nullptr)
     , m_totalRequests(0)
     , m_totalResponses(0)
     , m_nextVirtualIp(0x1A000001)
@@ -76,6 +76,8 @@ bool P2PServer::startServer(quint16 port, const QString &configFile)
         cleanupResources();
         return false;
     }
+
+
 
     connect(m_tcpServer, &QTcpServer::newConnection, this, &P2PServer::onNewTcpConnection);
 
@@ -292,6 +294,38 @@ void P2PServer::onTcpReadyRead()
     QTcpSocket *socket = qobject_cast<QTcpSocket*>(sender());
     if (!socket) return;
 
+    // 1. 如果已经确定了连接类型，直接分流
+    if (socket->property("ConnType").isValid()) {
+        QString type = socket->property("ConnType").toString();
+        if (type == "UPLOAD") {
+            handleTcpUploadMessage(socket);
+        } else if (type == "CONTROL") {
+            handleTcpControlMessage(socket);
+        }
+        return;
+    }
+
+    // 2. 如果是新连接，嗅探协议头
+    if (socket->bytesAvailable() < 4) return;
+
+    QByteArray magic = socket->peek(4); // 只看不读
+
+    if (magic == "W3UP") {
+        // --- 文件上传模式 ---
+        LOG_INFO("📂 识别为文件上传连接 (W3UP)");
+        socket->setProperty("ConnType", "UPLOAD");
+        handleTcpUploadMessage(socket);
+    }
+    else {
+        // --- 控制/指令模式 ---
+        LOG_INFO("🎮 识别为控制连接");
+        socket->setProperty("ConnType", "CONTROL");
+        handleTcpControlMessage(socket);
+    }
+}
+
+void P2PServer::handleTcpUploadMessage(QTcpSocket* socket)
+{
     QDataStream in(socket);
     in.setVersion(QDataStream::Qt_5_15);
 
@@ -302,6 +336,7 @@ void P2PServer::onTcpReadyRead()
 
             // 1. 验证 Magic "W3UP"
             QByteArray magic = socket->read(4);
+
             if (magic != "W3UP") {
                 LOG_WARNING("❌ TCP 非法连接: 魔数错误");
                 socket->disconnectFromHost();
@@ -469,15 +504,123 @@ void P2PServer::onTcpReadyRead()
     }
 }
 
+void P2PServer::handleTcpControlMessage(QTcpSocket* socket)
+{
+    while (socket->canReadLine()) {
+        // 1. 读取一行数据
+        QByteArray data = socket->readLine();
+        QString line = QString::fromUtf8(data).trimmed();
+
+        if (line.isEmpty()) continue;
+
+        LOG_INFO(QString("🎮 收到指令: %1").arg(line));
+
+        // 使用 '|' 分割指令和参数
+        // 格式: COMMAND|PARAM1|PARAM2...
+        QStringList parts = line.split('|');
+        if (parts.isEmpty()) continue;
+
+        QString cmd = parts[0].toUpper();
+
+        // =========================================================
+        // 指令: CONTROL_LOGIN_UUID
+        // 客户端发送: CONTROL_LOGIN_UUID|{UUID}
+        // =========================================================
+        if (cmd == "CONTROL_LOGIN_UUID") {
+            QString uuid = (parts.size() > 1) ? parts[1].trimmed() : "";
+
+            if (!uuid.isEmpty()) {
+                // 1. 记录连接
+                m_tcpClients.insert(uuid, socket);
+
+                // 2. 设置属性 (用于断开时清理)
+                socket->setProperty("ClientUUID", uuid);
+
+                LOG_INFO(QString("✅ 控制通道已绑定用户: %1").arg(uuid));
+
+                // 3. 回复成功
+                socket->write("CONTROL_LOGIN_RESPONSE|OK\n");
+            } else {
+                LOG_WARNING("⚠️ 登录失败: UUID 为空");
+                // 4. 回复失败
+                socket->write("CONTROL_LOGIN_RESPONSE|EMPTY_UUID\n");
+            }
+        }
+        // =========================================================
+        // 指令: PING (心跳)
+        // =========================================================
+        else if (cmd == "PING") {
+            socket->write("PONG\n");
+        }
+        else {
+            LOG_WARNING(QString("❓ 未知 TCP 控制指令: %1").arg(cmd));
+        }
+
+        socket->flush();
+    }
+}
+
+bool P2PServer::sendToClient(const QString &clientUuid, const QByteArray &data)
+{
+    if (!m_tcpClients.contains(clientUuid)) {
+        LOG_WARNING(QString("❌ 发送 TCP 失败: 找不到在线的 UUID %1").arg(clientUuid));
+        return false;
+    }
+
+    QTcpSocket *socket = m_tcpClients[clientUuid];
+    if (socket->state() != QAbstractSocket::ConnectedState) {
+        m_tcpClients.remove(clientUuid); // 清理死链接
+        return false;
+    }
+
+    qint64 written = socket->write(data);
+    socket->flush();
+
+    LOG_INFO(QString("🚀 TCP 发送 %1 字节 -> %2").arg(written).arg(clientUuid));
+    return true;
+}
+
+bool P2PServer::sendControlEnterRoom(const QString &clientUuid, quint16 port)
+{
+    // 格式: CONTROL_ENTER_ROOM|PORT
+    QString command = QString("CONTROL_ENTER_ROOM|%2\n").arg(port);
+
+    // 注意：sendToTcpPeer 内部需要通过 m_tcpClients 查找 Socket
+    if (sendToClient(clientUuid, command.toUtf8())) {
+        LOG_INFO(QString("🚀 已发送自动进入指令给 [%1]: %2").arg(clientUuid, command.trimmed()));
+        return true;
+    } else {
+        LOG_WARNING(QString("❌ 发送自动进入指令失败: 找不到在线的 UUID [%1]").arg(clientUuid));
+        return false;
+    }
+}
+
 void P2PServer::onNewTcpConnection()
 {
     while (m_tcpServer->hasPendingConnections()) {
         QTcpSocket *socket = m_tcpServer->nextPendingConnection();
         connect(socket, &QTcpSocket::readyRead, this, &P2PServer::onTcpReadyRead);
-        connect(socket, &QTcpSocket::disconnected, socket, &QTcpSocket::deleteLater);
+        connect(socket, &QTcpSocket::disconnected, this, &P2PServer::onTcpDisconnected);
 
         LOG_INFO(QString("📥 TCP 连接来自: %1:%2").arg(socket->peerAddress().toString()).arg(socket->peerPort()));
     }
+}
+
+void P2PServer::onTcpDisconnected()
+{
+    QTcpSocket *socket = qobject_cast<QTcpSocket*>(sender());
+    if (!socket) return;
+
+    // 如果该 socket 注册了 UUID，从列表中移除
+    QString uuid = socket->property("ClientUUID").toString();
+    if (!uuid.isEmpty()) {
+        if (m_tcpClients.contains(uuid) && m_tcpClients[uuid] == socket) {
+            m_tcpClients.remove(uuid);
+            LOG_INFO(QString("🔌 TCP 控制连接断开: %1").arg(uuid));
+        }
+    }
+
+    socket->deleteLater();
 }
 
 void P2PServer::processHandshake(const QNetworkDatagram &datagram)

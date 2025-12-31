@@ -4,35 +4,38 @@
 #include <QObject>
 #include <QVector>
 #include <QSettings>
+
 #include "client.h"
+#include "p2pserver.h"
 
 // === 1. 机器人状态枚举 ===
 enum class BotState {
-    Unregistered,               // 未注册 (初始状态或正在注册)
-    Idle,                       // 空闲中 (已登录在大厅)
-    Creating,                   // 创建中 (正在发送创建房间包)
-    Waiting,                    // 等待中 (房间已创建，等待玩家加入)
-    InGame,                     // 游戏中 (游戏已开始)
-    Connecting,                 // 连接中
-    Disconnected                // 断开连接
+    Unregistered,                               // 未注册 (初始状态或正在注册)
+    Idle,                                       // 空闲中 (已登录在大厅)
+    Creating,                                   // 创建中 (正在发送创建房间包)
+    Waiting,                                    // 等待中 (房间已创建，等待玩家加入)
+    InGame,                                     // 游戏中 (游戏已开始)
+    Connecting,                                 // 连接中
+    Disconnected                                // 断开连接
 };
 
 // === 2. 机器人结构体 ===
 struct Bot {
-    int id;                     // 数字 ID (1, 2, 3...)
-    QString username;           // 完整用户名 (例如 bot1)
-    QString password;           // 密码
-    BotState state;             // 当前状态
-    Client *client;             // 客户端对象
+    int id;                                     // 数字 ID (1, 2, 3...)
+    Client *client;                             // 客户端对象
+    BotState state;                             // 当前状态
+    QString username;                           // 完整用户名 (例如 bot1)
+    QString password;                           // 密码
+    CommandSource commandSource = From_Server;  // 命令来源
 
     struct Task {
-        bool hasTask = false;   // 是否有任务
-        QString creatorName;    // 谁下的命令 (虚拟房主)
-        QString gameName;       // 房间名
+        bool hasTask = false;                   // 是否有任务
+        QString creatorName;                    // 谁下的命令 (虚拟房主)
+        QString gameName;                       // 房间名
     } pendingTask;
 
     Bot(int _id, QString _user, QString _pass)
-        : id(_id), username(_user), password(_pass), state(BotState::Disconnected), client(nullptr) {}
+        : id(_id), client(nullptr), state(BotState::Disconnected), username(_user), password(_pass) {}
 
     ~Bot() { if (client) client->deleteLater(); }
 };
@@ -57,6 +60,10 @@ public:
     // 获取所有机器人列表
     const QVector<Bot*>& getAllBots() const;
 
+    // 设置 P2PServer
+    void setP2PServer(P2PServer *server) { m_p2pServer = server; }
+    void setP2PControlPort(quint16 port) { m_controlPort = port; }
+
 signals:
     // 状态变更信号，用于日志或UI更新
     void botStateChanged(int botId, QString username, BotState newState);
@@ -76,10 +83,12 @@ private:
 
     // 缓存连接信息
     QString m_targetServer;
+    quint16 m_controlPort;
     quint16 m_targetPort;
     QString m_configPath;
     QString m_userPrefix;
     QString m_defaultPassword;
+    P2PServer *m_p2pServer = nullptr;
 };
 
 #endif // BOTMANAGER_H
