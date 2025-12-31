@@ -702,32 +702,44 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
                 else {
                     // 检查是否需要下载
                     if (m_slots[i].downloadStatus != 0) {
-                        m_slots[i].downloadStatus = 0; // 设置为 0%
+                        // 1. 修改槽位状态
+                        m_slots[i].downloadStatus = 0; // 0% Started
 
-                        // 1. 更新下载状态标志
+                        // 2. 修改玩家状态
                         playerData.isDownloading = true;
                         playerData.downloadOffset = 0;
 
-                        // 2. 构造组合包：0x3F (开始) + 0x09 (更新UI)
+                        // ====================================================
+                        // 构建组合包 (Batch Packet)
+                        // 顺序：3F(Start) -> 09(Slot Update) -> 43(First Chunk)
+                        // ====================================================
                         QByteArray packetBatch;
 
                         // [包 1] 0x3F Start Download
                         packetBatch.append(createW3GSStartDownloadPacket(currentPid));
 
-                        // [包 2] 0x09 Slot Info (告诉客户端：我的下载进度是 0%)
-                        // 注意：必须先更新 m_slots 数据再生成这个包
+                        // [包 2] 0x09 Slot Info (广播新的下载状态 0%)
+                        // 注意：虽然发给所有人的 0x09 都一样，但这里是专门发给下载者的
                         packetBatch.append(createW3GSSlotInfoPacket());
 
+                        // [包 3] 0x43 Map Part (第一块数据，Offset 0)
+                        // 获取第一块数据
+                        const QByteArray &mapData = m_war3Map.getMapRawData();
+                        int chunkSize = 1442;
+                        if (mapData.size() < chunkSize) chunkSize = mapData.size();
+                        QByteArray firstChunk = mapData.mid(0, chunkSize);
+
+                        // 这里的 FromPid = 1 (主机), ToPid = currentPid
+                        packetBatch.append(createW3GSMapPartPacket(currentPid, 1, 0, firstChunk));
+
+                        // 一次性发送所有数据！
                         socket->write(packetBatch);
                         socket->flush();
 
-                        LOG_INFO(QString("⏬ [握手完成] 已发送 0x3F + 0x09，正在推送第一块数据..."));
+                        // 更新偏移量，为下一次 0x44 ACK 做准备
+                        playerData.downloadOffset += chunkSize;
 
-                        // =======================================================
-                        // 3. 主动发送第一块地图数据 (Offset 0)
-                        //    不要等待客户端，它不会理你的，直到你给它数据！
-                        // =======================================================
-                        sendNextMapPart(currentPid);
+                        LOG_INFO(QString("🚀 [加速传输] 已向 PID %1 发送 3F+09+43 (Header) 组合包").arg(currentPid));
                     }
                 }
                 break;
