@@ -657,29 +657,6 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         LOG_INFO("💓 收到玩家 TCP Pong");
         break;
 
-    case 0x3F: // W3GS_STARTDOWNLOAD
-    {
-        quint8 currentPid = 0;
-        for (auto it = m_players.begin(); it != m_players.end(); ++it) {
-            if (it.value().socket == socket) {
-                currentPid = it.key();
-                break;
-            }
-        }
-
-        if (currentPid == 0) return;
-
-        LOG_INFO(QString("⏬ 收到 [0x3F] 客户端下载就绪信号 (PID: %1)").arg(currentPid));
-
-        // 检查状态是否合法
-        if (m_players[currentPid].isDownloading) {
-            sendNextMapPart(currentPid);
-        } else {
-            LOG_WARNING("📪 收到 [0x3F] 但玩家未处于下载状态，忽略");
-        }
-    }
-    break;
-
     case 0x42: // W3GS_MAPSIZE
     {
         if (payload.size() < 9) return;
@@ -723,20 +700,34 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
                 }
                 // 情况 B: 需要下载
                 else {
+                    // 检查是否需要下载
                     if (m_slots[i].downloadStatus != 0) {
-                        m_slots[i].downloadStatus = 0;
-                        slotUpdated = true;
-                        LOG_WARNING(QString("⚠️ 玩家 [%1] 需要下载地图 (Client: %2 vs Host: %3)").arg(playerName).arg(clientMapSize).arg(hostMapSize));
+                        m_slots[i].downloadStatus = 0; // 设置为 0%
 
-                        // 1. 发送 StartDownload (0x3F)
-                        QByteArray startPkt = createW3GSStartDownloadPacket(currentPid);
-                        socket->write(startPkt);
-                        socket->flush(); // 强制推送到网络层
-                        LOG_INFO(QString("⏬ 开始下载 [0x3F] StartDownload"));
-
-                        // 2. 初始化下载状态
+                        // 1. 更新下载状态标志
                         playerData.isDownloading = true;
                         playerData.downloadOffset = 0;
+
+                        // 2. 构造组合包：0x3F (开始) + 0x09 (更新UI)
+                        QByteArray packetBatch;
+
+                        // [包 1] 0x3F Start Download
+                        packetBatch.append(createW3GSStartDownloadPacket(currentPid));
+
+                        // [包 2] 0x09 Slot Info (告诉客户端：我的下载进度是 0%)
+                        // 注意：必须先更新 m_slots 数据再生成这个包
+                        packetBatch.append(createW3GSSlotInfoPacket());
+
+                        socket->write(packetBatch);
+                        socket->flush();
+
+                        LOG_INFO(QString("⏬ [握手完成] 已发送 0x3F + 0x09，正在推送第一块数据..."));
+
+                        // =======================================================
+                        // 3. 主动发送第一块地图数据 (Offset 0)
+                        //    不要等待客户端，它不会理你的，直到你给它数据！
+                        // =======================================================
+                        sendNextMapPart(currentPid, 1); // 1 是 Host 的 PID
                     }
                 }
                 break;
