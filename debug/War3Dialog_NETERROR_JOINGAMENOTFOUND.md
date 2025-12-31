@@ -3,7 +3,7 @@
 ![x64dbg调试截图](https://github.com/wuxiancong/War3Bot/raw/main/debug/images/War3Dialog_NETERROR_JOINGAMENOTFOUND.PNG)
 
 
-## 问题描述 (Issue Description)
+## 1. 问题描述 (Issue Description)
 
 **现象:**
 在使用自定义 C++ 编写的 War3Bot 创建房间后：
@@ -2543,7 +2543,7 @@ graph TD
 **总结：**
 根本没有走eax=1的的分支，导致 call game.6F6803C0，传递固定参数C。
 
-### 3. 最终原因：数据包解析错误
+## 3. 初步分析：数据包解析错误
 - **地址**: `6F664220` (数据包解析函数)
 - **偏移**: `game.dll + 664220`
 - **关键发现**: 。
@@ -2750,7 +2750,7 @@ graph TD
 6F66449E | 83C4 38                       | add esp,38                             |
 6F6644A1 | C2 1800                       | ret 18                                 |
 ```
-### 3.1 判断协议类型（BNET 或者 W3GS）
+### 3.2 判断协议类型（BNET 或者 W3GS）
 - **BNET**: `FF`
 - **W3GS**: `F7`
 
@@ -4637,3 +4637,95 @@ sequenceDiagram
     *   **删除**: `out << m_baseGameType;`
     *   **删除**: `out << m_slots.size();`
     *   **原因**: 汇编证明客户端直接从 `SlotData` 跳到了 `PID` 读取。
+
+
+## 4.最终原因
+- 保留三个字段的6字节，在槽数据前的字段加上6字节告诉客户端如何解析，其实后面的三个字段和槽数据是一个整体。
+```cpp
+QByteArray Client::createW3GSSlotInfoJoinPacket(quint8 playerID, const QHostAddress& externalIp, quint16 localPort)
+{
+    LOG_INFO("=== 构建 W3GS_SLOTINFOJOIN (0x04) ===");
+
+    QByteArray packet;
+    QDataStream out(&packet, QIODevice::WriteOnly);
+    out.setByteOrder(QDataStream::LittleEndian); // War3 协议统一使用小端序
+
+    // -------------------------------------------------
+    // 1. 准备数据
+    // -------------------------------------------------
+    QByteArray slotData = serializeSlotData();
+    
+    // 【关键】计算 SlotInfoBlock 的总长度
+    // 结构包含: [SlotData (N字节)] + [RandomSeed (4)] + [LayoutStyle (1)] + [NumSlots (1)]
+    // 所以长度 = slotData.size() + 6
+    quint16 slotBlockSize = (quint16)slotData.size() + 6;
+
+    // -------------------------------------------------
+    // 2. 写入包头 (Header)
+    // -------------------------------------------------
+    out << (quint8)0xF7         // Header
+        << (quint8)0x04         // ID: W3GS_SLOTINFOJOIN
+        << (quint16)0;          // Total Length (稍后回填)
+
+    // -------------------------------------------------
+    // 3. 写入槽位信息块 (Slot Info Block)
+    // -------------------------------------------------
+    // 3.1 写入块长度 (必须包含尾部的6字节，否则客户端解析错位)
+    out << slotBlockSize;
+
+    // 3.2 写入槽位数据
+    out.writeRawData(slotData.data(), slotData.size());
+
+    // 3.3 写入尾部信息 (共6字节)
+    out << (quint32)m_randomSeed;           // 随机种子
+    out << (quint8)m_layoutStyle;           // 布局 (3=Fixed)
+    out << (quint8)m_slots.size();          // 玩家总数
+
+    // -------------------------------------------------
+    // 4. 写入玩家连接信息 (Player Join Info)
+    // -------------------------------------------------
+    // 4.1 玩家 ID
+    out << (quint8)playerID;
+
+    // 4.2 网络端口与 IP
+    out << (quint16)2;                      // AF_INET
+    out << (quint16)qToBigEndian(localPort);// Port (网络字节序/大端)
+    writeIpToStreamWithLog(out, externalIp);// IP Address
+
+    // 4.3 填充数据 (Unknown)
+    out << (quint32)0;                      // Unknown 1
+    out << (quint32)0;                      // Unknown 2
+
+    // -------------------------------------------------
+    // 5. 收尾工作
+    // -------------------------------------------------
+    // 回填包总长度 (覆盖偏移 2-3 的位置)
+    quint16 totalSize = (quint16)packet.size();
+    QDataStream lenStream(&packet, QIODevice::ReadWrite);
+    lenStream.setByteOrder(QDataStream::LittleEndian);
+    lenStream.skipRawData(2);
+    lenStream << totalSize;
+
+    // -------------------------------------------------
+    // 6. 日志记录
+    // -------------------------------------------------
+    LOG_INFO(QString("📦 [0x04] 生成完毕: 总长=%1, 槽位块长=%2, PID=%3")
+             .arg(totalSize).arg(slotBlockSize).arg(playerID));
+    
+    // 校验日志：打印 PID 及其前一个字节，确保没有错位
+    // 偏移量计算: Header(4) + Len(2) + SlotBlock(slotBlockSize)
+    // PID 应该位于: 4 + 2 + slotBlockSize 的位置
+    if (packet.size() > 6 + slotBlockSize) {
+        int pidOffset = 6 + slotBlockSize;
+        quint8 pidInPacket = (quint8)packet.at(pidOffset);
+        quint8 byteBefore = (quint8)packet.at(pidOffset - 1);
+        
+        LOG_INFO(QString("🔍 偏移校验: 预期PID位置[%1] 值=0x%2 (前一字节=0x%3)")
+                 .arg(pidOffset)
+                 .arg(QString::number(pidInPacket, 16).toUpper())
+                 .arg(QString::number(byteBefore, 16).toUpper())); // 前一字节应该是 NumSlots (0x0A)
+    }
+
+    return packet;
+}
+```
