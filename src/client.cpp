@@ -574,7 +574,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         }
 
         // 分配 PID
-        quint8 hostId = slotIndex + 1;
+        quint8 hostId = slotIndex + 2;
 
         // 更新内存中的槽位状态
         m_slots[slotIndex].pid = hostId;
