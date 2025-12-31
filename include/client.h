@@ -379,7 +379,7 @@ private:
                                       const QHostAddress& internalIp, quint16 internalPort);
 
     // --- 内部网络处理 ---
-    void sendNextMapPart(quint8 pid, quint8 from = 1);
+    void sendNextMapPart(quint8 toPid, quint8 fromPid = 1);
     void sendPacket(TCPPacketID id, const QByteArray &payload);
     void handleTcpPacket(TCPPacketID id, const QByteArray &data);
     void handleUdpPacket(const QByteArray &data, const QHostAddress &sender, quint16 senderPort);

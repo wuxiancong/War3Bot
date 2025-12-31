@@ -171,52 +171,79 @@ void Client::sendPacket(TCPPacketID id, const QByteArray &payload)
                  .arg(hexStr));
 }
 
-void Client::sendNextMapPart(quint8 pid, quint8 from)
+void Client::sendNextMapPart(quint8 toPid, quint8 fromPid)
 {
-    if (!m_players.contains(pid)) return;
+    if (!m_players.contains(toPid)) {
+        LOG_ERROR(QString("❌ sendNextMapPart: 找不到 PID %1").arg(toPid));
+        return;
+    }
 
-    PlayerData &p = m_players[pid];
-    if (!p.isDownloading) return;
+    PlayerData &playerData = m_players[toPid];
 
-    const QByteArray &fullMapData = m_war3Map.getMapRawData();
-    quint32 mapSize = (quint32)fullMapData.size();
+    // [检查点 1] 状态检查
+    if (!playerData.isDownloading) {
+        LOG_WARNING(QString("⚠️ 玩家 [%1] 未处于下载状态，忽略发送请求").arg(playerData.name));
+        return;
+    }
 
-    // 检查是否传输完成
-    if (p.downloadOffset >= mapSize) {
-        LOG_INFO(QString("✅ 玩家 [%1] 地图下载完成").arg(p.name));
-        p.isDownloading = false;
+    // 获取原始地图数据
+    const QByteArray &mapData = m_war3Map.getMapRawData(); // 确保 War3Map 类里有这个方法
+    quint32 totalSize = (quint32)mapData.size();
 
-        // 更新槽位状态为 100% 并广播
+    // [检查点 2] 数据有效性
+    if (totalSize == 0) {
+        LOG_ERROR("❌ 严重错误: 内存中没有地图数据！");
+        return;
+    }
+
+    // 检查是否完成
+    if (playerData.downloadOffset >= totalSize) {
+        LOG_INFO(QString("✅ 玩家 [%1] 地图下载完成 (Offset: %2 / %3)").arg(playerData.name).arg(playerData.downloadOffset).arg(totalSize));
+        playerData.isDownloading = false;
+
+        // 更新槽位并广播
         for (int i = 0; i < m_slots.size(); ++i) {
-            if (m_slots[i].pid == pid) {
+            if (m_slots[i].pid == toPid) {
                 m_slots[i].downloadStatus = 100;
                 break;
             }
         }
         broadcastSlotInfo();
+
+        // 发送最后一个 SlotInfo 给该玩家确认
+        playerData.socket->write(createW3GSSlotInfoPacket());
+        playerData.socket->flush();
         return;
     }
 
-    // 计算本次分片大小 (标准是 1442 字节)
-    quint32 chunkSize = 1442;
-    if (p.downloadOffset + chunkSize > mapSize) {
-        chunkSize = mapSize - p.downloadOffset;
+    // 计算分片
+    quint32 chunkSize = 1442; // 标准 MTU 安全大小
+    if (playerData.downloadOffset + chunkSize > totalSize) {
+        chunkSize = totalSize - playerData.downloadOffset;
     }
 
-    // 截取数据
-    QByteArray chunk = fullMapData.mid(p.downloadOffset, chunkSize);
+    QByteArray chunk = mapData.mid(playerData.downloadOffset, chunkSize);
 
-    // 构造并发送包
-    QByteArray packet = createW3GSMapPartPacket(pid, from, p.downloadOffset, chunk);
-    p.socket->write(packet);
-    p.socket->flush();
+    // 构造包 (0x43)
+    // FromPID = 1 (Host)
+    QByteArray packet = createW3GSMapPartPacket(toPid, fromPid, playerData.downloadOffset, chunk);
 
-    p.downloadOffset += chunkSize;
+    qint64 written = playerData.socket->write(packet);
+    playerData.socket->flush();
 
-    // 打印进度日志 (每 1MB 打印一次，防止刷屏)
-    if (p.downloadOffset % (1024 * 1024) < 2000) {
-        int percent = (int)((double)p.downloadOffset / mapSize * 100);
-        LOG_INFO(QString("   -> 正在发送地图给 [%1]: %2%").arg(p.name).arg(percent));
+    if (written > 0) {
+        // [日志] 仅每传输 1MB 打印一次，防止日志爆炸
+        if (playerData.downloadOffset == 0 || playerData.downloadOffset % (1024 * 1024) < 2000) {
+            int percent = (int)((double)playerData.downloadOffset / totalSize * 100);
+            LOG_INFO(QString("📤 发送分片: Offset %1 (Size %2) -> [%3] (%4%)")
+                         .arg(playerData.downloadOffset).arg(chunkSize).arg(playerData.name).arg(percent));
+        }
+
+        // 更新偏移量
+        playerData.downloadOffset += chunkSize;
+    } else {
+        LOG_ERROR(QString("❌ Socket 写入失败: %1").arg(playerData.socket->errorString()));
+        playerData.isDownloading = false; // 终止下载
     }
 }
 
@@ -556,18 +583,18 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         m_slots[slotIndex].computer = 0;
 
         // 保存玩家数据到列表
-        PlayerData newPlayer;
-        newPlayer.pid = hostId;
-        newPlayer.name = clientPlayerName;
-        newPlayer.socket = socket;
-        newPlayer.extIp = socket->peerAddress();
-        newPlayer.extPort = socket->peerPort();
-        newPlayer.intIp = QHostAddress(qToBigEndian(clientInternalIP));
-        newPlayer.intPort = clientInternalPort;
-        newPlayer.language = "EN";
-        newPlayer.codec = QTextCodec::codecForName("Windows-1252");
+        PlayerData playerData;
+        playerData.pid = hostId;
+        playerData.name = clientPlayerName;
+        playerData.socket = socket;
+        playerData.extIp = socket->peerAddress();
+        playerData.extPort = socket->peerPort();
+        playerData.intIp = QHostAddress(qToBigEndian(clientInternalIP));
+        playerData.intPort = clientInternalPort;
+        playerData.language = "EN";
+        playerData.codec = QTextCodec::codecForName("Windows-1252");
 
-        m_players.insert(hostId, newPlayer);
+        m_players.insert(hostId, playerData);
         LOG_INFO(QString("💾 已注册玩家: [%1] PID: %2").arg(clientPlayerName).arg(hostId));
 
         // 3. 构建握手响应包序列 (发送给新玩家)
@@ -605,7 +632,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
         // A. 广播新玩家加入信息 (0x06) 给所有老玩家 (排除新人自己)
         QByteArray newPlayerInfoPacket = createPlayerInfoPacket(
-            newPlayer.pid, newPlayer.name, newPlayer.extIp, newPlayer.extPort, newPlayer.intIp, newPlayer.intPort);
+            playerData.pid, playerData.name, playerData.extIp, playerData.extPort, playerData.intIp, playerData.intPort);
         broadcastPacket(newPlayerInfoPacket, hostId);
 
         // B. 广播最新槽位图 (0x09) 给房间所有人 (不排除任何人，确保所有人的 UI 刷新)
@@ -641,10 +668,10 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
         LOG_INFO(QString("🗺️ [0x42] 收到玩家地图报告: %1 字节 (Flag: %2)").arg(clientMapSize).arg(sizeFlag));
 
-        // 1. 寻找当前玩家的 PID
         quint8 currentPid = 0;
         QString playerName = "Unknown";
 
+        // 查找玩家
         for (auto it = m_players.begin(); it != m_players.end(); ++it) {
             if (it.value().socket == socket) {
                 currentPid = it.key();
@@ -653,42 +680,42 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
             }
         }
 
-        if (currentPid == 0) {
-            LOG_WARNING("⚠️ 收到未知 Socket 的地图报告，无法更新状态");
-            return;
-        }
+        if (currentPid == 0) return;
 
-        // 2. 验证地图大小并更新槽位
         quint32 hostMapSize = m_war3Map.getMapSize();
-        PlayerData playerData = m_players[currentPid];
+        PlayerData &playerData = m_players[currentPid];
 
         bool slotUpdated = false;
 
         for (int i = 0; i < m_slots.size(); ++i) {
             if (m_slots[i].pid == currentPid) {
-                // 校验大小：如果客户端报告的大小与主机一致，说明拥有地图
-                if (clientMapSize == hostMapSize) {
-                    // 仅当状态改变时才标记更新，避免不必要的广播
+                // 情况 A: 拥有地图
+                if (clientMapSize == hostMapSize && sizeFlag == 1) {
                     if (m_slots[i].downloadStatus != 100) {
-                        m_slots[i].downloadStatus = 100; // 100% 下载完成
+                        m_slots[i].downloadStatus = 100;
                         slotUpdated = true;
-                        LOG_INFO(QString("✅ 玩家 [%1] 已拥有地图 (Slot %2 -> 100%)").arg(playerName).arg(i));
+                        playerData.isDownloading = false; // 确保关闭下载状态
+                        LOG_INFO(QString("✅ 玩家 [%1] 地图校验通过").arg(playerName));
                     }
-                } else {
-                    // 大小不匹配，说明没有地图
+                }
+                // 情况 B: 需要下载
+                else {
                     if (m_slots[i].downloadStatus != 0) {
-                        m_slots[i].downloadStatus = 0;   // 0% 需要下载
+                        m_slots[i].downloadStatus = 0;
                         slotUpdated = true;
-                        LOG_WARNING(QString("⚠️ 玩家 [%1] 地图大小不匹配 (C:%2 vs S:%3) -> 需下载").arg(playerName).arg(clientMapSize).arg(hostMapSize));
+                        LOG_WARNING(QString("⚠️ 玩家 [%1] 需要下载地图 (Client: %2 vs Host: %3)").arg(playerName).arg(clientMapSize).arg(hostMapSize));
 
                         // 1. 发送 StartDownload (0x3F)
-                        socket->write(createW3GSStartDownloadPacket(currentPid));
+                        QByteArray startPkt = createW3GSStartDownloadPacket(currentPid);
+                        socket->write(startPkt);
+                        LOG_INFO(QString("   -> 发送 0x3F StartDownload"));
 
-                        // 2. 初始化下载状态
+                        // 2. 初始化下载状态 (直接修改引用对象)
                         playerData.isDownloading = true;
                         playerData.downloadOffset = 0;
 
-                        // 3. 立即发送第一块数据！
+                        // 3. 立即发送第一块数据
+                        LOG_INFO(QString("   -> 触发首个分片发送..."));
                         sendNextMapPart(currentPid);
                     }
                 }
@@ -696,12 +723,10 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
             }
         }
 
-        // 3. 广播更新
+        // 广播或回发
         if (slotUpdated) {
-            // 状态变了（例如从 未知->100%），必须广播给所有人看
             broadcastSlotInfo();
         } else {
-            // 状态没变，只回复当前玩家，维持握手协议流程
             socket->write(createW3GSSlotInfoPacket());
             socket->flush();
         }
@@ -1634,26 +1659,27 @@ QByteArray Client::createW3GSMapPartPacket(quint8 toPid, quint8 fromPid, quint32
     // Header: F7 43 [Len]
     out << (quint8)0xF7 << (quint8)0x43 << (quint16)0;
 
-    out << (quint8)toPid;   // To
-    out << (quint8)fromPid; // From (Host PID: 1)
-    out << (quint32)1;      // Unknown (Always 1)
-    out << (quint32)offset; // 当前分片在文件中的偏移量
-    out << (quint32)0;      // 占位 CRC32 (稍后回填)
+    out << (quint8)toPid;
+    out << (quint8)fromPid;
+    out << (quint32)1;      // Unknown
+    out << (quint32)offset; // Current Offset
+    out << (quint32)0;      // CRC Placeholder
 
-    // 写入地图数据分片
+    // Data
     out.writeRawData(chunkData.data(), chunkData.size());
 
-    // 回填长度
+    // Length
     quint16 totalSize = (quint16)packet.size();
     QDataStream ds(&packet, QIODevice::ReadWrite);
     ds.setByteOrder(QDataStream::LittleEndian);
     ds.skipRawData(2);
     ds << totalSize;
 
-    uLong crc = crc32(0L, Z_NULL, 0);
-    crc = crc32(crc, (const Bytef*)chunkData.constData(), chunkData.size());
+    // CRC Calculation (Standard Types)
+    unsigned long crc = crc32(0L, nullptr, 0);
+    crc = crc32(crc, reinterpret_cast<const unsigned char*>(chunkData.constData()), chunkData.size());
 
-    // 回填 CRC (偏移量：Header(4) + To(1) + From(1) + Unk(4) + Offset(4) = 14)
+    // Fill CRC (Offset 14)
     ds.device()->seek(14);
     ds << (quint32)crc;
 
@@ -1668,18 +1694,18 @@ void Client::broadcastChatMessage(const MultiLangMsg& msg, quint8 excludePid)
         // 排除 PID 1 (Host) 和 指定排除的 PID
         if (pid == excludePid || pid == 1) continue;
 
-        PlayerData &p = it.value();
-        QTcpSocket* socket = p.socket;
+        PlayerData &playerData = it.value();
+        QTcpSocket* socket = playerData.socket;
 
         if (!socket || socket->state() != QAbstractSocket::ConnectedState) continue;
 
         // 1. 根据玩家的语言标记 (CN/EN/RU...) 获取对应文本
-        QString textToSend = msg.get(p.language);
+        QString textToSend = msg.get(playerData.language);
 
         // 2. 转码 (根据玩家特定的 Codec)
         // 注意：这里 textToSend 已经是对应语言的 Unicode 字符串了
         // 例如俄语玩家获取到了俄文，然后用 CP1251 转码
-        QByteArray finalBytes = p.codec->fromUnicode(textToSend);
+        QByteArray finalBytes = playerData.codec->fromUnicode(textToSend);
 
         // 3. 造包并发送
         QByteArray chatPacket = createW3GSChatFromHostPacket(
@@ -1697,13 +1723,13 @@ void Client::broadcastChatMessage(const MultiLangMsg& msg, quint8 excludePid)
 void Client::broadcastPacket(const QByteArray &packet, quint8 excludePid)
 {
     for (auto it = m_players.begin(); it != m_players.end(); ++it) {
-        const PlayerData &p = it.value();
+        const PlayerData &playerData = it.value();
         // 如果 PID 匹配排除项，或者 Socket 无效，则跳过
-        if (excludePid != 0 && p.pid == excludePid) continue;
-        if (!p.socket || p.socket->state() != QAbstractSocket::ConnectedState) continue;
+        if (excludePid != 0 && playerData.pid == excludePid) continue;
+        if (!playerData.socket || playerData.socket->state() != QAbstractSocket::ConnectedState) continue;
 
-        p.socket->write(packet);
-        p.socket->flush();
+        playerData.socket->write(packet);
+        playerData.socket->flush();
     }
 }
 
@@ -1783,8 +1809,8 @@ void Client::sendPingLoop()
 
     for (auto it = m_players.begin(); it != m_players.end(); ++it) {
         quint8 pid = it.key();
-        PlayerData &p = it.value();
-        QTcpSocket* socket = p.socket;
+        PlayerData &playerData = it.value();
+        QTcpSocket *socket = playerData.socket;
 
         if (!socket || socket->state() != QAbstractSocket::ConnectedState) continue;
 
@@ -1794,8 +1820,8 @@ void Client::sendPingLoop()
         // B. 发送聊天
         if (shouldSendChat) {
             // 获取对应语言文本
-            QString text = waitMsg.get(p.language);
-            QByteArray finalBytes = p.codec->fromUnicode(text);
+            QString text = waitMsg.get(playerData.language);
+            QByteArray finalBytes = playerData.codec->fromUnicode(text);
 
             QByteArray chatPacket = createW3GSChatFromHostPacket(finalBytes, 1, pid, ChatFlag::Message);
             socket->write(chatPacket);
