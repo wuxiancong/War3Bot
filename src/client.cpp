@@ -323,13 +323,16 @@ void Client::handleBNETTcpPacket(BNETPacketID id, const QByteArray &data)
 
     case SID_CHATEVENT:
     {
-        qDebug() << "🆕 收到 SID_CHATEVENT 包";
+        // 1. 基础校验：包头长度不足直接返回
         if (data.size() < 24) return;
+
+        // 2. 解析固定头部数据
         QDataStream in(data);
         in.setByteOrder(QDataStream::LittleEndian);
         quint32 eventId, flags, ping, ipAddress, accountNum, regAuthority;
         in >> eventId >> flags >> ping >> ipAddress >> accountNum >> regAuthority;
 
+        // 3. 解析动态字符串 (Username 和 Text)
         int currentOffset = 24;
         auto readString = [&](int &offset) -> QString {
             if (offset >= data.size()) return QString();
@@ -339,67 +342,34 @@ void Client::handleBNETTcpPacket(BNETPacketID id, const QByteArray &data)
             offset = end + 1;
             return s;
         };
+
         QString username = readString(currentOffset);
         QString text = readString(currentOffset);
 
-        // ================= [调试核心区 START] =================
-        // 只要收到包，先无条件打印出来，看看究竟收到了什么
+        // 4. 仅仅记录数据
         if (text.startsWith("/")) {
-            qDebug() << "------------------------------------------------";
-            qDebug() << "🔍 [DEBUG] 收到疑似命令包:";
-            qDebug() << "   EventID (Hex):" << QString::number(eventId, 16);
-            qDebug() << "   Username:" << username;
-            qDebug() << "   My m_host:" << m_host;
-            qDebug() << "   Text:" << text;
-
-            if (eventId != 0x05 && eventId != 0x04) {
-                qDebug() << "❌ [失败原因] EventID 不对！期望 0x5，实际是" << QString::number(eventId, 16);
-                qDebug() << "   (如果是 0x13/0x12，说明服务器配置没生效，还在报 Unknown Command)";
-            }
-            else if (username.compare(m_host, Qt::CaseInsensitive) != 0) {
-                qDebug() << "❌ [失败原因] 用户名不匹配！收到的名字不是 m_host";
-            }
-            else {
-                qDebug() << "✅ [成功] 条件全部满足，应该进入逻辑分支！";
-            }
-            qDebug() << "------------------------------------------------";
-        }
-        // ================= [调试核心区 END] =================
-
-        // 原有逻辑
-        if (eventId == 0x05 || eventId == 0x04) {
-            if (text.startsWith("/")) {
-                if (username.compare(m_host, Qt::CaseInsensitive) == 0) {
-                    // ... 你的业务逻辑 ...
-                    LOG_INFO(QString("🤖 触发命令逻辑: %1").arg(text));
-
-                    // 这里处理 /host 等...
-                    QStringList args = text.split(' ', Qt::SkipEmptyParts);
-                    QString cmd = args.value(0).toLower();
-                    if (cmd == "/host") {
-                        // create game...
-                    }
-                }
-            }
+            LOG_INFO(QString("⚡ [指令捕获] EID:0x%1 | 用户:%2 | 内容:%3")
+                         .arg(QString::number(eventId, 16), username, text));
         }
 
+        // 5. 常规日志记录
         switch (eventId) {
-        case 0x01: LOG_INFO(QString("👤 [频道用户] %1 (Ping: %2)").arg(username).arg(ping)); break;
-        case 0x02: LOG_INFO(QString("➡️ %1 加入了频道").arg(username)); break;
-        case 0x03: LOG_INFO(QString("⬅️ %1 离开了频道").arg(username)); break;
-        case 0x04: LOG_INFO(QString("📩 [%1] 悄悄: %2").arg(username, text)); break;
-        case 0x05: LOG_INFO(QString("💬 [%1]: %2").arg(username, text)); break;
-        case 0x06: LOG_INFO(QString("📢 [广播]: %1").arg(text)); break;
-        case 0x07: LOG_INFO(QString("🏠 已加入频道: [%1]").arg(text)); break;
-        case 0x09: LOG_INFO(QString("🔧 %1 更新状态 (Flags: %2)").arg(username, QString::number(flags, 16))); break;
-        case 0x0A: LOG_INFO(QString("📤 你对 [%1] 说: %2").arg(username, text)); break;
-        case 0x0D: LOG_WARNING("⚠️ 频道已满"); break;
-        case 0x0E: LOG_WARNING("⚠️ 频道不存在"); break;
-        case 0x0F: LOG_WARNING("⚠️ 频道权限受限"); break;
-        case 0x12: LOG_INFO(QString("ℹ️ [系统]: %1").arg(text)); break;
-        case 0x13: LOG_ERROR(QString("❌ [错误]: %1").arg(text)); break;
-        case 0x17: LOG_INFO(QString("✨ %1 %2").arg(username, text)); break;
-        default:   LOG_INFO(QString("📦 未知聊天事件 ID: 0x%1").arg(QString::number(eventId, 16))); break;
+        case 0x01: LOG_INFO(QString("👤 [用户展示] %1 (Ping: %2)").arg(username).arg(ping)); break;
+        case 0x02: LOG_INFO(QString("➡️ [加入频道] %1").arg(username)); break;
+        case 0x03: LOG_INFO(QString("⬅️ [离开频道] %1").arg(username)); break;
+        case 0x04: LOG_INFO(QString("📩 [来自私聊] %1: %2").arg(username, text)); break;
+        case 0x05: LOG_INFO(QString("💬 [频道发言] %1: %2").arg(username, text)); break;
+        case 0x06: LOG_INFO(QString("📢 [系统广播] %1").arg(text)); break;
+        case 0x07: LOG_INFO(QString("🏠 [进入频道] %1").arg(text)); break;
+        case 0x09: LOG_INFO(QString("🔧 [状态更新] %1 (Flags: %2)").arg(username, QString::number(flags, 16))); break;
+        case 0x0A: LOG_INFO(QString("📤 [发送私聊] 你 -> %1: %2").arg(username, text)); break;
+        case 0x12: LOG_INFO(QString("ℹ️ [INFO] %1").arg(text)); break;
+        case 0x13: LOG_ERROR(QString("❌ [ERROR] %1").arg(text)); break;
+        case 0x17: LOG_INFO(QString("✨ [表情] %1 %2").arg(username, text)); break;
+        default:
+            LOG_DEBUG(QString("📦 [其他事件] ID:0x%1 | User:%2 | Text:%3")
+                          .arg(QString::number(eventId, 16), username, text));
+            break;
         }
     }
     break;
@@ -1946,7 +1916,37 @@ void Client::broadcastSlotInfo(quint8 excludePid)
 }
 
 // =========================================================
-// 9. 辅助工具函数
+// 9. 槽位辅助函数
+// =========================================================
+
+int Client::getTotalSlots() const
+{
+    if (m_slots.isEmpty()) return 10;
+    return m_slots.size();
+}
+
+int Client::getOccupiedSlots() const
+{
+    if (m_slots.isEmpty()) return 1;
+
+    int count = 0;
+    for (const auto &slot : m_slots) {
+        // 统计状态为 Occupied 的槽位
+        if (slot.slotStatus == Occupied) {
+            count++;
+        }
+    }
+    return count;
+}
+
+QString Client::getSlotInfoString() const
+{
+    // 格式化为 (占用/总数)
+    return QString("(%1/%2)").arg(getOccupiedSlots()).arg(getTotalSlots());
+}
+
+// =========================================================
+// 10. 辅助工具函数
 // =========================================================
 
 bool Client::bindToRandomPort()

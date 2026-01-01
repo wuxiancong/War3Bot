@@ -411,9 +411,14 @@ public:
     bool isBlackListedPort(quint16 port);               // 检查端口黑名单
     void writeIpToStreamWithLog(QDataStream &out, const QHostAddress &ip);
 
-    // IP转换辅助
+    // --- IP转换辅助 ---
     quint32 ipToUint32(const QString &ipAddress);
     quint32 ipToUint32(const QHostAddress &address);
+
+    // --- 槽位信息辅助 ---
+    int getTotalSlots() const;                          // 获取总槽位数
+    int getOccupiedSlots() const;                       // 获取已占用槽位数 (包括Bot/Host)
+    QString getSlotInfoString() const;                  // 返回 "(1/10)" 格式字符串
 
 signals:
     void disconnected();

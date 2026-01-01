@@ -84,6 +84,7 @@ signals:
     void peersMatched(const QString &peer1, const QString &peer2, const QString &targetIp, const QString &targetPort);
     void peerHandshaked(const QString &peerId, const QString &clientUuid, const QString &targetIp, const QString &targetPort);
     void peerHandshaking(const QString &peerId, const QString &clientUuid, const QString &targetIp, const QString &targetPort);
+    void botCommandReceived(const QString &userName, const QString &clientUuid, const QString &command, const QString &text);
 
 private slots:
     void onUDPReadyRead();
@@ -120,6 +121,7 @@ private:
     void processHandshake(const QNetworkDatagram &datagram);
     void processKeepAlive(const QNetworkDatagram &datagram);
     void processUnregister(const QNetworkDatagram &datagram);
+    void processBotCommand(const QNetworkDatagram &datagram);
     void processPeerInfoAck(const QNetworkDatagram &datagram);
     void processPingRequest(const QNetworkDatagram &datagram);
     void processTestMessage(const QNetworkDatagram &datagram);

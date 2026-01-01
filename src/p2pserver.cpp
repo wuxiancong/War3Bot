@@ -251,6 +251,9 @@ void P2PServer::processDatagram(const QNetworkDatagram &datagram)
     } else if (message.startsWith("UNREGISTER")) {
         LOG_INFO("👋 处理 UNREGISTER 请求");
         processUnregister(datagram);
+    } else if (message.startsWith("BOTCOMMAND")) {
+        LOG_INFO("🤖 处理 BOTCOMMAND 消息");
+        processBotCommand(datagram);
     } else if (message.startsWith("GET_PEER_LIST")) {
         LOG_INFO("📋 处理 GET_PEER_LIST 请求");
         processGetPeerList(datagram);
@@ -907,6 +910,52 @@ void P2PServer::processUnregister(const QNetworkDatagram &datagram)
         QByteArray response = QString("UNREGISTER_ACK|%1|NOT_FOUND").arg(clientUuidToRemove).toUtf8();
         sendToAddress(datagram.senderAddress(), datagram.senderPort(), response);
     }
+}
+
+void P2PServer::processBotCommand(const QNetworkDatagram &datagram)
+{
+    QString message = QString::fromUtf8(datagram.data()).trimmed();
+    QStringList parts = message.split('|');
+
+    // 协议格式: BOTCOMMAND|USERNAME|CLIENT_UUID|COMMAND|TEXT
+    // 索引:        0     |    1   |      2    |   3   |  4(参数)
+
+    // 1. 格式校验
+    if (parts.size() < 4) {
+        LOG_WARNING(QString("❌ [BOT] 指令格式错误，字段不足: %1").arg(message));
+        return;
+    }
+
+    QString userName = parts[1];
+    QString clientUuid = parts[2];
+    QString command = parts[3];
+    // 如果 text 包含 '|'，split 会将其切断，所以我们需要把剩余部分重新拼回去，或者取空
+    QString text = (parts.size() > 4) ? parts.mid(4).join('|') : "";
+
+    // 2. 安全校验 (验证发送者身份)
+    // 必须确保发指令的 IP:Port 和注册的 UUID 是对应的，防止有人冒充管理员发指令
+    QReadLocker locker(&m_peersLock);
+
+    if (!m_peers.contains(clientUuid)) {
+        LOG_WARNING(QString("❌ [BOT] 拒绝指令: 未知的 UUID %1").arg(clientUuid));
+        return;
+    }
+
+    const PeerInfo &peer = m_peers[clientUuid];
+
+    // 简单验证发送源地址是否匹配
+    QString senderIp = cleanAddress(datagram.senderAddress().toString());
+    if (senderIp != peer.publicIp || datagram.senderPort() != peer.publicPort) {
+        LOG_WARNING(QString("⚠️ [BOT] 安全警告: UUID %1 指令来源不匹配! 注册IP: %2, 实际IP: %3")
+                    .arg(clientUuid, peer.publicIp, senderIp));
+        return; // 拒绝执行
+    }
+
+    // 3. 处理指令逻辑
+    LOG_INFO(QString("🤖 [BOT] 执行指令 -> 用户: %1 (%2) | 命令: %3 | 参数: %4")
+                 .arg(userName, clientUuid.left(8), command, text));
+
+    emit botCommandReceived(userName, clientUuid, command, text);
 }
 
 void P2PServer::processGetPeerList(const QNetworkDatagram &datagram)

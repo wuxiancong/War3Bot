@@ -26,11 +26,14 @@ struct Bot {
     BotState state;                             // 当前状态
     QString username;                           // 完整用户名 (例如 bot1)
     QString password;                           // 密码
+    QString clientId;                           // 客户端Id
+    QString gameName;                           // 游戏名称
+    QString hostName;                           // 主机名称
     CommandSource commandSource = From_Server;  // 命令来源
 
     struct Task {
         bool hasTask = false;                   // 是否有任务
-        QString creatorName;                    // 谁下的命令 (虚拟房主)
+        QString hostName;                       // 谁下的命令 (虚拟房主)
         QString gameName;                       // 房间名
     } pendingTask;
 
@@ -64,6 +67,10 @@ public:
     void setP2PServer(P2PServer *server) { m_p2pServer = server; }
     void setP2PControlPort(quint16 port) { m_controlPort = port; }
 
+    // 创建游戏
+    QString generateSafeGameName(const QString &inputName, const QString &hostName);
+    bool createGame(const QString& hostName, const QString &gameName, CommandSource commandSource, const QString &clientUuid);
+
 signals:
     // 状态变更信号，用于日志或UI更新
     void botStateChanged(int botId, QString username, BotState newState);
@@ -75,7 +82,7 @@ private slots:
     void onBotGameCreated(Bot *bot);
     void onBotDisconnected(Bot *bot);
     void onBotError(Bot *bot, QString error);
-    bool onRequestCreateGame(const QString& creatorName, const QString &gameName, CommandSource commandSource);
+    void onBotCommandReceived(const QString &userName, const QString &clientUuid, const QString &command, const QString &text);
 
 private:
     // 容器存储所有机器人指针

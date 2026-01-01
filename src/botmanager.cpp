@@ -78,7 +78,7 @@ void BotManager::initializeBots(int count, const QString &configPath)
     LOG_INFO(QString("初始化完成，共创建 %1 个机器人对象").arg(m_bots.size()));
 }
 
-bool BotManager::onRequestCreateGame(const QString &creatorName, const QString &gameName, CommandSource commandSource)
+bool BotManager::createGame(const QString &hostName, const QString &gameName, CommandSource commandSource, const QString &clientUuid)
 {
     Bot *targetBot = nullptr;
 
@@ -103,6 +103,9 @@ bool BotManager::onRequestCreateGame(const QString &creatorName, const QString &
         LOG_INFO(QString("⚠️ 无空闲机器人，动态扩容: [%1]").arg(newUsername));
 
         targetBot = new Bot(newId, newUsername, m_defaultPassword);
+        targetBot->hostName = hostName;
+        targetBot->gameName = gameName;
+        targetBot->clientId = clientUuid;
         targetBot->commandSource = commandSource;
         targetBot->client = new class Client(this);
         targetBot->client->setCredentials(newUsername, m_defaultPassword, Protocol_SRP_0x53);
@@ -119,7 +122,7 @@ bool BotManager::onRequestCreateGame(const QString &creatorName, const QString &
 
         // 标记此 Bot 有任务在身！
         targetBot->pendingTask.hasTask = true;
-        targetBot->pendingTask.creatorName = creatorName;
+        targetBot->pendingTask.hostName = hostName;
         targetBot->pendingTask.gameName = gameName;
 
         // 启动连接
@@ -138,7 +141,7 @@ bool BotManager::onRequestCreateGame(const QString &creatorName, const QString &
         targetBot->state = BotState::Creating;
 
         // 设置虚拟房主
-        targetBot->client->setHost(creatorName);
+        targetBot->client->setHost(hostName);
 
         // 发送创建命令
         targetBot->client->createGame(gameName, "", Provider_TFT_New, Game_TFT_Custom, SubType_None, Ladder_None, commandSource);
@@ -199,7 +202,66 @@ void BotManager::onBotAccountCreated(Bot *bot)
     LOG_INFO(QString("🆕 [%1] 账号注册成功，正在尝试登录...").arg(bot->username));
 }
 
-void BotManager::onBotGameCreated(Bot* bot)
+void BotManager::onBotCommandReceived(const QString &userName, const QString &clientUuid, const QString &command, const QString &text)
+{
+    if (command == "/host") {
+        // 1. 获取基础房名
+        // 例如 "/host xl83tb fast" -> text 为 "xl83tb fast"
+        QString baseName = text.trimmed();
+        if (baseName.isEmpty()) {
+            baseName = QString("%1's Game").arg(userName);
+        }
+
+        // 2. 准备后缀
+        QString suffix = QString(" (%1/%2)").arg(1).arg(10);
+
+        // 3. 计算截断逻辑
+        const int MAX_BYTES = 31;
+
+        // 计算后缀占用的字节数
+        int suffixBytes = suffix.toUtf8().size();
+
+        // 剩余给房名的字节数
+        int availableBytes = MAX_BYTES - suffixBytes;
+
+        if (availableBytes <= 0) {
+            LOG_ERROR("❌ 无法创建房间：后缀过长或限制过严");
+            return;
+        }
+
+        // 4. 对 baseName 进行字节级截断
+        QByteArray nameBytes = baseName.toUtf8();
+        if (nameBytes.size() > availableBytes) {
+            nameBytes = nameBytes.left(availableBytes);
+            while (nameBytes.size() > 0) {
+                QString tryStr = QString::fromUtf8(nameBytes);
+                if (tryStr.toUtf8().size() == nameBytes.size() && !tryStr.contains(QChar::ReplacementCharacter)) {
+                    break;
+                }
+                nameBytes.chop(1);
+            }
+        }
+
+        // 5. 拼接最终房名
+        QString finalGameName = QString::fromUtf8(nameBytes) + suffix;
+
+        LOG_INFO(QString("🤖 [BOT] 准备创建房间: [%1] (原名: %2)").arg(finalGameName, baseName));
+
+        // 6. 创建游戏
+        createGame(userName, finalGameName, From_Client, clientUuid);
+    }
+    else if (command == "/unhost") {
+        LOG_INFO("🤖 [BOT] 取消房间");
+    }
+    else if (command == "/kick") {
+        LOG_INFO("🤖 [BOT] 主机踢人");
+    }
+    else {
+        LOG_INFO(QString("ℹ️ [BOT] 收到通用指令，已记录。"));
+    }
+}
+
+void BotManager::onBotGameCreated(Bot *bot)
 {
     if (!bot) return;
 
@@ -207,17 +269,17 @@ void BotManager::onBotGameCreated(Bot* bot)
     bot->state = BotState::Waiting;
 
     // 2. 获取房主 UUID
-    QString hostUuid = bot->pendingTask.creatorName;
-    LOG_INFO(QString("🎮 [%1] 房间创建成功 (房主UUID: %2)").arg(bot->username, hostUuid));
+    QString clientId = bot->clientId;
+    LOG_INFO(QString("🎮 [%1] 房间创建成功 (房主UUID: %2)").arg(bot->username, clientId));
 
     // 4. 发送 TCP 控制指令让客户端进入
     if (m_p2pServer) {
-        bool sent = m_p2pServer->sendControlEnterRoom(hostUuid, m_controlPort);
+        bool sent = m_p2pServer->sendControlEnterRoom(clientId, m_controlPort);
 
         if (sent) {
             LOG_INFO(QString("🚀 [自动进入] 发送指令 -> 目标UUID:[%1] 端口:[%2]").arg(m_controlPort));
         } else {
-            LOG_WARNING(QString("❌ [自动进入] 发送失败: 目标UUID [%1] 不在线").arg(hostUuid));
+            LOG_WARNING(QString("❌ [自动进入] 发送失败: 目标UUID [%1] 不在线").arg(clientId));
         }
     } else {
         LOG_ERROR("❌ BotManager 未绑定 P2PServer，无法发送控制指令");
