@@ -41,7 +41,9 @@ struct CSRegisterPacket {
     char clientId[40];
     char username[32];
     char localIp[16];
+    char publicIp[16];
     quint16 localPort;
+    quint16 publicPort;
     quint8 natType;
 };
 

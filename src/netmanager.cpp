@@ -258,51 +258,67 @@ void NetManager::handleRegister(const PacketHeader *header, const CSRegisterPack
 {
     Q_UNUSED(header);
 
-    // 提取数据 (确保字符串以 \0 结尾)
+    // 提取字符串数据
     QString clientId = QString::fromUtf8(packet->clientId, strnlen(packet->clientId, sizeof(packet->clientId)));
     QString username = QString::fromUtf8(packet->username, strnlen(packet->username, sizeof(packet->username)));
-    QString localIp = QString::fromUtf8(packet->localIp, strnlen(packet->localIp, sizeof(packet->localIp)));
+    QString localIp  = QString::fromUtf8(packet->localIp, strnlen(packet->localIp, sizeof(packet->localIp)));
+
+    // 🆕 提取客户端上报的公网IP
+    QString reportedPublicIp = QString::fromUtf8(packet->publicIp, strnlen(packet->publicIp, sizeof(packet->publicIp)));
 
     if (clientId.isEmpty()) return;
 
     QWriteLocker locker(&m_registerInfosLock);
 
-    // 1. 生成新的 SessionID
+    // === Session ID 生成 ===
     quint32 newSessionId = 0;
     do {
         newSessionId = QRandomGenerator::global()->generate();
     } while (newSessionId == 0 || m_sessionIndex.contains(newSessionId));
 
-    // === ♻️ 处理旧会话清理 ===
-    // 如果这个 UUID 之前已经注册过，需要清理旧的 SessionID 映射
+    // === 清理旧会话 ===
     if (m_registerInfos.contains(clientId)) {
         quint32 oldSession = m_registerInfos[clientId].sessionId;
         m_sessionIndex.remove(oldSession);
         LOG_INFO(QString("♻️ 用户重连，清理旧 Session: %1").arg(oldSession));
     }
 
-    // 2. 存储用户信息
+    // 获取服务端看到的实际地址
+    QString actualPublicIp = cleanAddress(senderAddr);
+    QString natStr = natTypeToString(static_cast<NATType>(packet->natType));
+
+    // 存储用户信息
     RegisterInfo info;
     info.clientId = clientId;
     info.username = username;
     info.localIp = localIp;
     info.localPort = packet->localPort;
-    info.publicIp = cleanAddress(senderAddr);
-    info.publicPort = senderPort;
+    info.publicIp = actualPublicIp; // 以服务端看到的为准
+    info.publicPort = senderPort;   // 以服务端看到的为准
     info.natType = packet->natType;
     info.sessionId = newSessionId;
     info.lastSeen = QDateTime::currentMSecsSinceEpoch();
     info.isRegistered = true;
 
-    // 更新两个 Map
     m_registerInfos[clientId] = info;
     m_sessionIndex[newSessionId] = clientId;
 
-    locker.unlock(); // 尽早解锁
+    locker.unlock();
 
-    LOG_INFO(QString("📝 用户注册: %1 (%2) -> Session: %3").arg(username, clientId).arg(newSessionId));
+    // ✅ 打印详细日志 (包含您要求的两个字段对比)
+    LOG_INFO("--------------------[ 📝 用户注册请求 ]--------------------");
+    LOG_INFO(QString("   ├─ Session ID:     %1").arg(newSessionId));
+    LOG_INFO(QString("   ├─ Username:       %1").arg(username));
+    LOG_INFO(QString("   ├─ Client UUID:    %1").arg(clientId));
+    LOG_INFO(QString("   ├─ Local Address:  %1:%2").arg(localIp).arg(packet->localPort));
+    // 显示客户端自己检测到的 (Reported)
+    LOG_INFO(QString("   ├─ Public(Report): %1:%2").arg(reportedPublicIp).arg(packet->publicPort));
+    // 显示服务端实际看到的 (Actual)
+    LOG_INFO(QString("   ├─ Public(Actual): %1:%2").arg(actualPublicIp).arg(senderPort));
+    LOG_INFO(QString("   └─ NAT Type:       %1").arg(natStr));
+    LOG_INFO("----------------------------------------------------------");
 
-    // 3. 发送响应
+    // 发送响应
     SCRegisterPacket resp;
     resp.sessionId = newSessionId;
     resp.status = 1;
@@ -312,22 +328,34 @@ void NetManager::handleRegister(const PacketHeader *header, const CSRegisterPack
 
 void NetManager::handleUnregister(const PacketHeader *header)
 {
+    // SessionID 为 0 表示无效或未注册
     if (header->sessionId == 0) return;
 
-    QString clientIdToRemove;
-    {
-        QWriteLocker locker(&m_registerInfosLock);
-        for (auto it = m_registerInfos.begin(); it != m_registerInfos.end(); ++it) {
-            if (it.value().sessionId == header->sessionId) {
-                clientIdToRemove = it.key();
-                m_registerInfos.remove(it.key());
-                break;
-            }
+    QWriteLocker locker(&m_registerInfosLock);
+
+    // ✅ 1. 利用索引快速查找 (O(1) 时间复杂度)
+    if (m_sessionIndex.contains(header->sessionId)) {
+
+        // 2. 从索引中移除，并获取对应的 Client UUID
+        QString uuid = m_sessionIndex.take(header->sessionId);
+
+        // 3. 从主信息表中移除，并获取信息用于打印日志
+        if (m_registerInfos.contains(uuid)) {
+            RegisterInfo info = m_registerInfos.take(uuid); // take = remove + return
+
+            LOG_INFO("--------------------[ 👋 用户注销 ]--------------------");
+            LOG_INFO(QString("   ├─ Username:    %1").arg(info.username));
+            LOG_INFO(QString("   ├─ Client UUID: %1").arg(info.clientId));
+            LOG_INFO(QString("   └─ Session ID:  %1").arg(header->sessionId));
+            LOG_INFO("-------------------------------------------------------");
+        }
+        else {
+            // 理论上不应该进这里，除非索引和主表数据不一致
+            LOG_WARNING(QString("⚠️ 索引存在但主表丢失数据: %1").arg(uuid));
         }
     }
-
-    if (!clientIdToRemove.isEmpty()) {
-        LOG_INFO(QString("👋 用户注销: Session %1").arg(header->sessionId));
+    else {
+        LOG_WARNING(QString("⚠️ 收到未知 Session %1 的注销请求").arg(header->sessionId));
     }
 }
 
