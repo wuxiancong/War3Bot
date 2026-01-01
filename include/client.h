@@ -10,7 +10,7 @@
 #include <QDataStream>
 #include <QHostAddress>
 
-#include "p2pserver.h"
+#include "netmanager.h"
 #include "war3map.h"
 #include "command.h"
 
@@ -468,8 +468,8 @@ private:
     void handleW3GSUdpPacket(const QByteArray &data, const QHostAddress &sender, quint16 senderPort);
     void handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &payload);
 
-    // 设置 P2PServer 指针
-    void setP2PServer(P2PServer* server) { m_p2pServer = server; }
+    // 设置 NetManager 指针
+    void setNetManager(NetManager* server) { m_NetManager = server; }
 
     // --- 认证流程 ---
     void sendAuthInfo();
@@ -497,7 +497,7 @@ private:
     QTimer                          *m_pingTimer            = nullptr;
 
     // 连接管理
-    P2PServer                       *m_p2pServer            = nullptr;
+    NetManager                       *m_NetManager            = nullptr;
     QString                         m_serverAddr;
     quint16                         m_serverPort            = 0;
 

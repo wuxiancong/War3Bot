@@ -6,7 +6,7 @@
 #include <QSettings>
 
 #include "client.h"
-#include "p2pserver.h"
+#include "netmanager.h"
 
 // === 1. 机器人状态枚举 ===
 enum class BotState {
@@ -63,8 +63,8 @@ public:
     // 获取所有机器人列表
     const QVector<Bot*>& getAllBots() const;
 
-    // 设置 P2PServer
-    void setP2PServer(P2PServer *server) { m_p2pServer = server; }
+    // 设置 NetManager
+    void setNetManager(NetManager *server) { m_NetManager = server; }
     void setP2PControlPort(quint16 port) { m_controlPort = port; }
 
     // 创建游戏
@@ -95,7 +95,7 @@ private:
     QString m_configPath;
     QString m_userPrefix;
     QString m_defaultPassword;
-    P2PServer *m_p2pServer = nullptr;
+    NetManager *m_NetManager = nullptr;
 };
 
 #endif // BOTMANAGER_H

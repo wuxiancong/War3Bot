@@ -2,7 +2,7 @@
 #define WAR3BOT_H
 
 #include "client.h"
-#include "p2pserver.h"
+#include "netmanager.h"
 #include "botmanager.h"
 
 class War3Bot : public QObject
@@ -35,7 +35,7 @@ private:
     QString m_pendingGameName;
     bool m_forcePortReuse = false;
     BotManager *m_botManager;
-    P2PServer *m_p2pServer;
+    NetManager *m_NetManager;
     QString m_configPath;
     Client *m_client;
 };

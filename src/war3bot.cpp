@@ -5,7 +5,7 @@ War3Bot::War3Bot(QObject *parent)
     : QObject(parent)
     , m_forcePortReuse(false)
     , m_botManager(nullptr)
-    , m_p2pServer(nullptr)
+    , m_NetManager(nullptr)
     , m_client(nullptr)
 {
     m_client = new Client(this);
@@ -31,29 +31,26 @@ bool War3Bot::startServer(quint16 port, const QString &configFile)
     if (m_configPath.isEmpty()) {
         m_configPath = "config/war3bot.ini";
     }
-    if (m_p2pServer && m_p2pServer->isRunning()) {
+    if (m_NetManager && m_NetManager->isRunning()) {
         LOG_WARNING("服务器已在运行中");
         return true;
     }
 
-    if (!m_p2pServer) {
-        m_p2pServer = new P2PServer(this);
-        m_botManager->setP2PServer(m_p2pServer);
+    if (!m_NetManager) {
+        m_NetManager = new NetManager(this);
+        m_botManager->setNetManager(m_NetManager);
 
         // 设置强制端口重用
         if (m_forcePortReuse) {
-            // 这里可以传递强制重用标志给 P2PServer
-            // 或者 P2PServer 会自动处理
+            // 这里可以传递强制重用标志给 NetManager
+            // 或者 NetManager 会自动处理
         }
 
         // 连接信号
-        connect(m_p2pServer, &P2PServer::peerRemoved, this, &War3Bot::onPeerRemoved);
-        connect(m_p2pServer, &P2PServer::peerRegistered, this, &War3Bot::onPeerRegistered);
-        connect(m_p2pServer, &P2PServer::punchRequested, this, &War3Bot::onPunchRequested);
-        connect(m_p2pServer, &P2PServer::botCommandReceived, m_botManager, &BotManager::onBotCommandReceived);
+        connect(m_NetManager, &NetManager::botCommandReceived, m_botManager, &BotManager::onBotCommandReceived);
     }
 
-    bool success = m_p2pServer->startServer(port, configFile);
+    bool success = m_NetManager->startServer(port, configFile);
     if (success) {
         LOG_INFO("War3Bot 服务器启动成功");
         if (QFile::exists(m_configPath)) {
@@ -176,15 +173,15 @@ void War3Bot::stopAdv()
 
 void War3Bot::stopServer()
 {
-    if (m_p2pServer) {
-        m_p2pServer->stopServer();
+    if (m_NetManager) {
+        m_NetManager->stopServer();
         LOG_INFO("War3Bot 服务器已停止");
     }
 }
 
 bool War3Bot::isRunning() const
 {
-    return m_p2pServer && m_p2pServer->isRunning();
+    return m_NetManager && m_NetManager->isRunning();
 }
 
 void War3Bot::onPeerRegistered(const QString &peerId, const QString &clientUuid, int size)
