@@ -702,6 +702,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
     }
     break;
 
+        // 这里是进入房间的指令
     case 0x28: // W3GS_CHAT_TO_HOST
     {
         // 基础长度检查
@@ -763,16 +764,11 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
                 LOG_INFO(QString("🔧 检测到指令: [%1] 来自 [%2] (房主是: [%3])")
                              .arg(msg, senderName, m_host));
 
-                // 检查权限 (是不是房主)
-                if (senderName == m_host) {
-                    if (m_command) {
-                        LOG_INFO(QString("✅ 执行房主指令: %1").arg(msg));
-                        m_command->process(senderPid, msg);
-                    } else {
-                        LOG_ERROR("❌ Command 处理器未初始化！");
-                    }
+                if (m_command) {
+                    LOG_INFO(QString("✅ 执行房主指令: %1").arg(msg));
+                    m_command->process(senderPid, msg);
                 } else {
-                    LOG_WARNING(QString("⛔ 拒绝指令: [%1] 不是房主").arg(senderName));
+                    LOG_ERROR("❌ Command 处理器未初始化！");
                 }
             }
 

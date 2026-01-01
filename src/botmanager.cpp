@@ -253,11 +253,11 @@ void BotManager::onBotCommandReceived(const QString &userName, const QString &cl
     else if (command == "/unhost") {
         LOG_INFO("🤖 [BOT] 取消房间");
     }
-    else if (command == "/kick") {
-        LOG_INFO("🤖 [BOT] 主机踢人");
+    else if (command == "/bot") {
+        LOG_INFO("🤖 [BOT] 切换bot");
     }
     else {
-        LOG_INFO(QString("ℹ️ [BOT] 收到通用指令，已记录。"));
+        LOG_INFO(QString("ℹ️ [BOT] 收到未处理指令: %1").arg(command));
     }
 }
 

@@ -941,16 +941,6 @@ void P2PServer::processBotCommand(const QNetworkDatagram &datagram)
         return;
     }
 
-    const PeerInfo &peer = m_peers[clientUuid];
-
-    // 简单验证发送源地址是否匹配
-    QString senderIp = cleanAddress(datagram.senderAddress().toString());
-    if (senderIp != peer.publicIp || datagram.senderPort() != peer.publicPort) {
-        LOG_WARNING(QString("⚠️ [BOT] 安全警告: UUID %1 指令来源不匹配! 注册IP: %2, 实际IP: %3")
-                    .arg(clientUuid, peer.publicIp, senderIp));
-        return; // 拒绝执行
-    }
-
     // 3. 处理指令逻辑
     LOG_INFO(QString("🤖 [BOT] 执行指令 -> 用户: %1 (%2) | 命令: %3 | 参数: %4")
                  .arg(userName, clientUuid.left(8), command, text));
