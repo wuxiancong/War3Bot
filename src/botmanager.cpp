@@ -4,8 +4,7 @@
 
 BotManager::BotManager(QObject *parent) : QObject(parent)
 {
-    connect(m_p2pServer, &P2PServer::botCommandReceived,
-            m_botManager, &BotManager::onBotCommandReceived);
+
 }
 
 BotManager::~BotManager()
