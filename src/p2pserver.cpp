@@ -745,15 +745,22 @@ void P2PServer::processRegister(const QNetworkDatagram &datagram)
 
     // 2. 安全检查阶段
 
-    // 检查是否包含 Token (部分大小 > 6 说明带了验证信息)
+    // 客户端发送结构: Header|UUID|LocalIP|LocalPort|Status|NatType|UserName|TimeStamp|Token
+    // 对应索引:        0   | 1  |   2   |    3    |   4  |   5   |    6   |    7    |  8
+
+    // 检查是否包含 Token
     bool isVerified = false;
-    if (parts.size() >= 8) {
-        qint64 timestamp = parts[6].toLongLong();
-        QString receivedToken = parts[7];
+
+    // 判断长度改为 >= 9
+    if (parts.size() >= 9) {
+        qint64 timestamp = parts[7].toLongLong();
+        QString receivedToken = parts[8];
+
         qint64 now = QDateTime::currentMSecsSinceEpoch();
 
         // 1. 检查时效性 (例如 Token 有效期 10秒)
-        if (now - timestamp < 10000 && now >= timestamp) {
+        // 注意：如果客户端和服务端系统时间差异大，这里也可能死循环，建议放宽一点或者只判断 token 正确性
+        if (qAbs(now - timestamp) < 15000) { // 放宽到15秒，且使用绝对值防止客户端时间快于服务端
             // 2. 重新计算签名
             QString expectedToken = generateRegisterToken(clientUuid, senderAddr, senderPort, timestamp);
             if (receivedToken == expectedToken) {
@@ -762,7 +769,10 @@ void P2PServer::processRegister(const QNetworkDatagram &datagram)
                 LOG_WARNING(QString("❌ [注册] 签名验证失败: %1").arg(clientUuid));
             }
         } else {
-            LOG_WARNING(QString("⚠️ [注册] Token 已过期: %1").arg(clientUuid));
+            // 打印调试信息方便排查时间同步问题
+            LOG_WARNING(QString("⚠️ [注册] Token 已过期: %1 (Srv: %2, Cli: %3, Diff: %4ms)")
+                            .arg(clientUuid)
+                            .arg(now).arg(timestamp).arg(now - timestamp));
         }
     }
 
