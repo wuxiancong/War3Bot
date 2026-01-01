@@ -283,7 +283,7 @@ void NetManager::handleRegister(const PacketHeader *header, const CSRegisterPack
         LOG_INFO(QString("♻️ 用户重连，清理旧 Session: %1").arg(oldSession));
     }
 
-    // 获取服务端看到的实际地址
+    qint64 now = QDateTime::currentMSecsSinceEpoch();
     QString actualPublicIp = cleanAddress(senderAddr);
     QString natStr = natTypeToString(static_cast<NATType>(packet->natType));
 
@@ -293,12 +293,13 @@ void NetManager::handleRegister(const PacketHeader *header, const CSRegisterPack
     info.username = username;
     info.localIp = localIp;
     info.localPort = packet->localPort;
-    info.publicIp = actualPublicIp; // 以服务端看到的为准
-    info.publicPort = senderPort;   // 以服务端看到的为准
-    info.natType = packet->natType;
+    info.publicIp = actualPublicIp;
+    info.publicPort = senderPort;
     info.sessionId = newSessionId;
-    info.lastSeen = QDateTime::currentMSecsSinceEpoch();
+    info.lastSeen = now;
+    info.firstSeen = now;
     info.isRegistered = true;
+    info.natType = packet->natType;
 
     m_registerInfos[clientId] = info;
     m_sessionIndex[newSessionId] = clientId;
@@ -770,11 +771,54 @@ void NetManager::broadcastServerInfo()
 
 void NetManager::updateMostFrequentCrc()
 {
-    // 逻辑保持不变
-    // 统计 m_registerInfos 中的 CRC，设置 War3Map::setPriorityCrcDirectory
+    m_crcCounts.clear();
+
+    {
+        QReadLocker locker(&m_registerInfosLock);
+        for (const RegisterInfo &peer : qAsConst(m_registerInfos)) {
+            if (!peer.crcToken.isEmpty()) {
+                m_crcCounts[peer.crcToken]++;
+            }
+        }
+    }
+
+    // 找出最大值
+    QString maxCrcToken;
+    int maxCount = 0;
+
+    QMapIterator<QString, int> i(m_crcCounts);
+    while (i.hasNext()) {
+        i.next();
+        if (i.value() > maxCount) {
+            maxCount = i.value();
+            maxCrcToken = i.key();
+        }
+    }
+
+    if (!maxCrcToken.isEmpty()) {
+        QString path = QCoreApplication::applicationDirPath() + "/war3files/crc/" + maxCrcToken;
+        QDir dir(path);
+
+        // 确保该目录确实存在 .j 文件，否则设置了也没用
+        if (dir.exists() && QFile::exists(path + "/common.j")) {
+            War3Map::setPriorityCrcDirectory(path);
+            LOG_INFO(QString("🔥 更新热门地图 CRC: %1 (在线人数: %2)").arg(maxCrcToken).arg(maxCount));
+        } else {
+            // 目录不完整，回退
+            War3Map::setPriorityCrcDirectory("");
+        }
+    } else {
+        // 没有热门地图，回退
+        War3Map::setPriorityCrcDirectory("");
+    }
 }
 
 // ==================== 工具函数 ====================
+QList<RegisterInfo> NetManager::getOnlinePlayers() const
+{
+    QReadLocker locker(&m_registerInfosLock);
+    return m_registerInfos.values();
+}
 
 quint16 NetManager::calculateCRC16(const QByteArray &data)
 {

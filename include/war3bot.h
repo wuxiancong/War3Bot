@@ -18,6 +18,7 @@ public:
     void cancelGame();
     bool isRunning() const;
     BotManager *getBotManager() const { return m_botManager; }
+    NetManager* getNetManager() const { return m_netManager; }
     bool startServer(quint16 port, const QString &configFile);
     void setForcePortReuse(bool force) { m_forcePortReuse = force; }
     void connectToBattleNet(QString hostname = "", quint16 port = 0, QString user = "", QString pass = "");
@@ -35,7 +36,7 @@ private:
     QString m_pendingGameName;
     bool m_forcePortReuse = false;
     BotManager *m_botManager;
-    NetManager *m_NetManager;
+    NetManager *m_netManager;
     QString m_configPath;
     Client *m_client;
 };

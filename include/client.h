@@ -469,7 +469,7 @@ private:
     void handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &payload);
 
     // 设置 NetManager 指针
-    void setNetManager(NetManager* server) { m_NetManager = server; }
+    void setNetManager(NetManager* server) { m_netManager = server; }
 
     // --- 认证流程 ---
     void sendAuthInfo();
@@ -497,7 +497,7 @@ private:
     QTimer                          *m_pingTimer            = nullptr;
 
     // 连接管理
-    NetManager                       *m_NetManager            = nullptr;
+    NetManager                       *m_netManager            = nullptr;
     QString                         m_serverAddr;
     quint16                         m_serverPort            = 0;
 

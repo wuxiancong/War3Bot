@@ -410,24 +410,102 @@ int main(int argc, char *argv[]) {
 
     // === 5. 定时状态报告 ===
     QTimer *statusTimer = new QTimer(&app);
-    QObject::connect(statusTimer, &QTimer::timeout, &app, [&war3bot, startTime = QDateTime::currentDateTime()]() {
-        qint64 uptimeSeconds = startTime.secsTo(QDateTime::currentDateTime());
-        // 简单计算时间...
-        QString uptimeStr = QString("运行 %1秒").arg(uptimeSeconds);
+    QObject::connect(statusTimer, &QTimer::timeout, &app, [startTime = QDateTime::currentDateTime(), &war3bot]() {
 
-        // 获取真实状态
+        // 1. 计算运行时间 (Uptime)
+        qint64 totalSeconds = startTime.secsTo(QDateTime::currentDateTime());
+        qint64 days = totalSeconds / 86400;
+        qint64 hours = (totalSeconds % 86400) / 3600;
+        qint64 minutes = (totalSeconds % 3600) / 60;
+        qint64 seconds = totalSeconds % 60;
+
+        QString uptimeStr;
+        if (days > 0) uptimeStr += QString("%1天 ").arg(days);
+        if (hours > 0 || days > 0) uptimeStr += QString("%1时 ").arg(hours);
+        uptimeStr += QString("%1分 %2秒").arg(minutes).arg(seconds);
+
+        // 2. 获取机器人状态
         BotManager *botManager = war3bot.getBotManager();
-        int online = 0, idle = 0;
+        int online = 0;
+        int idle = 0;
+        int creating = 0;
+        int inLobby = 0;
+        int total = 0;
+
         if (botManager) {
             const auto &bots = botManager->getAllBots();
+            total = bots.size();
             for(auto* b : bots) {
-                if (b->client && b->client->isConnected()) online++;
-                if (b->state == BotState::Idle) idle++;
+                if (b && b->client && b->client->isConnected()) {
+                    online++;
+                    // 细分状态统计
+                    switch (b->state) {
+                    case BotState::Idle: idle++; break;
+                    case BotState::Creating: creating++; break;
+                    case BotState::InLobby: inLobby++; break;
+                    default: break;
+                    }
+                }
             }
         }
 
-        LOG_INFO(QString("🔄 服务器状态 - %1 - 在线Bot: %2 (空闲: %3)").arg(uptimeStr).arg(online).arg(idle));
+        // 3. 获取在线玩家状态
+        NetManager *netManager = war3bot.getNetManager();
+        int playerOnline = 0;
+        QString playerDetails = "";
+
+        if (netManager) {
+            QList<RegisterInfo> players = netManager->getOnlinePlayers();
+            playerOnline = players.size();
+
+            if (playerOnline > 0) {
+                std::sort(players.begin(), players.end(), [](const RegisterInfo& a, const RegisterInfo& b){
+                    return a.firstSeen < b.firstSeen;
+                });
+
+                qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+                QStringList detailsList;
+
+                // 只取前 3 名
+                int countToPrint = qMin(players.size(), 3);
+
+                for (int i = 0; i < countToPrint; ++i) {
+                    const RegisterInfo &p = players[i];
+
+                    qint64 durationMs = nowMs - p.firstSeen;
+                    qint64 durationSec = durationMs / 1000;
+
+                    // 格式化时长
+                    QString timeStr;
+                    if (durationSec >= 86400) timeStr += QString("%1d").arg(durationSec / 86400);
+                    if (durationSec >= 3600)  timeStr += QString("%1h").arg((durationSec % 86400) / 3600);
+                    timeStr += QString("%1m").arg((durationSec % 3600) / 60);
+                    if (timeStr.isEmpty()) timeStr = QString("%1s").arg(durationSec);
+
+                    detailsList << QString("%1(%2)").arg(p.username, timeStr);
+                }
+
+                playerDetails = " -> [Top3: " + detailsList.join(", ");
+                if (playerOnline > 3) {
+                    playerDetails += QString(", ...等%1人").arg(playerOnline - 3);
+                }
+                playerDetails += "]";
+            }
+        }
+
+        // 4. 打印详细日志
+        LOG_INFO(QString("🔄 [服务器状态] 运行: %1 | Bot: %2/%3 (空闲:%4, 正在创建:%5, 大厅等待:%6) | 玩家: %7%8")
+                     .arg(uptimeStr)
+                     .arg(online)           // %2
+                     .arg(total)            // %3
+                     .arg(idle)             // %4
+                     .arg(creating)         // %5
+                     .arg(inLobby)          // %6
+                     .arg(playerOnline)     // %7
+                     .arg(playerDetails));  // %8
     });
+
+    // 设置间隔为 30 秒 (30000 毫秒)
     statusTimer->start(30000);
 
     // === 6. 退出清理 ===

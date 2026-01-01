@@ -274,8 +274,8 @@ void BotManager::onBotGameCreated(Bot *bot)
     LOG_INFO(QString("🎮 [%1] 房间创建成功 (房主UUID: %2)").arg(bot->username, clientId));
 
     // 4. 发送 TCP 控制指令让客户端进入
-    if (m_NetManager) {
-        bool sent = m_NetManager->sendControlEnterRoom(clientId, m_controlPort);
+    if (m_netManager) {
+        bool sent = m_netManager->sendControlEnterRoom(clientId, m_controlPort);
 
         if (sent) {
             LOG_INFO(QString("🚀 [自动进入] 发送指令 -> 目标UUID:[%1] 端口:[%2]").arg(m_controlPort));

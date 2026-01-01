@@ -15,6 +15,7 @@ enum class BotState {
     Creating,                                   // 创建中 (正在发送创建房间包)
     Waiting,                                    // 等待中 (房间已创建，等待玩家加入)
     InGame,                                     // 游戏中 (游戏已开始)
+    InLobby,                                    // 在大厅
     Connecting,                                 // 连接中
     Disconnected                                // 断开连接
 };
@@ -64,7 +65,7 @@ public:
     const QVector<Bot*>& getAllBots() const;
 
     // 设置 NetManager
-    void setNetManager(NetManager *server) { m_NetManager = server; }
+    void setNetManager(NetManager *server) { m_netManager = server; }
     void setP2PControlPort(quint16 port) { m_controlPort = port; }
 
     // 创建游戏
@@ -95,7 +96,7 @@ private:
     QString m_configPath;
     QString m_userPrefix;
     QString m_defaultPassword;
-    NetManager *m_NetManager = nullptr;
+    NetManager *m_netManager = nullptr;
 };
 
 #endif // BOTMANAGER_H

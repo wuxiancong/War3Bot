@@ -33,14 +33,15 @@ enum NATType {
 struct RegisterInfo {
     QString clientId;
     QString username;
-    quint64 lastSeen;
     QString localIp;
     quint16 localPort;
     QString publicIp;
     quint16 publicPort;
     quint32 sessionId;
+    quint64 lastSeen;
+    quint64 firstSeen;
     QString crcToken;
-    int natType;
+    quint32 natType;
     bool isRegistered;
 };
 
@@ -55,6 +56,7 @@ public:
     bool startServer(quint16 port, const QString &configFile = "war3bot.ini");
     void stopServer();
     bool isRunning() const;
+    QList<RegisterInfo> getOnlinePlayers() const;
     bool sendControlEnterRoom(const QString &clientUuid, quint16 port);
 
 signals:
@@ -127,7 +129,7 @@ private:
 
     // 数据
     QMap<QString, QTcpSocket*> m_tcpClients;
-    QReadWriteLock m_registerInfosLock;
+    mutable QReadWriteLock m_registerInfosLock;
     QMap<QString, RegisterInfo> m_registerInfos;
     QMap<quint32, QString> m_sessionIndex;
     QMap<QString, int> m_crcCounts;
