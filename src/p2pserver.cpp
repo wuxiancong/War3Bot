@@ -239,25 +239,13 @@ void P2PServer::processDatagram(const QNetworkDatagram &datagram)
 
     QString message = QString::fromUtf8(data).trimmed();
 
-    // 1. 基础检查
-    if (data.size() > 2048) return;
+    if (data.size() > 1500) return;
 
-    // 2. 只有特定指令允许未注册 IP 调用
-    bool isPublicCmd = message.startsWith("REGISTER") ||
-                       message.startsWith("CHALLENGE");
-
-    if (!isPublicCmd) {
-        QString uuid = findPeerUuidByAddress(datagram.senderAddress(), senderPort);
-        if (uuid.isEmpty()) {
-            return;
-        }
-    }
-
-    // 3. 分发处理
     if (message.startsWith("HANDSHAKE")) {
         LOG_INFO("🔗 处理 HANDSHAKE 消息");
         processHandshake(datagram);
-    } else if (message.startsWith("REGISTER")) {
+    } else if (message.startsWith("REGISTER")
+               || message.startsWith("CHALLENGE")) {
         LOG_INFO("📝 处理 REGISTER 消息");
         processRegister(datagram);
     } else if (message.startsWith("UNREGISTER")) {
