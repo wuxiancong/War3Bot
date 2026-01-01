@@ -931,13 +931,23 @@ void P2PServer::processBotCommand(const QNetworkDatagram &datagram)
     QString text = (parts.size() > 4) ? parts.mid(4).join('|') : "";
 
     // 2. 安全校验 (验证发送者身份)
-    // 必须确保发指令的 IP:Port 和注册的 UUID 是对应的，防止有人冒充管理员发指令
     QReadLocker locker(&m_peersLock);
 
     if (!m_peers.contains(clientUuid)) {
-        LOG_WARNING(QString("❌ [BOT] 拒绝指令: 未知的 UUID %1").arg(clientUuid));
-        return;
+        LOG_WARNING(QString("⚠ [BOT] 注意: UUID %1 未注册").arg(clientUuid));
+        // return;
     }
+
+    // const PeerInfo& peer = m_peers[clientUuid];
+
+    // 简单验证发送源地址是否匹配 (注意：datagram地址可能带IPv6映射，需要cleanAddress处理)
+    // 这里假设 cleanAddress 是你已有的工具函数
+    // QString senderIp = cleanAddress(datagram.senderAddress().toString());
+    // if (senderIp != peer.publicIp || datagram.senderPort() != peer.publicPort) {
+    //     LOG_WARNING(QString("⚠️ [BOT] 安全警告: UUID %1 指令来源不匹配! 注册IP: %2, 实际IP: %3")
+    //                 .arg(clientUuid, peer.publicIp, senderIp));
+    //     return; // 拒绝执行
+    // }
 
     // 3. 处理指令逻辑
     LOG_INFO(QString("🤖 [BOT] 执行指令 -> 用户: %1 (%2) | 命令: %3 | 参数: %4")
