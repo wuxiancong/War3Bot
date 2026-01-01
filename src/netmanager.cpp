@@ -203,7 +203,7 @@ void NetManager::processIncomingDatagram(const QNetworkDatagram &datagram)
         return;
     }
 
-    if (data.size() != sizeof(PacketHeader) + header->payloadLen) {
+    if (data.size() != static_cast<int>(sizeof(PacketHeader) + header->payloadLen)) {
         LOG_WARNING("包长度不一致，丢弃");
         return;
     }
@@ -623,18 +623,12 @@ void NetManager::handleTcpControlMessage(QTcpSocket *socket)
 
         LOG_INFO(QString("🎮 收到指令: %1").arg(line));
 
-        // 使用 '|' 分割指令和参数
-        // 格式: COMMAND|PARAM1|PARAM2...
         QStringList parts = line.split('|');
         if (parts.isEmpty()) continue;
 
         QString cmd = parts[0].toUpper();
 
-        // =========================================================
-        // 指令: CONTROL_LOGIN_clientId
-        // 客户端发送: CONTROL_LOGIN_clientId|{clientId}
-        // =========================================================
-        if (cmd == "CONTROL_LOGIN_clientId") {
+        if (cmd == "CONTROL_LOGIN_CLIENTID") {
             QString clientId = (parts.size() > 1) ? parts[1].trimmed() : "";
 
             if (!clientId.isEmpty()) {
@@ -654,9 +648,6 @@ void NetManager::handleTcpControlMessage(QTcpSocket *socket)
                 socket->write("CONTROL_LOGIN_RESPONSE|EMPTY_clientId\n");
             }
         }
-        // =========================================================
-        // 指令: PING (心跳)
-        // =========================================================
         else if (cmd == "PING") {
             socket->write("PONG\n");
         }

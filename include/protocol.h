@@ -56,6 +56,12 @@ struct CSCommandPacket {
     char text[200];
 };
 
+struct SCCommandPacket {
+    char clientId[40];
+    char username[32];
+    char command[16];
+};
+
 struct CSCheckMapCRCPacket {
     char crcHex[10];
 };
