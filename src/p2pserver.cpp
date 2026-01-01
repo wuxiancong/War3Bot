@@ -77,8 +77,6 @@ bool P2PServer::startServer(quint16 port, const QString &configFile)
         return false;
     }
 
-
-
     connect(m_tcpServer, &QTcpServer::newConnection, this, &P2PServer::onNewTcpConnection);
 
     m_listenPort = m_udpSocket->localPort();

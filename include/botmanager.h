@@ -70,6 +70,7 @@ public:
     // 创建游戏
     QString generateSafeGameName(const QString &inputName, const QString &hostName);
     bool createGame(const QString& hostName, const QString &gameName, CommandSource commandSource, const QString &clientUuid);
+    void onBotCommandReceived(const QString &userName, const QString &clientUuid, const QString &command, const QString &text);
 
 signals:
     // 状态变更信号，用于日志或UI更新
@@ -82,7 +83,6 @@ private slots:
     void onBotGameCreated(Bot *bot);
     void onBotDisconnected(Bot *bot);
     void onBotError(Bot *bot, QString error);
-    void onBotCommandReceived(const QString &userName, const QString &clientUuid, const QString &command, const QString &text);
 
 private:
     // 容器存储所有机器人指针

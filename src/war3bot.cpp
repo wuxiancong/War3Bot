@@ -39,6 +39,7 @@ bool War3Bot::startServer(quint16 port, const QString &configFile)
     if (!m_p2pServer) {
         m_p2pServer = new P2PServer(this);
         m_botManager->setP2PServer(m_p2pServer);
+        connect(m_p2pServer, &P2PServer::botCommandReceived, m_botManager, &BotManager::onBotCommandReceived);
 
         // 设置强制端口重用
         if (m_forcePortReuse) {
