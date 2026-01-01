@@ -44,7 +44,7 @@ struct PeerInfo {
     QString status;
     bool isRelayMode;
     QString crcToken;
-    QString bnetUsername;
+    QString username;
     bool operator==(const PeerInfo &other) const {
         return this->clientUuid == other.clientUuid && !this->clientUuid.isEmpty();
     }
@@ -71,7 +71,8 @@ public:
     QString findPeerUuidByAddress(const QHostAddress &address, quint16 port);
     QByteArray getPeers(int maxCount = -1, const QString &excludeClientUuid = "");
 
-    // 控制命令
+    // 控制命令    
+    void getClientUuid(const QHostAddress &address, quint16 port);
     bool sendControlEnterRoom(const QString &clientUuid, quint16 port);
 
 signals:
@@ -118,7 +119,6 @@ private:
     void processCheckCrc(const QNetworkDatagram &datagram);
     void processHandshake(const QNetworkDatagram &datagram);
     void processKeepAlive(const QNetworkDatagram &datagram);
-    void processClientUuid(const QNetworkDatagram &datagram);
     void processUnregister(const QNetworkDatagram &datagram);
     void processPeerInfoAck(const QNetworkDatagram &datagram);
     void processPingRequest(const QNetworkDatagram &datagram);
@@ -128,7 +128,6 @@ private:
     void processPunchRequest(const QNetworkDatagram &datagram);
     void processInitiatePunch(const QNetworkDatagram &datagram);
     void processForwardedMessage(const QNetworkDatagram &datagram);
-    void processClientUuidResponse(const QNetworkDatagram &datagram);
     void processOriginalMessage(const QByteArray &data, const QHostAddress &originalAddr, quint16 originalPort);
     void processRegisterRelayFromForward(const QByteArray &data, const QHostAddress &originalAddr, quint16 originalPort);
 
@@ -151,10 +150,11 @@ private:
     void updateMostFrequentCrc();
     QString ipIntToString(quint32 ip);
     QString natTypeToString(NATType type);
+    QString cleanAddress(const QString &address);
+    QString cleanAddress(const QHostAddress &address);
     QString formatPeerLog(const PeerInfo &peer) const;
     QString formatPeerData(const PeerInfo &peer) const;
     QByteArray buildSTUNTestResponse(const QNetworkDatagram &datagram);
-    QString generateStatelessToken(const QHostAddress &addr, quint16 port, qint64 timestamp);
     QString generateRegisterToken(const QString &uuid, const QHostAddress &addr, quint16 port, qint64 timestamp);
 
     // 配置参数

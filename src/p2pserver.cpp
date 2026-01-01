@@ -244,7 +244,6 @@ void P2PServer::processDatagram(const QNetworkDatagram &datagram)
 
     // 2. 只有特定指令允许未注册 IP 调用
     bool isPublicCmd = message.startsWith("REGISTER") ||
-                       message.startsWith("CLIENTUUID") ||
                        message.startsWith("CHALLENGE");
 
     if (!isPublicCmd) {
@@ -255,15 +254,7 @@ void P2PServer::processDatagram(const QNetworkDatagram &datagram)
     }
 
     // 3. 分发处理
-    if (message.startsWith("CLIENTUUID")) {
-        LOG_INFO("💻 处理 CLIENTUUID 消息");
-        processClientUuid(datagram);
-    }
-    else if (message.startsWith("CLIENTUUID_RESPONSE")) {
-        LOG_INFO("⛰️ 处理 CLIENTUUID_RESPONSE 消息");
-        processClientUuidResponse(datagram);
-    }
-    else if (message.startsWith("HANDSHAKE")) {
+    if (message.startsWith("HANDSHAKE")) {
         LOG_INFO("🔗 处理 HANDSHAKE 消息");
         processHandshake(datagram);
     } else if (message.startsWith("REGISTER")) {
@@ -490,10 +481,7 @@ void P2PServer::handleTcpUploadMessage(QTcpSocket* socket)
                     QString uploadedCrc = socket->property("CrcToken").toString();
 
                     // 2. 获取发送者 IP (处理 IPv6 映射)
-                    QString senderIp = socket->peerAddress().toString();
-                    if (senderIp.startsWith("::ffff:")) {
-                        senderIp = senderIp.mid(7);
-                    }
+                    QString senderIp = cleanAddress(socket->peerAddress().toString());
 
                     if (!uploadedCrc.isEmpty()) {
                         QWriteLocker locker(&m_peersLock);
@@ -647,61 +635,6 @@ void P2PServer::onTcpDisconnected()
     socket->deleteLater();
 }
 
-void P2PServer::processClientUuid(const QNetworkDatagram &datagram)
-{
-    QString uuid = QString::fromUtf8(datagram.data()).section('|', 1);
-
-    // 获取当前时间戳
-    qint64 now = QDateTime::currentMSecsSinceEpoch();
-
-    // 生成签名
-    QString token = generateStatelessToken(datagram.senderAddress(), datagram.senderPort(), now);
-
-    // CLIENTUUID | 时间戳 | 签名
-    QByteArray response = QString("CLIENTUUID|%1|%2").arg(now).arg(token).toUtf8();
-
-    sendToAddress(datagram.senderAddress(), datagram.senderPort(), response);
-}
-
-void P2PServer::processClientUuidResponse(const QNetworkDatagram &datagram)
-{
-    QStringList parts = QString::fromUtf8(datagram.data()).split('|');
-    // 格式: CLIENTUUID_RESPONSE | UUID | 时间戳 | 签名
-    if (parts.size() < 4) return;
-
-    QString uuid = parts[1];
-    qint64 timestamp = parts[2].toLongLong();
-    QString receivedToken = parts[3];
-
-    // A. 检查时间戳是否过期
-    qint64 now = QDateTime::currentMSecsSinceEpoch();
-    if (now - timestamp > 10000 || now < timestamp) {
-        LOG_WARNING("❌ 时间戳已过期");
-        return;
-    }
-
-    // B. 重新计算签名，验证是否被篡改
-    QString expectedToken = generateStatelessToken(datagram.senderAddress(), datagram.senderPort(), timestamp);
-
-    if (receivedToken == expectedToken) {
-        // === 验证通过！===
-        // 这证明了：
-        // 1. 对方确实收到了我们发去的包 (IP可达性验证)
-        // 2. 对方没有伪造 IP (因为 Token 是绑定 IP 生成的)
-
-        LOG_INFO("✅ 无状态验证通过: " + uuid);
-
-        // 这里可以安全地更新 m_peers
-        QWriteLocker locker(&m_peersLock);
-        if (m_peers.contains(uuid)) {
-            m_peers[uuid].publicIp = datagram.senderAddress().toString();
-            m_peers[uuid].publicPort = datagram.senderPort();
-        }
-    } else {
-        LOG_WARNING("❌ 签名验证失败 (可能是伪造包)");
-    }
-}
-
 void P2PServer::processHandshake(const QNetworkDatagram &datagram)
 {
     QString data = QString(datagram.data());
@@ -796,7 +729,7 @@ void P2PServer::processRegister(const QNetworkDatagram &datagram)
     // 1. 数据验证
     // 格式兼容两种情况：
     // 初始请求: REGISTER | UUID | LocalIP | LocalPort | Status | NatType
-    // 验证请求: REGISTER | UUID | LocalIP | LocalPort | Status | NatType | TimeStamp | Token | UserName
+    // 验证请求: REGISTER | UUID | LocalIP | LocalPort | Status | NatType | UserName | TimeStamp | Token
 
     if (parts.size() < 6) {
         LOG_WARNING("❌ [注册] 格式错误");
@@ -851,6 +784,7 @@ void P2PServer::processRegister(const QNetworkDatagram &datagram)
     QString localPort = parts[3];
     QString status = parts.size() > 4 ? parts[4] : "WAITING";
     int natTypeInt = parts[5].toInt();
+    QString username = parts[6];
     NATType natType = static_cast<NATType>(natTypeInt);
 
     // 防止注册空数据
@@ -907,22 +841,20 @@ void P2PServer::processRegister(const QNetworkDatagram &datagram)
         // ==================================================================
     }
 
-    // 5. 更新其他信息 (无论是新老用户都要更新心跳和公网地址)
+    // 5. 更新其他信息
     peerInfo.id = peerId;
     peerInfo.clientUuid = clientUuid;
     peerInfo.localIp = localIp;
     peerInfo.localPort = localPort.toUShort();
     peerInfo.publicIp = datagram.senderAddress().toString();
-    // 处理 IPv6 映射的 IPv4 (::ffff:192.168.1.1)
-    if (peerInfo.publicIp.startsWith("::ffff:")) {
-        peerInfo.publicIp = peerInfo.publicIp.mid(7);
-    }
+    peerInfo.publicIp = cleanAddress(peerInfo.publicIp);
     peerInfo.publicPort = datagram.senderPort();
-    peerInfo.targetIp = "0.0.0.0"; // 初始化
+    peerInfo.targetIp = "0.0.0.0";
     peerInfo.targetPort = 0;
     peerInfo.lastSeen = QDateTime::currentMSecsSinceEpoch();
     peerInfo.natType = natTypeToString(natType);
     peerInfo.status = status;
+    peerInfo.username = username;
 
     // 6. 写入 Map
     m_peers[clientUuid] = peerInfo;
@@ -1350,10 +1282,7 @@ void P2PServer::notifyPeerAboutPeer(const QString &targetUuid, const PeerInfo &o
         QReadLocker locker(&m_peersLock);
         if (m_peers.contains(targetUuid)) {
             const PeerInfo &targetPeer = m_peers.value(targetUuid);
-            QString cleanIp = targetPeer.publicIp;
-            if (cleanIp.startsWith("::ffff:")) {
-                cleanIp = cleanIp.mid(7);
-            }
+            QString cleanIp = cleanAddress(targetPeer.publicIp);
             targetAddress = QHostAddress(cleanIp);
             targetPort = targetPeer.publicPort;
             targetFound = !targetAddress.isNull();
@@ -1394,10 +1323,7 @@ void P2PServer::notifyPeerAboutPeers(const QString &requesterUuid, const QList<P
         if (m_peers.contains(requesterUuid)) {
             const PeerInfo &requesterPeer = m_peers.value(requesterUuid);
             // 这里可以复用您在 notifyPeerAboutPeer 中的IP清理逻辑
-            QString cleanIp = requesterPeer.publicIp;
-            if (cleanIp.startsWith("::ffff:")) {
-                cleanIp = cleanIp.mid(7);
-            }
+            QString cleanIp = cleanAddress(requesterPeer.publicIp);
             requesterAddress = QHostAddress(cleanIp);
             requesterPort = requesterPeer.publicPort;
             requesterFound = !requesterAddress.isNull();
@@ -1676,10 +1602,7 @@ void P2PServer::sendToPeer(const QString &clientUuid, const QByteArray &data)
     }
 
     const PeerInfo &peer = m_peers[clientUuid];
-    QString cleanIp = peer.publicIp;
-    if (cleanIp.startsWith("::ffff:")) {
-        cleanIp = cleanIp.mid(7);
-    }
+    QString cleanIp = cleanAddress(peer.publicIp);
     QHostAddress address(cleanIp);
     if (address.isNull()) {
         LOG_ERROR(QString("❌ 无效地址: %1").arg(cleanIp));
@@ -1803,10 +1726,7 @@ void P2PServer::cleanupExpiredPeers()
 
 QString P2PServer::generatePeerId(const QHostAddress &address, quint16 port)
 {
-    QString ipString = address.toString();
-    if (ipString.startsWith("::ffff:")) {
-        ipString = ipString.mid(7);
-    }
+    QString ipString = cleanAddress(address);
     return QString("%1:%2").arg(ipString).arg(port);
 }
 
@@ -2000,17 +1920,6 @@ QString P2PServer::formatPeerLog(const PeerInfo &peer) const
     return "\n" + logLines.join("\n");
 }
 
-QString P2PServer::generateStatelessToken(const QHostAddress &addr, quint16 port, qint64 timestamp)
-{
-    // 绑定 IP、端口、时间戳，防止伪造和重放
-    QString raw = QString("%1:%2:%3:%4")
-                      .arg(addr.toString())
-                      .arg(port).arg(timestamp)
-                      .arg(m_serverSecret);
-    // 使用 SHA256 签名
-    return QCryptographicHash::hash(raw.toUtf8(), QCryptographicHash::Sha256).toHex();
-}
-
 QString P2PServer::generateRegisterToken(const QString &uuid, const QHostAddress &addr, quint16 port, qint64 timestamp)
 {
     // 绑定 UUID、IP、端口、时间戳，防止伪造和重放
@@ -2076,6 +1985,23 @@ bool P2PServer::isValidFileName(const QString &name)
            lower == "blizzard.j" ||
            lower == "war3map.j" ||
            lower == "war3map.lua";
+}
+
+QString P2PServer::cleanAddress(const QHostAddress &address)
+{
+    QString ip = address.toString();
+    if (ip.startsWith("::ffff:")) {
+        return ip.mid(7);
+    }
+    return ip;
+}
+
+QString P2PServer::cleanAddress(const QString &address)
+{
+    if (address.startsWith("::ffff:")) {
+        return address.mid(7);
+    }
+    return address;
 }
 
 bool P2PServer::isRunning() const

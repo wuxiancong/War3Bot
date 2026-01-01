@@ -208,7 +208,6 @@ void BotManager::onBotGameCreated(Bot* bot)
 
     // 2. 获取房主 UUID
     QString hostUuid = bot->pendingTask.creatorName;
-
     LOG_INFO(QString("🎮 [%1] 房间创建成功 (房主UUID: %2)").arg(bot->username, hostUuid));
 
     // 4. 发送 TCP 控制指令让客户端进入
