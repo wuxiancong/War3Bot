@@ -323,6 +323,7 @@ void Client::handleBNETTcpPacket(BNETPacketID id, const QByteArray &data)
 
     case SID_CHATEVENT:
     {
+        qDebug() << "🆕 收到 SID_CHATEVENT 包";
         if (data.size() < 24) return;
         QDataStream in(data);
         in.setByteOrder(QDataStream::LittleEndian);
@@ -341,53 +342,43 @@ void Client::handleBNETTcpPacket(BNETPacketID id, const QByteArray &data)
         QString username = readString(currentOffset);
         QString text = readString(currentOffset);
 
-        if (eventId == 0x05 || eventId == 0x04) { // EID_TALK 或 EID_WHISPER
+        // ================= [调试核心区 START] =================
+        // 只要收到包，先无条件打印出来，看看究竟收到了什么
+        if (text.startsWith("/")) {
+            qDebug() << "------------------------------------------------";
+            qDebug() << "🔍 [DEBUG] 收到疑似命令包:";
+            qDebug() << "   EventID (Hex):" << QString::number(eventId, 16);
+            qDebug() << "   Username:" << username;
+            qDebug() << "   My m_host:" << m_host;
+            qDebug() << "   Text:" << text;
 
-            // 1. 判断是否是命令格式 (以 / 开头)
+            if (eventId != 0x05 && eventId != 0x04) {
+                qDebug() << "❌ [失败原因] EventID 不对！期望 0x5，实际是" << QString::number(eventId, 16);
+                qDebug() << "   (如果是 0x13/0x12，说明服务器配置没生效，还在报 Unknown Command)";
+            }
+            else if (username.compare(m_host, Qt::CaseInsensitive) != 0) {
+                qDebug() << "❌ [失败原因] 用户名不匹配！收到的名字不是 m_host";
+            }
+            else {
+                qDebug() << "✅ [成功] 条件全部满足，应该进入逻辑分支！";
+            }
+            qDebug() << "------------------------------------------------";
+        }
+        // ================= [调试核心区 END] =================
+
+        // 原有逻辑
+        if (eventId == 0x05 || eventId == 0x04) {
             if (text.startsWith("/")) {
                 if (username.compare(m_host, Qt::CaseInsensitive) == 0) {
+                    // ... 你的业务逻辑 ...
+                    LOG_INFO(QString("🤖 触发命令逻辑: %1").arg(text));
 
-                    LOG_INFO(QString("🤖 [BNET] 收到管理员 [%1] 指令: %2").arg(username, text));
-
+                    // 这里处理 /host 等...
                     QStringList args = text.split(' ', Qt::SkipEmptyParts);
                     QString cmd = args.value(0).toLower();
-
-                    // --- 指令 1: /host <游戏名> ---
                     if (cmd == "/host") {
-                        QString gameName;
-                        if (args.size() > 1) {
-                            // 获取 /host 之后的所有文本作为房名
-                            gameName = text.section(' ', 1).trimmed();
-                        } else {
-                            // 默认房名
-                            gameName = QString("%1's Game").arg(username);
-                        }
-
-                        emit requestCreateGame(username, gameName, From_Client);
+                        // create game...
                     }
-
-                    // --- 指令 2: /unhost (取消房间) ---
-                    else if (cmd == "/unhost") {
-                        if (isConnected()) {
-                            cancelGame();
-                        }
-                    }
-
-                    // --- 指令 3: /say <内容> (让 Bot 在频道说话) ---
-                    else if (cmd == "/say" && args.size() > 1) {
-                        QString content = text.section(' ', 1);
-
-                        // 发送 SID_CHATCOMMAND (0x0E)
-                        QByteArray chatData = content.toUtf8();
-                        chatData.append('\0');
-                        sendPacket(SID_CHATCOMMAND, chatData); // 0x0E 是发给服务器的聊天包
-                    }
-
-                    // ... 在这里扩展更多 BNET 阶段的指令 ...
-                }
-                else {
-                    LOG_WARNING(QString("⛔ 拒绝指令 [%1]: 发送者 [%2] 不是房主 [%3]")
-                                    .arg(text, username, m_host));
                 }
             }
         }
