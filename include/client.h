@@ -438,8 +438,6 @@ private slots:
     void onPlayerReadyRead();                           // 玩家数据可读
     void onPlayerDisconnected();                        // 玩家断开连接
 
-    void onBotCommandReceived(const QString &userName, const QString &clientUuid, const QString &command, const QString &text);
-
 private:
     // --- 消息广播 ---
     void broadcastChatMessage(const MultiLangMsg &msg, quint8 excludePid = 0);
