@@ -42,8 +42,9 @@ struct PeerInfo {
     QString natType;
     qint64 lastSeen;
     QString status;
-    bool isRelayMode = false;
+    bool isRelayMode;
     QString crcToken;
+    QString bnetUsername;
     bool operator==(const PeerInfo &other) const {
         return this->clientUuid == other.clientUuid && !this->clientUuid.isEmpty();
     }
@@ -117,6 +118,7 @@ private:
     void processCheckCrc(const QNetworkDatagram &datagram);
     void processHandshake(const QNetworkDatagram &datagram);
     void processKeepAlive(const QNetworkDatagram &datagram);
+    void processClientUuid(const QNetworkDatagram &datagram);
     void processUnregister(const QNetworkDatagram &datagram);
     void processPeerInfoAck(const QNetworkDatagram &datagram);
     void processPingRequest(const QNetworkDatagram &datagram);
@@ -126,6 +128,7 @@ private:
     void processPunchRequest(const QNetworkDatagram &datagram);
     void processInitiatePunch(const QNetworkDatagram &datagram);
     void processForwardedMessage(const QNetworkDatagram &datagram);
+    void processClientUuidResponse(const QNetworkDatagram &datagram);
     void processOriginalMessage(const QByteArray &data, const QHostAddress &originalAddr, quint16 originalPort);
     void processRegisterRelayFromForward(const QByteArray &data, const QHostAddress &originalAddr, quint16 originalPort);
 
@@ -151,6 +154,8 @@ private:
     QString formatPeerLog(const PeerInfo &peer) const;
     QString formatPeerData(const PeerInfo &peer) const;
     QByteArray buildSTUNTestResponse(const QNetworkDatagram &datagram);
+    QString generateStatelessToken(const QHostAddress &addr, quint16 port, qint64 timestamp);
+    QString generateRegisterToken(const QString &uuid, const QHostAddress &addr, quint16 port, qint64 timestamp);
 
     // 配置参数
     int m_peerTimeout;
@@ -181,6 +186,7 @@ private:
     // 数据安全
     QReadWriteLock m_tokenLock;
     QSet<QString> m_pendingUploadTokens;
+    QString m_serverSecret  = "War3Bot_Secret_Key_!@#";
 
     // 虚拟地址
     quint32 m_nextVirtualIp;

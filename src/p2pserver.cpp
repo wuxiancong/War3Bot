@@ -239,7 +239,31 @@ void P2PServer::processDatagram(const QNetworkDatagram &datagram)
 
     QString message = QString::fromUtf8(data).trimmed();
 
-    if (message.startsWith("HANDSHAKE")) {
+    // 1. 基础检查
+    if (data.size() > 2048) return;
+
+    // 2. 只有特定指令允许未注册 IP 调用
+    bool isPublicCmd = message.startsWith("REGISTER") ||
+                       message.startsWith("CLIENTUUID") ||
+                       message.startsWith("CHALLENGE");
+
+    if (!isPublicCmd) {
+        QString uuid = findPeerUuidByAddress(datagram.senderAddress(), senderPort);
+        if (uuid.isEmpty()) {
+            return;
+        }
+    }
+
+    // 3. 分发处理
+    if (message.startsWith("CLIENTUUID")) {
+        LOG_INFO("💻 处理 CLIENTUUID 消息");
+        processClientUuid(datagram);
+    }
+    else if (message.startsWith("CLIENTUUID_RESPONSE")) {
+        LOG_INFO("⛰️ 处理 CLIENTUUID_RESPONSE 消息");
+        processClientUuidResponse(datagram);
+    }
+    else if (message.startsWith("HANDSHAKE")) {
         LOG_INFO("🔗 处理 HANDSHAKE 消息");
         processHandshake(datagram);
     } else if (message.startsWith("REGISTER")) {
@@ -623,6 +647,61 @@ void P2PServer::onTcpDisconnected()
     socket->deleteLater();
 }
 
+void P2PServer::processClientUuid(const QNetworkDatagram &datagram)
+{
+    QString uuid = QString::fromUtf8(datagram.data()).section('|', 1);
+
+    // 获取当前时间戳
+    qint64 now = QDateTime::currentMSecsSinceEpoch();
+
+    // 生成签名
+    QString token = generateStatelessToken(datagram.senderAddress(), datagram.senderPort(), now);
+
+    // CLIENTUUID | 时间戳 | 签名
+    QByteArray response = QString("CLIENTUUID|%1|%2").arg(now).arg(token).toUtf8();
+
+    sendToAddress(datagram.senderAddress(), datagram.senderPort(), response);
+}
+
+void P2PServer::processClientUuidResponse(const QNetworkDatagram &datagram)
+{
+    QStringList parts = QString::fromUtf8(datagram.data()).split('|');
+    // 格式: CLIENTUUID_RESPONSE | UUID | 时间戳 | 签名
+    if (parts.size() < 4) return;
+
+    QString uuid = parts[1];
+    qint64 timestamp = parts[2].toLongLong();
+    QString receivedToken = parts[3];
+
+    // A. 检查时间戳是否过期
+    qint64 now = QDateTime::currentMSecsSinceEpoch();
+    if (now - timestamp > 10000 || now < timestamp) {
+        LOG_WARNING("❌ 时间戳已过期");
+        return;
+    }
+
+    // B. 重新计算签名，验证是否被篡改
+    QString expectedToken = generateStatelessToken(datagram.senderAddress(), datagram.senderPort(), timestamp);
+
+    if (receivedToken == expectedToken) {
+        // === 验证通过！===
+        // 这证明了：
+        // 1. 对方确实收到了我们发去的包 (IP可达性验证)
+        // 2. 对方没有伪造 IP (因为 Token 是绑定 IP 生成的)
+
+        LOG_INFO("✅ 无状态验证通过: " + uuid);
+
+        // 这里可以安全地更新 m_peers
+        QWriteLocker locker(&m_peersLock);
+        if (m_peers.contains(uuid)) {
+            m_peers[uuid].publicIp = datagram.senderAddress().toString();
+            m_peers[uuid].publicPort = datagram.senderPort();
+        }
+    } else {
+        LOG_WARNING("❌ 签名验证失败 (可能是伪造包)");
+    }
+}
+
 void P2PServer::processHandshake(const QNetworkDatagram &datagram)
 {
     QString data = QString(datagram.data());
@@ -634,6 +713,13 @@ void P2PServer::processHandshake(const QNetworkDatagram &datagram)
     }
 
     QString clientUuid = parts[1];
+
+    QString registeredUuid = findPeerUuidByAddress(datagram.senderAddress(), datagram.senderPort());
+    if (registeredUuid != clientUuid) {
+        LOG_WARNING("❌ 握手失败: UUID 与注册信息不符 (可能存在欺骗)");
+        return;
+    }
+
     QString localIp = parts[2];
     QString localPortStr = parts[3];
     QString targetIp = parts[4];
@@ -707,14 +793,60 @@ void P2PServer::processRegister(const QNetworkDatagram &datagram)
     QString data = QString::fromUtf8(datagram.data());
     QStringList parts = data.split('|');
 
-    // 1. 基础格式校验
+    // 1. 数据验证
+    // 格式兼容两种情况：
+    // 初始请求: REGISTER | UUID | LocalIP | LocalPort | Status | NatType
+    // 验证请求: REGISTER | UUID | LocalIP | LocalPort | Status | NatType | TimeStamp | Token | UserName
+
     if (parts.size() < 6) {
-        qDebug() << "❌ [注册失败] 无效的格式:" << data;
+        LOG_WARNING("❌ [注册] 格式错误");
         return;
     }
 
-    // 2. 提取并校验关键数据
-    QString clientUuid = parts[1].trimmed(); // 去除首尾空格
+    QString clientUuid = parts[1].trimmed();
+    if (clientUuid.isEmpty()) return;
+
+    // 获取发送者信息
+    QHostAddress senderAddr = datagram.senderAddress();
+    quint16 senderPort = datagram.senderPort();
+
+    // 2. 安全检查阶段
+
+    // 检查是否包含 Token (部分大小 > 6 说明带了验证信息)
+    bool isVerified = false;
+    if (parts.size() >= 8) {
+        qint64 timestamp = parts[6].toLongLong();
+        QString receivedToken = parts[7];
+        qint64 now = QDateTime::currentMSecsSinceEpoch();
+
+        // 1. 检查时效性 (例如 Token 有效期 10秒)
+        if (now - timestamp < 10000 && now >= timestamp) {
+            // 2. 重新计算签名
+            QString expectedToken = generateRegisterToken(clientUuid, senderAddr, senderPort, timestamp);
+            if (receivedToken == expectedToken) {
+                isVerified = true;
+            } else {
+                LOG_WARNING(QString("❌ [注册] 签名验证失败: %1").arg(clientUuid));
+            }
+        } else {
+            LOG_WARNING(QString("⚠️ [注册] Token 已过期: %1").arg(clientUuid));
+        }
+    }
+
+    // 如果未通过验证，发送挑战包，并立即返回 (不分配内存！)
+    if (!isVerified) {
+        qint64 now = QDateTime::currentMSecsSinceEpoch();
+        QString token = generateRegisterToken(clientUuid, senderAddr, senderPort, now);
+
+        // 发送挑战: REGISTER_CHALLENGE | TimeStamp | Token
+        QByteArray challenge = QString("REGISTER_CHALLENGE|%1|%2").arg(now).arg(token).toUtf8();
+        sendToAddress(senderAddr, senderPort, challenge);
+
+        LOG_DEBUG(QString("🛡️ [安全] 发送注册挑战给: %1 (不分配内存)").arg(clientUuid));
+        return; // <--- 关键！直接结束，不往下执行！
+    }
+
+    // ✅ 验证通过
     QString localIp = parts[2];
     QString localPort = parts[3];
     QString status = parts.size() > 4 ? parts[4] : "WAITING";
@@ -1120,6 +1252,11 @@ void P2PServer::processCheckCrc(const QNetworkDatagram &datagram)
     } else {
         status = "NOT_EXIST";
         QWriteLocker locker(&m_tokenLock);
+        // 限制 Token 总数，防止内存耗尽
+        if (m_pendingUploadTokens.size() > 1000) {
+            LOG_WARNING("⚠️ 上传队列已满，拒绝 CRC 请求");
+            return;
+        }
         m_pendingUploadTokens.insert(crcHex);
         QPointer<P2PServer> self = this;
         QTimer::singleShot(60000, this, [self, crcHex](){
@@ -1861,6 +1998,27 @@ QString P2PServer::formatPeerLog(const PeerInfo &peer) const
 
     // 将所有行合并为一个字符串，每行前加缩进
     return "\n" + logLines.join("\n");
+}
+
+QString P2PServer::generateStatelessToken(const QHostAddress &addr, quint16 port, qint64 timestamp)
+{
+    // 绑定 IP、端口、时间戳，防止伪造和重放
+    QString raw = QString("%1:%2:%3:%4")
+                      .arg(addr.toString())
+                      .arg(port).arg(timestamp)
+                      .arg(m_serverSecret);
+    // 使用 SHA256 签名
+    return QCryptographicHash::hash(raw.toUtf8(), QCryptographicHash::Sha256).toHex();
+}
+
+QString P2PServer::generateRegisterToken(const QString &uuid, const QHostAddress &addr, quint16 port, qint64 timestamp)
+{
+    // 绑定 UUID、IP、端口、时间戳，防止伪造和重放
+    QString raw = QString("%1:%2:%3:%4:%5")
+                      .arg(uuid, addr.toString())
+                      .arg(port).arg(timestamp)
+                      .arg(m_serverSecret);
+    return QCryptographicHash::hash(raw.toUtf8(), QCryptographicHash::Sha256).toHex();
 }
 
 void P2PServer::updateMostFrequentCrc()
