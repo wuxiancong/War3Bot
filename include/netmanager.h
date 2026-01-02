@@ -109,7 +109,7 @@ private:
     // 工具
     QString cleanAddress(const QString &address);
     QString cleanAddress(const QHostAddress &address);
-    QString natTypeToString(int type);
+    QString natTypeToString(NATType type);
 
     // 配置
     quint64 m_peerTimeout;

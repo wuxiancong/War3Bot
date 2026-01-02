@@ -706,7 +706,6 @@ bool NetManager::sendControlEnterRoom(const QString &clientId, quint16 port)
 {
     QString command = QString("CONTROL_ENTER_ROOM|%2\n").arg(port);
 
-    // 注意：sendToTcpPeer 内部需要通过 m_tcpClients 查找 Socket
     if (sendToClient(clientId, command.toUtf8())) {
         LOG_INFO(QString("🚀 已发送自动进入指令给 [%1]: %2").arg(clientId, command.trimmed()));
         return true;
@@ -845,13 +844,39 @@ QString NetManager::cleanAddress(const QHostAddress &address) {
     QString ip = address.toString();
     return ip.startsWith("::ffff:") ? ip.mid(7) : ip;
 }
+
 QString NetManager::cleanAddress(const QString &address) {
     return address.startsWith("::ffff:") ? address.mid(7) : address;
 }
 
-QString NetManager::natTypeToString(int type) {
-    // 简单映射，或者使用之前的 switch
-    return QString::number(type);
+QString NetManager::natTypeToString(NATType type)
+{
+    switch (type) {
+    case NAT_UNKNOWN:
+        return QStringLiteral("未知");
+    case NAT_OPEN_INTERNET:
+        return QStringLiteral("开放互联网");
+    case NAT_FULL_CONE:
+        return QStringLiteral("完全锥形NAT");
+    case NAT_RESTRICTED_CONE:
+        return QStringLiteral("限制锥形NAT");
+    case NAT_PORT_RESTRICTED_CONE:
+        return QStringLiteral("端口限制锥形NAT");
+    case NAT_SYMMETRIC:
+        return QStringLiteral("对称型NAT");
+    case NAT_SYMMETRIC_UDP_FIREWALL:
+        return QStringLiteral("对称型UDP防火墙");
+    case NAT_BLOCKED:
+        return QStringLiteral("被阻挡");
+    case NAT_DOUBLE_NAT:
+        return QStringLiteral("双重NAT");
+    case NAT_CARRIER_GRADE:
+        return QStringLiteral("运营商级NAT");
+    case NAT_IP_RESTRICTED:
+        return QStringLiteral("IP限制型NAT");
+    default:
+        return QStringLiteral("未知类型 (%1)").arg(type);
+    }
 }
 
 bool NetManager::isRunning() const { return m_isRunning; }
