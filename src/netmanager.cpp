@@ -247,7 +247,7 @@ void NetManager::processIncomingDatagram(const QNetworkDatagram &datagram)
         }
         break;
     default:
-        // LOG_DEBUG("未知或未处理的指令");
+        LOG_DEBUG(QString("❓ 收到未知指令: %1 来自 %2").arg((int)header->command).arg(sender.toString()));
         break;
     }
 }
