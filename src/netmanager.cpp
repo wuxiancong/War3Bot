@@ -341,7 +341,7 @@ void NetManager::handleUnregister(const PacketHeader *header)
         if (m_registerInfos.contains(uuid)) {
             RegisterInfo info = m_registerInfos.take(uuid); // take = remove + return
 
-            LOG_INFO("--------------------[ 👋 用户注销 ]--------------------");
+            LOG_INFO("--------------------[ 👋 用户注销请求 ]--------------------");
             LOG_INFO(QString("   ├─ Username:    %1").arg(info.username));
             LOG_INFO(QString("   ├─ Client UUID: %1").arg(info.clientId));
             LOG_INFO(QString("   └─ Session ID:  %1").arg(header->sessionId));
@@ -797,47 +797,79 @@ void NetManager::sendUploadResult(QTcpSocket* socket, const QString& crc, const 
 {
     if (!socket || !m_udpSocket) return;
 
-    // 1. 获取 TCP 对端 IP (处理 IPv6 映射)
     QString senderIp = cleanAddress(socket->peerAddress().toString());
-
     QHostAddress targetAddr;
     quint16 targetPort = 0;
     bool found = false;
+    quint32 fallbackSessionId = socket->property("SessionId").toUInt(); // 获取 SessionID
 
-    // 2. 在注册列表中查找对应的 UDP 用户
-    {
-        QReadLocker locker(&m_registerInfosLock);
-        for (const auto &info : qAsConst(m_registerInfos)) {
-            // 通过公网 IP 匹配用户
-            if (info.publicIp == senderIp) {
+    QReadLocker locker(&m_registerInfosLock);
+
+    // ---------------------------------------------------------
+    // 策略 1: 优先尝试通过 IP 匹配
+    // ---------------------------------------------------------
+    for (const auto &info : qAsConst(m_registerInfos)) {
+        // 如果 SessionID 存在，优先匹配 SessionID (最准确)
+        if (fallbackSessionId != 0 && info.sessionId == fallbackSessionId) {
+            targetAddr = QHostAddress(info.publicIp);
+            targetPort = info.publicPort;
+            found = true;
+            // 如果 IP 变了，顺便打印个日志
+            if (info.publicIp != senderIp) {
+                LOG_INFO(QString("🔄 [TCP/UDP关联] IP不一致 (TCP:%1 vs UDP:%2)，使用 SessionID:%3 修正")
+                             .arg(senderIp, info.publicIp).arg(fallbackSessionId));
+            }
+            break;
+        }
+
+        // 如果没有 SessionID，才尝试 IP 匹配
+        if (fallbackSessionId == 0 && info.publicIp == senderIp) {
+            targetAddr = QHostAddress(info.publicIp);
+            targetPort = info.publicPort;
+            found = true;
+            break;
+        }
+    }
+
+    // ---------------------------------------------------------
+    // 策略 2: 如果遍历完还没找到
+    // ---------------------------------------------------------
+    if (!found && fallbackSessionId != 0) {
+        // 尝试通过索引直接查找
+        if (m_sessionIndex.contains(fallbackSessionId)) {
+            QString uuid = m_sessionIndex.value(fallbackSessionId);
+            if (m_registerInfos.contains(uuid)) {
+                const RegisterInfo &info = m_registerInfos[uuid];
                 targetAddr = QHostAddress(info.publicIp);
                 targetPort = info.publicPort;
                 found = true;
-                break;
+                LOG_INFO(QString("✅ 通过索引找回用户: %1 (Session: %2)").arg(uuid).arg(fallbackSessionId));
             }
         }
     }
 
+    locker.unlock(); // 尽早解锁
+
     if (!found) {
-        LOG_WARNING(QString("⚠️ 上传结束，但无法找到对应的 UDP 用户 (IP: %1)，无法发送回执").arg(senderIp));
+        LOG_WARNING(QString("⚠️ 上传结束，无法找到 UDP 用户 (IP: %1, SessionID: %2)")
+                        .arg(senderIp)
+                        .arg(fallbackSessionId));
         return;
     }
 
-    // 3. 构造回执包
     SCUploadResultPacket pkt;
     memset(&pkt, 0, sizeof(pkt));
-
-    // 安全拷贝
     strncpy(pkt.crcHex, crc.toUtf8().constData(), sizeof(pkt.crcHex) - 1);
     strncpy(pkt.fileName, fileName.toUtf8().constData(), sizeof(pkt.fileName) - 1);
     pkt.status = success ? 1 : 0;
     pkt.reason = static_cast<quint8>(reason);
 
-    // 4. 通过 UDP 发送
     sendPacket(targetAddr, targetPort, PacketType::S_C_UPLOADRESULT, &pkt, sizeof(pkt));
 
-    LOG_INFO(QString("📤 发送上传回执 -> %1:%2 | 文件: %3 | 结果: %4")
-                 .arg(senderIp).arg(targetPort).arg(fileName, success ? "成功" : "失败"));
+    LOG_INFO(QString("📤 发送上传回执 -> %1:%2 (Session: %5) | 文件: %3 | 结果: %4")
+                 .arg(targetAddr.toString()).arg(targetPort)
+                 .arg(fileName, success ? "成功" : "失败")
+                 .arg(fallbackSessionId));
 }
 
 // ==================== 定时任务 ====================

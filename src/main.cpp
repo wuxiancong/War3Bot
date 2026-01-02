@@ -11,6 +11,8 @@
 #include <QSettings>
 #include <QUdpSocket>
 #include <QTextCodec>
+#include <QLocalServer>
+#include <QLocalSocket>
 #include <QCoreApplication>
 #include <QCommandLineParser>
 #include <QRegularExpression>
@@ -65,6 +67,8 @@ bool forceFreePort(quint16 port) {
     return true;
 }
 
+const QString IPC_SERVER_NAME = "war3bot_ipc";
+
 int main(int argc, char *argv[]) {
     // 设置编码为 UTF-8
     QTextCodec *codec = QTextCodec::codecForName("UTF-8");
@@ -94,7 +98,34 @@ int main(int argc, char *argv[]) {
     QCommandLineOption forceOption({"f", "force"}, "强制端口重用");
     parser.addOption(forceOption);
 
+    QCommandLineOption execOption({"x", "exec"}, "发送命令到正在运行的后台服务", "command");
+
     parser.process(app);
+
+    if (parser.isSet(execOption)) {
+        QString cmdToSend = parser.value(execOption);
+        if (cmdToSend.isEmpty()) {
+            fprintf(stderr, "错误: 命令不能为空\n");
+            return 1;
+        }
+
+        QLocalSocket socket;
+        socket.connectToServer(IPC_SERVER_NAME);
+
+        if (socket.waitForConnected(1000)) {
+            // 发送命令
+            QByteArray data = cmdToSend.toUtf8();
+            socket.write(data);
+            socket.waitForBytesWritten(1000);
+            socket.disconnectFromServer();
+            printf("✅ 命令已发送: %s\n", qPrintable(cmdToSend));
+            return 0; // 发送成功，退出进程
+        } else {
+            fprintf(stderr, "❌ 连接失败: 无法连接到后台服务 (%s)\n", qPrintable(socket.errorString()));
+            fprintf(stderr, "请确认 sudo systemctl status war3bot 是否正在运行。\n");
+            return 1;
+        }
+    }
 
     // === 1. 加载配置与日志初始化 ===
     QString configFile = parser.value(configOption);
@@ -197,9 +228,8 @@ int main(int argc, char *argv[]) {
     LOG_INFO("War3Bot 服务器正在运行。按 Ctrl+C 停止。");
     LOG_INFO("=== 服务器启动完成，开始监听 ===");
 
-    // === 4. 控制台命令处理 ===
-    Command command;
-    QObject::connect(&command, &Command::inputReceived, &app, [&](QString cmd){
+    auto processCommand = [&](QString cmd) {
+        LOG_INFO(QString("📥 收到指令: %1").arg(cmd));
         QStringList parts;
         QRegularExpression regex("(\"[^\"]*\"|[^\\s\"]+)");
         QRegularExpressionMatchIterator i = regex.globalMatch(cmd);
@@ -403,12 +433,40 @@ int main(int argc, char *argv[]) {
         else {
             LOG_INFO("未知命令。可用命令: connect, create, cancel, stop");
         }
-    });
+    };
 
-    // 启动监听
+    // === 4. 控制台命令处理 ===
+    Command command;
+    QObject::connect(&command, &Command::inputReceived, &app, processCommand);
     command.start();
 
-    // === 5. 定时状态报告 ===
+    // === 5. 启动 IPC 本地服务器 ===
+    QLocalServer ipcServer;
+    if (ipcServer.listen(IPC_SERVER_NAME)) {
+        // 设置权限，确保 sudo 运行的用户或者同组用户能访问
+        // Linux 下建议设置为 User/Group 可读写
+#ifndef Q_OS_WIN
+        QFile ipcFile(QDir::tempPath() + "/" + IPC_SERVER_NAME);
+        ipcFile.setPermissions(QFile::ReadOwner | QFile::WriteOwner | QFile::ReadUser | QFile::WriteUser);
+#endif
+        LOG_INFO(QString("✅ IPC 命令服务已启动，监听: %1").arg(ipcServer.fullServerName()));
+
+        QObject::connect(&ipcServer, &QLocalServer::newConnection, &app, [&]() {
+            QLocalSocket *clientConnection = ipcServer.nextPendingConnection();
+            QObject::connect(clientConnection, &QLocalSocket::readyRead, [clientConnection, processCommand]() {
+                QByteArray data = clientConnection->readAll();
+                QString cmd = QString::fromUtf8(data).trimmed();
+                if (!cmd.isEmpty()) {
+                    processCommand(cmd);
+                }
+            });
+            QObject::connect(clientConnection, &QLocalSocket::disconnected, clientConnection, &QLocalSocket::deleteLater);
+        });
+    } else {
+        LOG_ERROR(QString("❌ IPC 服务启动失败: %1").arg(ipcServer.errorString()));
+    }
+
+    // === 6. 定时状态报告 ===
     QTimer *statusTimer = new QTimer(&app);
     QObject::connect(statusTimer, &QTimer::timeout, &app, [startTime = QDateTime::currentDateTime(), &war3bot]() {
 
