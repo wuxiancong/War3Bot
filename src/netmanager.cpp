@@ -369,7 +369,6 @@ void NetManager::handlePing(const PacketHeader *header, const QHostAddress &send
 
 void NetManager::handleHeartbeat(const PacketHeader *header, const QHostAddress &senderAddr, quint16 senderPort)
 {
-    // 更新最后在线时间
     if (header->sessionId == 0) return;
 
     QWriteLocker locker(&m_registerInfosLock);
@@ -378,6 +377,9 @@ void NetManager::handleHeartbeat(const PacketHeader *header, const QHostAddress 
             info.lastSeen = QDateTime::currentMSecsSinceEpoch();
             info.publicIp = cleanAddress(senderAddr);
             info.publicPort = senderPort;
+
+            locker.unlock();
+            sendPacket(senderAddr, senderPort, PacketType::S_C_PONG);
             return;
         }
     }
