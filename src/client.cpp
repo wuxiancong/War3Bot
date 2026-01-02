@@ -286,12 +286,28 @@ void Client::onTcpReadyRead()
 
 void Client::handleBNETTcpPacket(BNETPacketID id, const QByteArray &data)
 {
-    LOG_INFO(QString("📥 收到包 ID: 0x%1").arg(QString::number(id, 16)));
+    // 将日志级别降为 DEBUG，避免正常的 PING 包刷屏 INFO 日志
+    if (id != SID_PING) {
+        LOG_INFO(QString("📥 收到包 ID: 0x%1").arg(QString::number(id, 16)));
+    }
 
     switch (id) {
     case SID_PING:
+    {
+        if (data.size() < 4) return; // 基础校验
+
+        quint32 pingValue;
+        QDataStream ds(data);
+        ds.setByteOrder(QDataStream::LittleEndian);
+        ds >> pingValue;
+
+        // 仅在 DEBUG 模式下打印，防止刷屏
+        LOG_DEBUG(QString("💓 [心跳] 收到服务器 Ping: %1，已回应").arg(pingValue));
+
+        // 核心逻辑：原样发回数据
         sendPacket(SID_PING, data);
-        break;
+    }
+    break;
 
     case SID_ENTERCHAT:
         LOG_INFO("✅ 已成功进入聊天环境 (Unique Name Received)");
@@ -305,12 +321,19 @@ void Client::handleBNETTcpPacket(BNETPacketID id, const QByteArray &data)
         int offset = 0;
         while (offset < data.size()) {
             int strEnd = data.indexOf('\0', offset);
-            if (strEnd == -1) break;
+            if (strEnd == -1) {
+                if (offset < data.size()) {
+                    QString lastStr = QString::fromUtf8(data.mid(offset));
+                    if (!lastStr.isEmpty()) m_channelList.append(lastStr);
+                }
+                break;
+            }
             QByteArray rawStr = data.mid(offset, strEnd - offset);
             QString channelName = QString::fromUtf8(rawStr);
             if (!channelName.isEmpty()) m_channelList.append(channelName);
             offset = strEnd + 1;
         }
+
         if (m_channelList.isEmpty()) {
             LOG_WARNING("⚠️ 频道列表为空！尝试加入 'Waiting Players'");
             joinChannel("Waiting Players");
@@ -323,16 +346,16 @@ void Client::handleBNETTcpPacket(BNETPacketID id, const QByteArray &data)
 
     case SID_CHATEVENT:
     {
-        // 1. 基础校验：包头长度不足直接返回
+        // 1. 基础校验
         if (data.size() < 24) return;
 
-        // 2. 解析固定头部数据
+        // 2. 解析固定头部
         QDataStream in(data);
         in.setByteOrder(QDataStream::LittleEndian);
         quint32 eventId, flags, ping, ipAddress, accountNum, regAuthority;
         in >> eventId >> flags >> ping >> ipAddress >> accountNum >> regAuthority;
 
-        // 3. 解析动态字符串 (Username 和 Text)
+        // 3. 解析动态字符串
         int currentOffset = 24;
         auto readString = [&](int &offset) -> QString {
             if (offset >= data.size()) return QString();
@@ -346,13 +369,13 @@ void Client::handleBNETTcpPacket(BNETPacketID id, const QByteArray &data)
         QString username = readString(currentOffset);
         QString text = readString(currentOffset);
 
-        // 4. 仅仅记录数据
+        // 4. 指令捕获记录
         if (text.startsWith("/")) {
             LOG_INFO(QString("⚡ [指令捕获] EID:0x%1 | 用户:%2 | 内容:%3")
                          .arg(QString::number(eventId, 16), username, text));
         }
 
-        // 5. 常规日志记录
+        // 5. 日志分流
         switch (eventId) {
         case 0x01: LOG_INFO(QString("👤 [用户展示] %1 (Ping: %2)").arg(username).arg(ping)); break;
         case 0x02: LOG_INFO(QString("➡️ [加入频道] %1").arg(username)); break;
@@ -366,10 +389,7 @@ void Client::handleBNETTcpPacket(BNETPacketID id, const QByteArray &data)
         case 0x12: LOG_INFO(QString("ℹ️ [INFO] %1").arg(text)); break;
         case 0x13: LOG_ERROR(QString("❌ [ERROR] %1").arg(text)); break;
         case 0x17: LOG_INFO(QString("✨ [表情] %1 %2").arg(username, text)); break;
-        default:
-            LOG_DEBUG(QString("📦 [其他事件] ID:0x%1 | User:%2 | Text:%3")
-                          .arg(QString::number(eventId, 16), username, text));
-            break;
+        default:   break;
         }
     }
     break;
@@ -408,7 +428,7 @@ void Client::handleBNETTcpPacket(BNETPacketID id, const QByteArray &data)
 
     case SID_AUTH_INFO:
     case SID_AUTH_CHECK:
-        if (data.size() > 16) handleAuthCheck(data);
+        handleAuthCheck(data);
         break;
 
     case SID_AUTH_ACCOUNTCREATE:
@@ -442,20 +462,23 @@ void Client::handleBNETTcpPacket(BNETPacketID id, const QByteArray &data)
         QDataStream ds(data);
         ds.setByteOrder(QDataStream::LittleEndian);
         ds >> status;
+        // 0x00 = OK, 0x0E = Email注册相关的OK
         if (status == 0 || status == 0x0E) {
             LOG_INFO("🎉 登录成功 (SRP)！");
             emit authenticated();
         } else {
-            LOG_ERROR(QString("❌ 登录失败 (SRP): 0x%1").arg(QString::number(status, 16)));
+            QString reason = "未知错误";
+            if (status == 0x02) reason = "密码错误";
+            else if (status == 0x0D) reason = "账号不存在";
+
+            LOG_ERROR(QString("❌ 登录失败 (SRP): 0x%1 (%2)").arg(QString::number(status, 16), reason));
         }
     }
     break;
 
     case SID_STARTADVEX3:
     {
-        // 确保数据长度足够读取状态码 (UINT32)
         if (data.size() < 4) return;
-
         quint32 status;
         QDataStream ds(data);
         ds.setByteOrder(QDataStream::LittleEndian);
@@ -464,14 +487,12 @@ void Client::handleBNETTcpPacket(BNETPacketID id, const QByteArray &data)
         if (status == GameCreate_Ok) {
             LOG_INFO("✅ 房间创建成功！(广播已启动)");
             emit gameCreated(From_Client);
-        }
-        else {
-            // 处理创建失败的情况
+        } else {
             QString errStr;
             switch (status) {
             case GameCreate_NameExists:      errStr = "房间名已存在"; break;
             case GameCreate_TypeUnavailable: errStr = "游戏类型不可用"; break;
-            case GameCreate_Error:           errStr = "未知错误"; break;
+            case GameCreate_Error:           errStr = "通用创建错误"; break;
             default:                         errStr = QString("错误码 0x%1").arg(QString::number(status, 16)); break;
             }
             LOG_ERROR(QString("❌ 房间创建失败: %1").arg(errStr));
