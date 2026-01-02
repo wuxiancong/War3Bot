@@ -16,11 +16,16 @@
 #include <QCoreApplication>
 #include <QCommandLineParser>
 #include <QRegularExpression>
+#include <QFileSystemWatcher>
 
 #ifdef Q_OS_WIN
 #include <windows.h>
 #include <tlhelp32.h>
 #endif
+
+// === 定义IPC名称 ===
+const QString IPC_SERVER_NAME = "war3bot_ipc";
+const QString IPC_NAME = "war3bot_ipc_socket";
 
 // === 端口检查函数 ===
 bool isPortInUse(quint16 port) {
@@ -67,7 +72,54 @@ bool forceFreePort(quint16 port) {
     return true;
 }
 
-const QString IPC_SERVER_NAME = "war3bot_ipc";
+int runConsoleClient(const QString &logFile) {
+    // 1. 尝试连接后台服务
+    QLocalSocket socket;
+    socket.connectToServer(IPC_NAME);
+    if (!socket.waitForConnected(1000)) {
+        printf("❌ 无法连接到 War3Bot 后台服务。\n");
+        printf("请确保服务已启动 (sudo systemctl start war3bot)\n");
+        printf("错误信息: %s\n", qPrintable(socket.errorString()));
+        return -1;
+    }
+    printf("✅ 已连接到 War3Bot 服务。您可以输入命令，日志将实时显示。\n");
+    printf("👉 输入 'quit' 或按 Ctrl+C 退出控制台 (不会停止后台服务)\n");
+    printf("----------------------------------------------------------\n");
+
+    // 2. 启动输入监听线程
+    Command cmdThread(nullptr); // Client 指针传 nullptr，因为只用来读 stdin
+
+    QObject::connect(&cmdThread, &Command::inputReceived, [&](QString cmd) {
+        if (cmd == "quit" || cmd == "exit") {
+            QCoreApplication::quit();
+            return;
+        }
+        // 发送命令到后台
+        socket.write(cmd.toUtf8());
+        socket.flush();
+    });
+    cmdThread.start();
+
+    // 3. 实时读取日志文件
+    QFile file(logFile);
+    if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        file.seek(file.size()); // 跳到文件末尾，不打印历史日志
+
+        QTimer *logTimer = new QTimer();
+        QObject::connect(logTimer, &QTimer::timeout, [&file]() {
+            QByteArray newLines = file.readAll();
+            if (!newLines.isEmpty()) {
+                printf("%s", newLines.constData());
+                fflush(stdout);
+            }
+        });
+        logTimer->start(200); // 每200毫秒检查一次新日志
+    } else {
+        printf("⚠️ 警告: 无法打开日志文件进行监控: %s\n", qPrintable(logFile));
+    }
+
+    return QCoreApplication::exec();
+}
 
 int main(int argc, char *argv[]) {
     // 设置编码为 UTF-8
@@ -99,6 +151,8 @@ int main(int argc, char *argv[]) {
     parser.addOption(forceOption);
 
     QCommandLineOption execOption({"x", "exec"}, "发送命令到正在运行的后台服务", "command");
+    QCommandLineOption attachOption({"a", "attach"}, "附着到运行中的服务 (查看日志并发送命令)");
+    parser.addOption(attachOption);
 
     parser.process(app);
 
@@ -163,6 +217,10 @@ int main(int argc, char *argv[]) {
 
     QFileInfo logFileInfo(logFilePath);
     if (!logFileInfo.dir().exists()) logFileInfo.dir().mkpath(".");
+
+    if (parser.isSet(attachOption)) {
+        return runConsoleClient(logFilePath);
+    }
 
     Logger::instance()->setLogLevel(Logger::logLevelFromString(configLogLevel));
     Logger::instance()->enableConsoleOutput(enableConsole);
