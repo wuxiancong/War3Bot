@@ -458,8 +458,9 @@ void NetManager::handleCheckMapCRC(const PacketHeader *header, const CSCheckMapC
     // 如果不存在，加入待上传白名单
     if (!exists) {
         QWriteLocker locker(&m_tokenLock);
-        m_pendingUploadTokens.insert(crcHex);
-        LOG_INFO(QString("🔍 请求CRC %1 不存在，等待上传").arg(crcHex));
+        m_pendingUploadTokens.insert(crcHex, header->sessionId);
+        LOG_INFO(QString("🔍 请求CRC %1 不存在，等待上传 (Session: %2)")
+                     .arg(crcHex).arg(header->sessionId));
     } else {
         LOG_INFO(QString("✅ 请求CRC %1 已存在").arg(crcHex));
     }
@@ -495,23 +496,50 @@ void NetManager::onTcpReadyRead()
 
 void NetManager::handleTcpUploadMessage(QTcpSocket *socket)
 {
+    // 建立数据流
     QDataStream in(socket);
     in.setVersion(QDataStream::Qt_5_15);
 
-    QString currentCrcToken;
-    QString currentFileName;
-
     while (socket->bytesAvailable() > 0) {
+
+        // ==================== 阶段 1: 解析头部 ====================
         if (!socket->property("HeaderParsed").toBool()) {
 
-            if (socket->bytesAvailable() < 4 + 8 + 4) return;
+            // 基础头部长度: Magic(4) + Token(8) + NameLen(4) = 16 字节
+            const int MIN_HEADER_SIZE = 16;
+            if (socket->bytesAvailable() < MIN_HEADER_SIZE) return;
 
-            // 1. 验证 Magic "W3UP"
+            // ⚡ 关键修正 1: 预读 (Peek) 检查完整性
+            // 防止读了 Magic 发现后面数据不够，导致下次重入时数据错位
+            QByteArray headerPeep = socket->peek(MIN_HEADER_SIZE);
+
+            // 提取文件名长度 (最后4字节)
+            QDataStream peepStream(headerPeep);
+            peepStream.skipRawData(12); // 跳过 Magic(4) + Token(8)
+            quint32 nameLenPreview;
+            peepStream >> nameLenPreview;
+
+            // 🛡️ 安全检查: 文件名长度过长
+            if (nameLenPreview > 256) {
+                LOG_WARNING("❌ TCP 拒绝: 文件名过长");
+                // 此时还没读 socket，但为了发回执需要读出 token (为了逻辑简单，这里直接断开即可)
+                // 或者手动读出 token 发回执
+                socket->disconnectFromHost();
+                return;
+            }
+
+            // ⚡ 关键修正 2: 确保【整个头部 + 文件名】都已到达才开始读取
+            if (socket->bytesAvailable() < MIN_HEADER_SIZE + nameLenPreview) {
+                return; // 数据不够，等待下一个包，不做任何读取操作
+            }
+
+            // ==================== 开始正式读取 ====================
+
+            // 1. 验证 Magic
             QByteArray magic = socket->read(4);
-
             if (magic != "W3UP") {
                 LOG_WARNING("❌ TCP 非法连接: 魔数错误");
-                sendUploadResult(socket, magic, "Magic not match", false, UPLOAD_ERR_MAGIC);
+                sendUploadResult(socket, "", "Magic not match", false, UPLOAD_ERR_MAGIC);
                 socket->disconnectFromHost();
                 return;
             }
@@ -519,10 +547,14 @@ void NetManager::handleTcpUploadMessage(QTcpSocket *socket)
             // 2. 读取并验证 CRC Token
             QByteArray tokenBytes = socket->read(8);
             QString crcToken = QString::fromLatin1(tokenBytes).trimmed();
+            quint32 linkedSessionId = 0;
 
             {
                 QReadLocker locker(&m_tokenLock);
-                if (!m_pendingUploadTokens.contains(crcToken)) {
+                // 3: 逻辑合并，去掉多余的 if/else
+                if (m_pendingUploadTokens.contains(crcToken)) {
+                    linkedSessionId = m_pendingUploadTokens.value(crcToken);
+                } else {
                     LOG_WARNING(QString("❌ TCP 拒绝上传: 未授权的 Token (%1)").arg(crcToken));
                     sendUploadResult(socket, crcToken, "Unauthorized", false, UPLOAD_ERR_TOKEN);
                     socket->disconnectFromHost();
@@ -530,24 +562,17 @@ void NetManager::handleTcpUploadMessage(QTcpSocket *socket)
                 }
             }
 
+            // 保存 SessionID
+            socket->setProperty("CrcToken", crcToken);
+            socket->setProperty("SessionId", linkedSessionId);
+
             // 3. 读取文件名长度
             quint32 nameLen;
             in >> nameLen;
 
-            // 🛡️ 安全检查: 文件名长度限制
-            if (nameLen > 256) {
-                LOG_WARNING("❌ TCP 拒绝: 文件名过长");
-                sendUploadResult(socket, crcToken, "File name too long", false, UPLOAD_ERR_FILENAME);
-                socket->disconnectFromHost();
-                return;
-            }
-
             // 4. 读取文件名
-            if (socket->bytesAvailable() < nameLen) return;
             QByteArray nameBytes = socket->read(nameLen);
             QString rawFileName = QString::fromUtf8(nameBytes);
-
-            // 🛡️ 安全检查: 强制使用 QFileInfo 取文件名，防止路径遍历
             QString fileName = QFileInfo(rawFileName).fileName();
 
             if (!isValidFileName(fileName)) {
@@ -562,7 +587,6 @@ void NetManager::handleTcpUploadMessage(QTcpSocket *socket)
             qint64 fileSize;
             in >> fileSize;
 
-            // 🛡️ 安全检查: 大小限制 (例如最大 20MB)
             if (fileSize <= 0 || fileSize > 20 * 1024 * 1024) {
                 LOG_WARNING("❌ TCP 拒绝: 文件过大");
                 sendUploadResult(socket, crcToken, fileName, false, UPLOAD_ERR_SIZE);
@@ -570,31 +594,12 @@ void NetManager::handleTcpUploadMessage(QTcpSocket *socket)
                 return;
             }
 
-            // 6. 准备文件写入
+            // 6. 准备文件
             QString saveDir = QCoreApplication::applicationDirPath() + "/war3files/crc/" + crcToken;
-
             QDir dir(saveDir);
-            if (!dir.exists()) {
-                if (!dir.mkpath(".")) {
-                    LOG_ERROR("❌ 无法创建目录: " + saveDir);
-                    sendUploadResult(socket, crcToken, fileName, false, UPLOAD_ERR_IO);
-                    socket->disconnectFromHost();
-                    return;
-                }
-            }
+            if (!dir.exists()) dir.mkpath(".");
 
-            QString safeFileName = QFileInfo(rawFileName).fileName();
-            if (!isValidFileName(safeFileName)) {
-                LOG_WARNING(QString("❌ TCP 拒绝上传: 非法文件名 (%1)").arg(fileName));
-                sendUploadResult(socket, crcToken, fileName, false, UPLOAD_ERR_FILENAME);
-                socket->disconnectFromHost();
-                return;
-            }
-            QString savePath = saveDir + "/" + safeFileName;
-
-            // 把 crcToken 存到 socket 属性里，传给下一步用
-            socket->setProperty("CrcToken", crcToken);
-
+            QString savePath = saveDir + "/" + fileName;
             QFile *file = new QFile(savePath);
             if (!file->open(QIODevice::WriteOnly)) {
                 LOG_ERROR("❌ 无法创建文件: " + savePath);
@@ -608,26 +613,21 @@ void NetManager::handleTcpUploadMessage(QTcpSocket *socket)
             socket->setProperty("BytesTotal", fileSize);
             socket->setProperty("BytesWritten", (qint64)0);
             socket->setProperty("HeaderParsed", true);
-            socket->setProperty("CrcToken", crcToken);
             socket->setProperty("FileName", fileName);
 
             LOG_INFO(QString("📥 [TCP] 开始接收文件: %1 (CRC: %2)").arg(fileName, crcToken));
         }
 
-        // 数据接收部分
+        // ==================== 阶段 2: 接收文件内容 ====================
         if (socket->property("HeaderParsed").toBool()) {
             QFile *file = static_cast<QFile*>(socket->property("FilePtr").value<void*>());
             qint64 total = socket->property("BytesTotal").toLongLong();
             qint64 current = socket->property("BytesWritten").toLongLong();
-
-            // 计算还需要读多少
             qint64 remaining = total - current;
-
-            // 只读取需要的部分，防止多读了下一个包的数据 (粘包处理)
             qint64 bytesToRead = qMin(remaining, socket->bytesAvailable());
 
-            currentCrcToken = socket->property("CrcToken").toString();
-            currentFileName = socket->property("FileName").toString();
+            QString currentCrcToken = socket->property("CrcToken").toString();
+            QString currentFileName = socket->property("FileName").toString();
 
             if (bytesToRead > 0) {
                 QByteArray chunk = socket->read(bytesToRead);
@@ -635,10 +635,8 @@ void NetManager::handleTcpUploadMessage(QTcpSocket *socket)
                 current += chunk.size();
                 socket->setProperty("BytesWritten", current);
 
-                // 🛡️ 安全检查: 防止超量写入
                 if (current > total) {
-                    LOG_ERROR("❌ 写入溢出，断开连接");
-                    sendUploadResult(socket, currentCrcToken, currentFileName, false, UPLOAD_ERR_OVERFLOW);
+                    // 溢出保护
                     file->remove();
                     socket->disconnectFromHost();
                     return;
@@ -648,35 +646,49 @@ void NetManager::handleTcpUploadMessage(QTcpSocket *socket)
                     file->close();
                     file->deleteLater();
 
-                    // 1. 取出保存的 CRC
-                    QString uploadedCrc = socket->property("CrcToken").toString();
+                    // =======================================================
+                    // 4: 使用 SessionID 更新状态
+                    // =======================================================
+                    quint32 sid = socket->property("SessionId").toUInt();
+                    bool updated = false;
+                    QString clientName = "Unknown";
 
-                    // 2. 获取发送者 IP (处理 IPv6 映射)
-                    QString senderIp = cleanAddress(socket->peerAddress().toString());
-
-                    if (!uploadedCrc.isEmpty()) {
+                    {
                         QWriteLocker locker(&m_registerInfosLock);
-                        bool peerFound = false;
-
-                        // 3. 遍历查找 IP 匹配的用户
-                        for (auto it = m_registerInfos.begin(); it != m_registerInfos.end(); ++it) {
-                            if (it.value().publicIp == senderIp) {
-                                it.value().crcToken = uploadedCrc;
-                                peerFound = true;
-                                LOG_INFO(QString("🗺️ 已更新用户 %1 的地图CRC: %2")
-                                             .arg(it.value().clientId, uploadedCrc));
+                        // 1. 先查索引
+                        if (m_sessionIndex.contains(sid)) {
+                            QString uuid = m_sessionIndex.value(sid);
+                            // 2. 再查主表
+                            if (m_registerInfos.contains(uuid)) {
+                                m_registerInfos[uuid].crcToken = currentCrcToken;
+                                clientName = m_registerInfos[uuid].username;
+                                updated = true;
+                                LOG_INFO(QString("🗺️ 已更新用户 %1 的地图CRC: %2 (via SessionID)")
+                                             .arg(clientName, currentCrcToken));
                             }
                         }
 
-                        if (!peerFound) {
-                            LOG_WARNING(QString("⚠️ 文件接收完成，但未找到 IP 为 %1 的用户来绑定 CRC").arg(senderIp));
+                        // 备用方案：如果 SessionID 找不到 (极少见)，才去遍历 IP
+                        if (!updated) {
+                            QString senderIp = cleanAddress(socket->peerAddress().toString());
+                            for (auto it = m_registerInfos.begin(); it != m_registerInfos.end(); ++it) {
+                                if (it.value().publicIp == senderIp) {
+                                    it.value().crcToken = currentCrcToken;
+                                    updated = true;
+                                    LOG_INFO(QString("🗺️ 已更新用户 %1 的地图CRC (via IP)").arg(it.value().username));
+                                    break;
+                                }
+                            }
                         }
                     }
+
+                    if (!updated) {
+                        LOG_WARNING(QString("⚠️ 文件接收完成，但找不到对应用户 (Session: %1)").arg(sid));
+                    }
+
                     sendUploadResult(socket, currentCrcToken, currentFileName, true, UPLOAD_OK);
 
-                    // 上传完成后，重新计算热门 CRC
                     updateMostFrequentCrc();
-
                     LOG_INFO("✅ [TCP] 接收完成");
                     socket->disconnectFromHost();
                     return;
@@ -685,7 +697,6 @@ void NetManager::handleTcpUploadMessage(QTcpSocket *socket)
                 break;
             }
         }
-
     }
 }
 

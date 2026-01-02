@@ -371,22 +371,30 @@ War3Bot/
 **创建游戏：**
 ```bash
 # 注意：如果参数包含空格，请使用引号
+create Dota
+create "Dota 6.83"
 sudo ./war3bot -x "create 'Dota 6.83' bot1"
 ```
 
 **取消游戏：**
 ```bash
 # 注意：如果参数包含空格，请使用引号
+cancel Dota
+cancel "Dota 6.83"
 sudo ./war3bot -x "cancel 'Dota 6.83' bot1"
 ```
 
 **连接服务器：**
 ```bash
+# 注意：如果留空则是用默认配置
+connect username [default] [default] [default]
+connect username password ip port
 sudo ./war3bot -x "connect bot1 123456 127.0.0.1"
 ```
 
 **停止广播：**
 ```bash
+stop
 sudo ./war3bot -x "stop"
 ```
 

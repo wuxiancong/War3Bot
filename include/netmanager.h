@@ -137,7 +137,7 @@ private:
 
     // 上传安全
     QReadWriteLock m_tokenLock;
-    QSet<QString> m_pendingUploadTokens;
+    QMap<QString, quint32> m_pendingUploadTokens;
 
     // Session 管理
     quint32 m_nextSessionId;
