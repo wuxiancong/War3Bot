@@ -58,12 +58,13 @@ public:
     void stopServer();
     bool isRunning() const;
     QList<RegisterInfo> getOnlinePlayers() const;
-    bool sendControlEnterRoom(const QString &clientUuid, quint16 port);
+    bool isClientRegistered(const QString &clientId) const;
+    bool sendControlEnterRoom(const QString &clientId, quint16 port);
 
 signals:
     void serverStopped();
     void serverStarted(quint16 port);
-    void commandReceived(const QString &userName, const QString &clientUuid, const QString &command, const QString &text);
+    void commandReceived(const QString &userName, const QString &clientId, const QString &command, const QString &text);
 
 private slots:
     void onUDPReadyRead();

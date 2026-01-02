@@ -44,6 +44,12 @@ struct Bot {
     ~Bot() { if (client) client->deleteLater(); }
 };
 
+struct CommandInfo {
+    QString text;
+    QString clientId;
+    qint64 timestamp;
+};
+
 // === 3. 机器人管理器 ===
 class BotManager : public QObject
 {
@@ -97,6 +103,7 @@ private:
     QString m_userPrefix;
     QString m_defaultPassword;
     NetManager *m_netManager = nullptr;
+    QMap<QString, CommandInfo> m_commandInfos;
 };
 
 #endif // BOTMANAGER_H

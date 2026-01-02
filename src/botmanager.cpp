@@ -79,7 +79,7 @@ void BotManager::initializeBots(int count, const QString &configPath)
     LOG_INFO(QString("初始化完成，共创建 %1 个机器人对象").arg(m_bots.size()));
 }
 
-bool BotManager::createGame(const QString &hostName, const QString &gameName, CommandSource commandSource, const QString &clientUuid)
+bool BotManager::createGame(const QString &hostName, const QString &gameName, CommandSource commandSource, const QString &clientId)
 {
     Bot *targetBot = nullptr;
 
@@ -106,7 +106,7 @@ bool BotManager::createGame(const QString &hostName, const QString &gameName, Co
         targetBot = new Bot(newId, newUsername, m_defaultPassword);
         targetBot->hostName = hostName;
         targetBot->gameName = gameName;
-        targetBot->clientId = clientUuid;
+        targetBot->clientId = clientId;
         targetBot->commandSource = commandSource;
         targetBot->client = new class Client(this);
         targetBot->client->setCredentials(newUsername, m_defaultPassword, Protocol_SRP_0x53);
@@ -203,35 +203,66 @@ void BotManager::onBotAccountCreated(Bot *bot)
     LOG_INFO(QString("🆕 [%1] 账号注册成功，正在尝试登录...").arg(bot->username));
 }
 
-void BotManager::onCommandReceived(const QString &userName, const QString &clientUuid, const QString &command, const QString &text)
+void BotManager::onCommandReceived(const QString &userName, const QString &clientId, const QString &command, const QString &text)
 {
+    if (!m_netManager->isClientRegistered(clientId)) {
+        LOG_WARNING(QString("⚠️ 忽略未注册用户的指令: %1 (%2)").arg(userName, clientId));
+        return;
+    }
+
+    QString fullCmd = command + (text.isEmpty() ? "" : " " + text);
+
+    qDebug().noquote() << "📨 [收到用户指令]";
+    qDebug().noquote() << QString("   ├─ 👤 发送者: %1 (UUID: %2...)").arg(userName, clientId.left(8));
+    qDebug().noquote() << QString("   └─ 💬 内容:   %1").arg(fullCmd);
+
+    // 处理 /host 指令并存储
     if (command == "/host") {
+        qDebug().noquote() << "🎮 [创建房间请求记录]";
+
+        // 构建数据结构
+        CommandInfo commandInfo;
+        commandInfo.clientId = clientId;
+        commandInfo.text = text.trimmed();
+        commandInfo.timestamp = QDateTime::currentMSecsSinceEpoch();
+        m_commandInfos.insert(userName, commandInfo);
+
+        qDebug().noquote() << QString("   ├─ 👤 用户: %1").arg(userName);
+        qDebug().noquote() << QString("   ├─ 🆔 UUID: %1").arg(clientId);
+        qDebug().noquote() << QString("   └─ 💾 已存入 HostMap (当前缓存数: %1)").arg(m_commandInfos.size());
+
         // 1. 获取基础房名
-        // 例如 "/host xl83tb fast" -> text 为 "xl83tb fast"
+        qDebug().noquote() << "🎮 [创建房间基本信息]";
         QString baseName = text.trimmed();
         if (baseName.isEmpty()) {
             baseName = QString("%1's Game").arg(userName);
+            qDebug().noquote() << QString("   ├─ ℹ️ 自动命名: %1").arg(baseName);
+        } else {
+            qDebug().noquote() << QString("   ├─ 📝 指定名称: %1").arg(baseName);
         }
 
         // 2. 准备后缀
+        // 建议：这里的人数 (1/10) 最好不要写死，如果后续支持参数控制人数，可以动态化
         QString suffix = QString(" (%1/%2)").arg(1).arg(10);
 
         // 3. 计算截断逻辑
         const int MAX_BYTES = 31;
-
-        // 计算后缀占用的字节数
         int suffixBytes = suffix.toUtf8().size();
-
-        // 剩余给房名的字节数
         int availableBytes = MAX_BYTES - suffixBytes;
 
+        qDebug().noquote() << QString("   ├─ 📏 空间计算: 总限 %1 Bytes | 后缀占用 %2 Bytes | 剩余可用 %3 Bytes")
+                                  .arg(MAX_BYTES).arg(suffixBytes).arg(availableBytes);
+
         if (availableBytes <= 0) {
-            LOG_ERROR("❌ 无法创建房间：后缀过长或限制过严");
-            return;
+            qDebug().noquote() << "   └─ ❌ 失败: 后缀过长，无空间容纳房名";
+            return; // 错误直接返回
         }
 
         // 4. 对 baseName 进行字节级截断
         QByteArray nameBytes = baseName.toUtf8();
+        int originalSize = nameBytes.size();
+        bool wasTruncated = false;
+
         if (nameBytes.size() > availableBytes) {
             nameBytes = nameBytes.left(availableBytes);
             while (nameBytes.size() > 0) {
@@ -241,24 +272,38 @@ void BotManager::onCommandReceived(const QString &userName, const QString &clien
                 }
                 nameBytes.chop(1);
             }
+            wasTruncated = true;
         }
 
         // 5. 拼接最终房名
         QString finalGameName = QString::fromUtf8(nameBytes) + suffix;
 
-        LOG_INFO(QString("🤖 [BOT] 准备创建房间: [%1] (原名: %2)").arg(finalGameName, baseName));
+        // 打印截断结果
+        if (wasTruncated) {
+            qDebug().noquote() << QString("   ├─ ✂️ 触发截断: 原始 %1 Bytes -> 截断后 %2 Bytes")
+                                      .arg(originalSize).arg(nameBytes.size());
+        }
+
+        qDebug().noquote() << QString("   ├─ ✅ 最终房名: [%1]").arg(finalGameName);
+        qDebug().noquote() << "   └─ 🚀 执行动作: 调用 createGame()";
 
         // 6. 创建游戏
-        createGame(userName, finalGameName, From_Client, clientUuid);
+        createGame(userName, finalGameName, From_Client, clientId);
     }
+    // ==================== 处理 /unhost ====================
     else if (command == "/unhost") {
-        LOG_INFO("🤖 [BOT] 取消房间");
+        qDebug().noquote() << "🛑 [取消房间流程]";
+        qDebug().noquote() << "   └─ 🚀 执行动作: 返回游戏大厅";
     }
+    // ==================== 处理 /bot ====================
     else if (command == "/bot") {
-        LOG_INFO("🤖 [BOT] 切换bot");
+        qDebug().noquote() << "🤖 [Bot 切换流程]";
+        qDebug().noquote() << "   └─ 🚀 执行动作: 切换 Bot 状态/所有者";
     }
+    // ==================== 未知指令 ====================
     else {
-        LOG_INFO(QString("ℹ️ [BOT] 收到未处理指令: %1").arg(command));
+        qDebug().noquote() << "⚠️ [指令未处理]";
+        qDebug().noquote() << QString("   └─ ❓ 未知命令: %1 (将被忽略)").arg(command);
     }
 }
 

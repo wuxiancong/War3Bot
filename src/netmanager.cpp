@@ -414,20 +414,17 @@ void NetManager::handleHeartbeat(const PacketHeader *header, const QHostAddress 
 
 void NetManager::handleCommand(const PacketHeader *header, const CSCommandPacket *packet)
 {
-    // 验证 SessionID
     QString clientId;
     {
         QReadLocker locker(&m_registerInfosLock);
-        bool found = false;
-        for (const auto &info : qAsConst(m_registerInfos)) {
-            if (info.sessionId == header->sessionId) {
-                clientId = info.clientId;
-                found = true;
-                break;
+        if (m_sessionIndex.contains(header->sessionId)) {
+            clientId = m_sessionIndex.value(header->sessionId);
+            if (!m_registerInfos.contains(clientId)) {
+                LOG_WARNING(QString("⚠️ 数据不一致: 索引有 Session %1 但找不到 ClientInfo").arg(header->sessionId));
+                return;
             }
-        }
-        if (!found) {
-            LOG_WARNING("⚠️ 收到 Bot指令，但 SessionID 无效");
+        } else {
+            LOG_WARNING(QString("⚠️ 收到指令，但 SessionID 无效: %1").arg(header->sessionId));
             return;
         }
     }
@@ -436,7 +433,6 @@ void NetManager::handleCommand(const PacketHeader *header, const CSCommandPacket
     QString text = QString::fromUtf8(packet->text, strnlen(packet->text, sizeof(packet->text)));
     QString user = QString::fromUtf8(packet->username, strnlen(packet->username, sizeof(packet->username)));
 
-    LOG_INFO(QString("🤖 指令 [%1]: %2 %3").arg(user, cmd, text));
     emit commandReceived(user, clientId, cmd, text);
 }
 
@@ -1021,6 +1017,13 @@ bool NetManager::isValidFileName(const QString &name)
     return (safe.compare("common.j", Qt::CaseInsensitive) == 0 ||
             safe.compare("blizzard.j", Qt::CaseInsensitive) == 0 ||
             safe.compare("war3map.j", Qt::CaseInsensitive) == 0);
+}
+
+bool NetManager::isClientRegistered(const QString &clientId) const
+{
+    if (clientId.isEmpty()) return false;
+    QReadLocker locker(&m_registerInfosLock);
+    return m_registerInfos.contains(clientId);
 }
 
 QString NetManager::cleanAddress(const QHostAddress &address) {
