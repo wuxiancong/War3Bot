@@ -81,9 +81,17 @@ void BotManager::initializeBots(int count, const QString &configPath)
 
 bool BotManager::createGame(const QString &hostName, const QString &gameName, CommandSource commandSource, const QString &clientId)
 {
+    // --- 1. 打印任务请求头部 ---
+    QString sourceStr = (commandSource == From_Client) ? "客户端聊天窗口" : "服务端命令窗口";
+
+    qDebug().noquote() << "🎮 [创建游戏任务启动]";
+    qDebug().noquote() << QString("   ├─ 👤 虚拟房主: %1").arg(hostName);
+    qDebug().noquote() << QString("   ├─ 📝 游戏名称: %1").arg(gameName);
+    qDebug().noquote() << QString("   ├─ 🆔 来源信息: %1 (%2)").arg(sourceStr, clientId.left(8));
+
     Bot *targetBot = nullptr;
 
-    // 1. 优先寻找现有空闲 Bot
+    // 2. 优先寻找现有空闲 Bot
     for (Bot *bot : qAsConst(m_bots)) {
         // 必须是已登录且空闲的
         if (bot->state == BotState::Idle && bot->client && bot->client->isConnected()) {
@@ -92,7 +100,7 @@ bool BotManager::createGame(const QString &hostName, const QString &gameName, Co
         }
     }
 
-    // 2. 如果没找到，动态创建一个新的 Bot
+    // ==================== 分支 A: 动态扩容 ====================
     if (!targetBot) {
         int maxId = 0;
         for (Bot *bot : qAsConst(m_bots)) {
@@ -101,7 +109,9 @@ bool BotManager::createGame(const QString &hostName, const QString &gameName, Co
         int newId = maxId + 1;
         QString newUsername = QString("%1%2").arg(m_userPrefix).arg(newId);
 
-        LOG_INFO(QString("⚠️ 无空闲机器人，动态扩容: [%1]").arg(newUsername));
+        // 打印扩容日志
+        qDebug().noquote() << "   ├─ ⚠️ 资源状态: 无空闲 Bot -> 触发动态扩容";
+        qDebug().noquote() << QString("   ├─ 🤖 新建实例: [%1] (ID: %2)").arg(newUsername).arg(newId);
 
         targetBot = new Bot(newId, newUsername, m_defaultPassword);
         targetBot->hostName = hostName;
@@ -112,7 +122,6 @@ bool BotManager::createGame(const QString &hostName, const QString &gameName, Co
         targetBot->client->setCredentials(newUsername, m_defaultPassword, Protocol_SRP_0x53);
 
         // === 绑定信号 ===
-        // 使用 Lambda 捕获 bot 指针，确保槽函数知道是哪个 bot
         connect(targetBot->client, &Client::authenticated, this, [this, targetBot]() { this->onBotAuthenticated(targetBot); });
         connect(targetBot->client, &Client::accountCreated, this, [this, targetBot]() { this->onBotAccountCreated(targetBot); });
         connect(targetBot->client, &Client::gameCreated, this, [this, targetBot]() { this->onBotGameCreated(targetBot); });
@@ -121,24 +130,33 @@ bool BotManager::createGame(const QString &hostName, const QString &gameName, Co
 
         m_bots.append(targetBot);
 
-        // 标记此 Bot 有任务在身！
+        // 标记任务
         targetBot->pendingTask.hasTask = true;
         targetBot->pendingTask.hostName = hostName;
         targetBot->pendingTask.gameName = gameName;
 
         // 启动连接
-        // 握手 -> 检查版本 -> 自动注册 -> 登录
-        // 只需在 onBotAuthenticated 里守株待兔
         targetBot->state = BotState::Connecting;
         targetBot->client->connectToHost(m_targetServer, m_targetPort);
 
-        LOG_INFO(QString("⏳ [%1] 正在启动并注册/登录，任务已挂起...").arg(newUsername));
+        qDebug().noquote() << "   └─ ⏳ 执行动作: 启动连接流程 (任务已挂起，等待登录)";
         return true;
     }
 
-    // 3. 如果是现成的空闲 Bot，直接创建
+    // ==================== 分支 B: 复用现有 Bot ====================
     if (targetBot) {
-        LOG_INFO(QString("✅ 指派空闲机器人 [%1]").arg(targetBot->username));
+        // 打印复用日志
+        qDebug().noquote() << QString("   ├─ ✅ 执行动作: 指派空闲机器人 [%1] 创建房间").arg(targetBot->username);
+
+        // 更新 UUID
+        targetBot->clientId = clientId;
+        // 更新房主名
+        targetBot->hostName = hostName;
+        // 更新游戏名
+        targetBot->gameName = gameName;
+        // 更新命令来源
+        targetBot->commandSource = commandSource;
+        // 更新机器状态
         targetBot->state = BotState::Creating;
 
         // 设置虚拟房主
@@ -146,6 +164,8 @@ bool BotManager::createGame(const QString &hostName, const QString &gameName, Co
 
         // 发送创建命令
         targetBot->client->createGame(gameName, "", Provider_TFT_New, Game_TFT_Custom, SubType_None, Ladder_None, commandSource);
+
+        qDebug().noquote() << "   └─ 🚀 执行动作: 立即发送 CreateGame 指令";
         return true;
     }
 
@@ -316,19 +336,23 @@ void BotManager::onBotGameCreated(Bot *bot)
 
     // 2. 获取房主 UUID
     QString clientId = bot->clientId;
-    LOG_INFO(QString("🎮 [%1] 房间创建成功 (房主UUID: %2)").arg(bot->username, clientId));
+
+    // 3. 打印头部日志
+    qDebug().noquote() << "🎮 [房间创建完成回调]";
+    qDebug().noquote() << QString("   ├─ 🤖 执行实例: %1").arg(bot->username);
+    qDebug().noquote() << QString("   ├─ 👤 归属用户: %1").arg(clientId);
 
     // 4. 发送 TCP 控制指令让客户端进入
     if (m_netManager) {
         bool sent = m_netManager->sendControlEnterRoom(clientId, m_controlPort);
 
         if (sent) {
-            LOG_INFO(QString("🚀 [自动进入] 发送指令 -> 目标UUID:[%1] 端口:[%2]").arg(m_controlPort));
+            qDebug().noquote() << QString("   └─ 🚀 自动进入: 指令已发送 (目标端口: %1)").arg(m_controlPort);
         } else {
-            LOG_WARNING(QString("❌ [自动进入] 发送失败: 目标UUID [%1] 不在线").arg(clientId));
+            qDebug().noquote() << "   └─ ❌ 自动进入: 发送失败 (目标用户不在线或未连接控制通道)";
         }
     } else {
-        LOG_ERROR("❌ BotManager 未绑定 NetManager，无法发送控制指令");
+        qDebug().noquote() << "   └─ 🛑 系统错误: NetManager 未绑定，无法发送指令";
     }
 
     // 5. 广播状态变更

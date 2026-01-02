@@ -159,11 +159,17 @@ void Client::onNewConnection()
 
 void Client::sendPacket(BNETPacketID id, const QByteArray &payload)
 {
+    if (!m_tcpSocket) {
+        LOG_WARNING("❌ 发送失败: Socket 未初始化");
+        return;
+    }
+
     QByteArray packet;
     QDataStream out(&packet, QIODevice::WriteOnly);
     out.setByteOrder(QDataStream::LittleEndian);
 
-    out << BNET_HEADER;
+    // BNET 协议头 (通常是 0xFF)
+    out << (quint8)BNET_HEADER;
     out << (quint8)id;
     out << (quint16)(payload.size() + 4);
 
@@ -173,12 +179,31 @@ void Client::sendPacket(BNETPacketID id, const QByteArray &payload)
 
     m_tcpSocket->write(packet);
 
-    QString hexStr = packet.toHex().toUpper();
-    for(int i = 2; i < hexStr.length(); i += 3) hexStr.insert(i, " ");
-    LOG_INFO(QString("📤 发送包 ID: 0x%1 Len:%2 Data: %3")
-                 .arg(QString::number(id, 16))
-                 .arg(packet.size())
-                 .arg(hexStr));
+    // 1. 获取可读名称
+    QString packetName = getBnetPacketName(id);
+    QString idHex = QString("0x%1").arg((quint8)id, 2, 16, QChar('0')).toUpper();
+
+    // 2. 格式化 Hex
+    QString hexData = packet.toHex().toUpper();
+    QString formattedHex;
+    int maxPreviewBytes = 256;
+
+    int previewLen = qMin(packet.size(), maxPreviewBytes);
+    for (int i = 0; i < previewLen; ++i) {
+        formattedHex += hexData.mid(i * 2, 2) + " ";
+    }
+
+    if (packet.size() > maxPreviewBytes) {
+        formattedHex += "... (Total " + QString::number(packet.size()) + " bytes)";
+    } else {
+        formattedHex = formattedHex.trimmed();
+    }
+
+    // 3. 树状输出
+    LOG_INFO("📤 [BNET 协议发送]");
+    LOG_INFO(QString("   ├─ 🆔 指令: %1 [%2]").arg(packetName, idHex));
+    LOG_INFO(QString("   ├─ 📏 长度: %1 字节 (Payload: %2)").arg(packet.size()).arg(payload.size()));
+    LOG_INFO(QString("   └─ 📦 数据: %1").arg(formattedHex));
 }
 
 void Client::sendNextMapPart(quint8 toPid, quint8 fromPid)
@@ -2130,6 +2155,30 @@ QString Client::getPrimaryIPv4() {
         }
     }
     return QString();
+}
+
+QString Client::getBnetPacketName(BNETPacketID id)
+{
+    switch (id) {
+    case SID_NULL:                   return "SID_NULL (空包)";
+    case SID_STOPADV:                return "SID_STOPADV (停止广播)";
+    case SID_ENTERCHAT:              return "SID_ENTERCHAT (进入聊天)";
+    case SID_GETCHANNELLIST:         return "SID_GETCHANNELLIST (获取频道)";
+    case SID_JOINCHANNEL:            return "SID_JOINCHANNEL (加入频道)";
+    case SID_CHATCOMMAND:            return "SID_CHATCOMMAND (聊天命令)";
+    case SID_CHATEVENT:              return "SID_CHATEVENT (聊天事件)";
+    case SID_STARTADVEX3:            return "SID_STARTADVEX3 (创建房间)";
+    case SID_PING:                   return "SID_PING (心跳)";
+    case SID_LOGONRESPONSE:          return "SID_LOGONRESPONSE (登录响应-旧)";
+    case SID_LOGONRESPONSE2:         return "SID_LOGONRESPONSE2 (登录响应-中)";
+    case SID_NETGAMEPORT:            return "SID_NETGAMEPORT (游戏端口)";
+    case SID_AUTH_INFO:              return "SID_AUTH_INFO (认证信息)";
+    case SID_AUTH_CHECK:             return "SID_AUTH_CHECK (版本检查)";
+    case SID_AUTH_ACCOUNTCREATE:     return "SID_AUTH_ACCOUNTCREATE (账号创建)";
+    case SID_AUTH_ACCOUNTLOGON:      return "SID_AUTH_ACCOUNTLOGON (SRP登录请求)";
+    case SID_AUTH_ACCOUNTLOGONPROOF: return "SID_AUTH_ACCOUNTLOGONPROOF (SRP登录验证)";
+    default:                         return QString("UNKNOWN (0x%1)").arg(QString::number((int)id, 16).toUpper());
+    }
 }
 
 quint32 Client::ipToUint32(const QHostAddress &address) { return address.toIPv4Address(); }

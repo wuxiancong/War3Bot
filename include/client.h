@@ -409,6 +409,7 @@ public:
     QString getPrimaryIPv4();                           // 获取本机IPv4
     bool bindToRandomPort();                            // 绑定随机UDP端口
     bool isBlackListedPort(quint16 port);               // 检查端口黑名单
+    QString getBnetPacketName(BNETPacketID id);         // 获取对应的包名
     void writeIpToStreamWithLog(QDataStream &out, const QHostAddress &ip);
 
     // --- IP转换辅助 ---
