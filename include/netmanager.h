@@ -78,17 +78,17 @@ private:
     void handleIncomingDatagram(const QNetworkDatagram &datagram);
 
     // 具体包处理器
-    void handleRegister(const PacketHeader* header, const CSRegisterPacket* packet, const QHostAddress& senderAddr, quint16 senderPort);
-    void handleUnregister(const PacketHeader* header);
-    void handlePing(const PacketHeader* header, const QHostAddress& senderAddr, quint16 senderPort);
-    void handleHeartbeat(const PacketHeader* header, const QHostAddress& senderAddr, quint16 senderPort);
-    void handleCommand(const PacketHeader* header, const CSCommandPacket* packet);
-    void handleCheckMapCRC(const PacketHeader* header, const CSCheckMapCRCPacket* packet, const QHostAddress& senderAddr, quint16 senderPort);
+    void handleRegister(const PacketHeader *header, const CSRegisterPacket *packet, const QHostAddress &senderAddr, quint16 senderPort);
+    void handleUnregister(const PacketHeader *header);
+    void handlePing(const PacketHeader *header, const QHostAddress &senderAddr, quint16 senderPort);
+    void handleHeartbeat(const PacketHeader *header, const QHostAddress &senderAddr, quint16 senderPort);
+    void handleCommand(const PacketHeader *header, const CSCommandPacket *packet);
+    void handleCheckMapCRC(const PacketHeader *header, const CSCheckMapCRCPacket *packet, const QHostAddress &senderAddr, quint16 senderPort);
 
     // 发送辅助
-    qint64 sendPacket(const QHostAddress &target, quint16 port, PacketType type, const void* payload = nullptr, quint16 payloadLen = 0);
-    void sendUploadResult(QTcpSocket* socket, const QString& crc, const QString& fileName, bool success, UploadErrorCode reason);
-    bool sendToClient(const QString &clientUuid, const QByteArray &data);
+    qint64 sendPacket(const QHostAddress &target, quint16 port, PacketType type, const void *payload = nullptr, quint16 payloadLen = 0);
+    void sendUploadResult(QTcpSocket *socket, const QString &crc, const QString &fileName, bool success, UploadErrorCode reason);
+    bool sendToClient(const QString &clientId, const QByteArray &data);
     quint16 calculateCRC16(const QByteArray &data);
 
     // --- TCP 处理 (保持原样，用于文件上传) ---
@@ -97,16 +97,15 @@ private:
 
     // --- 内部管理 ---
     void loadConfiguration();
-    void logServerConfiguration();
     void cleanupResources();
-    void cleanupInvalidPeers();
     bool setupSocketOptions();
     bool bindSocket(quint16 port);
     bool isValidFileName(const QString &name);
     void setupTimers();
-    void cleanupExpiredPeers();
     void broadcastServerInfo();
     void updateMostFrequentCrc();
+    void cleanupExpiredClients();
+    void removeClientInternal(const QString &clientId);
 
     // 工具
     QString cleanAddress(const QString &address);

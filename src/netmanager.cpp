@@ -43,7 +43,7 @@ NetManager::~NetManager()
     stopServer();
 }
 
-// ==================== Socket 管理与启动 (保持逻辑但简化日志) ====================
+// ==================== Socket 管理与启动 ====================
 
 bool NetManager::startServer(quint16 port, const QString &configFile)
 {
@@ -129,21 +129,7 @@ void NetManager::stopServer()
     emit serverStopped();
 }
 
-void NetManager::cleanupResources()
-{
-    if (m_cleanupTimer) m_cleanupTimer->deleteLater();
-    if (m_broadcastTimer) m_broadcastTimer->deleteLater();
-    if (m_udpSocket) m_udpSocket->deleteLater();
-    if (m_tcpServer) m_tcpServer->deleteLater();
-    if (m_settings) m_settings->deleteLater();
-    m_cleanupTimer = nullptr;
-    m_broadcastTimer = nullptr;
-    m_udpSocket = nullptr;
-    m_tcpServer = nullptr;
-    m_settings = nullptr;
-}
-
-// ==================== 核心：二进制发送逻辑 ====================
+// ==================== 二进制发送逻辑 ====================
 
 qint64 NetManager::sendPacket(const QHostAddress &target, quint16 port, PacketType type, const void *payload, quint16 payloadLen)
 {
@@ -858,22 +844,7 @@ void NetManager::sendUploadResult(QTcpSocket* socket, const QString& crc, const 
 
 void NetManager::onCleanupTimeout()
 {
-    cleanupExpiredPeers();
-}
-
-void NetManager::cleanupExpiredPeers()
-{
-    QWriteLocker locker(&m_registerInfosLock);
-    qint64 now = QDateTime::currentMSecsSinceEpoch();
-    auto it = m_registerInfos.begin();
-    while (it != m_registerInfos.end()) {
-        if (now - it.value().lastSeen > m_peerTimeout) {
-            LOG_INFO(QString("🗑️ 超时移除: %1").arg(it.key()));
-            it = m_registerInfos.erase(it);
-        } else {
-            ++it;
-        }
-    }
+    cleanupExpiredClients();
 }
 
 void NetManager::onBroadcastTimeout()
@@ -932,7 +903,56 @@ void NetManager::updateMostFrequentCrc()
     }
 }
 
+// ==================== 清理函数 ====================
+
+void NetManager::cleanupResources()
+{
+    if (m_cleanupTimer) m_cleanupTimer->deleteLater();
+    if (m_broadcastTimer) m_broadcastTimer->deleteLater();
+    if (m_udpSocket) m_udpSocket->deleteLater();
+    if (m_tcpServer) m_tcpServer->deleteLater();
+    if (m_settings) m_settings->deleteLater();
+    m_cleanupTimer = nullptr;
+    m_broadcastTimer = nullptr;
+    m_udpSocket = nullptr;
+    m_tcpServer = nullptr;
+    m_settings = nullptr;
+}
+
+void NetManager::cleanupExpiredClients()
+{
+    QWriteLocker locker(&m_registerInfosLock);
+    qint64 now = QDateTime::currentMSecsSinceEpoch();
+
+    QStringList timeOutUsers;
+    for (auto it = m_registerInfos.begin(); it != m_registerInfos.end(); ++it) {
+        if (now - it.value().lastSeen > m_peerTimeout) {
+            timeOutUsers.append(it.key());
+        }
+    }
+
+    for (const QString& uuid : timeOutUsers) {
+        LOG_INFO(QString("🗑️ 超时移除: %1").arg(uuid));
+        removeClientInternal(uuid);
+    }
+}
+
+void NetManager::removeClientInternal(const QString& uuid)
+{
+    if (!m_registerInfos.contains(uuid)) return;
+
+    // 1. 获取 SessionID
+    quint32 sid = m_registerInfos[uuid].sessionId;
+
+    // 2. 删索引
+    m_sessionIndex.remove(sid);
+
+    // 3. 删主表
+    m_registerInfos.remove(uuid);
+}
+
 // ==================== 工具函数 ====================
+
 QList<RegisterInfo> NetManager::getOnlinePlayers() const
 {
     QReadLocker locker(&m_registerInfosLock);
