@@ -180,7 +180,7 @@ qint64 NetManager::sendPacket(const QHostAddress &target, quint16 port, PacketTy
     return sent;
 }
 
-// ==================== 核心：二进制接收逻辑 ====================
+// ==================== 二进制接收逻辑 ====================
 
 void NetManager::onUDPReadyRead()
 {
@@ -203,7 +203,14 @@ void NetManager::handleIncomingDatagram(const QNetworkDatagram &datagram)
 
     // 1. 基础校验
     if (header->magic != PROTOCOL_MAGIC || header->version != PROTOCOL_VERSION) {
-        LOG_WARNING("无效的协议魔数或版本");
+        QString sender = QString("%1:%2").arg(datagram.senderAddress().toString()).arg(datagram.senderPort());
+
+        LOG_WARNING(QString("❌ [协议拒绝] 来自 %1 | Magic: 0x%2 (期望: 0x%3) | Ver: %4 (期望: %5)")
+                        .arg(sender,
+                             QString::number(header->magic, 16).toUpper(),
+                             QString::number(PROTOCOL_MAGIC, 16).toUpper())
+                        .arg(header->version)
+                        .arg(PROTOCOL_VERSION));
         return;
     }
 
