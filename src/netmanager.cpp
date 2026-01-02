@@ -410,7 +410,7 @@ void NetManager::handleCommand(const PacketHeader *header, const CSCommandPacket
     QString user = QString::fromUtf8(packet->username, strnlen(packet->username, sizeof(packet->username)));
 
     LOG_INFO(QString("🤖 指令 [%1]: %2 %3").arg(user, cmd, text));
-    emit botCommandReceived(user, clientId, cmd, text);
+    emit commandReceived(user, clientId, cmd, text);
 }
 
 void NetManager::handleCheckMapCRC(const PacketHeader *header, const CSCheckMapCRCPacket *packet, const QHostAddress &senderAddr, quint16 senderPort)

@@ -203,7 +203,7 @@ void BotManager::onBotAccountCreated(Bot *bot)
     LOG_INFO(QString("🆕 [%1] 账号注册成功，正在尝试登录...").arg(bot->username));
 }
 
-void BotManager::onBotCommandReceived(const QString &userName, const QString &clientUuid, const QString &command, const QString &text)
+void BotManager::onCommandReceived(const QString &userName, const QString &clientUuid, const QString &command, const QString &text)
 {
     if (command == "/host") {
         // 1. 获取基础房名

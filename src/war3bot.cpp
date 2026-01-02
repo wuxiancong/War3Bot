@@ -47,7 +47,7 @@ bool War3Bot::startServer(quint16 port, const QString &configFile)
         }
 
         // 连接信号
-        connect(m_netManager, &NetManager::botCommandReceived, m_botManager, &BotManager::onBotCommandReceived);
+        connect(m_netManager, &NetManager::commandReceived, m_botManager, &BotManager::onCommandReceived);
     }
 
     bool success = m_netManager->startServer(port, configFile);

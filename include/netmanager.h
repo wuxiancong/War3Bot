@@ -62,7 +62,7 @@ public:
 signals:
     void serverStopped();
     void serverStarted(quint16 port);
-    void botCommandReceived(const QString &userName, const QString &clientUuid, const QString &command, const QString &text);
+    void commandReceived(const QString &userName, const QString &clientUuid, const QString &command, const QString &text);
 
 private slots:
     void onUDPReadyRead();

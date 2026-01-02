@@ -71,7 +71,7 @@ public:
     // 创建游戏
     QString generateSafeGameName(const QString &inputName, const QString &hostName);
     bool createGame(const QString& hostName, const QString &gameName, CommandSource commandSource, const QString &clientUuid);
-    void onBotCommandReceived(const QString &userName, const QString &clientUuid, const QString &command, const QString &text);
+    void onCommandReceived(const QString &userName, const QString &clientUuid, const QString &command, const QString &text);
 
 signals:
     // 状态变更信号，用于日志或UI更新
