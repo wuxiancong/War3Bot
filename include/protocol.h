@@ -52,6 +52,10 @@ struct SCRegisterPacket {
     quint8 status;
 };
 
+struct SCPongPacket {
+    quint8 status;
+};
+
 struct CSCommandPacket {
     char username[32];
     char command[16];

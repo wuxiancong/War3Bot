@@ -2,6 +2,7 @@
 #define NETMANAGER_H
 
 #include "protocol.h"
+#include "securitywatchdog.h"
 
 #include <QMap>
 #include <QTimer>
@@ -74,7 +75,7 @@ private slots:
 
 private:
     // --- 核心网络处理 (二进制协议) ---
-    void processIncomingDatagram(const QNetworkDatagram &datagram);
+    void handleIncomingDatagram(const QNetworkDatagram &datagram);
 
     // 具体包处理器
     void handleRegister(const PacketHeader* header, const CSRegisterPacket* packet, const QHostAddress& senderAddr, quint16 senderPort);
@@ -141,6 +142,9 @@ private:
     // Session 管理
     quint32 m_nextSessionId;
     quint32 m_serverSeq;
+
+    // 安全检查
+    SecurityWatchdog m_watchdog;
 };
 
 #endif // NETMANAGER_H

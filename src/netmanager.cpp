@@ -186,12 +186,16 @@ void NetManager::onUDPReadyRead()
 {
     while (m_udpSocket && m_udpSocket->hasPendingDatagrams()) {
         QNetworkDatagram datagram = m_udpSocket->receiveDatagram();
-        processIncomingDatagram(datagram);
+        handleIncomingDatagram(datagram);
     }
 }
 
-void NetManager::processIncomingDatagram(const QNetworkDatagram &datagram)
+void NetManager::handleIncomingDatagram(const QNetworkDatagram &datagram)
 {
+    if (!m_watchdog.checkUdpPacket(datagram.senderAddress(), datagram.data().size())) {
+        return;
+    }
+
     QByteArray data = datagram.data();
     if (data.size() < (int)sizeof(PacketHeader)) return;
 
@@ -362,26 +366,56 @@ void NetManager::handleUnregister(const PacketHeader *header)
 
 void NetManager::handlePing(const PacketHeader *header, const QHostAddress &senderAddr, quint16 senderPort)
 {
-    Q_UNUSED(header);
-    sendPacket(senderAddr, senderPort, PacketType::S_C_PONG);
-    LOG_DEBUG(QString("🏓 Pong -> %1").arg(senderAddr.toString()));
+    // 1. 检查 SessionID 是否存在
+    bool isRegistered = false;
+
+    if (header->sessionId != 0) {
+        QReadLocker locker(&m_registerInfosLock);
+        if (m_sessionIndex.contains(header->sessionId)) {
+            isRegistered = true;
+        }
+    }
+
+    // 2. 构造带状态的 PONG 包
+    SCPongPacket pongPkt;
+    pongPkt.status = isRegistered ? 1 : 0;
+
+    // 3. 发送
+    sendPacket(senderAddr, senderPort, PacketType::S_C_PONG, &pongPkt, sizeof(pongPkt));
+
+    // 只有已注册才打印
+    if (isRegistered) {
+        LOG_DEBUG(QString("🏓 Pong -> %1 (Session: %2)").arg(senderAddr.toString()).arg(header->sessionId));
+    } else {
+        // LOG_DEBUG(QString("⚠️ 未注册 Ping -> %1").arg(senderAddr.toString()));
+    }
 }
 
 void NetManager::handleHeartbeat(const PacketHeader *header, const QHostAddress &senderAddr, quint16 senderPort)
 {
     if (header->sessionId == 0) return;
 
-    QWriteLocker locker(&m_registerInfosLock);
-    for (auto &info : m_registerInfos) {
-        if (info.sessionId == header->sessionId) {
-            info.lastSeen = QDateTime::currentMSecsSinceEpoch();
-            info.publicIp = cleanAddress(senderAddr);
-            info.publicPort = senderPort;
-
-            locker.unlock();
-            sendPacket(senderAddr, senderPort, PacketType::S_C_PONG);
-            return;
+    bool found = false;
+    {
+        QWriteLocker locker(&m_registerInfosLock);
+        if (m_sessionIndex.contains(header->sessionId)) {
+            QString uuid = m_sessionIndex[header->sessionId];
+            if (m_registerInfos.contains(uuid)) {
+                m_registerInfos[uuid].lastSeen = QDateTime::currentMSecsSinceEpoch();
+                m_registerInfos[uuid].publicIp = cleanAddress(senderAddr);
+                m_registerInfos[uuid].publicPort = senderPort;
+                found = true;
+            }
         }
+    }
+
+    if (found) {
+        sendPacket(senderAddr, senderPort, PacketType::S_C_PONG);
+    } else {
+        SCPongPacket pongPkt;
+        pongPkt.status = 0;
+        sendPacket(senderAddr, senderPort, PacketType::S_C_PONG, &pongPkt, sizeof(pongPkt));
+        LOG_WARNING(QString("⚠️ 收到失效心跳 (Session %1)，已通知客户端重连").arg(header->sessionId));
     }
 }
 
@@ -440,7 +474,7 @@ void NetManager::handleCheckMapCRC(const PacketHeader *header, const CSCheckMapC
     sendPacket(senderAddr, senderPort, PacketType::S_C_CHECKMAPCRC, &resp, sizeof(resp));
 }
 
-// ==================== TCP / 辅助功能 (基本保持不变) ====================
+// ==================== TCP ====================
 
 void NetManager::onTcpReadyRead()
 {
@@ -690,12 +724,22 @@ void NetManager::handleTcpControlMessage(QTcpSocket *socket)
     }
 }
 
-void NetManager::onNewTcpConnection() {
+void NetManager::onNewTcpConnection()
+{
     while (m_tcpServer->hasPendingConnections()) {
         QTcpSocket *socket = m_tcpServer->nextPendingConnection();
+
+        if (!m_watchdog.checkTcpConnection(socket->peerAddress())) {
+            LOG_WARNING(QString("🛡️ 拒绝恶意 IP 连接请求: %1").arg(socket->peerAddress().toString()));
+            socket->close(); // 立即关闭
+            socket->deleteLater();
+            continue; // 跳过这个连接
+        }
+
         connect(socket, &QTcpSocket::readyRead, this, &NetManager::onTcpReadyRead);
         connect(socket, &QTcpSocket::disconnected, this, &NetManager::onTcpDisconnected);
-        LOG_INFO(QString("📥 TCP 连接: %1").arg(socket->peerAddress().toString()));
+
+        LOG_INFO(QString("📥 TCP 连接来自: %1:%2").arg(socket->peerAddress().toString()).arg(socket->peerPort()));
     }
 }
 
