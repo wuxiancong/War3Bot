@@ -87,6 +87,7 @@ private:
 
     // 发送辅助
     qint64 sendPacket(const QHostAddress &target, quint16 port, PacketType type, const void* payload = nullptr, quint16 payloadLen = 0);
+    void sendUploadResult(QTcpSocket* socket, const QString& crc, const QString& fileName, bool success, UploadErrorCode reason);
     bool sendToClient(const QString &clientUuid, const QByteArray &data);
     quint16 calculateCRC16(const QByteArray &data);
 

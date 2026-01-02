@@ -505,6 +505,9 @@ void NetManager::handleTcpUploadMessage(QTcpSocket *socket)
     QDataStream in(socket);
     in.setVersion(QDataStream::Qt_5_15);
 
+    QString currentCrcToken;
+    QString currentFileName;
+
     while (socket->bytesAvailable() > 0) {
         if (!socket->property("HeaderParsed").toBool()) {
 
@@ -515,6 +518,7 @@ void NetManager::handleTcpUploadMessage(QTcpSocket *socket)
 
             if (magic != "W3UP") {
                 LOG_WARNING("❌ TCP 非法连接: 魔数错误");
+                sendUploadResult(socket, magic, "Magic not match", false, UPLOAD_ERR_MAGIC);
                 socket->disconnectFromHost();
                 return;
             }
@@ -527,6 +531,7 @@ void NetManager::handleTcpUploadMessage(QTcpSocket *socket)
                 QReadLocker locker(&m_tokenLock);
                 if (!m_pendingUploadTokens.contains(crcToken)) {
                     LOG_WARNING(QString("❌ TCP 拒绝上传: 未授权的 Token (%1)").arg(crcToken));
+                    sendUploadResult(socket, crcToken, "Unauthorized", false, UPLOAD_ERR_TOKEN);
                     socket->disconnectFromHost();
                     return;
                 }
@@ -539,6 +544,7 @@ void NetManager::handleTcpUploadMessage(QTcpSocket *socket)
             // 🛡️ 安全检查: 文件名长度限制
             if (nameLen > 256) {
                 LOG_WARNING("❌ TCP 拒绝: 文件名过长");
+                sendUploadResult(socket, crcToken, "File name too long", false, UPLOAD_ERR_FILENAME);
                 socket->disconnectFromHost();
                 return;
             }
@@ -553,6 +559,7 @@ void NetManager::handleTcpUploadMessage(QTcpSocket *socket)
 
             if (!isValidFileName(fileName)) {
                 LOG_WARNING(QString("❌ TCP 拒绝: 非法文件名 %1").arg(rawFileName));
+                sendUploadResult(socket, crcToken, fileName, false, UPLOAD_ERR_FILENAME);
                 socket->disconnectFromHost();
                 return;
             }
@@ -565,6 +572,7 @@ void NetManager::handleTcpUploadMessage(QTcpSocket *socket)
             // 🛡️ 安全检查: 大小限制 (例如最大 20MB)
             if (fileSize <= 0 || fileSize > 20 * 1024 * 1024) {
                 LOG_WARNING("❌ TCP 拒绝: 文件过大");
+                sendUploadResult(socket, crcToken, fileName, false, UPLOAD_ERR_SIZE);
                 socket->disconnectFromHost();
                 return;
             }
@@ -576,6 +584,7 @@ void NetManager::handleTcpUploadMessage(QTcpSocket *socket)
             if (!dir.exists()) {
                 if (!dir.mkpath(".")) {
                     LOG_ERROR("❌ 无法创建目录: " + saveDir);
+                    sendUploadResult(socket, crcToken, fileName, false, UPLOAD_ERR_IO);
                     socket->disconnectFromHost();
                     return;
                 }
@@ -584,6 +593,7 @@ void NetManager::handleTcpUploadMessage(QTcpSocket *socket)
             QString safeFileName = QFileInfo(rawFileName).fileName();
             if (!isValidFileName(safeFileName)) {
                 LOG_WARNING(QString("❌ TCP 拒绝上传: 非法文件名 (%1)").arg(fileName));
+                sendUploadResult(socket, crcToken, fileName, false, UPLOAD_ERR_FILENAME);
                 socket->disconnectFromHost();
                 return;
             }
@@ -595,6 +605,7 @@ void NetManager::handleTcpUploadMessage(QTcpSocket *socket)
             QFile *file = new QFile(savePath);
             if (!file->open(QIODevice::WriteOnly)) {
                 LOG_ERROR("❌ 无法创建文件: " + savePath);
+                sendUploadResult(socket, crcToken, fileName, false, UPLOAD_ERR_IO);
                 delete file;
                 socket->disconnectFromHost();
                 return;
@@ -604,6 +615,8 @@ void NetManager::handleTcpUploadMessage(QTcpSocket *socket)
             socket->setProperty("BytesTotal", fileSize);
             socket->setProperty("BytesWritten", (qint64)0);
             socket->setProperty("HeaderParsed", true);
+            socket->setProperty("CrcToken", crcToken);
+            socket->setProperty("FileName", fileName);
 
             LOG_INFO(QString("📥 [TCP] 开始接收文件: %1 (CRC: %2)").arg(fileName, crcToken));
         }
@@ -620,6 +633,9 @@ void NetManager::handleTcpUploadMessage(QTcpSocket *socket)
             // 只读取需要的部分，防止多读了下一个包的数据 (粘包处理)
             qint64 bytesToRead = qMin(remaining, socket->bytesAvailable());
 
+            currentCrcToken = socket->property("CrcToken").toString();
+            currentFileName = socket->property("FileName").toString();
+
             if (bytesToRead > 0) {
                 QByteArray chunk = socket->read(bytesToRead);
                 file->write(chunk);
@@ -629,6 +645,7 @@ void NetManager::handleTcpUploadMessage(QTcpSocket *socket)
                 // 🛡️ 安全检查: 防止超量写入
                 if (current > total) {
                     LOG_ERROR("❌ 写入溢出，断开连接");
+                    sendUploadResult(socket, currentCrcToken, currentFileName, false, UPLOAD_ERR_OVERFLOW);
                     file->remove();
                     socket->disconnectFromHost();
                     return;
@@ -662,6 +679,8 @@ void NetManager::handleTcpUploadMessage(QTcpSocket *socket)
                             LOG_WARNING(QString("⚠️ 文件接收完成，但未找到 IP 为 %1 的用户来绑定 CRC").arg(senderIp));
                         }
                     }
+                    sendUploadResult(socket, currentCrcToken, currentFileName, true, UPLOAD_OK);
+
                     // 上传完成后，重新计算热门 CRC
                     updateMostFrequentCrc();
 
@@ -780,6 +799,54 @@ bool NetManager::sendToClient(const QString &clientId, const QByteArray &data)
     LOG_INFO(QString("🚀 TCP 发送 %1 字节 -> %2").arg(written).arg(clientId));
     return true;
 }
+
+void NetManager::sendUploadResult(QTcpSocket* socket, const QString& crc, const QString& fileName, bool success, UploadErrorCode reason)
+{
+    if (!socket || !m_udpSocket) return;
+
+    // 1. 获取 TCP 对端 IP (处理 IPv6 映射)
+    QString senderIp = cleanAddress(socket->peerAddress().toString());
+
+    QHostAddress targetAddr;
+    quint16 targetPort = 0;
+    bool found = false;
+
+    // 2. 在注册列表中查找对应的 UDP 用户
+    {
+        QReadLocker locker(&m_registerInfosLock);
+        for (const auto &info : qAsConst(m_registerInfos)) {
+            // 通过公网 IP 匹配用户
+            if (info.publicIp == senderIp) {
+                targetAddr = QHostAddress(info.publicIp);
+                targetPort = info.publicPort;
+                found = true;
+                break;
+            }
+        }
+    }
+
+    if (!found) {
+        LOG_WARNING(QString("⚠️ 上传结束，但无法找到对应的 UDP 用户 (IP: %1)，无法发送回执").arg(senderIp));
+        return;
+    }
+
+    // 3. 构造回执包
+    SCUploadResultPacket pkt;
+    memset(&pkt, 0, sizeof(pkt));
+
+    // 安全拷贝
+    strncpy(pkt.crcHex, crc.toUtf8().constData(), sizeof(pkt.crcHex) - 1);
+    strncpy(pkt.fileName, fileName.toUtf8().constData(), sizeof(pkt.fileName) - 1);
+    pkt.status = success ? 1 : 0;
+    pkt.reason = static_cast<quint8>(reason);
+
+    // 4. 通过 UDP 发送
+    sendPacket(targetAddr, targetPort, PacketType::S_C_UPLOADRESULT, &pkt, sizeof(pkt));
+
+    LOG_INFO(QString("📤 发送上传回执 -> %1:%2 | 文件: %3 | 结果: %4")
+                 .arg(senderIp).arg(targetPort).arg(fileName, success ? "成功" : "失败"));
+}
+
 // ==================== 定时任务 ====================
 
 void NetManager::onCleanupTimeout()

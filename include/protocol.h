@@ -22,7 +22,21 @@ enum class PacketType : quint8 {
     S_C_CHECKMAPCRC                 = 0x0B,
     C_S_PING                        = 0x0C,
     S_C_PONG                        = 0x0D,
-    ERROR                           = 0x0E
+    ERROR                           = 0x0E,
+    S_C_UPLOADRESULT                = 0x0F
+};
+
+// ==================== 错误码定义 ====================
+
+enum UploadErrorCode : quint8 {
+    UPLOAD_ERR_UNKNOWN              = 0,
+    UPLOAD_OK                       = 1,
+    UPLOAD_ERR_MAGIC                = 2,
+    UPLOAD_ERR_TOKEN                = 3,
+    UPLOAD_ERR_FILENAME             = 4,
+    UPLOAD_ERR_SIZE                 = 5,
+    UPLOAD_ERR_IO                   = 6,
+    UPLOAD_ERR_OVERFLOW             = 7
 };
 
 #pragma pack(push, 1)
@@ -75,6 +89,13 @@ struct CSCheckMapCRCPacket {
 struct SCCheckMapCRCPacket {
     char crcHex[10];
     quint8 exists;
+};
+
+struct SCUploadResultPacket {
+    char crcHex[10];
+    char fileName[64];
+    quint8 status;
+    quint8 reason;
 };
 
 #pragma pack(pop)
