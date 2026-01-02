@@ -364,14 +364,31 @@ War3Bot/
 
 ---
 
-## 📚 协议与技术细节
+## 📚 协议与内部命令
 
-### P2P 建立流程
+### 支持的命令行 (CMD)
 
-1.  **连接建立**：游戏客户端通过 Hook 发起 SEARCHGAME 请求，与 War3Bot 建立 TCP 连接。
-2.  **会话创建**：War3Bot 创建 P2PSession，并通过 STUN 机制发现客户端的公网地址。
-3.  **地址交换**：当两个客户端都连接至 War3Bot 后，服务器交换双方的公网 IP 和端口。
-4.  **UDP 打洞**：客户端 A 与客户端 B 利用交换的信息进行 UDP 打洞，建立直接的 P2P 通信通道。
+**创建游戏：**
+```bash
+# 注意：如果参数包含空格，请使用引号
+sudo ./war3bot -x "create 'Dota 6.83' bot1"
+```
+
+**取消游戏：**
+```bash
+# 注意：如果参数包含空格，请使用引号
+sudo ./war3bot -x "cancel 'Dota 6.83' bot1"
+```
+
+**连接服务器：**
+```bash
+sudo ./war3bot -x "connect bot1 123456 127.0.0.1"
+```
+
+**停止广播：**
+```bash
+sudo ./war3bot -x "stop"
+```
 
 ### 支持的数据包 (W3GS)
 
