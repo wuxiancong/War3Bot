@@ -412,7 +412,7 @@ void NetManager::handleUnregister(const PacketHeader *header)
 
         // 3. 从主信息表中移除，并获取信息用于打印日志
         if (m_registerInfos.contains(uuid)) {
-            RegisterInfo info = m_registerInfos.take(uuid); // take = remove + return
+            RegisterInfo info = m_registerInfos.take(uuid);
 
             LOG_INFO("--------------------[ 👋 用户注销请求 ]--------------------");
             LOG_INFO(QString("   ├─ Username:    %1").arg(info.username));
@@ -430,36 +430,53 @@ void NetManager::handleUnregister(const PacketHeader *header)
     }
 }
 
-void NetManager::handlePing(const PacketHeader *header, const QHostAddress &senderAddr, quint64 senderPort)
+quint8 NetManager::updateSessionState(quint32 sessionId, const QHostAddress &addr, quint64 port, bool *outIpChanged)
 {
-    // 1. 检查 SessionID 是否存在
-    bool isRegistered = false;
+    if (sessionId == 0) return 0;
 
-    if (header->sessionId != 0) {
-        QReadLocker locker(&m_registerInfosLock);
-        if (m_sessionIndex.contains(header->sessionId)) {
-            isRegistered = true;
-            QString uuid = m_sessionIndex.value(header->sessionId);
-            m_registerInfos[uuid].lastSeen = QDateTime::currentMSecsSinceEpoch();
-            m_registerInfos[uuid].publicIp = cleanAddress(senderAddr);
-            m_registerInfos[uuid].publicPort = senderPort;
-        }
+    QWriteLocker locker(&m_registerInfosLock);
+
+    if (!m_sessionIndex.contains(sessionId)) {
+        return 0;
     }
 
-    // 2. 构造带状态的 PONG 包
-    SCPongPacket pongPkt;
-    pongPkt.status = isRegistered ? 1 : 0;
+    QString uuid = m_sessionIndex.value(sessionId);
+    if (!m_registerInfos.contains(uuid)) {
+        return 0;
+    }
 
-    // 3. 发送
+    RegisterInfo &info = m_registerInfos[uuid];
+
+    // 1. 更新活跃时间
+    info.lastSeen = QDateTime::currentMSecsSinceEpoch();
+
+    // 2. 检测并更新 IP
+    QString cleanIp = cleanAddress(addr);
+    if (outIpChanged) *outIpChanged = false;
+
+    if (info.publicIp != cleanIp || info.publicPort != port) {
+        if (outIpChanged) *outIpChanged = true;
+        info.publicIp = cleanIp;
+        info.publicPort = port;
+    }
+
+    return 2; // Success
+}
+
+void NetManager::handlePing(const PacketHeader *header, const QHostAddress &senderAddr, quint64 senderPort)
+{
+    bool ipChanged = false;
+
+    int status = updateSessionState(header->sessionId, senderAddr, senderPort, &ipChanged);
+
+    SCPongPacket pongPkt;
+    pongPkt.status = status;
     sendUdpPacket(senderAddr, senderPort, S_C_PONG, &pongPkt, sizeof(pongPkt));
 
-    // 4. 日志策略：高频操作，仅使用单行日志，且仅在注册时显示
-    if (isRegistered) {
-        // 使用紧凑格式，不占用太多版面
+    if (status == 2) {
         LOG_DEBUG(QString("🏓 [PING] Session:%1 <-> %2:%3").arg(header->sessionId).arg(senderAddr.toString()).arg(senderPort));
     } else {
-        // 未注册的 Ping 可能是过期客户端，稍微提示一下
-        LOG_DEBUG(QString("⚠️ [PING] 未注册/过期请求 <-> %1:%2").arg(senderAddr.toString()).arg(senderPort));
+        LOG_DEBUG(QString("⚠️ [PING] 未注册探测 <-> %1:%2").arg(senderAddr.toString()).arg(senderPort));
     }
 }
 
@@ -467,60 +484,20 @@ void NetManager::handleHeartbeat(const PacketHeader *header, const QHostAddress 
 {
     if (header->sessionId == 0) return;
 
-    bool found = false;
     bool ipChanged = false;
-    QString userName;
-    QString oldAddr;
-    QString newAddr;
+    int status = updateSessionState(header->sessionId, senderAddr, senderPort, &ipChanged);
 
-    // 1. 锁定并更新
-    {
-        QWriteLocker locker(&m_registerInfosLock);
-        if (m_sessionIndex.contains(header->sessionId)) {
-            QString uuid = m_sessionIndex[header->sessionId];
-            if (m_registerInfos.contains(uuid)) {
-                RegisterInfo &info = m_registerInfos[uuid];
+    SCPongPacket pongPkt;
+    pongPkt.status = status;
+    sendUdpPacket(senderAddr, senderPort, S_C_PONG, &pongPkt, sizeof(pongPkt));
 
-                // 更新活跃时间
-                info.lastSeen = QDateTime::currentMSecsSinceEpoch();
-
-                // 检测地址变化 (NAT 漫游检测)
-                QString currentCleanIp = cleanAddress(senderAddr);
-                if (info.publicIp != currentCleanIp || info.publicPort != senderPort) {
-                    ipChanged = true;
-                    userName = info.username;
-                    oldAddr = QString("%1:%2").arg(info.publicIp).arg(info.publicPort);
-                    newAddr = QString("%1:%2").arg(currentCleanIp).arg(senderPort);
-
-                    // 更新为新地址
-                    info.publicIp = currentCleanIp;
-                    info.publicPort = senderPort;
-                }
-
-                found = true;
-            }
-        }
-    }
-
-    // 2. 响应逻辑
-    if (found) {
-        sendUdpPacket(senderAddr, senderPort, S_C_PONG);
+    if (status == 2) {
         if (ipChanged) {
-            qDebug().noquote() << "🔄 [网络漫游/NAT变更]";
-            qDebug().noquote() << QString("   ├─ 👤 用户: %1").arg(userName);
-            qDebug().noquote() << QString("   ├─ 🏚️ 旧址: %1").arg(oldAddr);
-            qDebug().noquote() << QString("   └─ 🆕 新址: %1").arg(newAddr);
+            qDebug().noquote() << "🔄 [网络漫游/NAT变更] Session:" << header->sessionId
+                               << " 新地址:" << senderAddr.toString();
         }
     } else {
-        // 3. 异常处理：会话失效
-        SCPongPacket pongPkt;
-        pongPkt.status = 0; // 0 表示让客户端重置
-        sendUdpPacket(senderAddr, senderPort, S_C_PONG, &pongPkt, sizeof(pongPkt));
-
-        qDebug().noquote() << "🛑 [心跳拒绝]";
-        qDebug().noquote() << QString("   ├─ 🎯 来源: %1:%2").arg(senderAddr.toString()).arg(senderPort);
-        qDebug().noquote() << QString("   ├─ 🆔 会话: %1").arg(header->sessionId);
-        qDebug().noquote() << "   └─ ❌ 原因: 会话无效或已过期 (已通知客户端重连)";
+        qDebug().noquote() << "🛑 [心跳拒绝] Session无效:" << header->sessionId;
     }
 }
 

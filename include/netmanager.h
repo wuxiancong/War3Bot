@@ -108,6 +108,7 @@ private:
     void updateMostFrequentCrc();
     void cleanupExpiredClients();
     void removeClientInternal(const QString &clientId);
+    quint8 updateSessionState(quint32 sessionId, const QHostAddress &addr, quint64 port, bool *outIpChanged);
 
     // 工具
     QString cleanAddress(const QString &address);
