@@ -1254,10 +1254,11 @@ quint64 NetManager::calculateCRC16(const QByteArray &data)
     for (int i = 0; i < len; i++) {
         unsigned char x = (crc >> 8) ^ (unsigned char)p[i];
         x ^= x >> 4;
-        crc = (crc << 8) ^ (quint64)(x << 12) ^ (quint64)(x << 5) ^ (quint64)x;
+        crc = (crc << 8) ^ (quint16)(x << 12) ^ (quint16)(x << 5) ^ (quint16)x;
     }
     return crc;
 }
+
 bool NetManager::isValidFileName(const QString &name)
 {
     QString safe = QFileInfo(name).fileName();
