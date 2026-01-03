@@ -392,7 +392,7 @@ void NetManager::handleRegister(const PacketHeader *header, const CSRegisterPack
     // 发送响应
     SCRegisterPacket resp;
     resp.sessionId = newSessionId;
-    resp.status = 1;
+    resp.status = Registered;
 
     sendUdpPacket(senderAddr, senderPort, S_C_REGISTER, &resp, sizeof(resp));
 }
@@ -432,17 +432,17 @@ void NetManager::handleUnregister(const PacketHeader *header)
 
 quint8 NetManager::updateSessionState(quint32 sessionId, const QHostAddress &addr, quint64 port, bool *outIpChanged)
 {
-    if (sessionId == 0) return 0;
+    if (sessionId == 0) return Unregistered;
 
     QWriteLocker locker(&m_registerInfosLock);
 
     if (!m_sessionIndex.contains(sessionId)) {
-        return 0;
+        return Unregistered;
     }
 
     QString uuid = m_sessionIndex.value(sessionId);
     if (!m_registerInfos.contains(uuid)) {
-        return 0;
+        return Unregistered;
     }
 
     RegisterInfo &info = m_registerInfos[uuid];
@@ -460,7 +460,7 @@ quint8 NetManager::updateSessionState(quint32 sessionId, const QHostAddress &add
         info.publicPort = port;
     }
 
-    return 2; // Success
+    return Registered;
 }
 
 void NetManager::handlePing(const PacketHeader *header, const QHostAddress &senderAddr, quint64 senderPort)

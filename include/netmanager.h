@@ -31,6 +31,12 @@ enum NATType {
     NAT_IP_RESTRICTED = 10
 };
 
+enum RegistrationState {
+    Unregistered = 0,
+    Registering,
+    Registered
+};
+
 struct RegisterInfo {
     QString clientId;
     QString username;
