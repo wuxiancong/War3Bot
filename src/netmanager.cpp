@@ -607,6 +607,7 @@ void NetManager::onTcpReadyRead()
     QTcpSocket *socket = qobject_cast<QTcpSocket*>(sender());
     if (!socket) return;
 
+    // 1. 快速路径：如果已识别过协议，直接分发
     if (socket->property("ConnType").isValid()) {
         QString type = socket->property("ConnType").toString();
         if (type == "UPLOAD") handleTcpUploadMessage(socket);
@@ -614,23 +615,44 @@ void NetManager::onTcpReadyRead()
         return;
     }
 
+    // 2. 数据缓冲检查
     if (socket->bytesAvailable() < 4) return;
 
+    // 3. 预读协议头
     QByteArray head = socket->peek(4);
+    QString peerInfo = QString("%1:%2").arg(socket->peerAddress().toString()).arg(socket->peerPort());
+    QString headHex = head.toHex().toUpper();
 
-    // 检查是否是文件上传 (魔数: W3UP)
+    // 4. 协议识别逻辑
     if (head.startsWith("W3UP")) {
         socket->setProperty("ConnType", "UPLOAD");
+
+        qDebug().noquote() << "🔌 [TCP 协议识别]";
+        qDebug().noquote() << QString("   ├─ 👤 来源: %1").arg(peerInfo);
+        qDebug().noquote() << QString("   ├─ 🏷️ 头部: %1 (ASCII: W3UP)").arg(headHex);
+        qDebug().noquote() << "   └─ ✅ 类型: 文件上传通道 (UPLOAD)";
+
         handleTcpUploadMessage(socket);
-    } else {
+    }
+    else {
         const char *data = head.constData();
-        quint64 magic = *reinterpret_cast<const quint64*>(data);
-        if (magic == PROTOCOL_MAGIC) {
+        quint32 magic = *reinterpret_cast<const quint32*>(data);
+        if (magic == static_cast<quint32>(PROTOCOL_MAGIC)) {
             socket->setProperty("ConnType", "COMMAND");
+
+            qDebug().noquote() << "🔌 [TCP 协议识别]";
+            qDebug().noquote() << QString("   ├─ 👤 来源: %1").arg(peerInfo);
+            qDebug().noquote() << QString("   ├─ 🏷️ 头部: 0x%1").arg(QString::number(magic, 16).toUpper());
+            qDebug().noquote() << "   └─ ✅ 类型: 控制指令通道 (COMMAND)";
+
             handleTcpCommandMessage(socket);
         }
         else {
-            LOG_WARNING("❌ TCP 未知协议头，断开连接");
+            qDebug().noquote() << "🛑 [TCP 协议识别失败]";
+            qDebug().noquote() << QString("   ├─ 👤 来源: %1").arg(peerInfo);
+            qDebug().noquote() << QString("   ├─ 🏷️ 头部: %1 (未知)").arg(headHex);
+            qDebug().noquote() << "   └─ 🛡️ 动作: 断开非法连接";
+
             socket->disconnectFromHost();
         }
     }
@@ -850,13 +872,20 @@ void NetManager::handleTcpCommandMessage(QTcpSocket *socket)
         // 1. 检查头部是否完整
         if (socket->bytesAvailable() < (qint64)sizeof(PacketHeader)) return;
 
-        // 2. 预读头部
+        // 2. 预读头部 (Peek 不会移动读取指针)
         PacketHeader header;
         socket->peek(reinterpret_cast<char*>(&header), sizeof(PacketHeader));
 
         // 3. 校验魔数
         if (header.magic != PROTOCOL_MAGIC) {
-            LOG_WARNING("❌ TCP 控制协议 Magic 错误");
+            QString peerInfo = QString("%1:%2").arg(socket->peerAddress().toString()).arg(socket->peerPort());
+            QString badMagic = QString::number(header.magic, 16).toUpper();
+
+            qDebug().noquote() << "🛑 [TCP 协议违规]";
+            qDebug().noquote() << QString("   ├─ 🔌 来源: %1").arg(peerInfo);
+            qDebug().noquote() << QString("   ├─ ❌ Magic: 0x%1 (预期: 0x%2)").arg(badMagic, QString::number(PROTOCOL_MAGIC, 16).toUpper());
+            qDebug().noquote() << "   └─ 🛡️ 动作: 断开连接";
+
             socket->disconnectFromHost();
             return;
         }
@@ -870,22 +899,31 @@ void NetManager::handleTcpCommandMessage(QTcpSocket *socket)
         // 5. 正式读取完整数据包
         QByteArray packetData = socket->read(totalPacketSize);
         const PacketHeader *pHeader = reinterpret_cast<const PacketHeader*>(packetData.constData());
-        const char* payload = packetData.constData() + sizeof(PacketHeader);
+        const char *payload = packetData.constData() + sizeof(PacketHeader);
 
-        // TCP 身份绑定
-        if (!socket->property("clientId").isValid() && pHeader->sessionId != 0) {
+        // A. 先尝试获取当前已绑定的 ID
+        QString currentClientId = socket->property("clientId").toString();
+
+        // B. 如果未绑定，且包里有 SessionID，尝试进行“首次绑定”
+        if (currentClientId.isEmpty() && pHeader->sessionId != 0) {
             QWriteLocker locker(&m_registerInfosLock);
             if (m_sessionIndex.contains(pHeader->sessionId)) {
-                QString sessionId = m_sessionIndex.value(pHeader->sessionId);
+                // 查到了！
+                QString clientId = m_sessionIndex.value(pHeader->sessionId);
 
-                // 记录到 TCP 客户端表
-                m_tcpClients.insert(sessionId, socket);
-                socket->setProperty("clientId", sessionId);
+                // 立即更新 Socket 属性和 Map
+                m_tcpClients.insert(clientId, socket);
+                socket->setProperty("clientId", clientId);
                 socket->setProperty("sessionId", pHeader->sessionId);
 
-                LOG_INFO(QString("🔗 TCP 控制通道已绑定用户: %1 (Session: %2)").arg(sessionId).arg(pHeader->sessionId));
+                qDebug().noquote() << "🔗 [TCP 控制通道绑定]";
+                qDebug().noquote() << QString("   ├─ 🆔 Session: %1").arg(pHeader->sessionId);
+                qDebug().noquote() << QString("   ├─ 👤 用户ID:  %1").arg(clientId);
+                qDebug().noquote() << "   └─ ✅ 状态:    绑定成功";
             } else {
-                LOG_WARNING(QString("⚠️ TCP 收到无效 SessionID: %1").arg(pHeader->sessionId));
+                qDebug().noquote() << "⚠️ [TCP 绑定失败]";
+                qDebug().noquote() << QString("   ├─ 🆔 Session: %1").arg(pHeader->sessionId);
+                qDebug().noquote() << "   └─ ❌ 原因:    无效的会话 ID";
             }
         }
 
@@ -903,19 +941,38 @@ void NetManager::handleTcpCommandMessage(QTcpSocket *socket)
 
         case PacketType::C_S_COMMAND:
             if (pHeader->payloadLen >= sizeof(CSCommandPacket)) {
-                const CSCommandPacket* cmdPkt = reinterpret_cast<const CSCommandPacket*>(payload);
+                // 🛡️ 安全检查：如果到现在还没 ClientID，说明这是个未授权的连接发来的指令
+                if (currentClientId.isEmpty()) {
+                    qDebug().noquote() << "🛑 [指令拒绝]";
+                    qDebug().noquote() << "   ├─ ❌ 原因: 未鉴权连接 (无有效 SessionID)";
+                    qDebug().noquote() << "   └─ 🛡️ 动作: 忽略指令";
+                    break;
+                }
+
+                const CSCommandPacket *cmdPkt = reinterpret_cast<const CSCommandPacket*>(payload);
 
                 QString cmd = QString::fromUtf8(cmdPkt->command, strnlen(cmdPkt->command, sizeof(cmdPkt->command)));
                 QString text = QString::fromUtf8(cmdPkt->text, strnlen(cmdPkt->text, sizeof(cmdPkt->text)));
                 QString user = QString::fromUtf8(cmdPkt->username, strnlen(cmdPkt->username, sizeof(cmdPkt->username)));
 
-                LOG_INFO(QString("🎮 [TCP] 收到指令 [%1]: %2 %3").arg(user, cmd, text));
-                QString clientId = socket->property("clientId").toString();
-                emit commandReceived(user, clientId, cmd, text);
+                qDebug().noquote() << "🎮 [TCP 指令接收]";
+                qDebug().noquote() << QString("   ├─ 👤 发送者: %1").arg(user);
+                qDebug().noquote() << QString("   ├─ 🔗 来源ID: %1").arg(currentClientId);
+                qDebug().noquote() << QString("   ├─ 💬 指令:   %1").arg(cmd);
+                if (!text.isEmpty()) {
+                    qDebug().noquote() << QString("   ├─ 📄 参数:   %1").arg(text);
+                }
+                qDebug().noquote() << "   └─ 🚀 动作:    分发至 BotManager";
+
+                // 这里直接用 currentClientId，它一定是最新的
+                emit commandReceived(user, currentClientId, cmd, text);
             }
             break;
 
         default:
+            // 处理未知包
+            qDebug().noquote() << "❓ [TCP 未知指令]";
+            qDebug().noquote() << QString("   └─ 🔢 Command: %1").arg(pHeader->command);
             break;
         }
     }
