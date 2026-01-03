@@ -853,11 +853,9 @@ void NetManager::handleTcpCommandMessage(QTcpSocket *socket)
         // 6. 处理具体指令
         switch (static_cast<PacketType>(pHeader->command)) {
 
-        case PacketType::C_S_PING:
         case PacketType::C_S_HEARTBEAT:
+        case PacketType::C_S_PING:
         {
-            PacketHeader respHead = *pHeader;
-            respHead.payloadLen = sizeof(SCPongPacket);
             SCPongPacket pong;
             pong.status = 1;
             sendTcpPacket(socket, PacketType::S_C_PONG, &pong, sizeof(pong));
