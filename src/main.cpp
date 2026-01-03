@@ -546,6 +546,7 @@ int main(int argc, char *argv[]) {
         int idle = 0;
         int creating = 0;
         int inLobby = 0;
+        int waiting = 0;
         int total = 0;
 
         if (botManager) {
@@ -559,6 +560,7 @@ int main(int argc, char *argv[]) {
                     case BotState::Idle: idle++; break;
                     case BotState::Creating: creating++; break;
                     case BotState::InLobby: inLobby++; break;
+                    case BotState::Waiting: waiting++; break;
                     default: break;
                     }
                 }
@@ -610,15 +612,16 @@ int main(int argc, char *argv[]) {
         }
 
         // 4. 打印详细日志
-        LOG_INFO(QString("🔄 [服务器状态] 运行: %1 | Bot: %2/%3 (空闲:%4, 正在创建:%5, 大厅等待:%6) | 玩家: %7%8")
+        LOG_INFO(QString("🔄 [服务器状态] 运行: %1 | Bot: %2/%3 (空闲:%4, 正在创建:%5, 大厅等待:%6, 房间等待:%7) | 玩家: %8%9")
                      .arg(uptimeStr)
                      .arg(online)           // %2
                      .arg(total)            // %3
                      .arg(idle)             // %4
                      .arg(creating)         // %5
                      .arg(inLobby)          // %6
-                     .arg(playerOnline)     // %7
-                     .arg(playerDetails));  // %8
+                     .arg(waiting)          // %7
+                     .arg(playerOnline)     // %8
+                     .arg(playerDetails));  // %9
     });
 
     // 设置间隔为 30 秒 (30000 毫秒)
