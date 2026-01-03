@@ -45,7 +45,7 @@ NetManager::~NetManager()
 
 // ==================== Socket 管理与启动 ====================
 
-bool NetManager::startServer(quint16 port, const QString &configFile)
+bool NetManager::startServer(quint64 port, const QString &configFile)
 {
     if (m_isRunning) return true;
 
@@ -98,7 +98,7 @@ bool NetManager::setupSocketOptions()
     return true;
 }
 
-bool NetManager::bindSocket(quint16 port)
+bool NetManager::bindSocket(quint64 port)
 {
     if (!m_udpSocket->bind(QHostAddress::AnyIPv4, port, QUdpSocket::ShareAddress)) {
         LOG_ERROR(QString("Bind Error: %1").arg(m_udpSocket->errorString()));
@@ -131,7 +131,7 @@ void NetManager::stopServer()
 
 // ==================== 二进制发送逻辑 ====================
 
-qint64 NetManager::sendUdpPacket(const QHostAddress &target, quint16 port, PacketType type, const void *payload, quint16 payloadLen)
+qint64 NetManager::sendUdpPacket(const QHostAddress &target, quint64 port, PacketType type, const void *payload, quint64 payloadLen)
 {
     if (!m_udpSocket) {
         LOG_ERROR("❌ [UDP] 发送失败: UDP Socket 未初始化");
@@ -179,7 +179,7 @@ qint64 NetManager::sendUdpPacket(const QHostAddress &target, quint16 port, Packe
     return sent;
 }
 
-bool NetManager::sendTcpPacket(QTcpSocket *socket, PacketType type, const void *payload, quint16 payloadLen)
+bool NetManager::sendTcpPacket(QTcpSocket *socket, PacketType type, const void *payload, quint64 payloadLen)
 {
     // 0. 前置检查
     if (!socket) {
@@ -279,7 +279,7 @@ void NetManager::handleIncomingDatagram(const QNetworkDatagram &datagram)
     }
 
     // 2. CRC 校验
-    quint16 recvChecksum = header->checksum;
+    quint64 recvChecksum = header->checksum;
     header->checksum = 0;
     if (calculateCRC16(data) != recvChecksum) {
         LOG_WARNING("CRC 校验失败");
@@ -289,7 +289,7 @@ void NetManager::handleIncomingDatagram(const QNetworkDatagram &datagram)
     // 3. 分发
     char *payload = data.data() + sizeof(PacketHeader);
     QHostAddress sender = datagram.senderAddress();
-    quint16 port = datagram.senderPort();
+    quint64 port = datagram.senderPort();
 
     switch (static_cast<PacketType>(header->command)) {
     case C_S_REGISTER:
@@ -324,7 +324,7 @@ void NetManager::handleIncomingDatagram(const QNetworkDatagram &datagram)
 
 // ==================== 具体业务处理器 ====================
 
-void NetManager::handleRegister(const PacketHeader *header, const CSRegisterPacket *packet, const QHostAddress &senderAddr, quint16 senderPort)
+void NetManager::handleRegister(const PacketHeader *header, const CSRegisterPacket *packet, const QHostAddress &senderAddr, quint64 senderPort)
 {
     Q_UNUSED(header);
 
@@ -430,7 +430,7 @@ void NetManager::handleUnregister(const PacketHeader *header)
     }
 }
 
-void NetManager::handlePing(const PacketHeader *header, const QHostAddress &senderAddr, quint16 senderPort)
+void NetManager::handlePing(const PacketHeader *header, const QHostAddress &senderAddr, quint64 senderPort)
 {
     // 1. 检查 SessionID 是否存在
     bool isRegistered = false;
@@ -439,6 +439,10 @@ void NetManager::handlePing(const PacketHeader *header, const QHostAddress &send
         QReadLocker locker(&m_registerInfosLock);
         if (m_sessionIndex.contains(header->sessionId)) {
             isRegistered = true;
+            QString uuid = m_sessionIndex.value(header->sessionId);
+            m_registerInfos[uuid].lastSeen = QDateTime::currentMSecsSinceEpoch();
+            m_registerInfos[uuid].publicIp = cleanAddress(senderAddr);
+            m_registerInfos[uuid].publicPort = senderPort;
         }
     }
 
@@ -449,39 +453,74 @@ void NetManager::handlePing(const PacketHeader *header, const QHostAddress &send
     // 3. 发送
     sendUdpPacket(senderAddr, senderPort, S_C_PONG, &pongPkt, sizeof(pongPkt));
 
-    // 只有已注册才打印
+    // 4. 日志策略：高频操作，仅使用单行日志，且仅在注册时显示
     if (isRegistered) {
-        LOG_DEBUG(QString("🏓 Pong -> %1 (Session: %2)").arg(senderAddr.toString()).arg(header->sessionId));
+        // 使用紧凑格式，不占用太多版面
+        LOG_DEBUG(QString("🏓 [PING] Session:%1 <-> %2:%3").arg(header->sessionId).arg(senderAddr.toString()).arg(senderPort));
     } else {
-        // LOG_DEBUG(QString("⚠️ 未注册 Ping -> %1").arg(senderAddr.toString()));
+        // 未注册的 Ping 可能是过期客户端，稍微提示一下
+        LOG_DEBUG(QString("⚠️ [PING] 未注册/过期请求 <-> %1:%2").arg(senderAddr.toString()).arg(senderPort));
     }
 }
 
-void NetManager::handleHeartbeat(const PacketHeader *header, const QHostAddress &senderAddr, quint16 senderPort)
+void NetManager::handleHeartbeat(const PacketHeader *header, const QHostAddress &senderAddr, quint64 senderPort)
 {
     if (header->sessionId == 0) return;
 
     bool found = false;
+    bool ipChanged = false;
+    QString userName;
+    QString oldAddr;
+    QString newAddr;
+
+    // 1. 锁定并更新
     {
         QWriteLocker locker(&m_registerInfosLock);
         if (m_sessionIndex.contains(header->sessionId)) {
             QString uuid = m_sessionIndex[header->sessionId];
             if (m_registerInfos.contains(uuid)) {
-                m_registerInfos[uuid].lastSeen = QDateTime::currentMSecsSinceEpoch();
-                m_registerInfos[uuid].publicIp = cleanAddress(senderAddr);
-                m_registerInfos[uuid].publicPort = senderPort;
+                RegisterInfo &info = m_registerInfos[uuid];
+
+                // 更新活跃时间
+                info.lastSeen = QDateTime::currentMSecsSinceEpoch();
+
+                // 检测地址变化 (NAT 漫游检测)
+                QString currentCleanIp = cleanAddress(senderAddr);
+                if (info.publicIp != currentCleanIp || info.publicPort != senderPort) {
+                    ipChanged = true;
+                    userName = info.username;
+                    oldAddr = QString("%1:%2").arg(info.publicIp).arg(info.publicPort);
+                    newAddr = QString("%1:%2").arg(currentCleanIp).arg(senderPort);
+
+                    // 更新为新地址
+                    info.publicIp = currentCleanIp;
+                    info.publicPort = senderPort;
+                }
+
                 found = true;
             }
         }
     }
 
+    // 2. 响应逻辑
     if (found) {
         sendUdpPacket(senderAddr, senderPort, S_C_PONG);
+        if (ipChanged) {
+            qDebug().noquote() << "🔄 [网络漫游/NAT变更]";
+            qDebug().noquote() << QString("   ├─ 👤 用户: %1").arg(userName);
+            qDebug().noquote() << QString("   ├─ 🏚️ 旧址: %1").arg(oldAddr);
+            qDebug().noquote() << QString("   └─ 🆕 新址: %1").arg(newAddr);
+        }
     } else {
+        // 3. 异常处理：会话失效
         SCPongPacket pongPkt;
-        pongPkt.status = 0;
+        pongPkt.status = 0; // 0 表示让客户端重置
         sendUdpPacket(senderAddr, senderPort, S_C_PONG, &pongPkt, sizeof(pongPkt));
-        LOG_WARNING(QString("⚠️ 收到失效心跳 (Session %1)，已通知客户端重连").arg(header->sessionId));
+
+        qDebug().noquote() << "🛑 [心跳拒绝]";
+        qDebug().noquote() << QString("   ├─ 🎯 来源: %1:%2").arg(senderAddr.toString()).arg(senderPort);
+        qDebug().noquote() << QString("   ├─ 🆔 会话: %1").arg(header->sessionId);
+        qDebug().noquote() << "   └─ ❌ 原因: 会话无效或已过期 (已通知客户端重连)";
     }
 }
 
@@ -533,7 +572,7 @@ void NetManager::handleCommand(const PacketHeader *header, const CSCommandPacket
     emit commandReceived(user, serverRecClientId, cmd, text);
 }
 
-void NetManager::handleCheckMapCRC(const PacketHeader *header, const CSCheckMapCRCPacket *packet, const QHostAddress &senderAddr, quint16 senderPort)
+void NetManager::handleCheckMapCRC(const PacketHeader *header, const CSCheckMapCRCPacket *packet, const QHostAddress &senderAddr, quint64 senderPort)
 {
     Q_UNUSED(header);
     QString crcHex = QString::fromUtf8(packet->crcHex, strnlen(packet->crcHex, sizeof(packet->crcHex))).trimmed();
@@ -585,7 +624,7 @@ void NetManager::onTcpReadyRead()
         handleTcpUploadMessage(socket);
     } else {
         const char *data = head.constData();
-        quint16 magic = *reinterpret_cast<const quint16*>(data);
+        quint64 magic = *reinterpret_cast<const quint64*>(data);
         if (magic == PROTOCOL_MAGIC) {
             socket->setProperty("ConnType", "COMMAND");
             handleTcpCommandMessage(socket);
@@ -906,13 +945,13 @@ void NetManager::onTcpDisconnected() {
     if (socket) socket->deleteLater();
 }
 
-bool NetManager::sendEnterRoomCommand(const QString &clientId, quint16 port)
+bool NetManager::sendEnterRoomCommand(const QString &clientId, quint64 port)
 {
     // 1. 检查 TCP 连接是否存在
     if (!m_tcpClients.contains(clientId)) {
         qDebug().noquote() << "🛑 [指令发送失败]";
         qDebug().noquote() << QString("   ├─ 🎯 目标: %1").arg(clientId);
-        qDebug().noquote() << "   └─ ❌ 原因: TCP 控制通道未连接 (用户未登录 Control)";
+        qDebug().noquote() << "   └─ ❌ 原因: 用户没有记录";
         return false;
     }
 
@@ -986,7 +1025,7 @@ void NetManager::sendUploadResult(QTcpSocket* socket, const QString& crc, const 
 
     QString senderIp = cleanAddress(socket->peerAddress().toString());
     QHostAddress targetAddr;
-    quint16 targetPort = 0;
+    quint64 targetPort = 0;
     bool found = false;
     quint32 fallbackSessionId = socket->property("SessionId").toUInt(); // 获取 SessionID
 
@@ -1141,18 +1180,46 @@ void NetManager::cleanupResources()
 void NetManager::cleanupExpiredClients()
 {
     QWriteLocker locker(&m_registerInfosLock);
-    qint64 now = QDateTime::currentMSecsSinceEpoch();
+    quint64 now = QDateTime::currentMSecsSinceEpoch();
 
-    QStringList timeOutUsers;
+    // 定义临时结构体存储待删除信息，避免在 remove 时丢失用户名等信息
+    struct ExpiredClient {
+        QString uuid;
+        QString username;
+        quint64 silenceDuration;
+    };
+    QList<ExpiredClient> expiredList;
+
+    // 1. 扫描阶段
     for (auto it = m_registerInfos.begin(); it != m_registerInfos.end(); ++it) {
-        if (now - it.value().lastSeen > m_peerTimeout) {
-            timeOutUsers.append(it.key());
+        quint64 silence = now - it.value().lastSeen;
+        if (silence > m_peerTimeout) {
+            expiredList.append({it.key(), it.value().username, silence});
         }
     }
 
-    for (const QString& uuid : timeOutUsers) {
-        LOG_INFO(QString("🗑️ 超时移除: %1").arg(uuid));
-        removeClientInternal(uuid);
+    // 2. 如果没有过期用户，直接返回，保持日志清爽
+    if (expiredList.isEmpty()) {
+        return;
+    }
+
+    // 3. 执行清理并打印树状日志
+    qDebug().noquote() << "🗑️ [会话超时清理任务]";
+    qDebug().noquote() << QString("   ├─ ⏱️ 超时阈值: %1 ms").arg(m_peerTimeout);
+    qDebug().noquote() << QString("   ├─ 📉 清理数量: %1 人").arg(expiredList.size());
+
+    for (int i = 0; i < expiredList.size(); ++i) {
+        const auto &client = expiredList.at(i);
+        bool isLast = (i == expiredList.size() - 1);
+        QString prefix = isLast ? "   └─ " : "   ├─ ";
+
+        // 打印详情：显示用户名、UUID前8位、沉默秒数
+        qDebug().noquote() << QString("%1🚫 移除: %2 (UUID: %3...) | 已沉默: %4s")
+                                  .arg(prefix, client.username, client.uuid.left(8))
+                                  .arg(client.silenceDuration / 1000.0, 0, 'f', 1);
+
+        // 执行移除
+        removeClientInternal(client.uuid);
     }
 }
 
@@ -1178,16 +1245,16 @@ QList<RegisterInfo> NetManager::getOnlinePlayers() const
     return m_registerInfos.values();
 }
 
-quint16 NetManager::calculateCRC16(const QByteArray &data)
+quint64 NetManager::calculateCRC16(const QByteArray &data)
 {
-    quint16 crc = 0xFFFF;
+    quint64 crc = 0xFFFF;
     const char *p = data.constData();
     int len = data.size();
 
     for (int i = 0; i < len; i++) {
         unsigned char x = (crc >> 8) ^ (unsigned char)p[i];
         x ^= x >> 4;
-        crc = (crc << 8) ^ (quint16)(x << 12) ^ (quint16)(x << 5) ^ (quint16)x;
+        crc = (crc << 8) ^ (quint64)(x << 12) ^ (quint64)(x << 5) ^ (quint64)x;
     }
     return crc;
 }

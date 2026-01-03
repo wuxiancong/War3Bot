@@ -35,9 +35,9 @@ struct RegisterInfo {
     QString clientId;
     QString username;
     QString localIp;
-    quint16 localPort;
+    quint64 localPort;
     QString publicIp;
-    quint16 publicPort;
+    quint64 publicPort;
     quint32 sessionId;
     quint64 lastSeen;
     quint64 firstSeen;
@@ -54,16 +54,16 @@ public:
     explicit NetManager(QObject *parent = nullptr);
     ~NetManager();
 
-    bool startServer(quint16 port, const QString &configFile = "war3bot.ini");
+    bool startServer(quint64 port, const QString &configFile = "war3bot.ini");
     void stopServer();
     bool isRunning() const;
     QList<RegisterInfo> getOnlinePlayers() const;
     bool isClientRegistered(const QString &clientId) const;
-    bool sendEnterRoomCommand(const QString &clientId, quint16 port);
+    bool sendEnterRoomCommand(const QString &clientId, quint64 port);
 
 signals:
     void serverStopped();
-    void serverStarted(quint16 port);
+    void serverStarted(quint64 port);
     void commandReceived(const QString &userName, const QString &clientId, const QString &command, const QString &text);
 
 private slots:
@@ -79,19 +79,19 @@ private:
     void handleIncomingDatagram(const QNetworkDatagram &datagram);
 
     // 具体包处理器
-    void handleRegister(const PacketHeader *header, const CSRegisterPacket *packet, const QHostAddress &senderAddr, quint16 senderPort);
+    void handleRegister(const PacketHeader *header, const CSRegisterPacket *packet, const QHostAddress &senderAddr, quint64 senderPort);
     void handleUnregister(const PacketHeader *header);
-    void handlePing(const PacketHeader *header, const QHostAddress &senderAddr, quint16 senderPort);
-    void handleHeartbeat(const PacketHeader *header, const QHostAddress &senderAddr, quint16 senderPort);
+    void handlePing(const PacketHeader *header, const QHostAddress &senderAddr, quint64 senderPort);
+    void handleHeartbeat(const PacketHeader *header, const QHostAddress &senderAddr, quint64 senderPort);
     void handleCommand(const PacketHeader *header, const CSCommandPacket *packet);
-    void handleCheckMapCRC(const PacketHeader *header, const CSCheckMapCRCPacket *packet, const QHostAddress &senderAddr, quint16 senderPort);
+    void handleCheckMapCRC(const PacketHeader *header, const CSCheckMapCRCPacket *packet, const QHostAddress &senderAddr, quint64 senderPort);
 
     // 发送辅助
-    qint64 sendUdpPacket(const QHostAddress &target, quint16 port, PacketType type, const void *payload = nullptr, quint16 payloadLen = 0);
+    qint64 sendUdpPacket(const QHostAddress &target, quint64 port, PacketType type, const void *payload = nullptr, quint64 payloadLen = 0);
     void sendUploadResult(QTcpSocket *socket, const QString &crc, const QString &fileName, bool success, UploadErrorCode reason);
-    bool sendTcpPacket(QTcpSocket *socket, PacketType type, const void *payload, quint16 payloadLen);
+    bool sendTcpPacket(QTcpSocket *socket, PacketType type, const void *payload, quint64 payloadLen);
     bool sendToClient(const QString &clientId, const QByteArray &data);
-    quint16 calculateCRC16(const QByteArray &data);
+    quint64 calculateCRC16(const QByteArray &data);
 
     // --- TCP 处理 (保持原样，用于文件上传) ---
     void handleTcpUploadMessage(QTcpSocket *socket);
@@ -101,7 +101,7 @@ private:
     void loadConfiguration();
     void cleanupResources();
     bool setupSocketOptions();
-    bool bindSocket(quint16 port);
+    bool bindSocket(quint64 port);
     bool isValidFileName(const QString &name);
     void setupTimers();
     void broadcastServerInfo();
@@ -117,12 +117,12 @@ private:
 
     // 配置
     quint64 m_peerTimeout;
-    quint16 m_listenPort;
+    quint64 m_listenPort;
     int m_cleanupInterval;
     QSettings *m_settings;
     bool m_enableBroadcast;
     int m_broadcastInterval;
-    quint16 m_broadcastPort;
+    quint64 m_broadcastPort;
     bool m_isRunning;
 
     // 资源
