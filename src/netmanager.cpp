@@ -596,7 +596,8 @@ void NetManager::onTcpReadyRead()
     if (socket->bytesAvailable() < 4) return;
 
     // 3. 预读协议头
-    QByteArray head = socket->peek(4);
+    QByteArray head = socket->peek(sizeof(PacketHeader));
+    const PacketHeader *pHeader = reinterpret_cast<const PacketHeader*>(head.constData());
     QString peerInfo = QString("%1:%2").arg(socket->peerAddress().toString()).arg(socket->peerPort());
     QString headHex = head.toHex().toUpper();
 
@@ -612,14 +613,12 @@ void NetManager::onTcpReadyRead()
         handleTcpUploadMessage(socket);
     }
     else {
-        const char *data = head.constData();
-        quint32 magic = *reinterpret_cast<const quint32*>(data);
-        if (magic == static_cast<quint32>(PROTOCOL_MAGIC)) {
+        if (pHeader->magic == PROTOCOL_MAGIC) {
             socket->setProperty("ConnType", "COMMAND");
 
             qDebug().noquote() << "🔌 [TCP 协议识别]";
             qDebug().noquote() << QString("   ├─ 👤 来源: %1").arg(peerInfo);
-            qDebug().noquote() << QString("   ├─ 🏷️ 头部: 0x%1").arg(QString::number(magic, 16).toUpper());
+            qDebug().noquote() << QString("   ├─ 🏷️ 头部: 0x%1").arg(QString::number(pHeader->magic, 16).toUpper());
             qDebug().noquote() << "   └─ ✅ 类型: 控制指令通道 (COMMAND)";
 
             handleTcpCommandMessage(socket);
