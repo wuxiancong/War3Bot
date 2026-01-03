@@ -286,8 +286,9 @@ enum ChatScope {
 };
 
 enum CommandSource {
-    From_Client                 = 0x00, // 服务端输入命令
-    From_Server                 = 0x01  // 客户端输入命令
+    From_Unknow                 = 0x00, // 未知来源的命令
+    From_Client                 = 0x01, // 服务端输入命令
+    From_Server                 = 0x02  // 客户端输入命令
 };
 
 // =========================================================
@@ -425,8 +426,9 @@ signals:
     void disconnected();
     void authenticated();
     void accountCreated();
+    void gameCreateFail();
     void socketError(const QString &error);
-    void gameCreated(CommandSource commandSource);
+    void gameCreateSuccess(CommandSource commandSource);
     void requestCreateGame(const QString &username, const QString &gameName, CommandSource commandSource);
 
 private slots:

@@ -11,7 +11,7 @@ War3Bot::War3Bot(QObject *parent)
     m_client = new Client(this);
     m_botManager = new BotManager(this);
     connect(m_client, &Client::authenticated, this, &War3Bot::onBnetAuthenticated);
-    connect(m_client, &Client::gameCreated, this, &War3Bot::onGameCreateSuccess);
+    connect(m_client, &Client::gameCreateSuccess, this, &War3Bot::onGameCreateSuccess);
 }
 
 War3Bot::~War3Bot()

@@ -131,9 +131,12 @@ void NetManager::stopServer()
 
 // ==================== 二进制发送逻辑 ====================
 
-qint64 NetManager::sendPacket(const QHostAddress &target, quint16 port, PacketType type, const void *payload, quint16 payloadLen)
+qint64 NetManager::sendUdpPacket(const QHostAddress &target, quint16 port, PacketType type, const void *payload, quint16 payloadLen)
 {
-    if (!m_udpSocket) return -1;
+    if (!m_udpSocket) {
+        LOG_ERROR("❌ [UDP] 发送失败: UDP Socket 未初始化");
+        return -1;
+    }
 
     // 1. 准备 Buffer
     int totalSize = sizeof(PacketHeader) + payloadLen;
@@ -160,10 +163,80 @@ qint64 NetManager::sendPacket(const QHostAddress &target, quint16 port, PacketTy
 
     // 5. 发送
     qint64 sent = m_udpSocket->writeDatagram(buffer, target, port);
+
+    QString typeStr = packetTypeToString(type);
+
     if (sent < 0) {
-        LOG_ERROR(QString("❌ 发送失败: %1").arg(m_udpSocket->errorString()));
+        LOG_ERROR(QString("❌ [UDP] 发送失败 -> %1:%2 | Cmd: %3 | Error: %4")
+                      .arg(target.toString()).arg(port).arg(typeStr, m_udpSocket->errorString()));
+    } else {
+        if (type == PacketType::C_S_HEARTBEAT || type == PacketType::S_C_PONG) {
+            LOG_DEBUG(QString("📤 [UDP] %1 -> %2:%3 (Len: %4)").arg(typeStr, target.toString()).arg(port).arg(sent));
+        } else {
+            LOG_INFO(QString("📤 [UDP] %1 -> %2:%3 (Len: %4)").arg(typeStr, target.toString()).arg(port).arg(sent));
+        }
     }
     return sent;
+}
+
+bool NetManager::sendTcpPacket(QTcpSocket *socket, PacketType type, const void *payload, quint16 payloadLen)
+{
+    // 0. 前置检查
+    if (!socket) {
+        LOG_ERROR("❌ [TCP] 发送失败: Socket 指针为空");
+        return false;
+    }
+    if (socket->state() != QAbstractSocket::ConnectedState) {
+        LOG_WARNING(QString("❌ [TCP] 发送失败: Socket 未连接 (State: %1)").arg(socket->state()));
+        return false;
+    }
+
+    // 1. 准备 Buffer
+    int totalSize = sizeof(PacketHeader) + payloadLen;
+    QByteArray buffer;
+    buffer.resize(totalSize);
+
+    // 2. 填充 Header
+    PacketHeader *header = reinterpret_cast<PacketHeader*>(buffer.data());
+    header->magic = PROTOCOL_MAGIC;
+    header->version = PROTOCOL_VERSION;
+    header->command = static_cast<quint8>(type);
+
+    // 获取身份信息用于日志
+    quint32 sid = socket->property("sessionId").toUInt();
+    QString clientId = socket->property("clientId").toString();
+
+    header->sessionId = sid;
+    header->seq = ++m_serverSeq;
+    header->payloadLen = payloadLen;
+    header->checksum = 0;
+
+    // 3. 填充 Payload
+    if (payloadLen > 0 && payload != nullptr) {
+        memcpy(buffer.data() + sizeof(PacketHeader), payload, payloadLen);
+    }
+
+    // 4. 发送
+    qint64 sent = socket->write(buffer);
+    socket->flush();
+
+    QString typeStr = packetTypeToString(type);
+    QString peerInfo = QString("%1:%2").arg(socket->peerAddress().toString()).arg(socket->peerPort());
+
+    // 5. 结果判断与日志
+    if (sent == totalSize) {
+        LOG_INFO(QString("🚀 [TCP] %1 -> %2 (Session: %3 | Client: %4 | Len: %5)")
+                     .arg(typeStr, peerInfo).arg(sid)
+                     .arg(clientId.isEmpty() ? "Unknown" : clientId.left(8))
+                     .arg(sent));
+        return true;
+    } else {
+        LOG_ERROR(QString("❌ [TCP] 发送不完整 -> %1 | Cmd: %2 | 计划: %3 / 实际: %4 | Error: %5")
+                      .arg(peerInfo, typeStr)
+                      .arg(totalSize).arg(sent)
+                      .arg(socket->errorString()));
+        return false;
+    }
 }
 
 // ==================== 二进制接收逻辑 ====================
@@ -219,26 +292,26 @@ void NetManager::handleIncomingDatagram(const QNetworkDatagram &datagram)
     quint16 port = datagram.senderPort();
 
     switch (static_cast<PacketType>(header->command)) {
-    case PacketType::C_S_REGISTER:
+    case C_S_REGISTER:
         if (header->payloadLen >= sizeof(CSRegisterPacket)) {
             handleRegister(header, reinterpret_cast<CSRegisterPacket*>(payload), sender, port);
         }
         break;
-    case PacketType::C_S_UNREGISTER:
+    case C_S_UNREGISTER:
         handleUnregister(header);
         break;
-    case PacketType::C_S_HEARTBEAT:
+    case C_S_HEARTBEAT:
         handleHeartbeat(header, sender, port);
         break;
-    case PacketType::C_S_PING:
+    case C_S_PING:
         handlePing(header, sender, port);
         break;
-    case PacketType::C_S_COMMAND:
+    case C_S_COMMAND:
         if (header->payloadLen >= sizeof(CSCommandPacket)) {
             handleCommand(header, reinterpret_cast<CSCommandPacket*>(payload));
         }
         break;
-    case PacketType::C_S_CHECKMAPCRC:
+    case C_S_CHECKMAPCRC:
         if (header->payloadLen >= sizeof(CSCheckMapCRCPacket)) {
             handleCheckMapCRC(header, reinterpret_cast<CSCheckMapCRCPacket*>(payload), sender, port);
         }
@@ -321,7 +394,7 @@ void NetManager::handleRegister(const PacketHeader *header, const CSRegisterPack
     resp.sessionId = newSessionId;
     resp.status = 1;
 
-    sendPacket(senderAddr, senderPort, PacketType::S_C_REGISTER, &resp, sizeof(resp));
+    sendUdpPacket(senderAddr, senderPort, S_C_REGISTER, &resp, sizeof(resp));
 }
 
 void NetManager::handleUnregister(const PacketHeader *header)
@@ -374,7 +447,7 @@ void NetManager::handlePing(const PacketHeader *header, const QHostAddress &send
     pongPkt.status = isRegistered ? 1 : 0;
 
     // 3. 发送
-    sendPacket(senderAddr, senderPort, PacketType::S_C_PONG, &pongPkt, sizeof(pongPkt));
+    sendUdpPacket(senderAddr, senderPort, S_C_PONG, &pongPkt, sizeof(pongPkt));
 
     // 只有已注册才打印
     if (isRegistered) {
@@ -403,37 +476,61 @@ void NetManager::handleHeartbeat(const PacketHeader *header, const QHostAddress 
     }
 
     if (found) {
-        sendPacket(senderAddr, senderPort, PacketType::S_C_PONG);
+        sendUdpPacket(senderAddr, senderPort, S_C_PONG);
     } else {
         SCPongPacket pongPkt;
         pongPkt.status = 0;
-        sendPacket(senderAddr, senderPort, PacketType::S_C_PONG, &pongPkt, sizeof(pongPkt));
+        sendUdpPacket(senderAddr, senderPort, S_C_PONG, &pongPkt, sizeof(pongPkt));
         LOG_WARNING(QString("⚠️ 收到失效心跳 (Session %1)，已通知客户端重连").arg(header->sessionId));
     }
 }
 
 void NetManager::handleCommand(const PacketHeader *header, const CSCommandPacket *packet)
 {
-    QString clientId;
+    QString serverRecClientId; // 服务器端记录的 ClientID
+
+    // 1. Session 验证与查找
     {
         QReadLocker locker(&m_registerInfosLock);
         if (m_sessionIndex.contains(header->sessionId)) {
-            clientId = m_sessionIndex.value(header->sessionId);
-            if (!m_registerInfos.contains(clientId)) {
-                LOG_WARNING(QString("⚠️ 数据不一致: 索引有 Session %1 但找不到 ClientInfo").arg(header->sessionId));
+            serverRecClientId = m_sessionIndex.value(header->sessionId);
+
+            // 数据一致性检查
+            if (!m_registerInfos.contains(serverRecClientId)) {
+                LOG_WARNING(QString("⚠️ [指令拒绝] 数据不一致: 索引存在 Session %1 但主表丢失 ClientInfo").arg(header->sessionId));
                 return;
             }
         } else {
-            LOG_WARNING(QString("⚠️ 收到指令，但 SessionID 无效: %1").arg(header->sessionId));
+            // 这是最常见的非法包，用一行日志即可
+            LOG_WARNING(QString("⚠️ [指令拒绝] 无效 SessionID: %1 (来自未注册或已过期的连接)").arg(header->sessionId));
             return;
         }
     }
 
-    QString cmd = QString::fromUtf8(packet->command, strnlen(packet->command, sizeof(packet->command)));
-    QString text = QString::fromUtf8(packet->text, strnlen(packet->text, sizeof(packet->text)));
+    // 2. 提取数据包内容
+    QString pktClientId = QString::fromUtf8(packet->clientId, strnlen(packet->clientId, sizeof(packet->clientId)));
     QString user = QString::fromUtf8(packet->username, strnlen(packet->username, sizeof(packet->username)));
+    QString cmd  = QString::fromUtf8(packet->command, strnlen(packet->command, sizeof(packet->command)));
+    QString text = QString::fromUtf8(packet->text, strnlen(packet->text, sizeof(packet->text)));
 
-    emit commandReceived(user, clientId, cmd, text);
+    // 3. 安全校验：防伪造检查
+    if (pktClientId != serverRecClientId) {
+        qDebug().noquote() << "🚫 [安全拦截] 客户端 ID 不匹配 (疑似伪造包)";
+        qDebug().noquote() << QString("   ├─ 🔒 Session 绑定: %1").arg(serverRecClientId);
+        qDebug().noquote() << QString("   └─ 🔓 数据包声称:   %1").arg(pktClientId);
+        return;
+    }
+
+    // 4. 打印成功日志
+    QString fullCmd = cmd + (text.isEmpty() ? "" : " " + text);
+
+    qDebug().noquote() << "🤖 [收到用户指令]";
+    qDebug().noquote() << QString("   ├─ 👤 用户: %1").arg(user);
+    qDebug().noquote() << QString("   ├─ 💬 内容: %1").arg(fullCmd);
+    qDebug().noquote() << QString("   └─ 🔑 验证: 通过 (Session: %1)").arg(header->sessionId);
+
+    // 5. 向上层分发
+    emit commandReceived(user, serverRecClientId, cmd, text);
 }
 
 void NetManager::handleCheckMapCRC(const PacketHeader *header, const CSCheckMapCRCPacket *packet, const QHostAddress &senderAddr, quint16 senderPort)
@@ -461,7 +558,7 @@ void NetManager::handleCheckMapCRC(const PacketHeader *header, const CSCheckMapC
         LOG_INFO(QString("✅ 请求CRC %1 已存在").arg(crcHex));
     }
 
-    sendPacket(senderAddr, senderPort, PacketType::S_C_CHECKMAPCRC, &resp, sizeof(resp));
+    sendUdpPacket(senderAddr, senderPort, S_C_CHECKMAPCRC, &resp, sizeof(resp));
 }
 
 // ==================== TCP ====================
@@ -474,19 +571,29 @@ void NetManager::onTcpReadyRead()
     if (socket->property("ConnType").isValid()) {
         QString type = socket->property("ConnType").toString();
         if (type == "UPLOAD") handleTcpUploadMessage(socket);
-        else if (type == "CONTROL") handleTcpControlMessage(socket);
+        else if (type == "COMMAND") handleTcpCommandMessage(socket);
         return;
     }
 
     if (socket->bytesAvailable() < 4) return;
-    QByteArray magic = socket->peek(4);
 
-    if (magic == "W3UP") {
+    QByteArray head = socket->peek(4);
+
+    // 检查是否是文件上传 (魔数: W3UP)
+    if (head.startsWith("W3UP")) {
         socket->setProperty("ConnType", "UPLOAD");
         handleTcpUploadMessage(socket);
     } else {
-        socket->setProperty("ConnType", "CONTROL");
-        handleTcpControlMessage(socket);
+        const char *data = head.constData();
+        quint16 magic = *reinterpret_cast<const quint16*>(data);
+        if (magic == PROTOCOL_MAGIC) {
+            socket->setProperty("ConnType", "COMMAND");
+            handleTcpCommandMessage(socket);
+        }
+        else {
+            LOG_WARNING("❌ TCP 未知协议头，断开连接");
+            socket->disconnectFromHost();
+        }
     }
 }
 
@@ -696,50 +803,84 @@ void NetManager::handleTcpUploadMessage(QTcpSocket *socket)
     }
 }
 
-void NetManager::handleTcpControlMessage(QTcpSocket *socket)
+void NetManager::handleTcpCommandMessage(QTcpSocket *socket)
 {
-    while (socket->canReadLine()) {
-        // 1. 读取一行数据
-        QByteArray data = socket->readLine();
-        QString line = QString::fromUtf8(data).trimmed();
+    // 循环读取，处理粘包
+    while (socket->bytesAvailable() > 0) {
 
-        if (line.isEmpty()) continue;
+        // 1. 检查头部是否完整
+        if (socket->bytesAvailable() < (qint64)sizeof(PacketHeader)) return;
 
-        LOG_INFO(QString("🎮 收到指令: %1").arg(line));
+        // 2. 预读头部
+        PacketHeader header;
+        socket->peek(reinterpret_cast<char*>(&header), sizeof(PacketHeader));
 
-        QStringList parts = line.split('|');
-        if (parts.isEmpty()) continue;
+        // 3. 校验魔数
+        if (header.magic != PROTOCOL_MAGIC) {
+            LOG_WARNING("❌ TCP 控制协议 Magic 错误");
+            socket->disconnectFromHost();
+            return;
+        }
 
-        QString cmd = parts[0].toUpper();
+        // 4. 检查包体是否已完全到达
+        qint64 totalPacketSize = sizeof(PacketHeader) + header.payloadLen;
+        if (socket->bytesAvailable() < totalPacketSize) {
+            return; // 数据不够，等待下次 readyRead
+        }
 
-        if (cmd == "CONTROL_LOGIN_CLIENTID") {
-            QString clientId = (parts.size() > 1) ? parts[1].trimmed() : "";
+        // 5. 正式读取完整数据包
+        QByteArray packetData = socket->read(totalPacketSize);
+        const PacketHeader *pHeader = reinterpret_cast<const PacketHeader*>(packetData.constData());
+        const char* payload = packetData.constData() + sizeof(PacketHeader);
 
-            if (!clientId.isEmpty()) {
-                // 1. 记录连接
-                m_tcpClients.insert(clientId, socket);
+        // TCP 身份绑定
+        if (!socket->property("clientId").isValid() && pHeader->sessionId != 0) {
+            QWriteLocker locker(&m_registerInfosLock);
+            if (m_sessionIndex.contains(pHeader->sessionId)) {
+                QString sessionId = m_sessionIndex.value(pHeader->sessionId);
 
-                // 2. 设置属性 (用于断开时清理)
-                socket->setProperty("clientId", clientId);
+                // 记录到 TCP 客户端表
+                m_tcpClients.insert(sessionId, socket);
+                socket->setProperty("clientId", sessionId);
+                socket->setProperty("sessionId", pHeader->sessionId);
 
-                LOG_INFO(QString("✅ 控制通道已绑定用户: %1").arg(clientId));
-
-                // 3. 回复成功
-                socket->write("CONTROL_LOGIN_RESPONSE|OK\n");
+                LOG_INFO(QString("🔗 TCP 控制通道已绑定用户: %1 (Session: %2)").arg(sessionId).arg(pHeader->sessionId));
             } else {
-                LOG_WARNING("⚠️ 登录失败: clientId 为空");
-                // 4. 回复失败
-                socket->write("CONTROL_LOGIN_RESPONSE|EMPTY_clientId\n");
+                LOG_WARNING(QString("⚠️ TCP 收到无效 SessionID: %1").arg(pHeader->sessionId));
             }
         }
-        else if (cmd == "PING") {
-            socket->write("PONG\n");
-        }
-        else {
-            LOG_WARNING(QString("❓ 未知 TCP 控制指令: %1").arg(cmd));
-        }
 
-        socket->flush();
+        // 6. 处理具体指令
+        switch (static_cast<PacketType>(pHeader->command)) {
+
+        case PacketType::C_S_PING:
+        case PacketType::C_S_HEARTBEAT:
+        {
+            PacketHeader respHead = *pHeader;
+            respHead.payloadLen = sizeof(SCPongPacket);
+            SCPongPacket pong;
+            pong.status = 1;
+            sendTcpPacket(socket, PacketType::S_C_PONG, &pong, sizeof(pong));
+        }
+        break;
+
+        case PacketType::C_S_COMMAND:
+            if (pHeader->payloadLen >= sizeof(CSCommandPacket)) {
+                const CSCommandPacket* cmdPkt = reinterpret_cast<const CSCommandPacket*>(payload);
+
+                QString cmd = QString::fromUtf8(cmdPkt->command, strnlen(cmdPkt->command, sizeof(cmdPkt->command)));
+                QString text = QString::fromUtf8(cmdPkt->text, strnlen(cmdPkt->text, sizeof(cmdPkt->text)));
+                QString user = QString::fromUtf8(cmdPkt->username, strnlen(cmdPkt->username, sizeof(cmdPkt->username)));
+
+                LOG_INFO(QString("🎮 [TCP] 收到指令 [%1]: %2 %3").arg(user, cmd, text));
+                QString clientId = socket->property("clientId").toString();
+                emit commandReceived(user, clientId, cmd, text);
+            }
+            break;
+
+        default:
+            break;
+        }
     }
 }
 
@@ -767,17 +908,58 @@ void NetManager::onTcpDisconnected() {
     if (socket) socket->deleteLater();
 }
 
-bool NetManager::sendControlEnterRoom(const QString &clientId, quint16 port)
+bool NetManager::sendEnterRoomCommand(const QString &clientId, quint16 port)
 {
-    QString command = QString("CONTROL_ENTER_ROOM|%2\n").arg(port);
-
-    if (sendToClient(clientId, command.toUtf8())) {
-        LOG_INFO(QString("🚀 已发送自动进入指令给 [%1]: %2").arg(clientId, command.trimmed()));
-        return true;
-    } else {
-        LOG_WARNING(QString("❌ 发送自动进入指令失败: 找不到在线的 clientId [%1]").arg(clientId));
+    // 1. 检查 TCP 连接是否存在
+    if (!m_tcpClients.contains(clientId)) {
+        qDebug().noquote() << "🛑 [指令发送失败]";
+        qDebug().noquote() << QString("   ├─ 🎯 目标: %1").arg(clientId);
+        qDebug().noquote() << "   └─ ❌ 原因: TCP 控制通道未连接 (用户未登录 Control)";
         return false;
     }
+
+    QTcpSocket *socket = m_tcpClients[clientId];
+
+    // 2. 检查 Socket 状态
+    if (socket->state() != QAbstractSocket::ConnectedState) {
+        m_tcpClients.remove(clientId); // 清理死链接
+        qDebug().noquote() << "🛑 [指令发送失败]";
+        qDebug().noquote() << QString("   ├─ 🎯 目标: %1").arg(clientId);
+        qDebug().noquote() << "   └─ ❌ 原因: Socket 连接已断开 (清理僵尸连接)";
+        return false;
+    }
+
+    // 3. 构造二进制 payload
+    SCCommandPacket pkt;
+    memset(&pkt, 0, sizeof(pkt));
+
+    // 填充 ClientID (截断保护)
+    strncpy(pkt.clientId, clientId.toUtf8().constData(), sizeof(pkt.clientId) - 1);
+
+    // 填充指令
+    const char *cmd = "ENTER_ROOM";
+    strncpy(pkt.command, cmd, sizeof(pkt.command) - 1);
+
+    // 填充参数 (端口)
+    QString portStr = QString::number(port);
+    strncpy(pkt.text, portStr.toUtf8().constData(), sizeof(pkt.text) - 1);
+
+    // 4. 发送 PacketType::S_C_COMMAND
+    bool ok = sendTcpPacket(socket, PacketType::S_C_COMMAND, &pkt, sizeof(pkt));
+
+    // 5. 打印结果日志
+    if (ok) {
+        qDebug().noquote() << "🚀 [自动进入指令分发]";
+        qDebug().noquote() << QString("   ├─ 👤 目标用户: %1").arg(clientId);
+        qDebug().noquote() << QString("   ├─ 🚪 房间端口: %1").arg(port);
+        qDebug().noquote() << "   └─ ✅ 发送状态: 成功 (TCP)";
+    } else {
+        qDebug().noquote() << "🛑 [指令发送失败]";
+        qDebug().noquote() << QString("   ├─ 🎯 目标: %1").arg(clientId);
+        qDebug().noquote() << "   └─ ❌ 原因: TCP Socket 写入错误";
+    }
+
+    return ok;
 }
 
 bool NetManager::sendToClient(const QString &clientId, const QByteArray &data)
@@ -871,7 +1053,7 @@ void NetManager::sendUploadResult(QTcpSocket* socket, const QString& crc, const 
     pkt.status = success ? 1 : 0;
     pkt.reason = static_cast<quint8>(reason);
 
-    sendPacket(targetAddr, targetPort, PacketType::S_C_UPLOADRESULT, &pkt, sizeof(pkt));
+    sendUdpPacket(targetAddr, targetPort, S_C_UPLOADRESULT, &pkt, sizeof(pkt));
 
     LOG_INFO(QString("📤 发送上传回执 -> %1:%2 (Session: %5) | 文件: %3 | 结果: %4")
                  .arg(targetAddr.toString()).arg(targetPort)
@@ -1062,6 +1244,22 @@ QString NetManager::natTypeToString(NATType type)
         return QStringLiteral("IP限制型NAT");
     default:
         return QStringLiteral("未知类型 (%1)").arg(type);
+    }
+}
+
+QString NetManager::packetTypeToString(PacketType type)
+{
+    switch (type) {
+    case PacketType::C_S_HEARTBEAT:   return "C_S_HEARTBEAT";
+    case PacketType::C_S_REGISTER:    return "C_S_REGISTER";
+    case PacketType::S_C_REGISTER:    return "S_C_REGISTER";
+    case PacketType::C_S_UNREGISTER:  return "C_S_UNREGISTER";
+    case PacketType::C_S_COMMAND:     return "C_S_COMMAND";
+    case PacketType::S_C_COMMAND:     return "S_C_COMMAND";
+    case PacketType::C_S_PING:        return "C_S_PING";
+    case PacketType::S_C_PONG:        return "S_C_PONG";
+    case PacketType::S_C_UPLOADRESULT: return "S_C_UPLOADRESULT";
+    default: return QString("UNKNOWN(%1)").arg(static_cast<int>(type));
     }
 }
 

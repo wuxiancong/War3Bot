@@ -511,7 +511,7 @@ void Client::handleBNETTcpPacket(BNETPacketID id, const QByteArray &data)
 
         if (status == GameCreate_Ok) {
             LOG_INFO("✅ 房间创建成功！(广播已启动)");
-            emit gameCreated(From_Client);
+            emit gameCreateSuccess(From_Client);
         } else {
             QString errStr;
             switch (status) {
@@ -521,6 +521,7 @@ void Client::handleBNETTcpPacket(BNETPacketID id, const QByteArray &data)
             default:                         errStr = QString("错误码 0x%1").arg(QString::number(status, 16)); break;
             }
             LOG_ERROR(QString("❌ 房间创建失败: %1").arg(errStr));
+            emit gameCreateFail();
         }
     }
     break;

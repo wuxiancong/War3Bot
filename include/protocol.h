@@ -8,7 +8,7 @@ const quint16 PROTOCOL_MAGIC        = 0xF801;   // 魔数
 const quint8  PROTOCOL_VERSION      = 0x01;     // 版本号
 
 // ==================== 指令集 ====================
-enum class PacketType : quint8 {
+enum PacketType : quint8 {
     C_S_HEARTBEAT                   = 0x01,
     C_S_REGISTER                    = 0x02,
     S_C_REGISTER                    = 0x03,
@@ -22,7 +22,7 @@ enum class PacketType : quint8 {
     S_C_CHECKMAPCRC                 = 0x0B,
     C_S_PING                        = 0x0C,
     S_C_PONG                        = 0x0D,
-    ERROR                           = 0x0E,
+    S_C_ERROR                       = 0x0E,
     S_C_UPLOADRESULT                = 0x0F
 };
 
@@ -71,6 +71,7 @@ struct SCPongPacket {
 };
 
 struct CSCommandPacket {
+    char clientId[40];
     char username[32];
     char command[16];
     char text[200];
@@ -80,6 +81,7 @@ struct SCCommandPacket {
     char clientId[40];
     char username[32];
     char command[16];
+    char text[200];
 };
 
 struct CSCheckMapCRCPacket {

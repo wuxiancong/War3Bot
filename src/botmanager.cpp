@@ -14,7 +14,7 @@ BotManager::~BotManager()
     m_bots.clear();
 }
 
-void BotManager::initializeBots(int count, const QString &configPath)
+void BotManager::initializeBots(quint32 count, const QString &configPath)
 {
     // 1. 清理旧数据
     stopAll();
@@ -37,7 +37,7 @@ void BotManager::initializeBots(int count, const QString &configPath)
                  .arg(m_targetServer).arg(m_targetPort).arg(userPrefix).arg(count));
 
     // 3. 批量创建机器人
-    for (int i = 0; i < count; ++i) {
+    for (quint32 i = 0; i < count; ++i) {
         // 生成用户名：前缀 + ID (例如 bot1, bot2)
         QString fullUsername = (i == 0) ? QString("%1").arg(userPrefix) : QString("%1%2").arg(userPrefix).arg(i);
 
@@ -65,8 +65,8 @@ void BotManager::initializeBots(int count, const QString &configPath)
         });
 
         // 3. 房间创建成功
-        connect(bot->client, &Client::gameCreated, this, [this, bot]() {
-            this->onBotGameCreated(bot);
+        connect(bot->client, &Client::gameCreateSuccess, this, [this, bot]() {
+            this->onBotGameCreateSuccess(bot);
         });
 
         // 4. 错误处理
@@ -102,11 +102,11 @@ bool BotManager::createGame(const QString &hostName, const QString &gameName, Co
 
     // ==================== 分支 A: 动态扩容 ====================
     if (!targetBot) {
-        int maxId = 0;
+        quint32 maxId = 0;
         for (Bot *bot : qAsConst(m_bots)) {
             if (bot->id > maxId) maxId = bot->id;
         }
-        int newId = maxId + 1;
+        quint32 newId = maxId + 1;
         QString newUsername = QString("%1%2").arg(m_userPrefix).arg(newId);
 
         // 打印扩容日志
@@ -124,7 +124,8 @@ bool BotManager::createGame(const QString &hostName, const QString &gameName, Co
         // === 绑定信号 ===
         connect(targetBot->client, &Client::authenticated, this, [this, targetBot]() { this->onBotAuthenticated(targetBot); });
         connect(targetBot->client, &Client::accountCreated, this, [this, targetBot]() { this->onBotAccountCreated(targetBot); });
-        connect(targetBot->client, &Client::gameCreated, this, [this, targetBot]() { this->onBotGameCreated(targetBot); });
+        connect(targetBot->client, &Client::gameCreateSuccess, this, [this, targetBot]() { this->onBotGameCreateSuccess(targetBot); });
+        connect(targetBot->client, &Client::gameCreateFail, this, [this, targetBot]() { this->onBotGameCreateFail(targetBot); });
         connect(targetBot->client, &Client::socketError, this, [this, targetBot](QString e) { this->onBotError(targetBot, e); });
         connect(targetBot->client, &Client::disconnected, this, [this, targetBot]() { this->onBotDisconnected(targetBot); });
 
@@ -327,7 +328,7 @@ void BotManager::onCommandReceived(const QString &userName, const QString &clien
     }
 }
 
-void BotManager::onBotGameCreated(Bot *bot)
+void BotManager::onBotGameCreateSuccess(Bot *bot)
 {
     if (!bot) return;
 
@@ -344,9 +345,9 @@ void BotManager::onBotGameCreated(Bot *bot)
 
     // 4. 发送 TCP 控制指令让客户端进入
     if (m_netManager) {
-        bool sent = m_netManager->sendControlEnterRoom(clientId, m_controlPort);
+        bool ok = m_netManager->sendEnterRoomCommand(clientId, m_controlPort);
 
-        if (sent) {
+        if (ok) {
             qDebug().noquote() << QString("   └─ 🚀 自动进入: 指令已发送 (目标端口: %1)").arg(m_controlPort);
         } else {
             qDebug().noquote() << "   └─ ❌ 自动进入: 发送失败 (目标用户不在线或未连接控制通道)";
@@ -357,6 +358,28 @@ void BotManager::onBotGameCreated(Bot *bot)
 
     // 5. 广播状态变更
     emit botStateChanged(bot->id, bot->username, bot->state);
+}
+
+void BotManager::onBotGameCreateFail(Bot *bot)
+{
+    if (!bot) return;
+
+    // 1. 只重置与当前"动作"相关的状态
+    bot->pendingTask = {};
+    bot->state = BotState::Idle;
+    bot->commandSource = CommandSource::From_Server;
+
+    // 2. 清理临时的游戏信息
+    bot->gameName.clear();
+    bot->hostName.clear();
+
+    // 3. 关于 Client
+    if (bot->client) {
+        bot->client->deleteLater();
+        bot->client = nullptr;
+    }
+
+    LOG_INFO(QString("Bot-%1 状态已重置").arg(bot->id));
 }
 
 void BotManager::onBotError(Bot *bot, QString error)

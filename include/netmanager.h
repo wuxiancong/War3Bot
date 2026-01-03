@@ -59,7 +59,7 @@ public:
     bool isRunning() const;
     QList<RegisterInfo> getOnlinePlayers() const;
     bool isClientRegistered(const QString &clientId) const;
-    bool sendControlEnterRoom(const QString &clientId, quint16 port);
+    bool sendEnterRoomCommand(const QString &clientId, quint16 port);
 
 signals:
     void serverStopped();
@@ -87,14 +87,15 @@ private:
     void handleCheckMapCRC(const PacketHeader *header, const CSCheckMapCRCPacket *packet, const QHostAddress &senderAddr, quint16 senderPort);
 
     // 发送辅助
-    qint64 sendPacket(const QHostAddress &target, quint16 port, PacketType type, const void *payload = nullptr, quint16 payloadLen = 0);
+    qint64 sendUdpPacket(const QHostAddress &target, quint16 port, PacketType type, const void *payload = nullptr, quint16 payloadLen = 0);
     void sendUploadResult(QTcpSocket *socket, const QString &crc, const QString &fileName, bool success, UploadErrorCode reason);
+    bool sendTcpPacket(QTcpSocket *socket, PacketType type, const void *payload, quint16 payloadLen);
     bool sendToClient(const QString &clientId, const QByteArray &data);
     quint16 calculateCRC16(const QByteArray &data);
 
     // --- TCP 处理 (保持原样，用于文件上传) ---
     void handleTcpUploadMessage(QTcpSocket *socket);
-    void handleTcpControlMessage(QTcpSocket *socket);
+    void handleTcpCommandMessage(QTcpSocket *socket);
 
     // --- 内部管理 ---
     void loadConfiguration();
@@ -111,6 +112,7 @@ private:
     // 工具
     QString cleanAddress(const QString &address);
     QString cleanAddress(const QHostAddress &address);
+    QString packetTypeToString(PacketType type);
     QString natTypeToString(NATType type);
 
     // 配置

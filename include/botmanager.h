@@ -22,7 +22,7 @@ enum class BotState {
 
 // === 2. 机器人结构体 ===
 struct Bot {
-    int id;                                     // 数字 ID (1, 2, 3...)
+    quint32 id;                                 // 数字 ID (1, 2, 3...)
     Client *client;                             // 客户端对象
     BotState state;                             // 当前状态
     QString username;                           // 完整用户名 (例如 bot1)
@@ -38,7 +38,7 @@ struct Bot {
         QString gameName;                       // 房间名
     } pendingTask;
 
-    Bot(int _id, QString _user, QString _pass)
+    Bot(quint32 _id, QString _user, QString _pass)
         : id(_id), client(nullptr), state(BotState::Disconnected), username(_user), password(_pass) {}
 
     ~Bot() { if (client) client->deleteLater(); }
@@ -59,7 +59,7 @@ public:
     ~BotManager();
 
     // 初始化机器人
-    void initializeBots(int count, const QString& configPath);
+    void initializeBots(quint32 count, const QString& configPath);
 
     // 启动所有机器人连接
     void startAll();
@@ -87,7 +87,8 @@ private slots:
     // 内部槽函数：处理单个机器人的信号
     void onBotAuthenticated(Bot *bot);
     void onBotAccountCreated(Bot *bot);
-    void onBotGameCreated(Bot *bot);
+    void onBotGameCreateSuccess(Bot *bot);
+    void onBotGameCreateFail(Bot *bot);
     void onBotDisconnected(Bot *bot);
     void onBotError(Bot *bot, QString error);
 
