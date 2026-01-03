@@ -1245,9 +1245,9 @@ QList<RegisterInfo> NetManager::getOnlinePlayers() const
     return m_registerInfos.values();
 }
 
-quint64 NetManager::calculateCRC16(const QByteArray &data)
+quint16 NetManager::calculateCRC16(const QByteArray &data)
 {
-    quint64 crc = 0xFFFF;
+    quint16 crc = 0xFFFF;
     const char *p = data.constData();
     int len = data.size();
 
