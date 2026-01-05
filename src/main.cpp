@@ -25,7 +25,6 @@
 
 // === 定义IPC名称 ===
 const QString IPC_SERVER_NAME = "war3bot_ipc";
-const QString IPC_NAME = "war3bot_ipc_socket";
 
 // === 端口检查函数 ===
 bool isPortInUse(quint16 port) {
@@ -75,7 +74,7 @@ bool forceFreePort(quint16 port) {
 int runConsoleClient(const QString &logFile) {
     // 1. 尝试连接后台服务
     QLocalSocket socket;
-    socket.connectToServer(IPC_NAME);
+    socket.connectToServer(IPC_SERVER_NAME);
     if (!socket.waitForConnected(1000)) {
         printf("❌ 无法连接到 War3Bot 后台服务。\n");
         printf("请确保服务已启动 (sudo systemctl start war3bot)\n");
