@@ -24,7 +24,7 @@
 #endif
 
 // === 定义IPC名称 ===
-const QString IPC_SERVER_NAME = "war3bot_ipc";
+const QString IPC_SERVER_NAME = "/tmp/war3bot.ipc";
 
 // === 端口检查函数 ===
 bool isPortInUse(quint16 port) {
@@ -505,6 +505,8 @@ int main(int argc, char *argv[]) {
 
     // === 5. 启动 IPC 本地服务器 ===
     QLocalServer ipcServer;
+    QLocalServer::removeServer(IPC_SERVER_NAME);
+
     if (ipcServer.listen(IPC_SERVER_NAME)) {
         // 设置权限，确保 sudo 运行的用户或者同组用户能访问
         // Linux 下建议设置为 User/Group 可读写
