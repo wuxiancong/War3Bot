@@ -163,6 +163,9 @@ sudo systemctl stop war3bot
 ### 1. 常用后台管理命令
 
 ```bash
+# 命令行运行
+sudo /root/War3Bot/build/War3Bot -a
+
 # 查看服务状态
 sudo systemctl status war3bot
 
