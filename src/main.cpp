@@ -150,6 +150,8 @@ int main(int argc, char *argv[]) {
     parser.addOption(forceOption);
 
     QCommandLineOption execOption({"x", "exec"}, "发送命令到正在运行的后台服务", "command");
+    parser.addOption(execOption);
+
     QCommandLineOption attachOption({"a", "attach"}, "附着到运行中的服务 (查看日志并发送命令)");
     parser.addOption(attachOption);
 
@@ -493,9 +495,13 @@ int main(int argc, char *argv[]) {
     };
 
     // === 4. 控制台命令处理 ===
-    Command command;
-    QObject::connect(&command, &Command::inputReceived, &app, processCommand);
-    command.start();
+    Command *command = nullptr;
+    if (enableConsole) {
+        command = new Command(nullptr, &app); // 使用堆分配，避免 main 函数栈溢出风险
+        QObject::connect(command, &Command::inputReceived, &app, processCommand);
+        command->start();
+        LOG_INFO("✅ 控制台命令监听已启动");
+    }
 
     // === 5. 启动 IPC 本地服务器 ===
     QLocalServer ipcServer;
