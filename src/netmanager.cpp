@@ -978,8 +978,12 @@ void NetManager::onTcpDisconnected() {
     if (socket) socket->deleteLater();
 }
 
-bool NetManager::sendEnterRoomCommand(const QString &clientId, quint64 port)
+bool NetManager::sendEnterRoomCommand(const QString &clientId, quint64 port, bool isServerCmd)
 {
+    if(isServerCmd){
+        return true;
+    }
+
     // 1. 检查 TCP 连接是否存在
     if (!m_tcpClients.contains(clientId)) {
         qDebug().noquote() << "🛑 [指令发送失败]";

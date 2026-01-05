@@ -345,7 +345,7 @@ void BotManager::onBotGameCreateSuccess(Bot *bot)
 
     // 4. 发送 TCP 控制指令让客户端进入
     if (m_netManager) {
-        bool ok = m_netManager->sendEnterRoomCommand(clientId, m_controlPort);
+        bool ok = m_netManager->sendEnterRoomCommand(clientId, m_controlPort, bot->commandSource == From_Server);
 
         if (ok) {
             qDebug().noquote() << QString("   └─ 🚀 自动进入: 指令已发送 (目标端口: %1)").arg(m_controlPort);

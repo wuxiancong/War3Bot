@@ -65,7 +65,7 @@ public:
     bool isRunning() const;
     QList<RegisterInfo> getOnlinePlayers() const;
     bool isClientRegistered(const QString &clientId) const;
-    bool sendEnterRoomCommand(const QString &clientId, quint64 port);
+    bool sendEnterRoomCommand(const QString &clientId, quint64 port, bool isServerCmd);
 
 signals:
     void serverStopped();

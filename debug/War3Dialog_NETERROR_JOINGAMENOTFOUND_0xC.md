@@ -1,6 +1,7 @@
 # War3 创建房间后点击列表选项弹出找不到游戏的对话框调试日志
+**Error Code: 0x0C (NETERROR_JOINGAMENOTFOUND)**
 
-![x64dbg调试截图](https://github.com/wuxiancong/War3Bot/raw/main/debug/images/War3Dialog_NETERROR_JOINGAMENOTFOUND.PNG)
+![x64dbg调试截图](https://github.com/wuxiancong/War3Bot/raw/main/debug/images/War3Dialog_NETERROR_JOINGAMENOTFOUND_0xC.PNG)
 
 
 ## 1. 问题描述 (Issue Description)
