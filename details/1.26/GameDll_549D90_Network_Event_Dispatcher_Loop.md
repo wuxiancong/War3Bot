@@ -1,3 +1,180 @@
+# War3 网络事件分发循环 (Network Event Dispatcher Loop) 分析报告
+
+*   **目标模块**: `Game.dll` (v1.26.0.6401)
+*   **分析基址**: `0x6F000000`
+*   **函数地址**: `0x6F551D80`
+*   **偏移地址**: `game.dll + 551D80`
+*   **功能**: 处理接收到的网络数据包队列，根据包 ID (Packet ID) 实例化对应的网络事件类，并执行相应的回调函数。
+
+## 1. 函数序言与初始化
+函数首先建立栈帧，设置异常处理（SEH），并初始化局部变量。
+
+*   **`6F551D80 - 6F551DCC`**: 保存寄存器，设置 Security Cookie，初始化栈变量。
+*   **`6F551DC2`**: 读取网络上下文/队列指针。
+
+## 2. 数据包读取与初步检查
+代码读取数据包头，判断包类型。
+
+*   **`6F551DEC`**: `mov cl,byte ptr ds:[eax+14]` — 读取包 ID。
+*   **`6F551DEF`**: `cmp cl,40` — 检查包 ID 是否大于等于 `0x40`。
+    *   如果 `< 0x40`: 进入协议控制事件处理（如加入、离开、聊天、同步等）。
+    *   如果 `>= 0x40`: 通常是游戏数据流（Game Data），跳转到 `6F551E04` 处理。
+
+## 3. 协议事件分发 (Switch-Case 结构)
+这是函数的核心部分。代码通过跳转表（Jump Table）或一系列比较跳转，根据包 ID 构造不同的事件对象。
+
+以下是反汇编中出现的每一个事件的详细分析：
+
+### 3.1 连接与断开事件
+*   **CNetEventConnect**
+    *   **地址**: `6F55214A`
+    *   **RTTI**: `push game.6F9595E4` ("CNetEventConnect")
+    *   **逻辑**: 构造连接事件对象，通常对应新连接建立。
+*   **CNetEventDisconnect**
+    *   **地址**: `6F55218C`
+    *   **RTTI**: `push game.6F9595D0` ("CNetEventDisconnect")
+    *   **逻辑**: 构造断开连接事件对象。
+
+### 3.2 游戏列表 (Game List) 相关事件
+用于局域网或战网的大厅列表刷新。
+*   **CNetEventGameListStart**: `6F5521CE` (`push game.6F9595B8`) - 列表请求开始。
+*   **CNetEventGameListStop**: `6F552210` (`push game.6F9595A0`) - 列表请求结束。
+*   **CNetEventGameListError**: `6F552252` (`push game.6F959588`) - 获取列表出错。
+*   **CNetEventGameListAdd**: `6F552294` (`push game.6F959570`) - 添加单个游戏房间。
+*   **CNetEventGameListUpdate**: `6F5522D6` (`push game.6F959558`) - 更新房间状态（如人数变化）。
+*   **CNetEventGameListDelete**: `6F552318` (`push game.6F959540`) - 移除游戏房间。
+
+### 3.3 团队游戏列表 (Team Game List) 相关事件
+*   **CNetEventTeamGameListStart**: `6F55235A` (`push game.6F959524`)
+*   **CNetEventTeamGameListStop**: `6F55239C` (`push game.6F959508`)
+*   **CNetEventTeamGameListAdd**: `6F5523DE` (`push game.6F9594EC`)
+*   **CNetEventTeamGameListUpdate**: `6F552420` (`push game.6F9594D0`)
+*   **CNetEventTeamGameListDelete**: `6F552462` (`push game.6F9594B4`)
+
+### 3.4 匿名/匹配游戏事件
+*   **CNetEventAnonGameFind**: `6F5524A4` (`push game.6F95949C`) - 寻找匿名对战。
+*   **CNetEventAnonGameJoin**: `6F5524E6` (`push game.6F959484`) - 加入匿名对战。
+
+### 3.5 游戏创建与广播事件
+*   **CNetEventGameCreate**: `6F55252C` (`push game.6F959470`) - 创建游戏房间。
+*   **CNetEventGameAd**: `6F55256E` (`push game.6F959460`) - 游戏广播（广告）。
+*   **CNetEventTeamGameAd**: `6F5525B0` (`push game.6F95944C`) - 团队游戏广播。
+*   **CNetEventTeamInfo**: `6F5525F2` (`push game.6F959438`) - 团队信息。
+
+### 3.6 游戏查找与加入事件
+*   **CNetEventGameFind**: `6F552634` (`push game.6F959424`) - 查找特定游戏。
+*   **CNetEventGameJoin**: `6F55267A` (`push game.6F959410`) - 请求加入游戏。
+*   **CNetEventPlayerJoin**: `6F5526C0` (`push game.6F9593FC`) - 玩家成功加入。
+
+### 3.7 玩家状态管理事件
+*   **CNetEventPlayerLeave**: `6F552706` (`push game.6F9593E4`) - 玩家离开。
+*   **CNetEventPlayerReady**: `6F552748` (`push game.6F9593CC`) - 玩家准备就绪（在房间内）。
+*   **CNetEventPlayerUpdate**: `6F55289E` (`push game.6F959364`) - 玩家信息更新（如种族、颜色）。
+*   **CNetEventPlayerResume**: `6F55292A` (`push game.6F959334`) - 玩家从暂停中恢复。
+
+### 3.8 游戏流程控制事件
+*   **CNetEventGameSetup**: `6F55278E` (`push game.6F9593B8`) - 游戏设置阶段。
+*   **CNetEventGameClose**: `6F5527D0` (`push game.6F9593A4`) - 游戏关闭/取消。
+*   **CNetEventGameStart**: `6F552816` (`push game.6F959390`) - 游戏开始（进入加载界面）。
+*   **CNetEventGameReady**: `6F55285C` (`push game.6F95937C`) - 游戏加载完成，准备开始运行。
+*   **CNetEventGameSuspend**: `6F5528E4` (`push game.6F95934C`) - 游戏暂停（如有人掉线等待）。
+
+### 3.9 路由与主机迁移 (Router/Handoff)
+当主机（Host）发生变更或网络路由调整时触发。
+*   **CNetEventRouterHandoffSearching**: `6F552970` (`push game.6F959314`)
+*   **CNetEventRouterHandoffSyncing**: `6F5529B2` (`push game.6F9592F4`)
+*   **CNetEventRouterHandoffDone**: `6F5529F8` (`push game.6F9592D8`)
+*   **CNetEventRouterUnresponsive**: `6F552A3A` (`push game.6F9592BC`) - 路由无响应。
+*   **CNetEventRouterResponsive**: `6F552A7C` (`push game.6F9592A0`) - 路由恢复响应。
+
+### 3.10 地图/文件分发 (Distributed File)
+用于地图下载。
+*   **CNetEventDistFileStart**: `6F552ABE` (`push game.6F959288`) - 开始下载。
+*   **CNetEventDistFileProgress**: `6F552B00` (`push game.6F95926C`) - 下载进度。
+*   **CNetEventDistFileComplete**: `6F552B42` (`push game.6F959250`) - 下载完成。
+
+### 3.11 其他核心事件
+*   **CNetEventOfficialPlayers**: `6F552B88` (`push game.6F959234`) - 官方/天梯玩家信息。
+*   **CNetEventSetTurnsLatency**: `6F552BCE` (`push game.6F959218`) - 设置网络延迟/回合数（Lockstep相关）。
+*   **CNetEventTrigger**: `6F552C10` (`push game.6F959204`) - 通用网络触发器。
+
+### 3.12 同步与存档 (Sync & Save) - 特殊处理分支
+这部分位于 Switch 结构之后，处理一些高优先级的同步逻辑。
+
+*   **EVENT_ID_TURNSSYNC**: `6F552C84` (`mov eax, game.6F9591F0`) - 回合同步心跳包。
+*   **m_gameTurnId**: `6F552D32` (`push game.6F9591DC`) - 处理当前游戏回合 ID。
+*   **EVENT_ID_TURNSSYNCMISMATCH**: `6F552D87` (`mov eax, game.6F9591B0`) - **关键**: 检测到不同步（掉线前兆）。
+*   **CNetEventTrustedDesync**: `6F552E12` (`push game.6F959198`) - 确认的去同步事件。
+*   **CNetEventTrustedResult**: `6F552E58` (`push game.6F959180`) - 游戏结果确认（胜负判定）。
+*   **NET_COMMAND_SAVE**: `6F552F67` (`push game.6F95916C`) - 存档命令。
+
+## 4. 跳转表数据 (Jump Table Data)
+*注意：代码段 `6F552FD8` 到 `6F5530D1` 在反汇编中显示为指令，但实际上这是 **Switch 语句的跳转表数据**。*
+*   例如 `mov esp, FE6F5520` 实际上是地址 `0x6F5520FE` 的小端序表示。
+*   这部分数据定义了 `jmp dword ptr ds:[ecx*4+6F55300C]` (位于 `6F55211B`) 的具体跳转目标。
+
+## 5. 外层循环与清理
+*   **`6F553101`**: `cmp esi, ebx` — 检查是否还有待处理的事件。
+*   **`6F5533CC`**: 循环尾部，清理当前事件对象，准备处理下一个。
+*   **`6F5533F0`**: 函数返回，恢复寄存器和栈。
+
+---
+
+# 总结表格：War3 网络事件 ID 映射
+
+| 内存地址 (Address) | 事件类名 (RTTI String) | 描述 (Description) |
+| :--- | :--- | :--- |
+| `6F55214A` | **CNetEventConnect** | 建立连接 |
+| `6F55218C` | **CNetEventDisconnect** | 断开连接 |
+| `6F5521CE` | **CNetEventGameListStart** | 游戏列表请求开始 |
+| `6F552210` | **CNetEventGameListStop** | 游戏列表请求结束 |
+| `6F552252` | **CNetEventGameListError** | 游戏列表错误 |
+| `6F552294` | **CNetEventGameListAdd** | 添加房间到列表 |
+| `6F5522D6` | **CNetEventGameListUpdate** | 更新列表房间信息 |
+| `6F552318` | **CNetEventGameListDelete** | 从列表移除房间 |
+| `6F55235A` | **CNetEventTeamGameListStart** | 团队列表开始 |
+| `6F55239C` | **CNetEventTeamGameListStop** | 团队列表结束 |
+| `6F5523DE` | **CNetEventTeamGameListAdd** | 添加团队房间 |
+| `6F552420` | **CNetEventTeamGameListUpdate** | 更新团队房间 |
+| `6F552462` | **CNetEventTeamGameListDelete** | 移除团队房间 |
+| `6F5524A4` | **CNetEventAnonGameFind** | 匿名游戏查找 |
+| `6F5524E6` | **CNetEventAnonGameJoin** | 匿名游戏加入 |
+| `6F55252C` | **CNetEventGameCreate** | 创建游戏 |
+| `6F55256E` | **CNetEventGameAd** | 游戏房间广播 |
+| `6F5525B0` | **CNetEventTeamGameAd** | 团队房间广播 |
+| `6F5525F2` | **CNetEventTeamInfo** | 团队信息 |
+| `6F552634` | **CNetEventGameFind** | 查找游戏 |
+| `6F55267A` | **CNetEventGameJoin** | 加入游戏请求 |
+| `6F5526C0` | **CNetEventPlayerJoin** | 玩家加入成功 |
+| `6F552706` | **CNetEventPlayerLeave** | 玩家离开 |
+| `6F552748` | **CNetEventPlayerReady** | 玩家准备 |
+| `6F55278E` | **CNetEventGameSetup** | 游戏设置 |
+| `6F5527D0` | **CNetEventGameClose** | 游戏关闭 |
+| `6F552816` | **CNetEventGameStart** | 游戏开始(Loading) |
+| `6F55285C` | **CNetEventGameReady** | 游戏就绪(Playing) |
+| `6F55289E` | **CNetEventPlayerUpdate** | 玩家信息变更 |
+| `6F5528E4` | **CNetEventGameSuspend** | 游戏暂停 |
+| `6F55292A` | **CNetEventPlayerResume** | 游戏恢复 |
+| `6F552970` | **CNetEventRouterHandoffSearching**| 路由搜索 |
+| `6F5529B2` | **CNetEventRouterHandoffSyncing** | 路由同步 |
+| `6F5529F8` | **CNetEventRouterHandoffDone** | 路由完成 |
+| `6F552A3A` | **CNetEventRouterUnresponsive** | 路由无响应 |
+| `6F552A7C` | **CNetEventRouterResponsive** | 路由恢复 |
+| `6F552ABE` | **CNetEventDistFileStart** | 地图下载开始 |
+| `6F552B00` | **CNetEventDistFileProgress** | 地图下载进度 |
+| `6F552B42` | **CNetEventDistFileComplete** | 地图下载完成 |
+| `6F552B88` | **CNetEventOfficialPlayers** | 官方玩家数据 |
+| `6F552BCE` | **CNetEventSetTurnsLatency** | 设置回合延迟 |
+| `6F552C10` | **CNetEventTrigger** | 网络触发器 |
+| `6F552C84` | **EVENT_ID_TURNSSYNC** | 回合同步检查 |
+| `6F552D87` | **EVENT_ID_TURNSSYNCMISMATCH**| 同步错误(掉线) |
+| `6F552E12` | **CNetEventTrustedDesync** | 确认去同步 |
+| `6F552E58` | **CNetEventTrustedResult** | 游戏结果确认 |
+| `6F552F67` | **NET_COMMAND_SAVE** | 存档指令 |
+
+---
+
+```assembly
 6F551D80  | 6A FF                   | push FFFFFFFF                              |
 6F551D82  | 68 A774836F             | push game.6F8374A7                         |
 6F551D87  | 64:A1 00000000          | mov eax,dword ptr fs:[0]                   |
@@ -1743,3 +1920,4 @@
 6F553432  | 3BF3                    | cmp esi,ebx                                |
 6F553434  | 0F85 D3FCFFFF           | jne game.6F55310D                          |
 6F55343A  | EB AE                   | jmp game.6F5533EA                          |
+```
