@@ -36,6 +36,7 @@ struct Bot {
         bool hasTask = false;                   // 是否有任务
         QString hostName;                       // 谁下的命令 (虚拟房主)
         QString gameName;                       // 房间名
+        CommandSource commandSource;            // 命令来源
     } pendingTask;
 
     Bot(quint32 _id, QString _user, QString _pass)

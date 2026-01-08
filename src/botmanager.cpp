@@ -135,6 +135,7 @@ bool BotManager::createGame(const QString &hostName, const QString &gameName, Co
         targetBot->pendingTask.hasTask = true;
         targetBot->pendingTask.hostName = hostName;
         targetBot->pendingTask.gameName = gameName;
+        targetBot->pendingTask.commandSource = commandSource;
 
         // 启动连接
         targetBot->state = BotState::Connecting;
@@ -212,10 +213,37 @@ const QVector<Bot*>& BotManager::getAllBots() const
 
 void BotManager::onBotAuthenticated(Bot *bot)
 {
-    if (!bot) return;
-    bot->state = BotState::Idle;
-    LOG_INFO(QString("✅ [%1] 登录成功").arg(bot->username));
-    emit botStateChanged(bot->id, bot->username, bot->state);
+    qDebug().noquote() << QString("✅ [%1] 登录成功").arg(bot->username);
+
+    // 1. 检查是否有挂起的任务 (Pending Task)
+    if (bot->pendingTask.hasTask) {
+        qDebug().noquote() << QString("🎮 [处理挂起任务] Bot: %1 | 任务: %2")
+                                  .arg(bot->username, bot->pendingTask.gameName);
+
+        // 更新状态
+        bot->state = BotState::Creating;
+
+        // 设置虚拟房主名
+        bot->client->setHost(bot->pendingTask.hostName);
+
+        // 🚀 立即执行创建游戏指令
+        bot->client->createGame(
+            bot->pendingTask.gameName,
+            "",
+            Provider_TFT_New,
+            Game_TFT_Custom,
+            SubType_None,
+            Ladder_None,
+            bot->pendingTask.commandSource
+            );
+
+        // 🧹 清除任务标记，防止重复执行
+        bot->pendingTask.hasTask = false;
+    } else {
+        // 无任务，标记为空闲
+        bot->state = BotState::Idle;
+        qDebug().noquote() << QString("💤 [%1] 进入空闲待机模式").arg(bot->username);
+    }
 }
 
 void BotManager::onBotAccountCreated(Bot *bot)

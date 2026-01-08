@@ -892,6 +892,8 @@ void NetManager::handleTcpCommandMessage(QTcpSocket *socket)
                 socket->setProperty("clientId", clientId);
                 socket->setProperty("sessionId", pHeader->sessionId);
 
+                currentClientId = clientId;
+
                 qDebug().noquote() << "🔗 [TCP 控制通道绑定]";
                 qDebug().noquote() << QString("   ├─ 🆔 Session: %1").arg(pHeader->sessionId);
                 qDebug().noquote() << QString("   ├─ 👤 用户ID:  %1").arg(clientId);
@@ -917,19 +919,23 @@ void NetManager::handleTcpCommandMessage(QTcpSocket *socket)
 
         case PacketType::C_S_COMMAND:
             if (pHeader->payloadLen >= sizeof(CSCommandPacket)) {
+                const CSCommandPacket *cmdPkt = reinterpret_cast<const CSCommandPacket*>(payload);
+                QString cmd = QString::fromUtf8(cmdPkt->command, strnlen(cmdPkt->command, sizeof(cmdPkt->command)));
+                QString text = QString::fromUtf8(cmdPkt->text, strnlen(cmdPkt->text, sizeof(cmdPkt->text)));
+                QString user = QString::fromUtf8(cmdPkt->username, strnlen(cmdPkt->username, sizeof(cmdPkt->username)));
+
                 // 🛡️ 安全检查：如果到现在还没 ClientID，说明这是个未授权的连接发来的指令
                 if (currentClientId.isEmpty()) {
                     qDebug().noquote() << "🛑 [指令拒绝]";
                     qDebug().noquote() << "   ├─ ❌ 原因: 未鉴权连接 (无有效 SessionID)";
+                    if (cmd == "/host") {
+                        qDebug().noquote() << "   └─ 🛡️ 动作: 发送 RETRY_HOST 指令";
+                        sendRetryCommand(socket);
+                        return;
+                    }
                     qDebug().noquote() << "   └─ 🛡️ 动作: 忽略指令";
                     break;
                 }
-
-                const CSCommandPacket *cmdPkt = reinterpret_cast<const CSCommandPacket*>(payload);
-
-                QString cmd = QString::fromUtf8(cmdPkt->command, strnlen(cmdPkt->command, sizeof(cmdPkt->command)));
-                QString text = QString::fromUtf8(cmdPkt->text, strnlen(cmdPkt->text, sizeof(cmdPkt->text)));
-                QString user = QString::fromUtf8(cmdPkt->username, strnlen(cmdPkt->username, sizeof(cmdPkt->username)));
 
                 qDebug().noquote() << "🎮 [TCP 指令接收]";
                 qDebug().noquote() << QString("   ├─ 👤 发送者: %1").arg(user);
@@ -1034,6 +1040,25 @@ bool NetManager::sendEnterRoomCommand(const QString &clientId, quint64 port, boo
     }
 
     return ok;
+}
+
+bool NetManager::sendRetryCommand(QTcpSocket *socket)
+{
+    if (!socket || socket->state() != QAbstractSocket::ConnectedState) return false;
+
+    SCCommandPacket pkt;
+    memset(&pkt, 0, sizeof(pkt));
+
+    // 指令: RETRY_HOST
+    const char *cmd = "RETRY_HOST";
+    strncpy(pkt.command, cmd, sizeof(pkt.command) - 1);
+
+    // 参数: 提示信息 (可选)
+    const char *msg = "Need Auth";
+    strncpy(pkt.text, msg, sizeof(pkt.text) - 1);
+
+    // 发送 PacketType::S_C_COMMAND
+    return sendTcpPacket(socket, PacketType::S_C_COMMAND, &pkt, sizeof(pkt));
 }
 
 bool NetManager::sendToClient(const QString &clientId, const QByteArray &data)
