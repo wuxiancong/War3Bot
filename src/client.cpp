@@ -706,9 +706,8 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         finalPacket.append(createW3GSSlotInfoJoinPacket(hostId, hostIp, hostPort));
 
         // Step B: 发送 Host 信息 (PID 1)
-        QString displayHostName = "CC";
         finalPacket.append(createPlayerInfoPacket(
-            1, displayHostName, QHostAddress("0.0.0.0"), 0, QHostAddress("0.0.0.0"), 0));
+            1, m_botDisplayName, QHostAddress("0.0.0.0"), 0, QHostAddress("0.0.0.0"), 0));
 
         // Step C: 发送已存在的其他老玩家信息给新玩家
         for (auto it = m_players.begin(); it != m_players.end(); ++it) {
@@ -1366,7 +1365,7 @@ void Client::createGame(const QString &gameName, const QString &password, Provid
         LOG_ERROR("❌ 地图加载失败");
         return;
     }
-    QByteArray encodedData = m_war3Map.getEncodedStatString(m_user);
+    QByteArray encodedData = m_war3Map.getEncodedStatString(m_botDisplayName);
     if (encodedData.isEmpty()) {
         LOG_ERROR("❌ StatString 生成失败");
         return;
