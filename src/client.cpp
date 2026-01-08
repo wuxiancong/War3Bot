@@ -706,8 +706,9 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         finalPacket.append(createW3GSSlotInfoJoinPacket(hostId, hostIp, hostPort));
 
         // Step B: 发送 Host 信息 (PID 1)
+        QString displayHostName = "CC";
         finalPacket.append(createPlayerInfoPacket(
-            1, m_user, QHostAddress("0.0.0.0"), 0, QHostAddress("0.0.0.0"), 0));
+            1, displayHostName, QHostAddress("0.0.0.0"), 0, QHostAddress("0.0.0.0"), 0));
 
         // Step C: 发送已存在的其他老玩家信息给新玩家
         for (auto it = m_players.begin(); it != m_players.end(); ++it) {

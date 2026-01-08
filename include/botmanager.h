@@ -34,6 +34,7 @@ struct Bot {
 
     struct Task {
         bool hasTask = false;                   // 是否有任务
+        qint64 startTime = 0;                   // 开始时间
         QString hostName;                       // 谁下的命令 (虚拟房主)
         QString gameName;                       // 房间名
         CommandSource commandSource;            // 命令来源
@@ -86,12 +87,13 @@ signals:
 
 private slots:
     // 内部槽函数：处理单个机器人的信号
-    void onBotAuthenticated(Bot *bot);
-    void onBotAccountCreated(Bot *bot);
-    void onBotGameCreateSuccess(Bot *bot);
-    void onBotGameCreateFail(Bot *bot);
-    void onBotDisconnected(Bot *bot);
     void onBotError(Bot *bot, QString error);
+    void onBotGameCreateSuccess(Bot *bot);
+    void onBotAccountCreated(Bot *bot);
+    void onBotGameCreateFail(Bot *bot);
+    void onBotAuthenticated(Bot *bot);
+    void onBotDisconnected(Bot *bot);
+    void onBotPendingTaskTimeout();
 
 private:
     // 容器存储所有机器人指针

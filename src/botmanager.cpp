@@ -4,7 +4,9 @@
 
 BotManager::BotManager(QObject *parent) : QObject(parent)
 {
-
+    QTimer *timer = new QTimer(this);
+    connect(timer, &QTimer::timeout, this, &BotManager::onBotPendingTaskTimeout);
+    timer->start(2000);
 }
 
 BotManager::~BotManager()
@@ -90,17 +92,49 @@ bool BotManager::createGame(const QString &hostName, const QString &gameName, Co
     qDebug().noquote() << QString("   ├─ 🆔 来源信息: %1 (%2)").arg(sourceStr, clientId.left(8));
 
     Bot *targetBot = nullptr;
+    bool needConnect = false; // 标记是否需要发起 TCP 连接
 
-    // 2. 优先寻找现有空闲 Bot
+    // 阶段 1: 优先寻找 [已登录 && 空闲] 的 Bot (最快路径)
     for (Bot *bot : qAsConst(m_bots)) {
-        // 必须是已登录且空闲的
         if (bot->state == BotState::Idle && bot->client && bot->client->isConnected()) {
             targetBot = bot;
             break;
         }
     }
 
-    // ==================== 分支 A: 动态扩容 ====================
+    // 如果找到在线空闲的，直接执行创建指令 (分支 B)
+    if (targetBot) {
+        qDebug().noquote() << QString("   ├─ ✅ 执行动作: 指派在线空闲机器人 [%1] 创建房间").arg(targetBot->username);
+
+        // 更新 Bot 属性
+        targetBot->clientId = clientId;
+        targetBot->hostName = hostName;
+        targetBot->gameName = gameName;
+        targetBot->commandSource = commandSource;
+        targetBot->state = BotState::Creating;
+
+        // 设置虚拟房主并发送指令
+        targetBot->client->setHost(hostName);
+        targetBot->client->createGame(gameName, "", Provider_TFT_New, Game_TFT_Custom, SubType_None, Ladder_None, commandSource);
+
+        qDebug().noquote() << "   └─ 🚀 执行动作: 立即发送 CreateGame 指令";
+        return true;
+    }
+
+    // 阶段 2: 寻找 [未登录/离线] 的现有 bot (资源复用)
+    if (!targetBot) {
+        for (Bot *bot : qAsConst(m_bots)) {
+            // 只要不是 Connecting, Creating, Idle (即 Disconnected 或 Error) 都可以复用
+            if (bot->state == BotState::Disconnected) {
+                targetBot = bot;
+                needConnect = true; // 需要发起连接
+                qDebug().noquote() << QString("   ├─ ♻️ 资源复用: 唤醒离线机器人 [%1] (ID: %2)").arg(targetBot->username).arg(targetBot->id);
+                break;
+            }
+        }
+    }
+
+    // 阶段 3: 如果还是没有，m_bots 外的 bot (动态扩容)
     if (!targetBot) {
         quint32 maxId = 0;
         for (Bot *bot : qAsConst(m_bots)) {
@@ -109,65 +143,52 @@ bool BotManager::createGame(const QString &hostName, const QString &gameName, Co
         quint32 newId = maxId + 1;
         QString newUsername = QString("%1%2").arg(m_userPrefix).arg(newId);
 
-        // 打印扩容日志
-        qDebug().noquote() << "   ├─ ⚠️ 资源状态: 无空闲 Bot -> 触发动态扩容";
+        qDebug().noquote() << "   ├─ ⚠️ 资源状态: 无可用 Bot -> 触发动态扩容";
         qDebug().noquote() << QString("   ├─ 🤖 新建实例: [%1] (ID: %2)").arg(newUsername).arg(newId);
 
         targetBot = new Bot(newId, newUsername, m_defaultPassword);
+        m_bots.append(targetBot);
+        needConnect = true;
+    }
+
+    // 统一处理: 启动连接流程 (适用于 阶段2 和 阶段3)
+    if (needConnect && targetBot) {
+        // 1. 更新 Bot 基础信息
+        targetBot->clientId = clientId;
         targetBot->hostName = hostName;
         targetBot->gameName = gameName;
-        targetBot->clientId = clientId;
         targetBot->commandSource = commandSource;
-        targetBot->client = new class Client(this);
-        targetBot->client->setCredentials(newUsername, m_defaultPassword, Protocol_SRP_0x53);
 
-        // === 绑定信号 ===
-        connect(targetBot->client, &Client::authenticated, this, [this, targetBot]() { this->onBotAuthenticated(targetBot); });
-        connect(targetBot->client, &Client::accountCreated, this, [this, targetBot]() { this->onBotAccountCreated(targetBot); });
-        connect(targetBot->client, &Client::gameCreateSuccess, this, [this, targetBot]() { this->onBotGameCreateSuccess(targetBot); });
-        connect(targetBot->client, &Client::gameCreateFail, this, [this, targetBot]() { this->onBotGameCreateFail(targetBot); });
-        connect(targetBot->client, &Client::socketError, this, [this, targetBot](QString e) { this->onBotError(targetBot, e); });
-        connect(targetBot->client, &Client::disconnected, this, [this, targetBot]() { this->onBotDisconnected(targetBot); });
+        // 2. 确保 Client 对象存在且信号已绑定
+        if (!targetBot->client) {
+            targetBot->client = new class Client(this);
+            targetBot->client->setCredentials(targetBot->username, m_defaultPassword, Protocol_SRP_0x53);
 
-        m_bots.append(targetBot);
+            // 绑定信号
+            connect(targetBot->client, &Client::authenticated, this, [this, targetBot]() { this->onBotAuthenticated(targetBot); });
+            connect(targetBot->client, &Client::accountCreated, this, [this, targetBot]() { this->onBotAccountCreated(targetBot); });
+            connect(targetBot->client, &Client::gameCreateSuccess, this, [this, targetBot]() { this->onBotGameCreateSuccess(targetBot); });
+            connect(targetBot->client, &Client::gameCreateFail, this, [this, targetBot]() { this->onBotGameCreateFail(targetBot); });
+            connect(targetBot->client, &Client::socketError, this, [this, targetBot](QString e) { this->onBotError(targetBot, e); });
+            connect(targetBot->client, &Client::disconnected, this, [this, targetBot]() { this->onBotDisconnected(targetBot); });
+        } else {
+            // 如果是复用已有的 Client 对象，确保状态重置
+            targetBot->client->setCredentials(targetBot->username, m_defaultPassword, Protocol_SRP_0x53);
+        }
 
-        // 标记任务
+        // 3. 设置挂起任务 (Pending Task)
+        // 这样当 onBotAuthenticated 触发时，会自动执行创建
         targetBot->pendingTask.hasTask = true;
         targetBot->pendingTask.hostName = hostName;
         targetBot->pendingTask.gameName = gameName;
         targetBot->pendingTask.commandSource = commandSource;
+        targetBot->pendingTask.startTime = QDateTime::currentMSecsSinceEpoch(); // 记得设置超时计时起点
 
-        // 启动连接
+        // 4. 发起 TCP 连接
         targetBot->state = BotState::Connecting;
         targetBot->client->connectToHost(m_targetServer, m_targetPort);
 
-        qDebug().noquote() << "   └─ ⏳ 执行动作: 启动连接流程 (任务已挂起，等待登录)";
-        return true;
-    }
-
-    // ==================== 分支 B: 复用现有 Bot ====================
-    if (targetBot) {
-        // 打印复用日志
-        qDebug().noquote() << QString("   ├─ ✅ 执行动作: 指派空闲机器人 [%1] 创建房间").arg(targetBot->username);
-
-        // 更新 UUID
-        targetBot->clientId = clientId;
-        // 更新房主名
-        targetBot->hostName = hostName;
-        // 更新游戏名
-        targetBot->gameName = gameName;
-        // 更新命令来源
-        targetBot->commandSource = commandSource;
-        // 更新机器状态
-        targetBot->state = BotState::Creating;
-
-        // 设置虚拟房主
-        targetBot->client->setHost(hostName);
-
-        // 发送创建命令
-        targetBot->client->createGame(gameName, "", Provider_TFT_New, Game_TFT_Custom, SubType_None, Ladder_None, commandSource);
-
-        qDebug().noquote() << "   └─ 🚀 执行动作: 立即发送 CreateGame 指令";
+        qDebug().noquote() << QString("   └─ ⏳ 执行动作: 启动连接流程 [%1] (任务已挂起，等待登录)").arg(targetBot->username);
         return true;
     }
 
@@ -410,6 +431,34 @@ void BotManager::onBotGameCreateFail(Bot *bot)
     LOG_INFO(QString("Bot-%1 状态已重置").arg(bot->id));
 }
 
+void BotManager::onBotPendingTaskTimeout()
+{
+    quint64 now = QDateTime::currentMSecsSinceEpoch();
+    const quint64 TIMEOUT_MS = 3000;
+
+    for (int i = 0; i < m_bots.size(); ++i) {
+        Bot *bot = m_bots[i];
+
+        // 只检查有挂起任务的
+        if (bot->pendingTask.hasTask) {
+
+            if (now - bot->pendingTask.startTime > TIMEOUT_MS) {
+                qDebug().noquote() << QString("🚨 [任务超时] Bot: %1 | 耗时: %2 ms | 任务: %3")
+                                          .arg(bot->username)
+                                          .arg(now - bot->pendingTask.startTime)
+                                          .arg(bot->pendingTask.gameName);
+
+                // 清除任务
+                bot->pendingTask.hasTask = false;
+
+                // sendErrorMessageToClient(bot->clientId, "创建超时，请重试");
+
+                bot->state = BotState::Disconnected;
+            }
+        }
+    }
+}
+
 void BotManager::onBotError(Bot *bot, QString error)
 {
     if (!bot) return;
@@ -427,6 +476,12 @@ void BotManager::onBotError(Bot *bot, QString error)
                 bot->client->connectToHost(m_targetServer, m_targetPort);
             }
         });
+    }
+
+    if (bot->pendingTask.hasTask) {
+        qDebug() << "❌ [任务失败] 连接错误，取消挂起任务:" << bot->pendingTask.gameName;
+        bot->pendingTask.hasTask = false;
+        // sendErrorMessageToClient(bot->clientId, "连接错误，取消挂起任务");
     }
 }
 
