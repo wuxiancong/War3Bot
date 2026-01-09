@@ -156,6 +156,16 @@ sudo systemctl start war3bot
 sudo systemctl stop war3bot
 ```
 
+### 4. 编辑 logind 配置
+sudo nano /etc/systemd/logind.conf
+
+KillUserProcesses=yes
+
+sudo systemctl restart systemd-logind
+
+sudo timeout 30m journalctl -u war3bot -f
+
+alias wlog="sudo pkill -f 'journalctl -u war3bot'; sudo timeout 1h journalctl -u war3bot -f"
 ---
 
 ## 💻 使用与管理
