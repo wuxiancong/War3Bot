@@ -132,7 +132,7 @@ User=war3bot
 Group=war3bot
 WorkingDirectory=/etc/War3Bot
 
-ExecStart=/usr/local/War3Bot/bin/War3Bot -p
+ExecStart=/usr/local/War3Bot/bin/War3Bot -p 6116
 Restart=always
 RestartSec=5
 StandardOutput=journal
