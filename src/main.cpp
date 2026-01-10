@@ -182,28 +182,74 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    // === 1. 加载配置与日志初始化 ===
+    // === 1. 加载配置与日志初始化 (修改版) ===
     QString configFile = parser.value(configOption);
-    QFileInfo configFileInfo(configFile);
+    bool configFound = false;
 
-    // 如果配置文件不存在，尝试查找或创建默认配置
-    if (!configFileInfo.exists()) {
+    // A. 如果用户在命令行指定了绝对路径，直接检查
+    QFileInfo fileInfo(configFile);
+    if (fileInfo.isAbsolute() && fileInfo.exists()) {
+        configFound = true;
+        LOG_INFO(QString("使用指定配置文件: %1").arg(configFile));
+    }
+    // B. 否则，在标准搜索路径中查找
+    else {
+        QStringList searchPaths;
+
+        // 1. 命令行参数 (如果是相对路径，结合当前工作目录)
+        searchPaths << configFile;
+        searchPaths << "config/" + configFile;
+
+        // 2. 开发/便携模式 (可执行文件所在目录)
         QString exeDir = QCoreApplication::applicationDirPath();
-        QString alternativeConfig = exeDir + "/config/" + configFile;
-        if (QFileInfo::exists(alternativeConfig)) {
-            configFile = alternativeConfig;
-        } else {
-            QString defaultConfigPath = exeDir + "/config/war3bot.ini";
-            QFile defaultConfig(defaultConfigPath);
-            if (defaultConfig.open(QIODevice::WriteOnly | QIODevice::Text)) {
-                QTextStream out(&defaultConfig);
-                out << "[server]\nbroadcast_port=6112\nenable_broadcast=false\npeer_timeout=300000\ncleanup_interval=60000\nbroadcast_interval=30000\n";
-                out << "\n[log]\nlevel=info\nenable_console=true\nlog_file=/var/log/war3bot/war3bot.log\nmax_size=10485760\nbackup_count=5\n";
-                out << "\n[bnet]\nserver=139.155.155.166\nport=6112\nusername=bot\npassword=wxc123\n";
-                defaultConfig.close();
-                configFile = defaultConfigPath;
-                LOG_INFO(QString("已创建默认配置文件: %1").arg(configFile));
+        searchPaths << exeDir + "/config/" + configFile;
+        searchPaths << exeDir + "/" + configFile;
+
+        // 3. Linux 系统标准安装路径
+#ifdef Q_OS_LINUX
+        searchPaths << "/etc/War3Bot/config/war3bot.ini";
+        searchPaths << "/etc/War3Bot/war3bot.ini";
+#endif
+
+        // 遍历查找
+        for (const QString &path : qAsConst(searchPaths)) {
+            if (QFileInfo::exists(path)) {
+                configFile = path;
+                configFound = true;
+                LOG_INFO(QString("✅ 找到配置文件: %1").arg(QDir::toNativeSeparators(configFile)));
+                break;
             }
+        }
+    }
+
+    // C. 如果到处都找不到，尝试在开发环境下生成默认配置
+    if (!configFound) {
+        LOG_WARNING("⚠️ 未找到现有配置文件，尝试生成默认配置...");
+
+        // 尝试写入的位置：优先当前目录，其次是 exe 目录
+        QString writePath = "config/war3bot.ini";
+        QFileInfo writeInfo(writePath);
+
+        // 确保目标目录存在
+        QDir dir = writeInfo.absoluteDir();
+        if (!dir.exists() && !dir.mkpath(".")) {
+            // 如果无法创建目录（比如在 /usr/local/bin），改用 /tmp 或者直接报错
+            writePath = QDir::tempPath() + "/war3bot_default.ini";
+        }
+
+        QFile defaultConfig(writePath);
+        if (defaultConfig.open(QIODevice::WriteOnly | QIODevice::Text)) {
+            QTextStream out(&defaultConfig);
+            out << "[server]\nbroadcast_port=6112\nenable_broadcast=false\npeer_timeout=300000\ncleanup_interval=60000\nbroadcast_interval=30000\n";
+            out << "\n[log]\nlevel=info\nenable_console=true\nlog_file=/var/log/War3Bot/war3bot.log\nmax_size=10485760\nbackup_count=5\n";
+            out << "\n[bnet]\nserver=127.0.0.1\nport=6112\nusername=bot\npassword=password\n";
+            defaultConfig.close();
+
+            configFile = writePath;
+            LOG_INFO(QString("✅ 已创建默认配置文件: %1").arg(configFile));
+        } else {
+            // 如果连写都写不进去（比如权限不足），则是致命错误
+            LOG_ERROR("❌ 无法创建默认配置文件 (权限不足?)。请手动检查安装路径: /etc/War3Bot/config/war3bot.ini");
         }
     }
 

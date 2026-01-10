@@ -4,13 +4,17 @@ After=network.target
 
 [Service]
 Type=simple
-User=root
-WorkingDirectory=/root/War3Bot/build
-ExecStart=/root/War3Bot/build/war3bot -p 6113
+
+User=war3bot
+Group=war3bot
+WorkingDirectory=/etc/War3Bot
+
+ExecStart=/usr/local/War3Bot/bin/War3Bot -p 6116
 Restart=always
 RestartSec=5
 StandardOutput=journal
 StandardError=journal
+PrivateTmp=false
 
 [Install]
 WantedBy=multi-user.target

@@ -1,5 +1,7 @@
 #include "logger.h"
 #include "war3bot.h"
+#include <QDir>
+#include <QCoreApplication>
 
 War3Bot::War3Bot(QObject *parent)
     : QObject(parent)
@@ -27,10 +29,48 @@ War3Bot::~War3Bot()
 
 bool War3Bot::startServer(quint16 port, const QString &configFile)
 {
+    // 1. 智能配置文件搜索逻辑
+
     m_configPath = configFile;
+
+    // 如果未指定配置文件，尝试在标准路径中搜索
     if (m_configPath.isEmpty()) {
-        m_configPath = "config/war3bot.ini";
+        QStringList searchPaths;
+
+        // 路径 1: 开发环境/当前目录 (相对路径)
+        searchPaths << "config/war3bot.ini";
+
+        // 路径 2: 可执行文件同级目录 (便携模式)
+        searchPaths << QCoreApplication::applicationDirPath() + "/config/war3bot.ini";
+
+#ifdef Q_OS_LINUX
+        // 路径 3: Linux 标准配置目录 (根据之前的 CMake 安装规则)
+        searchPaths << "/etc/War3Bot/config/war3bot.ini";
+
+        // 路径 4: Linux 备用配置目录 (直接在 etc 目录下)
+        searchPaths << "/etc/War3Bot/war3bot.ini";
+#endif
+
+        bool foundConfig = false;
+        for (const QString &path : qAsConst(searchPaths)) {
+            if (QFile::exists(path)) {
+                m_configPath = path;
+                foundConfig = true;
+                LOG_INFO(QString("✅ 找到配置文件: %1").arg(QDir::toNativeSeparators(m_configPath)));
+                break;
+            }
+        }
+
+        if (!foundConfig) {
+            // 如果都找不到，回退默认值并打印警告
+            m_configPath = "config/war3bot.ini";
+            LOG_WARNING("⚠️ 未在标准路径找到配置文件，将尝试默认相对路径: config/war3bot.ini");
+            LOG_WARNING(QString("已尝试路径: %1").arg(searchPaths.join(", ")));
+        }
     }
+
+    // 1. 搜索逻辑结束
+
     if (m_netManager && m_netManager->isRunning()) {
         LOG_WARNING("服务器已在运行中");
         return true;
@@ -46,15 +86,18 @@ bool War3Bot::startServer(quint16 port, const QString &configFile)
             // 或者 NetManager 会自动处理
         }
 
-        // 连接信号
         connect(m_netManager, &NetManager::commandReceived, m_botManager, &BotManager::onCommandReceived);
     }
 
-    bool success = m_netManager->startServer(port, configFile);
+    // 使用最终确定的 m_configPath 启动
+    bool success = m_netManager->startServer(port, m_configPath);
+
     if (success) {
-        LOG_INFO("War3Bot 服务器启动成功");
         if (QFile::exists(m_configPath)) {
             QSettings settings(m_configPath, QSettings::IniFormat);
+
+            LOG_INFO(QString("正在读取配置: [%1]").arg(m_configPath));
+
             QString bnetUser = settings.value("bnet/username", "").toString();
 
             if (bnetUser == "bot") {
@@ -63,10 +106,11 @@ bool War3Bot::startServer(quint16 port, const QString &configFile)
                 m_botManager->setP2PControlPort(port);
                 m_botManager->startAll();
             } else {
-                LOG_INFO("单用户模式就绪。等待 'connect' 命令连接战网。");
+                LOG_INFO(QString("单用户模式就绪 (用户: %1)。等待 'connect' 命令连接战网。").arg(bnetUser));
             }
         } else {
-            LOG_WARNING(QString("找不到配置文件: %1，无法读取战网信息").arg(m_configPath));
+            // 此时如果是 false，说明真的无论如何都找不到了
+            LOG_ERROR(QString("❌ 致命错误: 找不到配置文件: %1，无法读取战网信息").arg(m_configPath));
         }
     } else {
         LOG_ERROR("启动 War3Bot 服务器失败");
