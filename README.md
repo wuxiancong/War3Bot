@@ -35,69 +35,90 @@ sudo apt install -y build-essential cmake
 sudo apt install -y qtbase5-dev qt5-qmake libqt5core5a libqt5network5
 
 # 3. 安装其他依赖
-sudo apt install -y libgmp-dev zlib1g-dev libbz2-dev
+sudo apt install -y libgmp-dev zlib1g-dev libbz2-dev libgmp-dev
 
 # 4. 克隆项目代码
 git clone https://github.com/wuxiancong/War3Bot.git
 cd War3Bot
 
-# 5. 编译与安装
-# 注意：配置安装前缀为 /usr/local，并将配置文件自动部署到 /etc/War3Bot
+# 5. 编译项目
 mkdir build && cd build
 cmake -DCMAKE_INSTALL_PREFIX=/usr/local/War3Bot ..
 make -j$(nproc)
-
-# 执行安装 (需要 sudo 权限)
-# 这将把二进制放入 /usr/local/bin，配置放入 /etc/War3Bot
 sudo make install
 
-# 6. 验证安装结果
+# 6. 验证编译结果
+cd ~
 War3Bot --help
 ```
 
-### 2. 更新代码与重新编译
+### 2. 重新编译 (更新代码后)
 
 ```bash
-cd ~/War3Bot
-git pull
-cd build
+# 清理旧构建并重新编译
+cd ~/War3Bot/build
+rm -rf *
+cmake ..
 make -j$(nproc)
-sudo make install
-sudo systemctl restart war3bot
 ```
 
 ---
 
 ## ⚙️ 系统服务配置
 
-为了让 War3Bot 在后台稳定运行，并符合 Linux 安全规范，请按以下步骤配置 Systemd 服务。
+为了让 War3Bot 在后台稳定运行，建议配置 Systemd 服务。
 
-### 1. 创建专用用户和权限
+### 1. 创建专用用户和目录
 
-建议使用非 root 用户 (`war3bot`) 运行服务，以提高安全性。
+为了安全起见，建议使用非 root 用户运行服务。
 
 ```bash
-# 1. 创建系统用户 War3Bot (无登录权限)
-sudo useradd -r -s /bin/false -d /etc/War3Bot war3bot
+# 创建系统用户 War3Bot
+sudo useradd -r -s /bin/false -d /opt/War3Bot war3bot
 
-# 2. 创建日志目录
-sudo mkdir -p /var/log/War3Bot
+# 创建日志与配置目录
+sudo mkdir -p /var/log/War3Bot /etc/War3Bot
 
-# 3. 设置权限
-# 确保 war3bot 用户能读写配置文件和日志
-sudo chown -R war3bot:war3bot /etc/War3Bot
-sudo chown -R war3bot:war3bot /var/log/War3Bot
-
-# 如果 war3files 需要写入权限（通常只需要读取），也需设置
-sudo chmod -R 755 /etc/War3Bot/war3files
+# 设置目录权限
+sudo chown -R War3Bot:War3Bot /var/log/war3bot
+sudo chown -R War3Bot:War3Bot /etc/war3bot
+sudo chmod -R 755 /root/War3Bot/build/war3files/
 ```
 
-### 2. 配置 Systemd 服务
+### 2. 安装配置文件
 
-创建服务文件：
-`sudo nano /etc/systemd/system/war3bot.service`
+创建配置文件 `/etc/War3Bot/War3Bot.ini`：
 
-**复制以下内容：**
+```ini
+[server]
+broadcast_port=6112
+enable_broadcast=false
+peer_timeout=300000
+cleanup_interval=60000
+broadcast_interval=30000
+
+[log]
+level=info
+enable_console=true
+log_file=/var/log/war3bot/war3bot.log
+max_size=10485760
+backup_count=5
+
+[bnet]
+server=your_server_ip
+port=your_server_port
+username=your_bot_username
+password=your_bot_password
+
+```
+
+### 3. 配置 Systemd 服务
+
+创建服务文件 `sudo nano /etc/systemd/system/war3bot.service`：
+
+> **注意**：请确保 `ExecStart` 指向您实际编译生成的二进制文件路径。如果遵循上述安装步骤且未移动文件，路径可能为 `/root/War3Bot/build/War3Bot`（需 root 权限）或建议将其移动到 `/usr/local/bin/`。
+
+以下配置假设您已将编译好的 `War3Bot` 移动到了 `/usr/local/bin/War3Bot`，并使用 root 运行（简易模式）：
 
 ```ini
 [Unit]
@@ -107,21 +128,13 @@ After=network.target
 [Service]
 Type=simple
 
-# 运行用户与组
 User=war3bot
 Group=war3bot
-
-# 工作目录 (配置文件和 war3files 所在位置)
 WorkingDirectory=/etc/War3Bot
 
-# 启动命令 (指向安装后的路径)
 ExecStart=/usr/local/War3Bot/bin/War3Bot -p
-
-# 重启策略
 Restart=always
 RestartSec=5
-
-# 日志输出
 StandardOutput=journal
 StandardError=journal
 PrivateTmp=false
@@ -130,25 +143,10 @@ PrivateTmp=false
 WantedBy=multi-user.target
 ```
 
-### 3. 编辑配置文件
-
-安装脚本已将默认配置复制到 `/etc/War3Bot/config/war3bot.ini`（假设源码中有），请根据需要修改：
-
-`sudo nano /etc/War3Bot/config/war3bot.ini`
-
-```ini
-[server]
-broadcast_port=6112
-enable_broadcast=false
-
-[log]
-log_file=/var/log/War3Bot/war3bot.log
-```
-
 ### 4. 启动服务
 
 ```bash
-# 重载 Systemd 配置
+# 重载配置
 sudo systemctl daemon-reload
 
 # 启用开机自启
@@ -157,105 +155,315 @@ sudo systemctl enable war3bot
 # 启动服务
 sudo systemctl start war3bot
 
-# 查看状态
-sudo systemctl status war3bot
+# 停止服务
+sudo systemctl stop war3bot
 ```
 
+### 4. 编辑 logind 配置
+sudo nano /etc/systemd/logind.conf
+
+KillUserProcesses=yes
+
+sudo systemctl restart systemd-logind
+
+sudo timeout 30m journalctl -u war3bot -f
+
+alias wlog="sudo pkill -f 'journalctl -u war3bot'; sudo timeout 1h journalctl -u war3bot -f"
 ---
 
 ## 💻 使用与管理
 
-### 1. 常用管理命令
+### 1. 常用后台管理命令
 
 ```bash
+# 命令行运行1
+sudo /root/War3Bot/build/War3Bot -a create bot
+
+# 命令行运行2
+sudo /root/War3Bot/build/War3Bot -a
+
+# 查看服务状态
+sudo systemctl status war3bot
+
 # 查看实时日志
-alias wlog="sudo timeout 1h journalctl -u war3bot -f"
-wlog
+sudo journalctl -u war3bot -f
 
-# 停止/重启服务
-sudo systemctl stop war3bot
-sudo systemctl restart war3bot
+# 杀死所有相关进程
+pkill -f War3Bot
+
+# 强制杀死所有相关进程
+pkill -9 -f War3Bot
 ```
 
-### 2. 发送控制指令 (CLI)
+### 2. 🎮 交互式控制台模式 (手动发送指令)
 
-War3Bot 支持通过 `-x` 参数直接向程序传递指令。
+Systemd 后台服务无法接收键盘输入。如果您需要使用 **`connect`**、**`create`** 或 **`stop`** 等控制台命令，必须停止后台服务并在前台手动运行程序。
 
-**创建游戏：**
+**操作步骤：**
+
+1.  **停止后台服务** (必须执行，否则端口会被占用)：
+    ```bash
+    sudo systemctl stop war3bot
+    ```
+
+2.  **进入编译目录**：
+    ```bash
+    cd ~/War3Bot/build
+    ```
+
+3.  **前台启动程序**：
+    ```bash
+    ./War3Bot
+    ```
+
+4.  **输入指令**：
+    等待出现 `[INFO] === 服务器启动完成，开始监听 ===` 后，直接在终端输入命令并回车。
+
+    *   **连接战网**：
+        ```text
+        connect
+        # 或手动指定参数
+        connect 127.0.0.1 6112 myuser mypass
+        ```
+    *   **创建游戏**：
+        ```text
+        create Dota_6.83_CN
+        # 或带密码
+        create Dota_VIP 123
+        ```
+    *   **停止游戏**：
+        ```text
+        stop
+        ```
+
+### 3. 进程与端口监控
+
 ```bash
-# 注意：如果参数包含空格，请使用引号
-sudo War3Bot -x "create Dota"
-sudo War3Bot -x "create 'Dota 6.83' bot1"
+# 查看进程详情
+ps -ef | grep War3Bot
+
+# 查看端口监听状态 (6112)
+ss -tulpn | grep :6112
+# 或者
+netstat -tulpn | grep 6112
 ```
 
-**取消游戏：**
-```bash
-sudo War3Bot -x "cancel Dota"
-```
+# 开放 TCP 范围
+sudo ufw allow 6113:7113/tcp
 
-**连接服务器：**
-```bash
-# connect [username] [password] [ip] [port]
-sudo War3Bot -x "connect bot1 123456 127.0.0.1"
-```
+# 开放 UDP 范围
+sudo ufw allow 6113:7113/udp
 
-**停止广播：**
-```bash
-sudo War3Bot -x "stop"
-```
+# 重新加载让配置生效
+sudo ufw reload
 
+# 检查一下
+sudo ufw status
+
+# 查看所有正在监听的 TCP 和 UDP 端口，并显示进程名
+sudo ss -tulnp
 ---
 
 ## 🛡️ 防火墙配置
 
-War3Bot 需要同时开放 TCP 和 UDP 的 6112 端口 (以及可能的动态范围)。
+War3Bot 需要同时开放 TCP 和 UDP 的 6112 端口。
+
+### 使用 UFW (Ubuntu 默认)
 
 ```bash
-# 1. 开放主端口
 sudo ufw allow 6112/tcp
 sudo ufw allow 6112/udp
-
-# 2. 开放 P2P 动态端口范围 (根据实际配置调整)
-sudo ufw allow 6113:7113/tcp
-sudo ufw allow 6113:7113/udp
-
-# 3. 重载并检查
-sudo ufw reload
 sudo ufw status
+```
+
+### 使用 Firewalld (CentOS/RHEL)
+
+```bash
+# 永久开放端口
+sudo firewall-cmd --add-port=6112/tcp --permanent
+sudo firewall-cmd --add-port=6112/udp --permanent
+sudo firewall-cmd --reload
+
+# 验证配置
+sudo firewall-cmd --list-ports
 ```
 
 ---
 
-## 📂 安装后的目录结构
+## 🧪 测试与验证
 
-遵循 Linux FHS 标准，安装后的文件分布如下：
+### 1. 基础连通性测试 (Linux)
 
-| 路径 | 类型 | 说明 |
-| :--- | :--- | :--- |
-| `/usr/local/bin/War3Bot` | **二进制** | 可执行程序，已加入 PATH |
-| `/etc/War3Bot/` | **配置目录** | 存放 `war3files` 和 `config` |
-| `/etc/War3Bot/config/` | **配置文件** | `war3bot.ini` 等 |
-| `/etc/War3Bot/war3files/` | **资源文件** | `War3.exe`, `Storm.dll`, `Game.dll` |
-| `/var/log/War3Bot/` | **日志** | 运行日志文件 |
-| `/etc/systemd/system/` | **服务** | `war3bot.service` |
+```bash
+# 检查本地端口是否监听
+sudo netstat -tulpn | grep 6112
+
+# 发送 UDP 测试包
+echo "test" | nc -u localhost 6112
+
+# 抓包监控流量
+sudo tcpdump -i any -n udp port 6112
+```
+
+### 2. 远程连接测试 (Windows Client)
+
+在 Windows 客户端机器上验证到服务器的连接。
+
+```powershell
+# 使用 PowerShell 测试 TCP 连接
+Test-NetConnection <服务器IP> -Port 6112
+
+# CMD: 跟踪路由
+tracert <服务器IP>
+
+# CMD: 查看本地 6112 端口占用
+netstat -ano | findstr 6112
+```
+
+### 3. Python 模拟测试脚本
+
+保存为 `test_bot.py` 并运行：
+
+```python
+#!/usr/bin/env python3
+import socket
+import struct
+
+def test_War3Bot():
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    # 请修改为实际服务器地址
+    War3Bot_addr = ('localhost', 6112)
+    
+    # 创建 W3GS PING 数据包 (Header: 0xF7)
+    # 结构: Header(1B) + Length(2B) + Type(1B) + Data
+    header = struct.pack('<BHHB', 0xF7, 8, 0x01, 0)
+    
+    try:
+        sock.sendto(header, War3Bot_addr)
+        print(f"测试数据包已发送至 {War3Bot_addr}")
+    except Exception as e:
+        print(f"发送失败: {e}")
+    finally:
+        sock.close()
+
+if __name__ == "__main__":
+    test_War3Bot()
+```
 
 ---
 
-## 🧪 故障排查
+## 📂 项目结构
 
-**Q: 启动失败，提示 "Permissions denied"**
-*   检查 `/etc/War3Bot` 和 `/var/log/War3Bot` 的所有权是否为 `war3bot` 用户。
-    ```bash
-    sudo chown -R war3bot:war3bot /etc/War3Bot /var/log/War3Bot
-    ```
+```text
+War3Bot/
+├── CMakeLists.txt          # CMake 构建配置
+|── bncsutil/               # bncsutil 目录
+|── war3files/              # war3 文件目录
+├── include/                # 头文件目录
+│   ├── client.h            # 连接战网
+│   ├── logger.h            # 日志系统
+│   ├── p2pserver.h         # P2P连接
+│   |── botmanager.h        # 机器人管理
+│   |── bnetsrp3.h          # srp3
+│   ├── war3bot.h           # 机器人
+│   └── war3map.h
+├── src/                    # 源代码目录
+│   ├── main.cpp            # 入口文件
+│   ├── client.cpp          # 连接战网
+│   ├── logger.cpp          # 日志系统
+│   ├── p2pserver.cpp       # P2P连接
+│   |── botmanager.cpp      # 机器人管理
+│   |── bnetsrp3.cpp        # srp3
+│   ├── war3bot.cpp         # 机器人
+│   └── war3map.cpp
+|── lib/                    # 库目录
+└── config/                 # 配置相关
+    ├── war3bot.ini         # 配置文件模板
+    └── war3bot.service     # Systemd 服务文件
+```
 
-**Q: 提示找不到 War3files**
-*   确保 `War3.exe`, `Storm.dll`, `Game.dll` 存在于 `/etc/War3Bot/war3files` 目录下。
+---
 
-**Q: SSH断开后进程退出**
-*   如果你是手动运行而不是使用 systemd，请检查 `logind.conf`。
-    ```bash
-    sudo nano /etc/systemd/logind.conf
-    # 设置 KillUserProcesses=no (虽不推荐，但对手动运行有效)
-    ```
-    **推荐做法**：始终使用 `systemctl start war3bot` 来管理后台进程。
+## 📚 协议与内部命令
+
+### 支持的命令行 (CMD)
+
+**创建游戏：**
+```bash
+# 注意：如果参数包含空格，请使用引号
+create Dota
+create "Dota 6.83"
+sudo ./war3bot -x "create 'Dota 6.83' bot1"
+```
+
+**取消游戏：**
+```bash
+# 注意：如果参数包含空格，请使用引号
+cancel Dota
+cancel "Dota 6.83"
+sudo ./war3bot -x "cancel 'Dota 6.83' bot1"
+```
+
+**连接服务器：**
+```bash
+# 注意：如果留空则是用默认配置
+connect username [default] [default] [default]
+connect username password ip port
+sudo ./war3bot -x "connect bot1 123456 127.0.0.1"
+```
+
+**停止广播：**
+```bash
+stop
+sudo ./war3bot -x "stop"
+```
+
+### 支持的数据包 (W3GS)
+
+**Client -> Server (C->S):**
+
+| ID | 描述 |
+| :--- | :--- |
+| `0x00` | SID_NULL |
+| `0x0A` | SID_ENTERCHAT |
+| `0x0F` | SID_CHATEVENT |
+| `0x1C` | SID_STARTADVEX3 |
+| `0x25` | SID_PING |
+| `0x29` | SID_LOGONRESPONSE |
+| `0x3A` | SID_LOGONRESPONSE2 |
+| `0x4C` | SID_REQUIREDWORK |
+| `0x50` | SID_AUTH_INFO |
+| `0x51` | SID_AUTH_CHECK |
+| `0x53` | SID_AUTH_ACCOUNTLOGON |
+| `0x54` | SID_AUTH_ACCOUNTLOGONPROOF |
+
+**Server -> Client (S->C):**
+
+| ID | 描述 |
+| :--- | :--- |
+| `0x02` | PONG_TO_HOST |
+| `0x03` | REJECT |
+| `0x08` | SLOT_INFO |
+| `0x18` | PLAYER_LEFT |
+| `0x0E` | CHAT_FROM_HOST |
+
+---
+
+## 🗑️ 卸载指南 (Ubuntu)
+
+如果需要移除开发环境和 War3Bot：
+
+```bash
+# 1. 停止服务
+sudo systemctl stop war3bot
+sudo systemctl disable war3bot
+sudo rm /etc/systemd/system/war3bot.service
+sudo systemctl daemon-reload
+
+# 2. 删除文件
+sudo rm -rf /etc/War3Bot /var/log/War3Bot /opt/War3Bot
+
+# 3. 移除依赖库 (可选)
+sudo apt remove qtbase5-dev qt5-qmake libqt5core5a libqt5network5
+sudo apt autoremove
+```
