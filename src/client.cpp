@@ -53,22 +53,35 @@ Client::Client(QObject *parent)
         LOG_ERROR("UDP 绑定随机端口失败");
     }
 
-    // 初始化路径
-    QString appDir = QCoreApplication::applicationDirPath();
-    QDir dir(appDir);
+    QStringList searchPaths;
 
-    if (dir.cd("war3files")) {
-        m_war3ExePath = dir.absoluteFilePath("War3.exe");
-        m_gameDllPath = dir.absoluteFilePath("Game.dll");
-        m_stormDllPath = dir.absoluteFilePath("Storm.dll");
-        m_dota683dPath = dir.absoluteFilePath("maps/DotA v6.83d.w3x");
-    } else {
-        LOG_WARNING("找不到 war3files 目录，尝试直接读取当前目录下的 War3.exe");
-        dir.setPath(appDir);
-        m_war3ExePath = dir.absoluteFilePath("War3.exe");
-        m_gameDllPath = dir.absoluteFilePath("Game.dll");
-        m_stormDllPath = dir.absoluteFilePath("Storm.dll");
-        m_dota683dPath = dir.absoluteFilePath("maps/DotA v6.83d.w3x");
+    searchPaths << QCoreApplication::applicationDirPath() + "/war3files";
+
+#ifdef Q_OS_LINUX
+    searchPaths << "/etc/War3Bot/war3files";
+#endif
+
+    searchPaths << QDir::currentPath() + "/war3files";
+    searchPaths << QCoreApplication::applicationDirPath();
+
+    bool foundResources = false;
+
+    for (const QString &pathStr : qAsConst(searchPaths)) {
+        QDir dir(pathStr);
+        if (dir.exists("War3.exe")) {
+            m_war3ExePath = dir.absoluteFilePath("War3.exe");
+            m_gameDllPath = dir.absoluteFilePath("Game.dll");
+            m_stormDllPath = dir.absoluteFilePath("Storm.dll");
+            m_dota683dPath = dir.absoluteFilePath("maps/DotA v6.83d.w3x");
+            LOG_INFO(QString("✅ 成功加载 War3 资源: %1").arg(dir.absolutePath()));
+            foundResources = true;
+            break;
+        }
+    }
+
+    if (!foundResources) {
+        LOG_ERROR("❌ 致命错误: 未能找到 War3.exe！");
+        LOG_ERROR(QString("已尝试路径: %1").arg(searchPaths.join(", ")));
     }
 
     LOG_INFO(QString("War3 路径: %1").arg(m_war3ExePath));
