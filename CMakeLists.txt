@@ -197,4 +197,36 @@ endif()
 # 7. 安装配置
 # =========================================================
 
-install(TARGETS War3Bot DESTINATION bin)
+# 1. 安装可执行文件
+# 默认安装到 /usr/local/bin (由 CMAKE_INSTALL_PREFIX 控制)
+install(TARGETS War3Bot RUNTIME DESTINATION bin)
+
+# 2. Linux 特有安装规则：部署资源文件到 /etc/War3Bot
+if(UNIX AND NOT APPLE)
+    # 定义配置文件的目标路径 (配合 Systemd 的 WorkingDirectory)
+    set(CONF_INSTALL_DIR "/etc/War3Bot")
+
+    # 安装 config 文件夹
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/config")
+        install(DIRECTORY config
+            DESTINATION "${CONF_INSTALL_DIR}"
+            FILE_PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ
+            DIRECTORY_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
+        )
+    else()
+        message(WARNING "源码目录中未找到 config 文件夹，安装后可能无法启动。")
+    endif()
+
+    # 安装 war3files 文件夹
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/war3files")
+        install(DIRECTORY war3files
+            DESTINATION "${CONF_INSTALL_DIR}"
+            FILE_PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ
+            DIRECTORY_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
+        )
+    else()
+        message(WARNING "源码目录中未找到 war3files 文件夹，请确保其中包含 War3.exe 等文件。")
+    endif()
+
+    message(STATUS "配置安装路径: 可执行文件 -> ${CMAKE_INSTALL_PREFIX}/bin, 配置文件 -> ${CONF_INSTALL_DIR}")
+endif()
