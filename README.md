@@ -44,7 +44,7 @@ cd War3Bot
 # 5. 编译与安装
 # 注意：配置安装前缀为 /usr/local，并将配置文件自动部署到 /etc/War3Bot
 mkdir build && cd build
-cmake -DCMAKE_INSTALL_PREFIX=/usr/local ..
+cmake -DCMAKE_INSTALL_PREFIX=/usr/local/War3Bot ..
 make -j$(nproc)
 
 # 执行安装 (需要 sudo 权限)
@@ -115,7 +115,7 @@ Group=war3bot
 WorkingDirectory=/etc/War3Bot
 
 # 启动命令 (指向安装后的路径)
-ExecStart=/usr/local/bin/War3Bot -p
+ExecStart=/usr/local/War3Bot/bin/War3Bot -p
 
 # 重启策略
 Restart=always
