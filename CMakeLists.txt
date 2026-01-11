@@ -194,3 +194,35 @@ if(WIN32)
         wininet
     )
 endif()
+# =========================================================
+# 7. 安装配置
+# =========================================================
+
+# A. 安装可执行文件
+install(TARGETS War3Bot RUNTIME DESTINATION bin)
+
+# B. Linux 系统级资源安装
+if(UNIX AND NOT APPLE)
+    set(CONF_INSTALL_DIR "/etc/War3Bot")
+
+    # 1. 安装 config 文件夹 (静态资源 .ini 等)
+    install(DIRECTORY config
+        DESTINATION "${CONF_INSTALL_DIR}"
+        FILE_PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ
+        DIRECTORY_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
+        MESSAGE_NEVER
+    )
+
+    # 2. 安装 war3files 文件夹
+    install(DIRECTORY war3files
+        DESTINATION "${CONF_INSTALL_DIR}"
+        FILE_PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ
+        DIRECTORY_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
+    )
+
+    # 3. 安装 .service 文件
+    install(FILES war3bot.service DESTINATION /etc/systemd/system)
+
+    # 4. 可选：为了方便调试，把 config 也装一份到 bin 目录
+    install(DIRECTORY config DESTINATION bin MESSAGE_NEVER)
+endif()
