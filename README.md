@@ -50,7 +50,15 @@ sudo make install
 # 6. 验证编译结果
 cd ~
 War3Bot --help
+
+# 7. 脚本运行
+git clone https://github.com/wuxiancong/War3Bot.git
+cd War3Bot
+chmod +x install.sh
+./install.sh
+
 ```
+
 
 ### 2. 重新编译 (更新代码后)
 
