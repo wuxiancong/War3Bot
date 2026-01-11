@@ -194,55 +194,55 @@ if(WIN32)
 endif()
 
 # =========================================================
-# 7. 安装配置
+# 定义路径变量
+# =========================================================
+set(CONFIG_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/config")  # 源代码目录
+set(CONFIG_BIN_DIR "${CMAKE_CURRENT_BINARY_DIR}/config")  # 构建目录
+
+# =========================================================
+# 1.安装逻辑：只从源目录 (Source) 复制到 系统/安装目录
 # =========================================================
 
-# a. 安装可执行文件 -> /usr/local/bin/War3Bot
-install(TARGETS War3Bot RUNTIME DESTINATION bin)
-
-# b. Linux 系统级资源文件安装 -> /etc/War3Bot/
 if(UNIX AND NOT APPLE)
     set(CONF_INSTALL_DIR "/etc/War3Bot")
 
-    # -----------------------------------------------------
-    # (A) 安装 config 文件夹 到系统目录
-    # -----------------------------------------------------
-    # 目标路径: /etc/War3Bot/config
-    install(DIRECTORY config
+    # (A) 安装 config 文件夹 -> /etc/War3Bot/config
+    # 注意：这里明确指定了 ${CONFIG_SRC_DIR}，只认准源目录里的文件
+    install(DIRECTORY "${CONFIG_SRC_DIR}"
         DESTINATION "${CONF_INSTALL_DIR}"
         FILE_PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ
         DIRECTORY_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
         MESSAGE_NEVER
     )
 
-# -----------------------------------------------------
-# (B) 安装 war3files 文件夹 到系统目录
-# -----------------------------------------------------
-install(DIRECTORY war3files
-    DESTINATION "${CONF_INSTALL_DIR}"
-    FILE_PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ
-    DIRECTORY_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
-)
+    # (B) 安装 config 文件夹 -> /usr/local/bin/config (便携运行)
+    # 同样只从源目录复制
+    install(DIRECTORY "${CONFIG_SRC_DIR}"
+        DESTINATION bin
+        FILE_PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ
+        DIRECTORY_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
+        MESSAGE_NEVER
+    )
 
-# -----------------------------------------------------
-# (C) 将 config 复制到运行目录 (实现便携/同级查找)
-# -----------------------------------------------------
-# 目标路径: /usr/local/bin/config
-# 这样 QCoreApplication::applicationDirPath() + "/config" 就能直接找到
-install(DIRECTORY config
-    DESTINATION bin
-    FILE_PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ
-    DIRECTORY_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
-    MESSAGE_NEVER
-)
-
-# 添加一个安装后的提示信息
-install(CODE "message(\"----------------------------------------------------------\")")
-install(CODE "message(\"安装报告:\")")
-install(CODE "message(\"  Binary  -> ${CMAKE_INSTALL_PREFIX}/bin/War3Bot\")")
-install(CODE "message(\"  Config (Run) -> ${CMAKE_INSTALL_PREFIX}/bin/config      \")")
-install(CODE "message(\"  Config (Sys) -> ${CONF_INSTALL_DIR}/config\")")
-install(CODE "message(\"  War3Files -> ${CONF_INSTALL_DIR}/war3files\")")
-install(CODE "message(\"----------------------------------------------------------\")")
-
+    # (C) 这里的 War3Bot 可执行文件和 war3files 保持原样...
+    install(TARGETS War3Bot RUNTIME DESTINATION bin)
+    install(DIRECTORY war3files DESTINATION "${CONF_INSTALL_DIR}" ...)
 endif()
+
+# =========================================================
+# 2.编译逻辑：编译完成后，把 构建目录 的文件反向同步回 源目录
+# =========================================================
+
+# 添加一个自定义命令，在 War3Bot 编译/链接完成后执行
+add_custom_command(TARGET War3Bot POST_BUILD
+    # 1. 确保源目录存在
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CONFIG_SRC_DIR}"
+
+    # 2. 使用 bash -c 执行复杂的 shell 逻辑
+    # 注意：
+    # 1. 整个命令用双引号 "..." 包起来
+    # 2. 内部的路径用单引号 '...' 包起来（防止路径有空格导致 shell 报错）
+    COMMAND bash -c "if [ -d '${CONFIG_BIN_DIR}' ]; then cp -r '${CONFIG_BIN_DIR}/.' '${CONFIG_SRC_DIR}/'; echo '-- [Sync] Config synced'; fi"
+
+    COMMENT "正在检查并同步生成的配置..."
+)

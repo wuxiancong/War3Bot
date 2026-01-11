@@ -907,10 +907,8 @@ QString BotManager::generateUniqueUsername()
 
 bool BotManager::createBotAccountFilesIfNotExist()
 {
-    // 1. 打印根节点
     qDebug().noquote() << "🔐 [账号管理] 启动账号文件检查流程";
 
-    // 2. 智能路径判定逻辑
     QString configDir;
     QStringList searchPaths;
 
@@ -918,160 +916,101 @@ bool BotManager::createBotAccountFilesIfNotExist()
     searchPaths << "/etc/War3Bot/config";
 #endif
     searchPaths << QCoreApplication::applicationDirPath() + "/config";
-    searchPaths << QDir::currentPath() + "/config";
+    // 优先检查源码目录（如果是开发环境）
+#ifdef APP_SOURCE_DIR
+    searchPaths << QString(APP_SOURCE_DIR) + "/config";
+#endif
 
     bool foundExistingDir = false;
     for (const QString &path : qAsConst(searchPaths)) {
         QDir checkDir(path);
-        if (checkDir.exists()) {
+        // 只有目录存在且里面有文件才算找到
+        if (checkDir.exists() && !checkDir.isEmpty()) {
             configDir = path;
             foundExistingDir = true;
             break;
         }
     }
 
-    // 如果没有在搜索路径中找到任何现存目录
     if (!foundExistingDir) {
         QString defaultDir = QCoreApplication::applicationDirPath() + "/config";
 
-        // --- 第一阶段：询问是否创建新配置 ---
         qDebug().noquote() << "------------------------------------------------------------";
-        qDebug().noquote() << "⚠️  [警告] 未在标准搜索路径中找到配置文件。";
-        qDebug().noquote() << QString("❓ 建议路径: %1").arg(defaultDir);
-        qDebug().noquote() << "❓ 是否直接在该路径生成新账号文件? (y/n): ";
+        qDebug().noquote() << "⚠️  [警告] 未找到配置文件。";
+        qDebug().noquote() << QString("❓ 建议生成路径: %1").arg(defaultDir);
+        qDebug().noquote() << "❓ 是否生成新账号? (y/n) [y=生成, n=尝试从系统复制]: ";
 
         fflush(stdout);
         QTextStream qin(stdin);
         QString answer = qin.readLine().trimmed().toLower();
 
-        // 用户同意创建新文件 (y)
-        if (answer == "y" || answer == "yes") {
+        if (answer == "y" || answer == "yes" || answer.isEmpty()) {
             configDir = defaultDir;
             QDir dir(configDir);
-            if (!dir.exists()) {
-                if (!dir.mkpath(".")) {
-                    qDebug().noquote() << QString("   └─ ❌ [错误] 无法创建目录 (权限不足?): %1").arg(configDir);
-                    return false;
-                }
-                qDebug().noquote() << QString("   └─ ✅ 目录创建成功: %1").arg(configDir);
-            }
+            if (!dir.exists()) dir.mkpath(".");
         }
-        // 用户拒绝 (n) -> 进入第二阶段：尝试复制系统配置
         else {
+            //  完善从系统目录复制的逻辑 (支持 .ini, .json, .service)
 #ifdef Q_OS_LINUX
             QString sysConfigPath = "/etc/War3Bot/config";
             QDir sysDir(sysConfigPath);
 
-            // 检查系统目录是否存在且不为空
             if (sysDir.exists() && !sysDir.isEmpty()) {
-                qDebug().noquote() << "------------------------------------------------------------";
-                qDebug().noquote() << QString("🔍 检测到系统安装目录存在配置: %1").arg(sysConfigPath);
-                qDebug().noquote() << QString("❓ 是否将该目录下的文件复制到运行目录? (%1)").arg(defaultDir);
-                qDebug().noquote() << "❓ 输入 (y) 复制并继续，输入其他键退出: ";
-
-                fflush(stdout);
-                QString copyAnswer = qin.readLine().trimmed().toLower();
-
-                if (copyAnswer == "y" || copyAnswer == "yes") {
-                    // 1. 创建目标目录
+                qDebug().noquote() << QString("🔍 发现系统配置: %1").arg(sysConfigPath);
+                qDebug().noquote() << "❓ 是否复制到当前运行目录? (y/n): ";
+                if (qin.readLine().trimmed().toLower().startsWith("y")) {
                     QDir destDir(defaultDir);
-                    if (!destDir.exists()) {
-                        if (!destDir.mkpath(".")) {
-                            qDebug().noquote() << "   └─ ❌ 目标目录创建失败，无法复制。";
-                            return false;
-                        }
-                    }
+                    if (!destDir.exists()) destDir.mkpath(".");
 
-                    // 2. 执行复制
-                    qDebug().noquote() << "   ├─ 📂 开始复制文件...";
                     QStringList filters;
-                    filters << "*.ini" << "*.json"; // 只复制 ini 和 json
-                    QFileInfoList files = sysDir.entryInfoList(filters, QDir::Files);
-                    int copyCount = 0;
+                    // 添加 .service，确保所有类型都被复制
+                    filters << "*.ini" << "*.json" << "*.service";
 
+                    QFileInfoList files = sysDir.entryInfoList(filters, QDir::Files);
                     for (const QFileInfo &fileInfo : files) {
                         QString destFile = destDir.filePath(fileInfo.fileName());
-                        // 如果目标存在，先删除（覆盖模式），或者跳过。这里选择跳过以防覆盖重要数据
                         if (QFile::exists(destFile)) {
-                            qDebug().noquote() << QString("   │  ⚠️ 跳过已存在: %1").arg(fileInfo.fileName());
-                        } else {
-                            if (QFile::copy(fileInfo.absoluteFilePath(), destFile)) {
-                                qDebug().noquote() << QString("   │  ✅ 复制成功: %1").arg(fileInfo.fileName());
-                                copyCount++;
-                            } else {
-                                qDebug().noquote() << QString("   │  ❌ 复制失败: %1").arg(fileInfo.fileName());
-                            }
+                            QFile::remove(destFile); // 覆盖模式
                         }
+                        QFile::copy(fileInfo.absoluteFilePath(), destFile);
+                        qDebug().noquote() << QString("   │  ✅ 已复制: %1").arg(fileInfo.fileName());
                     }
-
-                    if (copyCount > 0) {
-                        qDebug().noquote() << QString("   └─ 🎉 复制完成，共处理 %1 个文件。").arg(copyCount);
-                        configDir = defaultDir; // 设置配置目录，让程序继续运行
-                    } else {
-                        qDebug().noquote() << "   └─ ⚠️ 未复制任何文件，程序退出。";
-                        return false;
-                    }
+                    configDir = defaultDir;
                 } else {
-                    qDebug().noquote() << "🚫 操作取消，程序退出。";
                     return false;
                 }
             } else {
-                qDebug().noquote() << "🚫 未检测到系统配置或用户取消，程序退出。";
                 return false;
             }
 #else
-            qDebug().noquote() << "🚫 操作取消，程序退出。";
             return false;
 #endif
         }
     }
 
-    // 打印路径信息 (第一个分支)
-    qDebug().noquote() << QString("   ├─ 📂 配置目录: %1").arg(configDir);
+    qDebug().noquote() << QString("   ├─ 📂 当前配置目录: %1").arg(configDir);
 
-    // 3. 种子配置处理
+    // 种子处理...
     QString seed = m_norepeatChars.trimmed();
-    if (seed.isEmpty()) {
-        seed = "default";
-        // 打印警告 (作为子项)
-        qDebug().noquote() << "   │  ⚠️ [警告] norepeat 为空，使用默认值 'default'";
-    }
+    if (seed.isEmpty()) seed = "default";
 
-    // 打印种子信息 (第二个分支)
-    qDebug().noquote() << QString("   ├─ 🔐 种子代码: %1").arg(seed);
-    // 4. 文件生成循环
     QStringList files;
     files << QString("bots_%1_part1.json").arg(seed);
     files << QString("bots_%1_part2.json").arg(seed);
 
     bool generatedAny = false;
-    m_newAccountFilePaths.clear();
 
     for (int i = 0; i < files.size(); ++i) {
         QString fileName = files[i];
         QString fullPath = configDir + "/" + fileName;
-        QString copyPath = fullPath;
-        copyPath.replace(".json", "_copy.json");
 
-        m_allAccountFilePaths.append(fullPath);
-
-        // === 动态计算树状前缀 ===
-        // 判断是否是列表中的最后一项，决定是否闭合树
-        bool isLastItem = (i == files.size() - 1);
-
-        QString branch = isLastItem ? "   └─ " : "   ├─ ";
-        QString indent = isLastItem ? "      " : "   │  "; // 子项的缩进跟随父项
-
-        // Case A: 文件已存在
         if (QFile::exists(fullPath)) {
-            qDebug().noquote() << QString("%1✅ [已就绪] %2").arg(branch, fileName);
+            qDebug().noquote() << QString("   ├─ ✅ [已存在] %1").arg(fileName);
             continue;
         }
 
-        // Case B: 需要生成
-        qDebug().noquote() << QString("%1🆕 [生成中] %2").arg(branch, fileName);
-
-        // 1. 生成数据
+        // 生成账号逻辑...
+        qDebug().noquote() << QString("   ├─ 🆕 [生成中] %1").arg(fileName);
         QJsonArray array;
         for (int k = 0; k < 100; ++k) {
             QJsonObject obj;
@@ -1080,33 +1019,31 @@ bool BotManager::createBotAccountFilesIfNotExist()
             array.append(obj);
         }
 
-        qDebug().noquote() << QString("%1├─ 🎲 生成账号: 100 个").arg(indent);
-
-        QJsonDocument doc(array);
-        QByteArray jsonData = doc.toJson();
-
-        // 2. 写入主文件
         QFile file(fullPath);
         if (file.open(QIODevice::WriteOnly)) {
-            file.write(jsonData);
+            file.write(QJsonDocument(array).toJson());
             file.close();
-
-            m_newAccountFilePaths.append(fullPath);
             generatedAny = true;
+            qDebug().noquote() << "   │  💾 文件写入成功";
 
-            qDebug().noquote() << QString("%1├─ 💾 主文件: 写入成功").arg(indent);
+            // 将生成的文件回写到源代码目录
+#ifdef APP_SOURCE_DIR
+            // APP_SOURCE_DIR 是由 CMake 传入的源码根目录路径
+            QString sourceConfigDir = QString(APP_SOURCE_DIR) + "/config";
+            QDir srcDir(sourceConfigDir);
 
-            // 3. 写入备份
-            QFile copyFile(copyPath);
-            if (copyFile.open(QIODevice::WriteOnly)) {
-                copyFile.write(jsonData);
-                copyFile.close();
-                qDebug().noquote() << QString("%1└─ 📋 备份文件: 写入成功").arg(indent);
-            } else {
-                qDebug().noquote() << QString("%1└─ ❌ 备份文件: 写入失败 (%2)").arg(indent, copyFile.errorString());
+            // 如果源码下的 config 目录存在，则进行回写
+            if (srcDir.exists()) {
+                QString sourceFilePath = srcDir.filePath(fileName);
+                if (QFile::copy(fullPath, sourceFilePath)) {
+                    qDebug().noquote() << QString("   │  🚀 [开发同步] 已复制回源码目录: %1").arg(fileName);
+                } else {
+                    qDebug().noquote() << QString("   │  ⚠️ [开发同步] 复制回源码失败");
+                }
             }
+#endif
         } else {
-            qDebug().noquote() << QString("%1└─ ❌ 主文件: 打开失败 (%2)").arg(indent, file.errorString());
+            qDebug().noquote() << QString("   │  ❌ 写入失败: %1").arg(file.errorString());
         }
     }
 
