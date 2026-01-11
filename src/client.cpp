@@ -662,6 +662,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
         bool isIncomingPlayerHost = false;
         // 1.1 判断当前申请加入的人，是不是指定的房主
+        LOG_INFO(QString("🔍 房主校验: 预设=[%1] vs 玩家=[%2]").arg(m_host, clientPlayerName));
         if (!m_host.isEmpty() && m_host.compare(clientPlayerName, Qt::CaseInsensitive) == 0) {
             isIncomingPlayerHost = true;
         }
