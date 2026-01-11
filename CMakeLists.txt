@@ -80,6 +80,8 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/config")
     )
 endif()
 
+target_compile_definitions(War3Bot PRIVATE APP_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+
 # =========================================================
 # 5. 外部库配置 (GMP & StormLib)
 # =========================================================
@@ -192,57 +194,3 @@ if(WIN32)
         wininet
     )
 endif()
-
-# =========================================================
-# 定义路径变量
-# =========================================================
-set(CONFIG_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/config")  # 源代码目录
-set(CONFIG_BIN_DIR "${CMAKE_CURRENT_BINARY_DIR}/config")  # 构建目录
-
-# =========================================================
-# 1.安装逻辑：只从源目录 (Source) 复制到 系统/安装目录
-# =========================================================
-
-if(UNIX AND NOT APPLE)
-    set(CONF_INSTALL_DIR "/etc/War3Bot")
-
-    # (A) 安装 config 文件夹 -> /etc/War3Bot/config
-    # 注意：这里明确指定了 ${CONFIG_SRC_DIR}，只认准源目录里的文件
-    install(DIRECTORY "${CONFIG_SRC_DIR}"
-        DESTINATION "${CONF_INSTALL_DIR}"
-        FILE_PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ
-        DIRECTORY_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
-        MESSAGE_NEVER
-    )
-
-    # (B) 安装 config 文件夹 -> /usr/local/bin/config (便携运行)
-    # 同样只从源目录复制
-    install(DIRECTORY "${CONFIG_SRC_DIR}"
-        DESTINATION bin
-        FILE_PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ
-        DIRECTORY_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
-        MESSAGE_NEVER
-    )
-
-    # (C) 这里的 War3Bot 可执行文件和 war3files 保持原样...
-    install(TARGETS War3Bot RUNTIME DESTINATION bin)
-    install(DIRECTORY war3files DESTINATION "${CONF_INSTALL_DIR}" ...)
-endif()
-
-# =========================================================
-# 2.编译逻辑：编译完成后，把 构建目录 的文件反向同步回 源目录
-# =========================================================
-
-# 添加一个自定义命令，在 War3Bot 编译/链接完成后执行
-add_custom_command(TARGET War3Bot POST_BUILD
-    # 1. 确保源目录存在
-    COMMAND ${CMAKE_COMMAND} -E make_directory "${CONFIG_SRC_DIR}"
-
-    # 2. 使用 bash -c 执行复杂的 shell 逻辑
-    # 注意：
-    # 1. 整个命令用双引号 "..." 包起来
-    # 2. 内部的路径用单引号 '...' 包起来（防止路径有空格导致 shell 报错）
-    COMMAND bash -c "if [ -d '${CONFIG_BIN_DIR}' ]; then cp -r '${CONFIG_BIN_DIR}/.' '${CONFIG_SRC_DIR}/'; echo '-- [Sync] Config synced'; fi"
-
-    COMMENT "正在检查并同步生成的配置..."
-)
