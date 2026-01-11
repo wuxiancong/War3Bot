@@ -221,7 +221,7 @@ if(UNIX AND NOT APPLE)
     )
 
     # 3. 安装 .service 文件
-    install(FILES war3bot.service DESTINATION /etc/systemd/system)
+    install(FILES config/war3bot.service DESTINATION /etc/systemd/system)
 
     # 4. 可选：为了方便调试，把 config 也装一份到 bin 目录
     install(DIRECTORY config DESTINATION bin MESSAGE_NEVER)
