@@ -109,22 +109,22 @@ if(MSVC)
         COMMAND ${CMAKE_COMMAND} -E copy_if_different "${GMP_ROOT}/bin/gmp-10.dll" "$<TARGET_FILE_DIR:War3Bot>/gmp-10.dll"
         COMMENT "部署 gmp-10.dll..."
     )
-    if(EXISTS "${GMP_ROOT}/bin/gmpxx-4.dll")
-        add_custom_command(TARGET War3Bot POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different "${GMP_ROOT}/bin/gmpxx-4.dll" "$<TARGET_FILE_DIR:War3Bot>/gmpxx-4.dll"
-            COMMENT "部署 gmpxx-4.dll..."
-        )
-    endif()
-
-    # [StormLib]
-    set(STORMLIB_ROOT "${LOCAL_LIB_ROOT}/msvc/stormLib")
-    target_include_directories(War3Bot PRIVATE "${STORMLIB_ROOT}/include")
-    target_link_libraries(War3Bot PRIVATE
-        "${STORMLIB_ROOT}/lib/StormLib.lib"
-        "${STORMLIB_ROOT}/lib/zlib.lib"
-        "${STORMLIB_ROOT}/lib/bz2.lib"
+if(EXISTS "${GMP_ROOT}/bin/gmpxx-4.dll")
+    add_custom_command(TARGET War3Bot POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${GMP_ROOT}/bin/gmpxx-4.dll" "$<TARGET_FILE_DIR:War3Bot>/gmpxx-4.dll"
+        COMMENT "部署 gmpxx-4.dll..."
     )
-    target_compile_definitions(War3Bot PRIVATE STORMLIB_NO_AUTO_LINK_LIB)
+endif()
+
+# [StormLib]
+set(STORMLIB_ROOT "${LOCAL_LIB_ROOT}/msvc/stormLib")
+target_include_directories(War3Bot PRIVATE "${STORMLIB_ROOT}/include")
+target_link_libraries(War3Bot PRIVATE
+    "${STORMLIB_ROOT}/lib/StormLib.lib"
+    "${STORMLIB_ROOT}/lib/zlib.lib"
+    "${STORMLIB_ROOT}/lib/bz2.lib"
+)
+target_compile_definitions(War3Bot PRIVATE STORMLIB_NO_AUTO_LINK_LIB)
 
 # --- Windows (MinGW) ---
 elseif(MINGW)
@@ -162,18 +162,18 @@ elseif(UNIX)
             pthread
             dl
         )
-    else()
-        message(FATAL_ERROR "未在 ${LINUX_STORM_LIB} 找到库文件！请在 Linux 上编译 StormLib 并放入该目录。")
-    endif()
+else()
+    message(FATAL_ERROR "未在 ${LINUX_STORM_LIB} 找到库文件！请在 Linux 上编译 StormLib 并放入该目录。")
+endif()
 
-    # [GMP] (通常使用系统库)
-    find_library(GMP_LIB gmp)
-    find_library(GMPXX_LIB gmpxx)
-    if(GMP_LIB)
-        target_link_libraries(War3Bot PRIVATE ${GMPXX_LIB} ${GMP_LIB})
-    else()
-        message(FATAL_ERROR "未找到 GMP 系统库，请运行: apt-get install libgmp-dev")
-    endif()
+# [GMP] (通常使用系统库)
+find_library(GMP_LIB gmp)
+find_library(GMPXX_LIB gmpxx)
+if(GMP_LIB)
+    target_link_libraries(War3Bot PRIVATE ${GMPXX_LIB} ${GMP_LIB})
+else()
+    message(FATAL_ERROR "未找到 GMP 系统库，请运行: apt-get install libgmp-dev")
+endif()
 
 endif()
 
@@ -200,36 +200,49 @@ endif()
 # a. 安装可执行文件 -> /usr/local/bin/War3Bot
 install(TARGETS War3Bot RUNTIME DESTINATION bin)
 
-# b. Linux 资源文件安装 -> /etc/War3Bot/
+# b. Linux 系统级资源文件安装 -> /etc/War3Bot/
 if(UNIX AND NOT APPLE)
     set(CONF_INSTALL_DIR "/etc/War3Bot")
 
     # -----------------------------------------------------
-    # (A) 安装 config 文件夹
+    # (A) 安装 config 文件夹 到系统目录
     # -----------------------------------------------------
-    # 注意：如果不加 if(EXISTS)，当文件夹缺失时 make install 会报错停止，这正是我们想要的
+    # 目标路径: /etc/War3Bot/config
     install(DIRECTORY config
         DESTINATION "${CONF_INSTALL_DIR}"
         FILE_PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ
         DIRECTORY_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
-        MESSAGE_NEVER # 减少刷屏，或者去掉这行看详细输出
+        MESSAGE_NEVER
     )
 
-    # -----------------------------------------------------
-    # (B) 安装 war3files 文件夹
-    # -----------------------------------------------------
-    install(DIRECTORY war3files
-        DESTINATION "${CONF_INSTALL_DIR}"
-        FILE_PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ
-        DIRECTORY_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
-    )
+# -----------------------------------------------------
+# (B) 安装 war3files 文件夹 到系统目录
+# -----------------------------------------------------
+install(DIRECTORY war3files
+    DESTINATION "${CONF_INSTALL_DIR}"
+    FILE_PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ
+    DIRECTORY_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
+)
 
-    # 添加一个安装后的提示信息，告诉你文件去哪了
-    install(CODE "message(\"----------------------------------------------------------\")")
-    install(CODE "message(\"安装报告:\")")
-    install(CODE "message(\"  Binary  -> ${CMAKE_INSTALL_PREFIX}/bin/War3Bot\")")
-    install(CODE "message(\"  Config  -> ${CONF_INSTALL_DIR}/config\")")
-    install(CODE "message(\"  War3Files -> ${CONF_INSTALL_DIR}/war3files\")")
-    install(CODE "message(\"----------------------------------------------------------\")")
+# -----------------------------------------------------
+# (C) 将 config 复制到运行目录 (实现便携/同级查找)
+# -----------------------------------------------------
+# 目标路径: /usr/local/bin/config
+# 这样 QCoreApplication::applicationDirPath() + "/config" 就能直接找到
+install(DIRECTORY config
+    DESTINATION bin
+    FILE_PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ
+    DIRECTORY_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
+    MESSAGE_NEVER
+)
+
+# 添加一个安装后的提示信息
+install(CODE "message(\"----------------------------------------------------------\")")
+install(CODE "message(\"安装报告:\")")
+install(CODE "message(\"  Binary  -> ${CMAKE_INSTALL_PREFIX}/bin/War3Bot\")")
+install(CODE "message(\"  Config (Run) -> ${CMAKE_INSTALL_PREFIX}/bin/config      \")")
+install(CODE "message(\"  Config (Sys) -> ${CONF_INSTALL_DIR}/config\")")
+install(CODE "message(\"  War3Files -> ${CONF_INSTALL_DIR}/war3files\")")
+install(CODE "message(\"----------------------------------------------------------\")")
 
 endif()
