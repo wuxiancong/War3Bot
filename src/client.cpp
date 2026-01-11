@@ -348,13 +348,18 @@ void Client::handleBNETTcpPacket(BNETPacketID id, const QByteArray &data)
 
     case SID_ENTERCHAT:
         LOG_INFO("✅ 已成功进入聊天环境 (Unique Name Received)");
-        queryChannelList();
+        if (m_isBot) {
+            joinRandomChannel();
+        } else {
+            queryChannelList();
+        }
         break;
 
-    case SID_GETCHANNELLIST:
+    case SID_GETCHANNELLIST: // 0x0B
     {
         LOG_INFO("📦 收到频道列表包，正在解析...");
         m_channelList.clear();
+
         int offset = 0;
         while (offset < data.size()) {
             int strEnd = data.indexOf('\0', offset);
@@ -371,12 +376,22 @@ void Client::handleBNETTcpPacket(BNETPacketID id, const QByteArray &data)
             offset = strEnd + 1;
         }
 
+        LOG_INFO(QString("📋 获取到 %1 个频道: %2").arg(m_channelList.size()).arg(m_channelList.join(", ")));
+
         if (m_channelList.isEmpty()) {
-            LOG_WARNING("⚠️ 频道列表为空！尝试加入 'Waiting Players'");
-            joinChannel("Waiting Players");
-        } else {
-            LOG_INFO(QString("📋 获取到 %1 个频道: %2").arg(m_channelList.size()).arg(m_channelList.join(", ")));
-            joinChannel(m_channelList.first());
+            LOG_WARNING("⚠️ 服务器返回的频道列表为空！使用默认频道 'The Void'");
+            joinChannel("The Void");
+        }
+        else {
+            if (m_isBot) {
+                int index = QRandomGenerator::global()->bounded(m_channelList.size());
+                QString target = m_channelList.at(index);
+                LOG_INFO(QString("🎲 [Bot随机] 从列表中选中: %1").arg(target));
+                joinChannel(target);
+            }
+            else {
+                joinChannel(m_channelList.first());
+            }
         }
     }
     break;
@@ -441,6 +456,7 @@ void Client::handleBNETTcpPacket(BNETPacketID id, const QByteArray &data)
         if (result == 1) {
             LOG_INFO("🎉 登录成功 (0x29)！");
             emit authenticated();
+            enterChat();
         } else {
             LOG_ERROR(QString("❌ 登录失败 (0x29): 0x%1").arg(QString::number(result, 16)));
         }
@@ -457,6 +473,7 @@ void Client::handleBNETTcpPacket(BNETPacketID id, const QByteArray &data)
         if (result == 0) {
             LOG_INFO("🎉 登录成功 (0x3A)！");
             emit authenticated();
+            enterChat();
         } else {
             LOG_ERROR(QString("❌ 登录失败 (0x3A): 0x%1").arg(QString::number(result, 16)));
         }
@@ -503,6 +520,7 @@ void Client::handleBNETTcpPacket(BNETPacketID id, const QByteArray &data)
         if (status == 0 || status == 0x0E) {
             LOG_INFO("🎉 登录成功 (SRP)！");
             emit authenticated();
+            enterChat();
         } else {
             QString reason = "未知错误";
             if (status == 0x02) reason = "密码错误";
@@ -1419,6 +1437,32 @@ void Client::joinChannel(const QString &channelName) {
     out.writeRawData(channelName.toUtf8().constData(), channelName.toUtf8().size());
     out << (quint8)0;
     sendPacket(SID_JOINCHANNEL, payload);
+}
+
+void Client::joinRandomChannel()
+{
+    // 1. 定义默认频道池
+    QStringList channels = {"The Void", "Frozen Throne", "Chat", "USA-1", "Human Castle", "Op War3Bot"};
+
+    // 2. 尝试从配置文件读取自定义频道列表 (可选)
+    // 假设你在 war3bot.ini 里加了 [bots] channels=ChannelA,ChannelB
+    QString configPath = "config/war3bot.ini"; // 简化的路径，你可以复用 War3Bot 传进来的路径
+    if (QFile::exists(configPath)) {
+        QSettings settings(configPath, QSettings::IniFormat);
+        QString configChans = settings.value("bots/channels", "").toString();
+        if (!configChans.isEmpty()) {
+            channels = configChans.split(",", Qt::SkipEmptyParts);
+        }
+    }
+
+    // 3. 随机选择一个
+    if (!channels.isEmpty()) {
+        int index = QRandomGenerator::global()->bounded(channels.size());
+        QString targetChannel = channels.at(index).trimmed();
+
+        LOG_INFO(QString("🤖 [Bot-%1] 随机选中频道: %2").arg(m_user, targetChannel));
+        joinChannel(targetChannel);
+    }
 }
 
 // =========================================================

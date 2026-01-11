@@ -423,6 +423,8 @@ public:
     int getOccupiedSlots() const;                       // 获取已占用槽位数 (包括Bot/Host)
     QString getSlotInfoString() const;                  // 返回 "(1/10)" 格式字符串
 
+    // --- 设置机器人标志 ---
+    void setBotFlag(bool isBot) { m_isBot = isBot; }
 signals:
     void connected();
     void disconnected();
@@ -476,6 +478,9 @@ private:
 
     // 设置 NetManager 指针
     void setNetManager(NetManager* server) { m_netManager = server; }
+
+    // --- 频道管理 ---
+    void joinRandomChannel();
 
     // --- 认证流程 ---
     void sendAuthInfo();
@@ -539,6 +544,9 @@ private:
     QString                         m_stormDllPath;
     QString                         m_gameDllPath;
     QString                         m_dota683dPath;
+
+    // 设置标志
+    bool m_isBot = false;
 };
 
 #endif // CLIENT_H

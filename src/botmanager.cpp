@@ -205,6 +205,7 @@ void BotManager::addBotInstance(const QString& username, const QString& password
     Bot *bot = new Bot(m_globalBotIdCounter++, username, password);
     bot->client = new class Client(this);
     bot->commandSource = From_Server;
+    bot->client->setBotFlag(true);
     bot->client->setCredentials(username, password, Protocol_SRP_0x53);
 
     connect(bot->client, &Client::authenticated, this, [this, bot]() { this->onBotAuthenticated(bot); });
@@ -796,12 +797,23 @@ bool BotManager::createBotAccountFilesIfNotExist()
     QDir dir(configDir);
     if (!dir.exists()) dir.mkpath(".");
 
-    QStringList files = {"bots_part1.json", "bots_part2.json"};
-    bool generatedAny = false;
+    // 1. 确保 norepeat 不为空，且没有首尾空格
+    QString seed = m_norepeatChars.trimmed();
+    if (seed.isEmpty()) {
+        seed = "default"; // 防止空配置导致 bots__part1.json
+        LOG_WARNING("⚠️ 配置文件中 norepeat 为空，使用默认值 'default'");
+    }
 
+    // 2. 使用格式化字符串生成文件名，确保只有一个下划线
+    // 格式: bots_种子_partX.json
+    QStringList files;
+    files << QString("bots_%1_part1.json").arg(seed);
+    files << QString("bots_%1_part2.json").arg(seed);
+
+    bool generatedAny = false;
     m_newAccountFilePaths.clear();
 
-    for (const QString &fileName : files) {
+    for (const QString &fileName : qAsConst(files)) {
         QString fullPath = configDir + "/" + fileName;
 
         m_allAccountFilePaths.append(fullPath);
@@ -810,7 +822,7 @@ bool BotManager::createBotAccountFilesIfNotExist()
             continue;
         }
 
-        LOG_INFO(QString("正在生成账号文件: %1 (基于 norepeat: %2)...").arg(fullPath, m_norepeatChars));
+        LOG_INFO(QString("正在生成账号文件: %1 (基于种子: %2)...").arg(fileName, seed));
 
         // 生成 100 个随机账号
         QJsonArray array;
@@ -826,7 +838,7 @@ bool BotManager::createBotAccountFilesIfNotExist()
         if (file.open(QIODevice::WriteOnly)) {
             file.write(doc.toJson());
             file.close();
-            LOG_INFO(QString("✅ 已生成账号文件: %1").arg(fullPath));
+            LOG_INFO(QString("✅ 已生成账号文件: %1").arg(fileName));
 
             m_newAccountFilePaths.append(fullPath);
             generatedAny = true;
