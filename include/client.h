@@ -516,6 +516,7 @@ private:
     War3Map                         m_war3Map;
     QVector<GameSlot>               m_slots;
     QStringList                     m_channelList;
+    bool                            m_isHostJoined;
 
     quint8                          m_layoutStyle           = CustomForces;
     quint32                         m_randomSeed            = 0;

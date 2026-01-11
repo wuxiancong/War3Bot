@@ -660,6 +660,41 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         LOG_INFO(QString("(UINT32) Intrnl IP   : %1 (%2)").arg(clientInternalIP).arg(iAddr.toString()));
         LOG_INFO("------------------------------------------------");
 
+        bool isIncomingPlayerHost = false;
+        // 1.1 判断当前申请加入的人，是不是指定的房主
+        if (!m_host.isEmpty() && m_host.compare(clientPlayerName, Qt::CaseInsensitive) == 0) {
+            isIncomingPlayerHost = true;
+        }
+
+        // 1.2 如果房主还没在房间里
+        if (!m_isHostJoined) {
+            // A. 如果来的不是房主 -> 拒绝！
+            if (!isIncomingPlayerHost) {
+                LOG_WARNING(QString("🛑 拒绝玩家 [%1] 加入: 等待房主 [%2] 进场中...").arg(clientPlayerName, m_host));
+                socket->write(createW3GSRejectJoinPacket(FULL));
+                socket->flush();
+                // 断开连接
+                socket->disconnectFromHost();
+                return;
+            }
+            // B. 如果来的是房主 -> 允许，并更新状态
+            else {
+                m_isHostJoined = true;
+                LOG_INFO(QString("👑 房主 [%1] 到达！解除房间锁定，允许其他人加入。").arg(clientPlayerName));
+                emit hostJoinedGame(clientPlayerName);
+            }
+        }
+        // 1.3 如果房主已经在房间里 (m_isHostPresent == true)
+        else {
+            // 如果这个时候又来了一个名字和房主一样的人 (极其罕见，可能是卡了或者重名攻击)
+            if (isIncomingPlayerHost) {
+                LOG_WARNING(QString("⚠️ 检测到重复的房主名 [%1] 尝试加入，拒绝。").arg(clientPlayerName));
+                socket->write(createW3GSRejectJoinPacket(FULL));
+                socket->disconnectFromHost();
+                return;
+            }
+        }
+
         // 2. 槽位与PID分配逻辑
         int slotIndex = -1;
         for (int i = 0; i < m_slots.size(); ++i) {
@@ -705,17 +740,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         playerData.codec = QTextCodec::codecForName("Windows-1252");
         playerData.lastResponseTime = now;
         playerData.lastDownloadTime = now;
-
-        // 判断是否为虚拟主机 (Virtual Host)
-        if (!m_host.isEmpty() && m_host.compare(clientPlayerName, Qt::CaseInsensitive) == 0) {
-            playerData.isVisualHost = true;
-            LOG_INFO(QString("👑 虚拟房主 [%1] 已加入房间！").arg(clientPlayerName));
-
-            // 发送信号通知 BotManager 修改 Bot 状态为 Waiting
-            emit hostJoinedGame(clientPlayerName);
-        } else {
-            playerData.isVisualHost = false;
-        }
+        playerData.isVisualHost = isIncomingPlayerHost;
 
         m_players.insert(hostId, playerData);
 
@@ -1022,11 +1047,12 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 }
 
 void Client::onPlayerDisconnected() {
-    QTcpSocket* socket = qobject_cast<QTcpSocket*>(sender());
+    QTcpSocket *socket = qobject_cast<QTcpSocket*>(sender());
     if (!socket) return;
 
     quint8 pidToRemove = 0;
     QString nameToRemove = "Unknown";
+    bool wasVisualHost = false;
 
     // 1. 查找玩家
     auto it = m_players.begin();
@@ -1034,6 +1060,8 @@ void Client::onPlayerDisconnected() {
         if (it.value().socket == socket) {
             pidToRemove = it.key();
             nameToRemove = it.value().name;
+            wasVisualHost = it.value().isVisualHost;
+
             it = m_players.erase(it);
             break;
         } else {
@@ -1046,9 +1074,12 @@ void Client::onPlayerDisconnected() {
     socket->deleteLater();
 
     if (pidToRemove != 0) {
-        LOG_INFO(QString("🔌 玩家 [%1] (PID: %2) 断开连接").arg(nameToRemove).arg(pidToRemove));
+        LOG_INFO(QString("🔌 玩家 [%1] (PID: %2) 断开连接%3")
+                     .arg(nameToRemove)
+                     .arg(pidToRemove)
+                     .arg(wasVisualHost ? " [房主]" : ""));
 
-        // 2. 释放槽位逻辑 (保持你原有的不变)
+        // 2. 释放槽位逻辑
         for (int i = 0; i < m_slots.size(); ++i) {
             if (m_slots[i].pid == pidToRemove) {
                 m_slots[i].pid = 0;
@@ -1058,9 +1089,52 @@ void Client::onPlayerDisconnected() {
             }
         }
 
+        // 房主离开处理逻辑
+        if (wasVisualHost) {
+            // A. 寻找继承人 (排除 PID 1 的机器人)
+            quint8 heirPid = 0;
+            QString heirName = "";
+
+            for (auto pIt = m_players.begin(); pIt != m_players.end(); ++pIt) {
+                if (pIt.key() != 1) {
+                    heirPid = pIt.key();
+                    heirName = pIt.value().name;
+                    break;
+                }
+            }
+
+            // B. 判断结果
+            if (heirPid == 0) {
+                // 情况 1: 房间里没人了 (或者只剩 Bot)
+                LOG_INFO("👑 房主离开且无其他玩家，正在取消房间...");
+                cancelGame();
+                return;
+            } else {
+                // 情况 2: 还有其他人，移交房主
+                // 1. 更新玩家标志
+                m_players[heirPid].isVisualHost = true;
+
+                // 2. 更新全局房主名字
+                m_host = heirName;
+                m_isHostJoined = true;
+
+                LOG_INFO(QString("👑 房主权限已移交给: [%1] (PID: %2)").arg(heirName).arg(heirPid));
+
+                // 3. 广播移交通知
+                MultiLangMsg transferMsg;
+                transferMsg.add("CN", QString("系统: 房主已离开，[%1] 成为新房主。").arg(heirName))
+                    .add("EN", QString("System: Host left. [%1] is the new host.").arg(heirName));
+                broadcastChatMessage(transferMsg, 0); // 发给所有人
+
+                // TODO: 在这里实现 /swap 逻辑，将 heirPid 的槽位移动到 Slot 1
+                // performSlotSwap(heirPid, 0);
+            }
+        }
+        // =========================================================
+
         // 3. 广播协议层离开包 (W3GS_PLAYERLEAVE_OTHERS 0x07)
-        QByteArray leftPacket = createW3GSPlayerLeftPacket(pidToRemove, 0x0D); // 0x0D = Left Lobby
-        broadcastPacket(leftPacket, pidToRemove); // 排除掉已经断开的那个人
+        QByteArray leftPacket = createW3GSPlayerLeftPacket(pidToRemove, 0x0D);
+        broadcastPacket(leftPacket, pidToRemove);
 
         // 4. 广播聊天消息：玩家离开
         MultiLangMsg leaveMsg;
