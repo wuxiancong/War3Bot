@@ -424,6 +424,7 @@ public:
     QString getSlotInfoString() const;                  // 返回 "(1/10)" 格式字符串
 
 signals:
+    void connected();
     void disconnected();
     void authenticated();
     void accountCreated();

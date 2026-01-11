@@ -30,8 +30,6 @@ Client::Client(QObject *parent)
     , m_tcpSocket(nullptr)
     , m_loginProtocol(Protocol_Old_0x29)
 {
-    initSlots();
-
     m_pingTimer = new QTimer(this);
     m_udpSocket = new QUdpSocket(this);
     m_tcpServer = new QTcpServer(this);
@@ -149,6 +147,7 @@ void Client::onConnected()
     char protocolByte = 1;
     m_tcpSocket->write(&protocolByte, 1);
     sendAuthInfo();
+    emit connected();
 }
 
 void Client::onNewConnection()
@@ -1582,7 +1581,7 @@ void Client::initSlots(quint8 maxPlayers)
         }
     }
 
-    LOG_INFO("✨ 房间初始化完成：Bot 已隐藏至 Slot 11 (裁判位)");
+    LOG_INFO("✨ 房间初始化或重置完成");
 }
 
 QByteArray Client::serializeSlotData() {

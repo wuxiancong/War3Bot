@@ -1,6 +1,12 @@
 #include "botmanager.h"
 #include "logger.h"
+#include <QDir>
 #include <QThread>
+#include <QJsonArray>
+#include <QJsonObject>
+#include <QJsonDocument>
+#include <QRandomGenerator>
+#include <QCoreApplication>
 
 BotManager::BotManager(QObject *parent) : QObject(parent)
 {
@@ -16,78 +22,206 @@ BotManager::~BotManager()
     m_bots.clear();
 }
 
-void BotManager::initializeBots(quint32 count, const QString &configPath)
+void BotManager::initializeBots(quint32 initialCount, const QString &configPath)
 {
     // 1. 清理旧数据
     stopAll();
     qDeleteAll(m_bots);
     m_bots.clear();
+    m_currentFileIndex = 0;
+    m_currentAccountIndex = 0;
+    m_globalBotIdCounter = 1;
+    m_allAccountFilePaths.clear();
+    m_newAccountFilePaths.clear(); // 【新增】清空新文件列表
 
     // 2. 读取配置文件
     QSettings settings(configPath, QSettings::IniFormat);
-
-    // 读取 [bnet] 节点
     m_targetServer = settings.value("bnet/server", "127.0.0.1").toString();
     m_targetPort = settings.value("bnet/port", 6112).toUInt();
-    m_userPrefix = settings.value("bnet/username", "bot").toString();
-    m_defaultPassword = settings.value("bnet/password", "wxc123").toString();
+    m_norepeatChars = settings.value("bots/norepeat", "abcd").toString();
 
-    QString userPrefix = settings.value("bnet/username", "bot").toString();
-    QString password = settings.value("bnet/password", "wxc123").toString();
+    m_initialLoginCount = initialCount;
 
-    LOG_INFO(QString("[BotManager] 初始化配置 - 服务器: %1:%2, 前缀: %3, 数量: %4")
-                 .arg(m_targetServer).arg(m_targetPort).arg(userPrefix).arg(count));
+    // 3. 生成或加载文件 (函数内部会填充 m_newAccountFilePaths)
+    bool isNewFiles = createBotAccountFilesIfNotExist();
 
-    // 3. 批量创建机器人
-    for (quint32 i = 0; i < count; ++i) {
-        // 生成用户名：前缀 + ID (例如 bot1, bot2)
-        QString fullUsername = (i == 0) ? QString("%1").arg(userPrefix) : QString("%1%2").arg(userPrefix).arg(i);
+    if (isNewFiles) {
+        LOG_INFO("🆕 检测到新生成的账号文件！准备开始批量注册...");
+        LOG_INFO("⏳ 注册过程为了防止被封IP设置了间隔，请耐心等待...");
 
-        Bot *bot = new Bot(i, fullUsername, password);
+        // 2. 只加载 "新生成的文件" 到注册队列
+        m_registrationQueue.clear();
 
-        // 创建 Client 实例
-        bot->client = new class Client(this);
-
-        // 设置命令来源
-        bot->commandSource = From_Server;
-
-        // 设置凭据 (默认使用 SRP 0x53)
-        bot->client->setCredentials(fullUsername, password, Protocol_SRP_0x53);
-
-        // === 绑定信号槽 ===
-
-        // 1. 连接成功/登录成功
-        connect(bot->client, &Client::authenticated, this, [this, bot]() {
-            this->onBotAuthenticated(bot);
-        });
-
-        // 2. 注册成功
-        connect(bot->client, &Client::accountCreated, this, [this, bot]() {
-            this->onBotAccountCreated(bot);
-        });
-
-        // 3. 房间创建成功
-        connect(bot->client, &Client::gameCreateSuccess, this, [this, bot]() {
-            this->onBotGameCreateSuccess(bot);
-        });
-
-        // 4. 错误处理
-        connect(bot->client, &Client::socketError, this, [this, bot](QString err) {
-            this->onBotError(bot, err);
-        });
-
-        // 5. 房主加入
-        connect(bot->client, &Client::hostJoinedGame, this, [this, bot](QString name) {
-            if (bot->state == BotState::Reserved) {
-                bot->state = BotState::Waiting;
-                LOG_INFO(QString("Bot-%1: 房主 %2 已就位，房间状态切换为 Waiting").arg(bot->id).arg(name));
-                emit botStateChanged(bot->id, bot->username, bot->state);
+        for (const QString &path : qAsConst(m_newAccountFilePaths)) {
+            QFile file(path);
+            if (file.open(QIODevice::ReadOnly)) {
+                QJsonDocument doc = QJsonDocument::fromJson(file.readAll());
+                QJsonArray array = doc.array();
+                for (const QJsonValue &val : qAsConst(array)) {
+                    QJsonObject obj = val.toObject();
+                    m_registrationQueue.enqueue(qMakePair(obj["u"].toString(), obj["p"].toString()));
+                }
+                file.close();
             }
-        });
+        }
 
-        m_bots.append(bot);
+        m_totalRegistrationCount = m_registrationQueue.size();
+
+        // 双重检查：虽然 flag 是 true，但如果队列空了(异常情况)，直接启动
+        if (m_totalRegistrationCount > 0) {
+            m_isMassRegistering = true;
+            processNextRegistration();
+        } else {
+            LOG_WARNING("⚠️ 标记为新文件，但解析出的账号队列为空，直接启动...");
+            loadMoreBots(initialCount);
+            startAll();
+        }
+
+    } else {
+        LOG_INFO("📂 所有账号文件均已存在，跳过注册，直接加载...");
+        loadMoreBots(initialCount);
+        startAll();
     }
-    LOG_INFO(QString("初始化完成，共创建 %1 个机器人对象").arg(m_bots.size()));
+}
+
+void BotManager::processNextRegistration()
+{
+    // 1. 检查队列是否为空
+    if (m_registrationQueue.isEmpty()) {
+        LOG_INFO(QString("🎉 批量注册完成！共处理 %1 个账号。").arg(m_totalRegistrationCount));
+        m_isMassRegistering = false;
+
+        if (m_tempRegistrationClient) {
+            m_tempRegistrationClient->deleteLater();
+            m_tempRegistrationClient = nullptr;
+        }
+
+        LOG_INFO(QString("🚀 正在启动前 %1 个机器人...").arg(m_initialLoginCount));
+        loadMoreBots(m_initialLoginCount);
+        startAll();
+        return;
+    }
+
+    // 2. 取出下一个账号
+    QPair<QString, QString> account = m_registrationQueue.dequeue();
+    QString user = account.first;
+    QString pass = account.second;
+
+    int current = m_totalRegistrationCount - m_registrationQueue.size();
+    if (current % 10 == 0) {
+        LOG_INFO(QString("⏳ 注册进度: %1/%2 ...").arg(current).arg(m_totalRegistrationCount));
+    }
+
+    // 3. 创建一次性 Client
+    m_tempRegistrationClient = new Client(this);
+    m_tempRegistrationClient->setCredentials(user, pass, Protocol_SRP_0x53);
+
+    // 连接成功 -> 发送注册包 (延迟50ms确保握手完成)
+    connect(m_tempRegistrationClient, &Client::connected, m_tempRegistrationClient, [this]() {
+        QTimer::singleShot(50, m_tempRegistrationClient, &Client::createAccount);
+    });
+
+    // 结束处理 Lambda
+    auto finishStep = [this](bool success, QString msg) {
+        if (!success) {
+            LOG_WARNING(msg);
+        }
+        m_tempRegistrationClient->disconnectFromHost();
+
+        // 延迟 200ms 后处理下一个
+        QTimer::singleShot(200, this, [this]() {
+            if (m_tempRegistrationClient) {
+                m_tempRegistrationClient->deleteLater();
+                m_tempRegistrationClient = nullptr;
+            }
+            this->processNextRegistration();
+        });
+    };
+
+    connect(m_tempRegistrationClient, &Client::accountCreated, this, [finishStep]() { finishStep(true, "成功"); });
+    connect(m_tempRegistrationClient, &Client::socketError, this, [finishStep, user](QString err) {
+        LOG_ERROR(QString("注册 [%1] 网络错误: %2").arg(user, err));
+        finishStep(false, err);
+    });
+
+    // 超时保护
+    QTimer::singleShot(5000, m_tempRegistrationClient, [this, finishStep, user]() {
+        if (m_tempRegistrationClient && m_tempRegistrationClient->isConnected()) {
+            LOG_WARNING(QString("注册 [%1] 超时，跳过").arg(user));
+            finishStep(false, "Timeout");
+        }
+    });
+
+    m_tempRegistrationClient->connectToHost(m_targetServer, m_targetPort);
+}
+
+int BotManager::loadMoreBots(int count)
+{
+    int loadedCount = 0;
+    while (loadedCount < count) {
+        if (m_currentFileIndex >= m_allAccountFilePaths.size()) {
+            LOG_WARNING("⚠️ 所有账号文件已全部加载完毕，无法再增加更多机器人！");
+            break;
+        }
+
+        QString currentFileName = m_allAccountFilePaths[m_currentFileIndex];
+        QFile file(currentFileName);
+        if (!file.open(QIODevice::ReadOnly)) {
+            LOG_ERROR(QString("❌ 无法读取文件: %1").arg(currentFileName));
+            m_currentFileIndex++;
+            m_currentAccountIndex = 0;
+            continue;
+        }
+
+        QJsonDocument doc = QJsonDocument::fromJson(file.readAll());
+        file.close();
+
+        if (!doc.isArray()) {
+            m_currentFileIndex++;
+            continue;
+        }
+
+        QJsonArray array = doc.array();
+        int totalInFile = array.size();
+
+        while (loadedCount < count && m_currentAccountIndex < totalInFile) {
+            QJsonObject obj = array[m_currentAccountIndex].toObject();
+            addBotInstance(obj["u"].toString(), obj["p"].toString());
+            loadedCount++;
+            m_currentAccountIndex++;
+        }
+
+        if (m_currentAccountIndex >= totalInFile) {
+            LOG_INFO(QString("📂 文件 [%1] 读取完毕，切换下一个...").arg(currentFileName));
+            m_currentFileIndex++;
+            m_currentAccountIndex = 0;
+        }
+    }
+    return loadedCount;
+}
+
+void BotManager::addBotInstance(const QString& username, const QString& password)
+{
+    Bot *bot = new Bot(m_globalBotIdCounter++, username, password);
+    bot->client = new class Client(this);
+    bot->commandSource = From_Server;
+    bot->client->setCredentials(username, password, Protocol_SRP_0x53);
+
+    connect(bot->client, &Client::authenticated, this, [this, bot]() { this->onBotAuthenticated(bot); });
+    connect(bot->client, &Client::accountCreated, this, [this, bot]() { this->onBotAccountCreated(bot); });
+    connect(bot->client, &Client::gameCreateSuccess, this, [this, bot]() { this->onBotGameCreateSuccess(bot); });
+    connect(bot->client, &Client::socketError, this, [this, bot](QString err) { this->onBotError(bot, err); });
+    connect(bot->client, &Client::disconnected, this, [this, bot]() { this->onBotDisconnected(bot); });
+    connect(bot->client, &Client::hostJoinedGame, this, [this, bot](QString name) {
+        if (bot->state == BotState::Reserved) {
+            bot->state = BotState::Waiting;
+            LOG_INFO(QString("Bot-%1: 房主 %2 已就位").arg(bot->id).arg(name));
+            emit botStateChanged(bot->id, bot->username, bot->state);
+        }
+    });
+
+    m_bots.append(bot);
+    qDebug().noquote() << QString("🆕 加载机器人: %1 (ID: %2)").arg(username).arg(bot->id);
 }
 
 bool BotManager::createGame(const QString &hostName, const QString &gameName, CommandSource commandSource, const QString &clientId)
@@ -98,12 +232,12 @@ bool BotManager::createGame(const QString &hostName, const QString &gameName, Co
     qDebug().noquote() << "🎮 [创建游戏任务启动]";
     qDebug().noquote() << QString("   ├─ 👤 虚拟房主: %1").arg(hostName);
     qDebug().noquote() << QString("   ├─ 📝 游戏名称: %1").arg(gameName);
-    qDebug().noquote() << QString("   ├─ 🆔 来源信息: %1 (%2)").arg(sourceStr, clientId.left(8));
+    qDebug().noquote() << QString("   ├─ 🆔 命令来源: %1 (%2)").arg(sourceStr, clientId.left(8));
 
     Bot *targetBot = nullptr;
-    bool needConnect = false; // 标记是否需要发起 TCP 连接
+    bool needConnect = false;
 
-    // 阶段 1: 优先寻找 [已登录 && 空闲] 的 Bot (最快路径)
+    // 1. 优先复用在线空闲的
     for (Bot *bot : qAsConst(m_bots)) {
         if (bot->state == BotState::Idle && bot->client && bot->client->isConnected()) {
             targetBot = bot;
@@ -111,18 +245,15 @@ bool BotManager::createGame(const QString &hostName, const QString &gameName, Co
         }
     }
 
-    // 如果找到在线空闲的，直接执行创建指令 (分支 B)
     if (targetBot) {
         qDebug().noquote() << QString("   ├─ ✅ 执行动作: 指派在线空闲机器人 [%1] 创建房间").arg(targetBot->username);
 
-        // 更新 Bot 属性
+        // 更新 Bot 基础信息
         targetBot->commandSource = commandSource;
         targetBot->gameInfo.clientId = clientId;
         targetBot->gameInfo.hostName = hostName;
         targetBot->gameInfo.gameName = gameName;
         targetBot->state = BotState::Creating;
-
-        // 设置虚拟房主并发送指令
         targetBot->client->setHost(hostName);
         targetBot->client->createGame(gameName, "", Provider_TFT_New, Game_TFT_Custom, SubType_None, Ladder_None, commandSource);
 
@@ -130,34 +261,31 @@ bool BotManager::createGame(const QString &hostName, const QString &gameName, Co
         return true;
     }
 
-    // 阶段 2: 寻找 [未登录/离线] 的现有 bot (资源复用)
+    // 2. 复用离线的
     if (!targetBot) {
         for (Bot *bot : qAsConst(m_bots)) {
             // 只要不是 Connecting, Creating, Idle (即 Disconnected 或 Error) 都可以复用
             if (bot->state == BotState::Disconnected) {
                 targetBot = bot;
-                needConnect = true; // 需要发起连接
+                needConnect = true;
                 qDebug().noquote() << QString("   ├─ ♻️ 资源复用: 唤醒离线机器人 [%1] (ID: %2)").arg(targetBot->username).arg(targetBot->id);
                 break;
             }
         }
     }
 
-    // 阶段 3: 如果还是没有，m_bots 外的 bot (动态扩容)
+    // 3. 动态扩容
     if (!targetBot) {
-        quint32 maxId = 0;
-        for (Bot *bot : qAsConst(m_bots)) {
-            if (bot->id > maxId) maxId = bot->id;
+        qDebug().noquote() << "   ├─ ⚠️ 当前池中无可用 Bot，尝试从文件加载...";
+
+        if (loadMoreBots(1) > 0) {
+            targetBot = m_bots.last();
+            needConnect = true;
+            qDebug().noquote() << QString("   ├─ 📂 动态扩容成功: 从文件加载了 [%1]").arg(targetBot->username);
+        } else {
+            qDebug().noquote() << "   └─ ❌ 动态扩容失败: 所有账号文件已耗尽！";
+            return false;
         }
-        quint32 newId = maxId + 1;
-        QString newUsername = QString("%1%2").arg(m_userPrefix).arg(newId);
-
-        qDebug().noquote() << "   ├─ ⚠️ 资源状态: 无可用 Bot -> 触发动态扩容";
-        qDebug().noquote() << QString("   ├─ 🤖 新建实例: [%1] (ID: %2)").arg(newUsername).arg(newId);
-
-        targetBot = new Bot(newId, newUsername, m_defaultPassword);
-        m_bots.append(targetBot);
-        needConnect = true;
     }
 
     // 统一处理: 启动连接流程 (适用于 阶段2 和 阶段3)
@@ -171,7 +299,7 @@ bool BotManager::createGame(const QString &hostName, const QString &gameName, Co
         // 2. 确保 Client 对象存在且信号已绑定
         if (!targetBot->client) {
             targetBot->client = new class Client(this);
-            targetBot->client->setCredentials(targetBot->username, m_defaultPassword, Protocol_SRP_0x53);
+            targetBot->client->setCredentials(targetBot->username, targetBot->password, Protocol_SRP_0x53);
 
             // 绑定信号
             connect(targetBot->client, &Client::authenticated, this, [this, targetBot]() { this->onBotAuthenticated(targetBot); });
@@ -181,7 +309,7 @@ bool BotManager::createGame(const QString &hostName, const QString &gameName, Co
             connect(targetBot->client, &Client::socketError, this, [this, targetBot](QString e) { this->onBotError(targetBot, e); });
             connect(targetBot->client, &Client::disconnected, this, [this, targetBot]() { this->onBotDisconnected(targetBot); });
         } else {
-            targetBot->client->setCredentials(targetBot->username, m_defaultPassword, Protocol_SRP_0x53);
+            targetBot->client->setCredentials(targetBot->username, targetBot->password, Protocol_SRP_0x53);
         }
 
         // 3. 设置挂起任务 (Pending Task)
@@ -205,7 +333,6 @@ bool BotManager::createGame(const QString &hostName, const QString &gameName, Co
 void BotManager::startAll()
 {
     int delay = 0;
-    const int interval = 200;
 
     for (Bot *bot : qAsConst(m_bots)) {
         if (!bot->client) continue;
@@ -217,7 +344,7 @@ void BotManager::startAll()
             }
         });
 
-        delay += interval;
+        delay += 200;
     }
 }
 
@@ -597,4 +724,114 @@ void BotManager::onBotDisconnected(Bot *bot)
     removeGameName(bot, true);
     LOG_INFO(QString("🔌 [%1] 断开连接").arg(bot->username));
     emit botStateChanged(bot->id, bot->username, bot->state);
+}
+
+// === 辅助函数 ===
+
+QChar BotManager::randomCase(QChar c)
+{
+    // 50% 概率大写，50% 概率小写
+    return (QRandomGenerator::global()->bounded(2) == 0) ? c.toLower() : c.toUpper();
+}
+
+QString BotManager::generateRandomSuffix(int length)
+{
+    const QString chars("abcdefghijklmnopqrstuvwxyz0123456789");
+    QString randomString;
+    for(int i=0; i<length; ++i) {
+        int index = QRandomGenerator::global()->bounded(chars.length());
+        randomString.append(chars.at(index));
+    }
+    return randomString;
+}
+
+QString BotManager::generateUniqueUsername()
+{
+    // 1. 获取基础字符集
+    QString raw = m_norepeatChars;
+    int prefixLen = raw.length();
+
+    // 2. 转换为 QList 进行洗牌
+    QList<QChar> charList;
+    for (QChar c : raw) {
+        charList.append(c);
+    }
+
+    for (int i = charList.size() - 1; i > 0; --i) {
+        int j = QRandomGenerator::global()->bounded(i + 1);
+        charList.swapItemsAt(i, j);
+    }
+
+    QString prefix;
+    for (QChar c : charList) {
+        prefix.append(randomCase(c));
+    }
+
+    // 3. 计算随机目标长度
+    const int MIN_LEN = 5;
+    const int MAX_LEN = 15;
+
+    int safeMin = qMax(MIN_LEN, prefixLen + 1);
+    int safeMax = qMax(MAX_LEN, prefixLen + 1);
+
+    // 随机生成一个总长度
+    int targetTotalLen = QRandomGenerator::global()->bounded(safeMin, safeMax + 1);
+
+    // 计算还需要补多少位
+    int suffixLen = targetTotalLen - prefixLen;
+
+    // 如果计算出来不需要补，至少补1位保证随机性
+    if (suffixLen < 1) suffixLen = 1;
+
+    // 4. 生成后缀
+    QString suffix = generateRandomSuffix(suffixLen);
+
+    return prefix + suffix;
+}
+
+bool BotManager::createBotAccountFilesIfNotExist()
+{
+    QString appDir = QCoreApplication::applicationDirPath();
+    QString configDir = appDir + "/config";
+    QDir dir(configDir);
+    if (!dir.exists()) dir.mkpath(".");
+
+    QStringList files = {"bots_part1.json", "bots_part2.json"};
+    bool generatedAny = false;
+
+    m_newAccountFilePaths.clear();
+
+    for (const QString &fileName : files) {
+        QString fullPath = configDir + "/" + fileName;
+
+        m_allAccountFilePaths.append(fullPath);
+
+        if (QFile::exists(fullPath)) {
+            continue;
+        }
+
+        LOG_INFO(QString("正在生成账号文件: %1 (基于 norepeat: %2)...").arg(fullPath, m_norepeatChars));
+
+        // 生成 100 个随机账号
+        QJsonArray array;
+        for (int i = 0; i < 100; ++i) {
+            QJsonObject obj;
+            obj["u"] = generateUniqueUsername();
+            obj["p"] = generateRandomSuffix(8);
+            array.append(obj);
+        }
+
+        QJsonDocument doc(array);
+        QFile file(fullPath);
+        if (file.open(QIODevice::WriteOnly)) {
+            file.write(doc.toJson());
+            file.close();
+            LOG_INFO(QString("✅ 已生成账号文件: %1").arg(fullPath));
+
+            m_newAccountFilePaths.append(fullPath);
+            generatedAny = true;
+        }
+    }
+
+    return generatedAny;
 }

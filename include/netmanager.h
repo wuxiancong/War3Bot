@@ -16,7 +16,7 @@
 #include <QNetworkDatagram>
 #include <QDateTime>
 
-// NAT类型枚举 (保持不变)
+// NAT类型枚举
 enum NATType {
     NAT_UNKNOWN = 0,
     NAT_OPEN_INTERNET = 1,

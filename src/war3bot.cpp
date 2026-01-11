@@ -29,28 +29,16 @@ War3Bot::~War3Bot()
 
 bool War3Bot::startServer(quint16 port, const QString &configFile)
 {
-    // 1. 智能配置文件搜索逻辑
-
+    // 1. 配置文件搜索逻辑
     m_configPath = configFile;
-
-    // 如果未指定配置文件，尝试在标准路径中搜索
     if (m_configPath.isEmpty()) {
         QStringList searchPaths;
-
-        // 路径 1: 开发环境/当前目录 (相对路径)
         searchPaths << "config/war3bot.ini";
-
-        // 路径 2: 可执行文件同级目录 (便携模式)
         searchPaths << QCoreApplication::applicationDirPath() + "/config/war3bot.ini";
-
 #ifdef Q_OS_LINUX
-        // 路径 3: Linux 标准配置目录 (根据之前的 CMake 安装规则)
         searchPaths << "/etc/War3Bot/config/war3bot.ini";
-
-        // 路径 4: Linux 备用配置目录 (直接在 etc 目录下)
         searchPaths << "/etc/War3Bot/war3bot.ini";
 #endif
-
         bool foundConfig = false;
         for (const QString &path : qAsConst(searchPaths)) {
             if (QFile::exists(path)) {
@@ -60,36 +48,27 @@ bool War3Bot::startServer(quint16 port, const QString &configFile)
                 break;
             }
         }
-
         if (!foundConfig) {
-            // 如果都找不到，回退默认值并打印警告
             m_configPath = "config/war3bot.ini";
-            LOG_WARNING("⚠️ 未在标准路径找到配置文件，将尝试默认相对路径: config/war3bot.ini");
-            LOG_WARNING(QString("已尝试路径: %1").arg(searchPaths.join(", ")));
+            LOG_WARNING("⚠️ 未找到配置文件，将尝试默认路径: config/war3bot.ini");
         }
     }
 
-    // 1. 搜索逻辑结束
-
+    // 防止重复启动
     if (m_netManager && m_netManager->isRunning()) {
         LOG_WARNING("服务器已在运行中");
         return true;
     }
 
+    // 初始化 NetManager
     if (!m_netManager) {
         m_netManager = new NetManager(this);
         m_botManager->setNetManager(m_netManager);
-
-        // 设置强制端口重用
-        if (m_forcePortReuse) {
-            // 这里可以传递强制重用标志给 NetManager
-            // 或者 NetManager 会自动处理
-        }
-
+        // 连接命令信号
         connect(m_netManager, &NetManager::commandReceived, m_botManager, &BotManager::onCommandReceived);
     }
 
-    // 使用最终确定的 m_configPath 启动
+    // 启动网络服务
     bool success = m_netManager->startServer(port, m_configPath);
 
     if (success) {
@@ -98,22 +77,21 @@ bool War3Bot::startServer(quint16 port, const QString &configFile)
 
             LOG_INFO(QString("正在读取配置: [%1]").arg(m_configPath));
 
-            QString bnetUser = settings.value("bnet/username", "").toString();
+            int botCount = settings.value("bots/count", 10).toInt();
 
-            if (bnetUser == "bot") {
-                LOG_INFO("检测到配置用户名为 'bot'，正在初始化基础机器人集群...");
-                m_botManager->initializeBots(10, m_configPath);
-                m_botManager->setP2PControlPort(port);
-                m_botManager->startAll();
-            } else {
-                LOG_INFO(QString("单用户模式就绪 (用户: %1)。等待 'connect' 命令连接战网。").arg(bnetUser));
-            }
+            LOG_INFO(QString("🚀 系统启动中: 目标在线机器人数量 [%1]").arg(botCount));
+
+            // 1. 设置服务器端口
+            m_botManager->setServerPort(port);
+
+            // 2. 初始化机器人集群
+            m_botManager->initializeBots(botCount, m_configPath);
+
         } else {
-            // 此时如果是 false，说明真的无论如何都找不到了
-            LOG_ERROR(QString("❌ 致命错误: 找不到配置文件: %1，无法读取战网信息").arg(m_configPath));
+            LOG_ERROR(QString("❌ 致命错误: 找不到配置文件: %1").arg(m_configPath));
         }
     } else {
-        LOG_ERROR("启动 War3Bot 服务器失败");
+        LOG_ERROR("启动 War3Bot 服务器失败 (端口可能被占用)");
     }
 
     return success;
