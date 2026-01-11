@@ -65,6 +65,8 @@ public:
     bool isRunning() const;
     QList<RegisterInfo> getOnlinePlayers() const;
     bool isClientRegistered(const QString &clientId) const;
+    bool sendErrorToClient(const QString &clientId, quint8 originalCmd, quint8 code,
+                           quint32 contextData = 0, bool isUdpError = false);
     bool sendEnterRoomCommand(const QString &clientId, quint64 port, bool isServerCmd);
     bool sendRetryCommand(QTcpSocket *socket);
 

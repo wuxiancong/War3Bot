@@ -10,42 +10,88 @@
 
 // === 1. 机器人状态枚举 ===
 enum class BotState {
+    Disconnected,                               // 断开连接
+    Connecting,                                 // 连接中
+    InLobby,                                    // 在大厅
     Unregistered,                               // 未注册 (初始状态或正在注册)
     Idle,                                       // 空闲中 (已登录在大厅)
     Creating,                                   // 创建中 (正在发送创建房间包)
+    Reserved,                                   // 已创建 (等待虚拟房主加入)
     Waiting,                                    // 等待中 (房间已创建，等待玩家加入)
+    Starting,                                   // 倒计时 (准备开始)
     InGame,                                     // 游戏中 (游戏已开始)
-    InLobby,                                    // 在大厅
-    Connecting,                                 // 连接中
-    Disconnected                                // 断开连接
+    Finishing                                  //  结算中 (游戏结束)
 };
 
-// === 2. 机器人结构体 ===
+// === 2. 房间信息结构体 ===
+struct GameInfo {
+    QString gameName;                           // 房间名
+    QString mapName;                            // 地图名称 (如 dota v6.83.w3x)
+    QString mapPath;                            // 地图路径 (方便下载或校验)
+    QString hostName;                           // 虚拟房主名字
+    QString clientId;                           // 虚拟房主的唯一ID (用于校验身份)
+
+    int maxPlayers = 10;                        // 最大玩家数
+    int currentPlayerCount = 0;                 // 当前人数
+
+    // 时间统计
+    qint64 createTime = 0;                      // 房间创建时刻 (用于计算超时未加入)
+    qint64 gameStartTime = 0;                   // 游戏开始时刻
+    qint64 gameEndTime = 0;                     // 游戏结束时刻
+};
+
+// === 3. 机器人结构体 ===
 struct Bot {
-    quint32 id;                                 // 数字 ID (1, 2, 3...)
-    Client *client;                             // 客户端对象
-    BotState state;                             // 当前状态
-    QString username;                           // 完整用户名 (例如 bot1)
-    QString password;                           // 密码
-    QString clientId;                           // 客户端Id
-    QString gameName;                           // 游戏名称
-    QString hostName;                           // 主机名称
-    CommandSource commandSource = From_Server;  // 命令来源
+    quint32 id;
+    Client *client;
+    BotState state;
+    QString username;
+    QString password;
+    GameInfo gameInfo;
+    QSet<QString> banList;
+    QSet<QString> kickList;
+    qint64 lastRefreshTime;
+    QMap<QString, PlayerData> PlayerDatas;
+    CommandSource commandSource = From_Server;
 
     struct Task {
-        bool hasTask = false;                   // 是否有任务
-        qint64 startTime = 0;                   // 开始时间
-        QString hostName;                       // 谁下的命令 (虚拟房主)
-        QString gameName;                       // 房间名
-        CommandSource commandSource;            // 命令来源
+        bool hasTask = false;
+        qint64 requestTime = 0;
+        QString hostName;
+        QString clientId;
+        QString gameName;
+        QString mapName;
+        CommandSource commandSource;
     } pendingTask;
 
     Bot(quint32 _id, QString _user, QString _pass)
         : id(_id), client(nullptr), state(BotState::Disconnected), username(_user), password(_pass) {}
 
     ~Bot() { if (client) client->deleteLater(); }
+
+    // 辅助函数：重置游戏状态
+    void resetGameState() {
+        // 1. 清理玩家和黑名单
+        PlayerDatas.clear();
+        kickList.clear();
+        banList.clear();
+
+        // 2. 重置游戏元数据
+        gameInfo = GameInfo();
+
+        // 3. 重置挂起任务！防止逻辑残留
+        pendingTask = Task();
+
+        // 4. 重置辅助标记
+        lastRefreshTime = 0;
+        commandSource = From_Server;
+
+        // 5. 状态重置
+        state = BotState::Idle;
+    }
 };
 
+// === 4. 指令信息结构体 ===
 struct CommandInfo {
     QString text;
     QString clientId;
@@ -68,6 +114,9 @@ public:
 
     // 停止所有机器人
     void stopAll();
+
+    // 清楚机器人数据
+    void removeGameName(Bot *bot, bool disconnectFlag = false);
 
     // 获取所有机器人列表
     const QVector<Bot*>& getAllBots() const;
@@ -107,6 +156,8 @@ private:
     QString m_userPrefix;
     QString m_defaultPassword;
     NetManager *m_netManager = nullptr;
+    QMap<QString, Bot*> m_activeGames;
+    QMap<QString, qint64> m_lastHostTime;
     QMap<QString, CommandInfo> m_commandInfos;
 };
 

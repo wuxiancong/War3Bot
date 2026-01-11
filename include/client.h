@@ -314,6 +314,7 @@ struct PlayerData {
     quint8          pid             = 0;
     QString         name;
     QString         clientUuid      = "";
+    bool            isVisualHost    = false;
 
     // 网络连接
     QTcpSocket*     socket          = nullptr;
@@ -428,6 +429,7 @@ signals:
     void accountCreated();
     void gameCreateFail();
     void socketError(const QString &error);
+    void hostJoinedGame(const QString &username);
     void gameCreateSuccess(CommandSource commandSource);
     void requestCreateGame(const QString &username, const QString &gameName, CommandSource commandSource);
 
@@ -500,7 +502,7 @@ private:
     QTimer                          *m_pingTimer            = nullptr;
 
     // 连接管理
-    NetManager                       *m_netManager            = nullptr;
+    NetManager                      *m_netManager            = nullptr;
     QString                         m_serverAddr;
     quint16                         m_serverPort            = 0;
 

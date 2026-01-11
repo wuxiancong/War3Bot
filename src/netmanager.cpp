@@ -1061,6 +1061,55 @@ bool NetManager::sendRetryCommand(QTcpSocket *socket)
     return sendTcpPacket(socket, PacketType::S_C_COMMAND, &pkt, sizeof(pkt));
 }
 
+bool NetManager::sendErrorToClient(const QString &clientId, quint8 originalCmd, quint8 code, quint32 contextData, bool isUdpError)
+{
+    // 1. 构造错误包
+    SCErrorPacket pkt;
+    memset(&pkt, 0, sizeof(pkt));
+    pkt.originalCommand = originalCmd;
+    pkt.errorCode = code;
+    pkt.contextData = contextData;
+
+    // 2. 逻辑分支 A: 优先尝试 TCP 发送 (默认行为)
+    if (!isUdpError) {
+        if (m_tcpClients.contains(clientId)) {
+            QTcpSocket *socket = m_tcpClients[clientId];
+            if (socket && socket->state() == QAbstractSocket::ConnectedState) {
+
+                bool ok = sendTcpPacket(socket, PacketType::S_C_ERROR, &pkt, sizeof(pkt));
+
+                if (ok) {
+                    LOG_INFO(QString("🚫 [TCP Error] -> %1 | Code: %2").arg(clientId.left(8)).arg(code));
+                    return true;
+                } else {
+                    LOG_WARNING(QString("⚠️ [TCP Error] 发送失败 -> %1 (Socket错误), 尝试回退到 UDP").arg(clientId.left(8)));
+                    // 发送失败，向下穿透到 UDP 逻辑
+                }
+            }
+        } else {
+            LOG_DEBUG(QString("ℹ️ [TCP Error] 目标无TCP连接 -> %1, 尝试回退到 UDP").arg(clientId.left(8)));
+        }
+    }
+
+    // 3. 逻辑分支 B: UDP 发送 (回退方案或强制指定)
+    QReadLocker locker(&m_registerInfosLock);
+    if (m_registerInfos.contains(clientId)) {
+        const RegisterInfo &info = m_registerInfos[clientId];
+        QHostAddress targetAddr(info.publicIp);
+        quint64 targetPort = info.publicPort;
+
+        locker.unlock();
+
+        sendUdpPacket(targetAddr, targetPort, PacketType::S_C_ERROR, &pkt, sizeof(pkt));
+
+        LOG_INFO(QString("🚫 [UDP Error] -> %1:%2 | Code: %3").arg(targetAddr.toString()).arg(targetPort).arg(code));
+        return true;
+    }
+
+    LOG_ERROR(QString("❌ [Error发送失败] 找不到目标用户: %1").arg(clientId));
+    return false;
+}
+
 bool NetManager::sendToClient(const QString &clientId, const QByteArray &data)
 {
     if (!m_tcpClients.contains(clientId)) {

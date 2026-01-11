@@ -39,6 +39,20 @@ enum UploadErrorCode : quint8 {
     UPLOAD_ERR_OVERFLOW             = 7
 };
 
+enum CommandErrorCode : quint8 {
+    CMD_OK                          = 0,
+    CMD_ERR_UNKNOWN_CMD             = 1,
+    CMD_ERR_PARAM_ERROR             = 2,
+    CMD_ERR_ALREADY_IN_GAME         = 3,
+    CMD_ERR_COOLDOWN                = 4,
+    CMD_ERR_PERMISSION_DENIED       = 5,
+    CMD_ERR_MAP_NOT_SUPPORTED       = 6,
+    CMD_ERR_NAME_TOO_LONG           = 7,
+    CMD_ERR_GAME_NAME_EXISTS        = 8,
+    CMD_ERR_NO_BOTS_AVAILABLE       = 9,
+    CMD_ERR_CREATE_FAILED           = 10
+};
+
 #pragma pack(push, 1)
 
 struct PacketHeader {
@@ -49,6 +63,12 @@ struct PacketHeader {
     quint32 seq;
     quint16 payloadLen;
     quint16 checksum;
+};
+
+struct SCErrorPacket {
+    quint8 originalCommand;
+    quint8 errorCode;
+    quint32 contextData;
 };
 
 struct CSRegisterPacket {

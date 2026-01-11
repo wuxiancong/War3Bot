@@ -706,6 +706,17 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         playerData.lastResponseTime = now;
         playerData.lastDownloadTime = now;
 
+        // 判断是否为虚拟主机 (Virtual Host)
+        if (!m_host.isEmpty() && m_host.compare(clientPlayerName, Qt::CaseInsensitive) == 0) {
+            playerData.isVisualHost = true;
+            LOG_INFO(QString("👑 虚拟房主 [%1] 已加入房间！").arg(clientPlayerName));
+
+            // 发送信号通知 BotManager 修改 Bot 状态为 Waiting
+            emit hostJoinedGame(clientPlayerName);
+        } else {
+            playerData.isVisualHost = false;
+        }
+
         m_players.insert(hostId, playerData);
 
         LOG_INFO(QString("💾 已注册玩家: [%1] PID: %2").arg(clientPlayerName).arg(hostId));
@@ -1346,13 +1357,29 @@ void Client::stopAdv() {
 }
 
 void Client::cancelGame() {
+    // 1. 停止广播
     stopAdv();
-    enterChat();
-    LOG_INFO("❌ 取消游戏，返回大厅");
-    if (m_pingTimer->isActive()) {
-        m_pingTimer->stop();
-        LOG_INFO("🛑 Ping 循环已停止");
+
+    // 2. 断开所有玩家连接
+    for (auto socket : qAsConst(m_playerSockets)) {
+        socket->disconnectFromHost();
+        socket->deleteLater();
     }
+    m_playerSockets.clear();
+    m_playerBuffers.clear();
+    m_players.clear();
+
+    // 3. 重置槽位
+    initSlots();
+
+    // 4. 重置其他标志
+    m_gameStarted = false;
+    m_hostCounter++;
+
+    // 5. 停止 Ping 循环
+    if (m_pingTimer->isActive()) m_pingTimer->stop();
+
+    LOG_INFO("❌ Client 网络层游戏状态已重置");
 }
 
 void Client::createGame(const QString &gameName, const QString &password, ProviderVersion providerVersion, ComboGameType comboGameType, SubGameType subGameType, LadderType ladderType, CommandSource commandSource)
