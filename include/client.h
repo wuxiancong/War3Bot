@@ -407,7 +407,7 @@ public:
 
     // --- 工具函数 ---
     void sendPingLoop();                                // 定时发送Ping
-    void checkPlayerTimeouts();                         // 检查玩家超时
+    void checkPlayerTimeout();                         // 检查玩家超时
     QString getPrimaryIPv4();                           // 获取本机IPv4
     bool bindToRandomPort();                            // 绑定随机UDP端口
     bool isBlackListedPort(quint16 port);               // 检查端口黑名单
