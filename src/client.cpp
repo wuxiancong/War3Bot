@@ -2104,11 +2104,14 @@ QByteArray Client::createW3GSStartDownloadPacket(quint8 toPid)
     // Header: F7 3F [Len]
     out << (quint8)0xF7 << (quint8)0x3F << (quint16)0;
 
-    // Unknown (Always 1)
-    out << (quint32)1;
+    // 1. From PID (发送者，通常 Bot 是 PID 1)
+    out << (quint8)1;
 
-    // Player ID (接收者)
+    // 2. To PID (接收者)
     out << (quint8)toPid;
+
+    // 3. Unknown (Always 1)
+    out << (quint32)1;
 
     // 回填长度
     QDataStream lenStream(&packet, QIODevice::ReadWrite);
