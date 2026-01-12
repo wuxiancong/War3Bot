@@ -699,7 +699,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
     }
 
     switch (id) {
-    case W3GS_REQJOIN: // 处理客户端发过来的 0x1E 包
+    case W3GS_REQJOIN: //  [0x1E] 客户端请求加入游戏
     {
         // 1. 解析客户端请求
         QDataStream in(payload);
@@ -859,7 +859,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
     }
     break;
 
-    case W3GS_CHAT_TO_HOST: // 处理客户端发过来的 0x28 包
+    case W3GS_CHAT_TO_HOST: // [0x28] 客户端发送聊天消息
     {
         if (payload.size() < 7) return;
         QDataStream in(payload);
@@ -911,7 +911,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
     }
     break;
 
-    case W3GS_STARTDOWNLOAD: // 处理客户端发过来的 0x3F 包
+    case W3GS_STARTDOWNLOAD: // [0x3F] 客户端主动请求开始下载
     {
         // 1. 查找玩家
         quint8 currentPid = 0;
@@ -922,7 +922,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
         PlayerData &playerData = m_players[currentPid];
 
-        qDebug().noquote() << QString("📥 [W3GS] 收到请求: 0x3F (客户端请求开始下载)");
+        qDebug().noquote() << QString("📥 [W3GS] 收到请求: 0x3F (StartDownload)");
         qDebug().noquote() << QString("   └─ 👤 玩家: %1 (PID: %2)").arg(playerData.name).arg(currentPid);
 
         // 2. 防重复检查
@@ -932,45 +932,49 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         }
 
         // 3. 查找槽位并触发下载
-        bool found = false;
+        bool validSlot = false;
         for (int i = 0; i < m_slots.size(); ++i) {
             if (m_slots[i].pid == currentPid) {
+                // 如果已经在 Completed 状态，就不重新开始了
                 if (m_slots[i].downloadStatus != Completed) {
                     m_slots[i].downloadStatus = Downloading;
-                    playerData.isDownloading = true;
-                    playerData.downloadOffset = 0;
-                    found = true;
-                    break;
+                    validSlot = true;
                 }
+                break;
             }
         }
 
-        if (found) {
-            qDebug().noquote() << "   └─ 🚀 响应请求: 启动下载序列";
+        if (validSlot) {
+            qDebug().noquote() << "   └─ 🚀 响应: 启动下载序列 (分包发送)";
 
-            // 获取首个分片
+            // --- 步骤 A: 发送开始信号 ---
+            socket->write(createW3GSStartDownloadPacket(currentPid));
+            socket->flush();
+
+            // --- 步骤 B: 更新大厅槽位状态 ---
+            socket->write(createW3GSSlotInfoPacket());
+            socket->flush();
+
+            // --- 步骤 C: 发送第一块地图数据 ---
+            playerData.isDownloading = true;
+            playerData.downloadOffset = 0;
+
             const QByteArray &mapData = m_war3Map.getMapRawData();
             int chunkSize = 1442;
             if (mapData.size() < chunkSize) chunkSize = mapData.size();
             QByteArray firstChunk = mapData.mid(0, chunkSize);
 
-            // 发送 Start(0x3F) + Slot(0x09) + Chunk(0x43)
-            QByteArray packetBatch;
-            packetBatch.append(createW3GSStartDownloadPacket(currentPid));
-            packetBatch.append(createW3GSSlotInfoPacket());
-            packetBatch.append(createW3GSMapPartPacket(currentPid, 1, 0, firstChunk));
-
-            socket->write(packetBatch);
+            socket->write(createW3GSMapPartPacket(currentPid, 1, 0, firstChunk));
             socket->flush();
 
             playerData.downloadOffset += chunkSize;
         } else {
-            qDebug().noquote() << "   └─ ❓ 异常: 玩家似乎已有地图或槽位状态错误";
+            qDebug().noquote() << "   └─ ℹ️ 忽略: 玩家已有地图或槽位无效";
         }
     }
     break;
 
-    case W3GS_MAPSIZE: // 处理客户端发过来的 0x42 包
+    case W3GS_MAPSIZE: // [0x42] 客户端报告地图状态
     {
         if (payload.size() < 9) return;
         QDataStream in(payload);
@@ -978,7 +982,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         quint32 unknown; quint8 sizeFlag; quint32 clientMapSize;
         in >> unknown >> sizeFlag >> clientMapSize;
 
-        // 查找玩家
+        // 1. 查找玩家
         quint8 currentPid = 0;
         QString playerName = "Unknown";
         for (auto it = m_players.begin(); it != m_players.end(); ++it) {
@@ -992,14 +996,13 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
         quint32 hostMapSize = m_war3Map.getMapSize();
         bool hasMap = (clientMapSize == hostMapSize && sizeFlag == 1);
+        PlayerData &playerData = m_players[currentPid];
 
-        // --- 🌲 树形日志开始 ---
-        qDebug().noquote() << QString("📥 [W3GS] 收到数据包: 0x42 (W3GS_MAPSIZE)");
+        qDebug().noquote() << QString("📥 [W3GS] 收到数据包: 0x42 (MapSize)");
         qDebug().noquote() << QString("   ├─ 👤 玩家: %1 (PID: %2)").arg(playerName).arg(currentPid);
-        qDebug().noquote() << QString("   ├─ 📊 报告: Size=%1 (本机: %2) | Flag=%3")
+        qDebug().noquote() << QString("   ├─ 📊 报告: Size=%1 (Host: %2) | Flag=%3")
                                   .arg(clientMapSize).arg(hostMapSize).arg(sizeFlag);
 
-        PlayerData &playerData = m_players[currentPid];
         bool slotUpdated = false;
 
         for (int i = 0; i < m_slots.size(); ++i) {
@@ -1018,27 +1021,31 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
                 else {
                     // --- 情况 B: 需要下载 ---
                     if (m_slots[i].downloadStatus != Downloading) {
-                        m_slots[i].downloadStatus = Downloading; // 0%
+                        m_slots[i].downloadStatus = Downloading; // 界面显示 0%
+
+                        qDebug().noquote() << "   └─ 🚀 流程: 触发下载序列";
+                        qDebug().noquote() << "      ├─ 1️⃣ 发送 StartDownload (0x3F) [Flush]";
+                        qDebug().noquote() << "      ├─ 2️⃣ 发送 SlotInfo (0x09) [Flush]";
+                        qDebug().noquote() << "      └─ 3️⃣ 发送 First Chunk (0x43)";
+
+                        // --- 步骤 A: 发送开始信号 ---
+                        socket->write(createW3GSStartDownloadPacket(currentPid));
+                        socket->flush();
+
+                        // --- 步骤 B: 更新状态 ---
+                        socket->write(createW3GSSlotInfoPacket());
+                        socket->flush();
+
+                        // --- 步骤 C: 发送第一块数据 ---
                         playerData.isDownloading = true;
                         playerData.downloadOffset = 0;
 
-                        // 获取首个分片
                         const QByteArray &mapData = m_war3Map.getMapRawData();
-                        int chunkSize = 1442; // 标准 MTU 安全值
+                        int chunkSize = 1442;
                         if (mapData.size() < chunkSize) chunkSize = mapData.size();
                         QByteArray firstChunk = mapData.mid(0, chunkSize);
 
-                        qDebug().noquote() << "   └─ 🚀 流程: 触发下载序列";
-                        qDebug().noquote() << "      ├─ 1️⃣ 发送 StartDownload (0x3F)";
-                        qDebug().noquote() << "      ├─ 2️⃣ 更新 SlotInfo (0x09) -> DownloadStatus: 0%";
-                        qDebug().noquote() << QString("      └─ 3️⃣ 发送 MapPart (0x43) -> Offset: 0, Size: %1").arg(chunkSize);
-
-                        QByteArray packetBatch;
-                        packetBatch.append(createW3GSStartDownloadPacket(currentPid));
-                        packetBatch.append(createW3GSSlotInfoPacket());
-                        packetBatch.append(createW3GSMapPartPacket(currentPid, 1, 0, firstChunk));
-
-                        socket->write(packetBatch);
+                        socket->write(createW3GSMapPartPacket(currentPid, 1, 0, firstChunk));
                         socket->flush();
 
                         playerData.downloadOffset += chunkSize;
@@ -1050,11 +1057,12 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
             }
         }
 
+        // 如果状态变更（变成了 Completed），需要广播给其他人
         if (slotUpdated) broadcastSlotInfo();
     }
     break;
 
-    case W3GS_MAPPARTOK: // 处理客户端发过来的 0x44 包
+    case W3GS_MAPPARTOK: //  [0x44] 客户端确认地图 OK
     {
         if (payload.size() < 9) return;
         QDataStream in(payload);
@@ -1074,7 +1082,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
     }
     break;
 
-    case W3GS_PONG_TO_HOST: // 处理客户端发过来的 0x46 包
+    case W3GS_PONG_TO_HOST: //  [0x46] 客户端回复 PING
     {
         if (payload.size() < 4) return;
         QDataStream in(payload);
