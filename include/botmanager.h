@@ -100,7 +100,7 @@ public:
     void startAll();
     void stopAll();
     int loadMoreBots(int count);
-    void removeGameName(Bot *bot, bool disconnectFlag = false);
+    void removeGame(Bot *bot, bool disconnectFlag = false);
 
     // --- 游戏创建与指令 ---
     bool createGame(const QString& hostName, const QString &gameName, CommandSource commandSource, const QString &clientUuid);
@@ -122,6 +122,7 @@ private slots:
     void onBotGameCreateFail(Bot *bot);
     void onBotAuthenticated(Bot *bot);
     void onBotDisconnected(Bot *bot);
+    void onBotGameCanceled(Bot *bot);
     void onBotPendingTaskTimeout();
 
     // 内部处理注册队列

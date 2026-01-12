@@ -434,6 +434,7 @@ public:
     void setBotFlag(bool isBot) { m_isBot = isBot; }
 signals:
     void connected();
+    void gameCanceled();
     void disconnected();
     void authenticated();
     void accountCreated();

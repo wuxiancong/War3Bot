@@ -51,9 +51,7 @@ void BotManager::initializeBots(quint32 initialCount, const QString &configPath)
     qDebug().noquote() << QString("   │  ├─ 🖥️ 服务器: %1:%2").arg(m_targetServer).arg(m_targetPort);
     qDebug().noquote() << QString("   │  └─ 🔐 种子码: %1").arg(m_norepeatChars);
 
-    // 4. 生成或加载文件 (函数内部会打印它自己的树状日志，我们这里只处理结果)
-    // createBotAccountFilesIfNotExist 内部已经有了日志输出，这里不需要额外缩进，
-    // 但为了视觉统一，你可以假设该函数输出是独立的模块日志
+    // 4. 生成或加载文件
     bool isNewFiles = createBotAccountFilesIfNotExist();
 
     // 5. 根据文件状态决定流程
@@ -282,6 +280,7 @@ void BotManager::addBotInstance(const QString& username, const QString& password
 
     // 基础状态信号
     connect(bot->client, &Client::disconnected, this, [this, bot]() { this->onBotDisconnected(bot); });
+    connect(bot->client, &Client::gameCanceled, this, [this, bot]() { this->onBotGameCanceled(bot); });
     connect(bot->client, &Client::authenticated, this, [this, bot]() { this->onBotAuthenticated(bot); });
     connect(bot->client, &Client::accountCreated, this, [this, bot]() { this->onBotAccountCreated(bot); });
     connect(bot->client, &Client::gameCreateFail, this, [this, bot]() { this->onBotGameCreateFail(bot); });
@@ -376,12 +375,13 @@ bool BotManager::createGame(const QString &hostName, const QString &gameName, Co
             targetBot->client->setCredentials(targetBot->username, targetBot->password, Protocol_SRP_0x53);
 
             // 绑定信号
+            connect(targetBot->client, &Client::disconnected, this, [this, targetBot]() { this->onBotDisconnected(targetBot); });
+            connect(targetBot->client, &Client::gameCanceled, this, [this, targetBot]() { this->onBotGameCanceled(targetBot); });
             connect(targetBot->client, &Client::authenticated, this, [this, targetBot]() { this->onBotAuthenticated(targetBot); });
             connect(targetBot->client, &Client::accountCreated, this, [this, targetBot]() { this->onBotAccountCreated(targetBot); });
-            connect(targetBot->client, &Client::gameCreateSuccess, this, [this, targetBot]() { this->onBotGameCreateSuccess(targetBot); });
             connect(targetBot->client, &Client::gameCreateFail, this, [this, targetBot]() { this->onBotGameCreateFail(targetBot); });
-            connect(targetBot->client, &Client::disconnected, this, [this, targetBot]() { this->onBotDisconnected(targetBot); });
-            connect(targetBot->client, &Client::socketError, this, [this, targetBot](QString e) { this->onBotError(targetBot, e); });
+            connect(targetBot->client, &Client::gameCreateSuccess, this, [this, targetBot]() { this->onBotGameCreateSuccess(targetBot); });
+            connect(targetBot->client, &Client::socketError, this, [this, targetBot](QString error) { this->onBotError(targetBot, error); });
             connect(targetBot->client, &Client::hostJoinedGame, this, [this, targetBot](const QString &name) { this->onHostJoinedGame(targetBot, name); });
         } else {
             targetBot->client->setCredentials(targetBot->username, targetBot->password, Protocol_SRP_0x53);
@@ -434,14 +434,13 @@ void BotManager::stopAll()
     }
 }
 
-void BotManager::removeGameName(Bot *bot, bool disconnectFlag)
+void BotManager::removeGame(Bot *bot, bool disconnectFlag)
 {
     if (!bot) return;
 
     // 1. 从全局活跃房间表中移除
     QString lowerName = bot->gameInfo.gameName.toLower();
     if (!lowerName.isEmpty() && m_activeGames.contains(lowerName)) {
-        // 确保移除的是当前 Bot 的记录
         if (m_activeGames.value(lowerName) == bot) {
             m_activeGames.remove(lowerName);
             LOG_INFO(QString("🔓 释放房间名锁定: %1").arg(lowerName));
@@ -743,7 +742,7 @@ void BotManager::onBotGameCreateFail(Bot *bot)
     }
 
     // 3. 清理资源
-    removeGameName(bot);
+    removeGame(bot);
 
     // 4. 闭环日志
     qDebug().noquote() << "   └─ 🔄 [状态重置] 游戏信息已清除";
@@ -823,7 +822,7 @@ void BotManager::onBotPendingTaskTimeout()
                 }
 
                 // 3. 取消游戏
-                removeGameName(bot, false);
+                removeGame(bot, false);
                 bot->client->cancelGame();
             }
         }
@@ -851,7 +850,7 @@ void BotManager::onBotError(Bot *bot, QString error)
     }
 
     // 3. 清理资源 (强制断线模式)
-    removeGameName(bot, true);
+    removeGame(bot, true);
 
     // 4. 发出状态变更信号
     emit botStateChanged(bot->id, bot->username, bot->state);
@@ -879,13 +878,42 @@ void BotManager::onBotDisconnected(Bot *bot)
     qDebug().noquote() << QString("🔌 [断开连接] Bot-%1 (%2)").arg(bot->id).arg(bot->username);
 
     // 2. 资源清理
-    removeGameName(bot, true);
+    removeGame(bot, true);
 
     // 3. 状态变更
     emit botStateChanged(bot->id, bot->username, bot->state);
 
     // 4. 闭环
     qDebug().noquote() << "   └─ 🧹 [清理完成] 状态已更新为 Disconnected";
+}
+
+void BotManager::onBotGameCanceled(Bot *bot)
+{
+    if (!bot) return;
+
+    // 1. 防止重复处理
+    if (bot->state == BotState::Idle && bot->gameInfo.gameName.isEmpty()) {
+        return;
+    }
+
+    qDebug().noquote() << QString("🔄 [状态同步] 收到 Client 取消信号: Bot-%1").arg(bot->id);
+
+    // 2. 从全局活跃游戏列表 (m_activeGames) 中移除
+    QString lowerName = bot->gameInfo.gameName.toLower();
+    if (!lowerName.isEmpty()) {
+        if (m_activeGames.value(lowerName) == bot) {
+            m_activeGames.remove(lowerName);
+            qDebug().noquote() << QString("   ├─ 🔓 释放房间名锁定: %1").arg(lowerName);
+        }
+    }
+
+    // 3. 重置 Bot
+    bot->resetGameState();
+
+    // 4. 通知上层应用
+    emit botStateChanged(bot->id, bot->username, bot->state);
+
+    qDebug().noquote() << "   └─ ✅ Bot 状态已更新为 Idle";
 }
 
 // === 辅助函数 ===

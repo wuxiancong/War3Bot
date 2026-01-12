@@ -944,7 +944,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         }
 
         if (validSlot) {
-            qDebug().noquote() << "   └─ 🚀 响应: 启动下载序列 (延迟发送首块)";
+            qDebug().noquote() << "   └─ 🚀 响应: 启动下载序列";
 
             // --- 步骤 A: 发送开始信号 (0x3F) ---
             socket->write(createW3GSStartDownloadPacket(currentPid));
@@ -1022,7 +1022,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
                     if (m_slots[i].downloadStatus != Downloading) {
                         m_slots[i].downloadStatus = Downloading;
 
-                        qDebug().noquote() << "   └─ 🚀 流程: 触发下载序列 (延迟发送首块)";
+                        qDebug().noquote() << "   └─ 🚀 流程: 触发下载序列";
                         qDebug().noquote() << "      ├─ 1️⃣ 发送 StartDownload (0x3F) [Flush]";
                         qDebug().noquote() << "      ├─ 2️⃣ 发送 SlotInfo (0x09) [Flush]";
                         qDebug().noquote() << "      └─ 3️⃣ 延迟 200ms 发送 First Chunk (0x43)";
@@ -1692,7 +1692,13 @@ void Client::cancelGame() {
     // 2. 停止广播
     stopAdv();
 
-    // 3. 断开所有玩家连接
+    // 3. 进入大厅
+    enterChat();
+
+    // 4. 进入频道
+    joinRandomChannel();
+
+    // 5. 断开所有玩家连接
     int playerCount = m_playerSockets.size();
     if (playerCount > 0) {
         qDebug().noquote() << QString("   ├─ 🔌 断开连接: 清理 %1 名玩家 Socket").arg(playerCount);
@@ -1709,21 +1715,22 @@ void Client::cancelGame() {
     m_playerBuffers.clear();
     m_players.clear();
 
-    // 4. 重置槽位
+    // 6. 重置槽位
     initSlots();
     qDebug().noquote() << "   ├─ 🧹 内存清理: 槽位重置 & 容器清空";
 
-    // 5. 重置标志位
+    // 7. 重置标志位
     m_gameStarted = false;
     m_hostCounter++;
 
-    // 6. 停止 Ping 循环
+    // 8. 停止 Ping 循环
     if (m_pingTimer->isActive()) {
         m_pingTimer->stop();
         qDebug().noquote() << "   └─ 🛑 计时器: Ping 循环已停止";
     } else {
         qDebug().noquote() << "   └─ ✅ 状态: 就绪 (Idle)";
     }
+    emit gameCanceled();
 }
 
 void Client::createGame(const QString &gameName, const QString &password, ProviderVersion providerVersion, ComboGameType comboGameType, SubGameType subGameType, LadderType ladderType, CommandSource commandSource)
