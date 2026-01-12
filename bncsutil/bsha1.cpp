@@ -14,7 +14,7 @@
 #include <bncsutil/mutil.h>
 #include <bncsutil/bsha1.h>
 #include <cstring>
-#include <cstdint> // [新增] 支持 uint32_t
+#include <cstdint>
 
 #define USE_NEW_BSHA1	0
 

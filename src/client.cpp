@@ -17,8 +17,6 @@
 #include <QNetworkInterface>
 #include <QCryptographicHash>
 
-#include <zlib.h>
-
 // =========================================================
 // 1. 生命周期 (构造与析构)
 // =========================================================
@@ -1077,7 +1075,10 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
         m_players[currentPid].lastResponseTime = QDateTime::currentMSecsSinceEpoch();
         m_players[currentPid].lastDownloadTime = QDateTime::currentMSecsSinceEpoch();
-        sendNextMapPart(currentPid);
+        QTimer::singleShot(5, this, [this, currentPid]() {
+            if (m_players.contains(currentPid))
+                sendNextMapPart(currentPid);
+        });
     }
     break;
 
@@ -2233,8 +2234,7 @@ QByteArray Client::createW3GSMapPartPacket(quint8 toPid, quint8 fromPid, quint32
     ds << totalSize;
 
     // CRC Calculation (Standard Types)
-    unsigned long crc = crc32(0L, nullptr, 0);
-    crc = crc32(crc, reinterpret_cast<const unsigned char*>(chunkData.constData()), chunkData.size());
+    unsigned long crc = m_war3Map.calcCrc32(chunkData.constData(), chunkData.size());
 
     // Fill CRC (Offset 14)
     ds.device()->seek(14);
