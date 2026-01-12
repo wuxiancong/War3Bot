@@ -462,10 +462,9 @@ quint32 War3Map::calcBlizzardHash(const QByteArray &data) {
     // 1. 处理 4 字节块 (DWORD)
     // 汇编: game.dll + 39E5C3 | shr esi,2 (Count of DWORDs)
     while (length >= 4) {
-        quint32 chunk;
-        // 安全拷贝 4 字节，编译器会将其优化为指令级操作
+        // 读取 4 字节 (强制转换为 quint32, 依赖 CPU 小端序)
         // 汇编: game.dll + 39E5D0 | mov edi,dword ptr ds:[ecx]
-        memcpy(&chunk, ptr, 4);
+        quint32 chunk = *reinterpret_cast<const quint32*>(ptr);
 
         // XOR
         // 汇编: game.dll + 39E5D2 | xor edi,eax
