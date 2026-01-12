@@ -508,7 +508,7 @@ void Client::handleBNETTcpPacket(BNETPacketID id, const QByteArray &data)
         }
 
         if (eventId == 0x13) {
-            LOG_ERROR(QString("📧 [系统消息] %1").arg(text));
+            LOG_INFO(QString("📧 [系统消息] %1").arg(text));
             qDebug().noquote() << QString("   └─ 📝 内容: %1").arg(contentLog);
         } else {
             qDebug().noquote() << QString("   └─ 📝 内容: %1").arg(contentLog);

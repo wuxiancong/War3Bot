@@ -23,7 +23,8 @@ enum PacketType : quint8 {
     C_S_PING                        = 0x0C,
     S_C_PONG                        = 0x0D,
     S_C_ERROR                       = 0x0E,
-    S_C_UPLOADRESULT                = 0x0F
+    S_C_MESSAGE                     = 0x0F,
+    S_C_UPLOADRESULT                = 0x10
 };
 
 // ==================== 错误码定义 ====================
@@ -39,18 +40,24 @@ enum UploadErrorCode : quint8 {
     UPLOAD_ERR_OVERFLOW             = 7
 };
 
-enum CommandErrorCode : quint8 {
-    CMD_OK                          = 0,
-    CMD_ERR_UNKNOWN_CMD             = 1,
-    CMD_ERR_PARAM_ERROR             = 2,
-    CMD_ERR_ALREADY_IN_GAME         = 3,
-    CMD_ERR_COOLDOWN                = 4,
-    CMD_ERR_PERMISSION_DENIED       = 5,
-    CMD_ERR_MAP_NOT_SUPPORTED       = 6,
-    CMD_ERR_NAME_TOO_LONG           = 7,
-    CMD_ERR_GAME_NAME_EXISTS        = 8,
-    CMD_ERR_NO_BOTS_AVAILABLE       = 9,
-    CMD_ERR_CREATE_FAILED           = 10
+// ==================== 消息码定义 ====================
+
+enum ErrorCode : quint8 {
+    ERR_OK                          = 0,
+    ERR_UNKNOWN                     = 1,
+    ERR_PARAM_ERROR                 = 2,
+    ERR_ALREADY_IN_GAME             = 3,
+    ERR_COOLDOWN                    = 4,
+    ERR_PERMISSION_DENIED           = 5,
+    ERR_MAP_NOT_SUPPORTED           = 6,
+    ERR_NAME_TOO_LONG               = 7,
+    ERR_GAME_NAME_EXISTS            = 8,
+    ERR_NO_BOTS_AVAILABLE           = 9,
+    ERR_CREATE_FAILED               = 10
+};
+
+enum MessageCode : quint8 {
+    MSG_HOST_JOINED_GAME            = 0
 };
 
 #pragma pack(push, 1)
@@ -65,10 +72,10 @@ struct PacketHeader {
     quint16 checksum;
 };
 
-struct SCErrorPacket {
-    quint8 originalCommand;
-    quint8 errorCode;
-    quint32 contextData;
+struct SCMessagePacket {
+    quint8 type;
+    quint8 code;
+    quint64 data;
 };
 
 struct CSRegisterPacket {

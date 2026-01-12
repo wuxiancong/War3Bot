@@ -1065,22 +1065,22 @@ bool NetManager::sendRetryCommand(QTcpSocket *socket)
     return sendTcpPacket(socket, PacketType::S_C_COMMAND, &pkt, sizeof(pkt));
 }
 
-bool NetManager::sendErrorToClient(const QString &clientId, quint8 originalCmd, quint8 code, quint32 contextData, bool isUdpError)
+bool NetManager::sendMessageToClient(const QString &clientId, PacketType type, quint8 code, quint64 data, bool isUdp)
 {
     // 1. 构造错误包
-    SCErrorPacket pkt;
+    SCMessagePacket pkt;
     memset(&pkt, 0, sizeof(pkt));
-    pkt.originalCommand = originalCmd;
-    pkt.errorCode = code;
-    pkt.contextData = contextData;
+    pkt.type = type;
+    pkt.code = code;
+    pkt.data = data;
 
     // 2. 逻辑分支 A: 优先尝试 TCP 发送 (默认行为)
-    if (!isUdpError) {
+    if (!isUdp) {
         if (m_tcpClients.contains(clientId)) {
             QTcpSocket *socket = m_tcpClients[clientId];
             if (socket && socket->state() == QAbstractSocket::ConnectedState) {
 
-                bool ok = sendTcpPacket(socket, PacketType::S_C_ERROR, &pkt, sizeof(pkt));
+                bool ok = sendTcpPacket(socket, type, &pkt, sizeof(pkt));
 
                 if (ok) {
                     LOG_INFO(QString("🚫 [TCP Error] -> %1 | Code: %2").arg(clientId.left(8)).arg(code));
@@ -1104,7 +1104,7 @@ bool NetManager::sendErrorToClient(const QString &clientId, quint8 originalCmd, 
 
         locker.unlock();
 
-        sendUdpPacket(targetAddr, targetPort, PacketType::S_C_ERROR, &pkt, sizeof(pkt));
+        sendUdpPacket(targetAddr, targetPort, type, &pkt, sizeof(pkt));
 
         LOG_INFO(QString("🚫 [UDP Error] -> %1:%2 | Code: %3").arg(targetAddr.toString()).arg(targetPort).arg(code));
         return true;
