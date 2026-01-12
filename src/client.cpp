@@ -699,7 +699,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
     }
 
     switch (id) {
-    case W3GS_REQJOIN: // 0x1E
+    case W3GS_REQJOIN: // 处理客户端发过来的 0x1E 包
     {
         // 1. 解析客户端请求
         QDataStream in(payload);
@@ -852,16 +852,15 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
     }
     break;
 
-    case W3GS_LEAVEREQ: // 0x21
+    case W3GS_LEAVEREQ: // 处理客户端发过来的 0x21 包
     {
         qDebug().noquote() << QString("   └─ 👋 [离开请求] 来源: %1").arg(socket->peerAddress().toString());
         socket->disconnectFromHost();
     }
     break;
 
-    case 0x28: // W3GS_CHAT_TO_HOST
+    case W3GS_CHAT_TO_HOST: // 处理客户端发过来的 0x28 包
     {
-        // ... (省略部分头部解析，保持原逻辑) ...
         if (payload.size() < 7) return;
         QDataStream in(payload);
         in.setByteOrder(QDataStream::LittleEndian);
@@ -912,7 +911,66 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
     }
     break;
 
-    case 0x42: // W3GS_MAPSIZE
+    case W3GS_STARTDOWNLOAD: // 处理客户端发过来的 0x3F 包
+    {
+        // 1. 查找玩家
+        quint8 currentPid = 0;
+        for (auto it = m_players.begin(); it != m_players.end(); ++it) {
+            if (it.value().socket == socket) { currentPid = it.key(); break; }
+        }
+        if (currentPid == 0) return;
+
+        PlayerData &playerData = m_players[currentPid];
+
+        qDebug().noquote() << QString("📥 [W3GS] 收到请求: 0x3F (客户端请求开始下载)");
+        qDebug().noquote() << QString("   └─ 👤 玩家: %1 (PID: %2)").arg(playerData.name).arg(currentPid);
+
+        // 2. 防重复检查
+        if (playerData.isDownloading) {
+            qDebug().noquote() << "   └─ ⚠️ 忽略: 已经在下载进程中";
+            return;
+        }
+
+        // 3. 查找槽位并触发下载
+        bool found = false;
+        for (int i = 0; i < m_slots.size(); ++i) {
+            if (m_slots[i].pid == currentPid) {
+                if (m_slots[i].downloadStatus != Completed) {
+                    m_slots[i].downloadStatus = Downloading;
+                    playerData.isDownloading = true;
+                    playerData.downloadOffset = 0;
+                    found = true;
+                    break;
+                }
+            }
+        }
+
+        if (found) {
+            qDebug().noquote() << "   └─ 🚀 响应请求: 启动下载序列";
+
+            // 获取首个分片
+            const QByteArray &mapData = m_war3Map.getMapRawData();
+            int chunkSize = 1442;
+            if (mapData.size() < chunkSize) chunkSize = mapData.size();
+            QByteArray firstChunk = mapData.mid(0, chunkSize);
+
+            // 发送 Start(0x3F) + Slot(0x09) + Chunk(0x43)
+            QByteArray packetBatch;
+            packetBatch.append(createW3GSStartDownloadPacket(currentPid));
+            packetBatch.append(createW3GSSlotInfoPacket());
+            packetBatch.append(createW3GSMapPartPacket(currentPid, 1, 0, firstChunk));
+
+            socket->write(packetBatch);
+            socket->flush();
+
+            playerData.downloadOffset += chunkSize;
+        } else {
+            qDebug().noquote() << "   └─ ❓ 异常: 玩家似乎已有地图或槽位状态错误";
+        }
+    }
+    break;
+
+    case W3GS_MAPSIZE: // 处理客户端发过来的 0x42 包
     {
         if (payload.size() < 9) return;
         QDataStream in(payload);
@@ -930,51 +988,62 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
                 break;
             }
         }
-
-        qDebug().noquote() << QString("   ├─ 👤 玩家: %1").arg(playerName);
-        qDebug().noquote() << QString("   ├─ 📊 地图报告: Size=%1 (Flag=%2)").arg(clientMapSize).arg(sizeFlag);
-
         if (currentPid == 0) return;
 
         quint32 hostMapSize = m_war3Map.getMapSize();
+        bool hasMap = (clientMapSize == hostMapSize && sizeFlag == 1);
+
+        // --- 🌲 树形日志开始 ---
+        qDebug().noquote() << QString("📥 [W3GS] 收到数据包: 0x42 (W3GS_MAPSIZE)");
+        qDebug().noquote() << QString("   ├─ 👤 玩家: %1 (PID: %2)").arg(playerName).arg(currentPid);
+        qDebug().noquote() << QString("   ├─ 📊 报告: Size=%1 (本机: %2) | Flag=%3")
+                                  .arg(clientMapSize).arg(hostMapSize).arg(sizeFlag);
+
         PlayerData &playerData = m_players[currentPid];
         bool slotUpdated = false;
 
         for (int i = 0; i < m_slots.size(); ++i) {
             if (m_slots[i].pid == currentPid) {
-                // 情况 A: 拥有地图
-                if (clientMapSize == hostMapSize && sizeFlag == 1) {
+                if (hasMap) {
+                    // --- 情况 A: 玩家已有地图 ---
                     if (m_slots[i].downloadStatus != Completed) {
                         m_slots[i].downloadStatus = Completed;
-                        slotUpdated = true;
                         playerData.isDownloading = false;
-                        qDebug().noquote() << "   └─ ✅ 状态: 地图校验通过 (Completed)";
+                        slotUpdated = true;
+                        qDebug().noquote() << "   └─ ✅ 状态: 校验通过 (无需下载)";
                     } else {
-                        qDebug().noquote() << "   └─ ℹ️ 状态: 已拥有 (无需更新)";
+                        qDebug().noquote() << "   └─ ℹ️ 状态: 保持完成状态";
                     }
                 }
-                // 情况 B: 需要下载
                 else {
+                    // --- 情况 B: 需要下载 ---
                     if (m_slots[i].downloadStatus != Downloading) {
-                        m_slots[i].downloadStatus = Downloading;
+                        m_slots[i].downloadStatus = Downloading; // 0%
                         playerData.isDownloading = true;
                         playerData.downloadOffset = 0;
 
-                        qDebug().noquote() << "   └─ 🚀 动作: 触发下载 (StartDownload + SlotInfo + FirstChunk)";
+                        // 获取首个分片
+                        const QByteArray &mapData = m_war3Map.getMapRawData();
+                        int chunkSize = 1442; // 标准 MTU 安全值
+                        if (mapData.size() < chunkSize) chunkSize = mapData.size();
+                        QByteArray firstChunk = mapData.mid(0, chunkSize);
+
+                        qDebug().noquote() << "   └─ 🚀 流程: 触发下载序列";
+                        qDebug().noquote() << "      ├─ 1️⃣ 发送 StartDownload (0x3F)";
+                        qDebug().noquote() << "      ├─ 2️⃣ 更新 SlotInfo (0x09) -> DownloadStatus: 0%";
+                        qDebug().noquote() << QString("      └─ 3️⃣ 发送 MapPart (0x43) -> Offset: 0, Size: %1").arg(chunkSize);
 
                         QByteArray packetBatch;
                         packetBatch.append(createW3GSStartDownloadPacket(currentPid));
                         packetBatch.append(createW3GSSlotInfoPacket());
-
-                        const QByteArray &mapData = m_war3Map.getMapRawData();
-                        int chunkSize = 1442;
-                        if (mapData.size() < chunkSize) chunkSize = mapData.size();
-                        QByteArray firstChunk = mapData.mid(0, chunkSize);
                         packetBatch.append(createW3GSMapPartPacket(currentPid, 1, 0, firstChunk));
 
                         socket->write(packetBatch);
                         socket->flush();
+
                         playerData.downloadOffset += chunkSize;
+                    } else {
+                        qDebug().noquote() << "   └─ ⚠️ 状态: 正在下载中 (忽略重复请求)";
                     }
                 }
                 break;
@@ -982,14 +1051,10 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         }
 
         if (slotUpdated) broadcastSlotInfo();
-        else {
-            socket->write(createW3GSSlotInfoPacket());
-            socket->flush();
-        }
     }
     break;
 
-    case 0x44: // W3GS_MAPPARTOK
+    case W3GS_MAPPARTOK: // 处理客户端发过来的 0x44 包
     {
         if (payload.size() < 9) return;
         QDataStream in(payload);
@@ -1009,7 +1074,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
     }
     break;
 
-    case 0x46: // W3GS_PONG_TO_HOST
+    case W3GS_PONG_TO_HOST: // 处理客户端发过来的 0x46 包
     {
         if (payload.size() < 4) return;
         QDataStream in(payload);
@@ -2103,17 +2168,12 @@ QByteArray Client::createW3GSStartDownloadPacket(quint8 toPid)
 
     // Header: F7 3F [Len]
     out << (quint8)0xF7 << (quint8)0x3F << (quint16)0;
-
-    // 1. From PID (发送者，通常 Bot 是 PID 1)
-    out << (quint8)1;
-
-    // 2. To PID (接收者)
-    out << (quint8)toPid;
-
-    // 3. Unknown (Always 1)
+    // (UINT32) Unknown
     out << (quint32)1;
 
-    // 回填长度
+    // (UINT8) Player number
+    out << (quint8)toPid;
+
     QDataStream lenStream(&packet, QIODevice::ReadWrite);
     lenStream.setByteOrder(QDataStream::LittleEndian);
     lenStream.skipRawData(2);
