@@ -17,6 +17,8 @@
 #include <QNetworkInterface>
 #include <QCryptographicHash>
 
+#include <zlib.h>
+
 // =========================================================
 // 1. 生命周期 (构造与析构)
 // =========================================================
@@ -2214,33 +2216,42 @@ QByteArray Client::createW3GSStartDownloadPacket(quint8 fromPid)
 
 QByteArray Client::createW3GSMapPartPacket(quint8 toPid, quint8 fromPid, quint32 offset, const QByteArray &chunkData)
 {
-    // 1. 计算 CRC
-    // 注意：W3GS 协议中，MapPart 包的 CRC 仅仅是 chunkData 的 CRC
-    quint32 crc = m_war3Map.calcCrc32(chunkData);
+    // 1. 你的手动算法 (确保已应用之前的 unsigned 修复)
+    quint32 myCrc = m_war3Map.calcCrc32(chunkData);
 
-    // 2. 构造包体
+    // 2. Zlib 标准算法
+    // zlib 的 crc32 函数签名: uLong crc32(uLong crc, const Bytef *buf, uInt len);
+    // 初始种子传 0
+    quint32 zlibCrc = (quint32)crc32(0L, (const Bytef*)chunkData.constData(), chunkData.size());
+
+    // 3. 对比日志
+    if (myCrc != zlibCrc) {
+        qDebug().noquote() << "❌ [CRC 严重不匹配]";
+        qDebug().noquote() << QString("   ├─ My Algo: 0x%1").arg(myCrc, 8, 16, QChar('0')).toUpper();
+        qDebug().noquote() << QString("   └─ Zlib   : 0x%1 (标准值)").arg(zlibCrc, 8, 16, QChar('0')).toUpper();
+    } else {
+        // 调试阶段可以开启这个，确认一致后注释掉
+        // qDebug().noquote() << QString("✅ [CRC 一致] Val: 0x%1").arg(myCrc, 8, 16, QChar('0')).toUpper();
+    }
+
+    // --------------------------------------------------------
+    // 决策：建议直接使用 zlibCrc，因为它经过了全球数十亿设备的验证
+    // --------------------------------------------------------
+    quint32 finalCrc = zlibCrc;
+
     QByteArray packet;
     QDataStream out(&packet, QIODevice::WriteOnly);
     out.setByteOrder(QDataStream::LittleEndian);
 
-    // [Header: 4 bytes] F7 43 [Length Placeholder]
-    out << (quint8)0xF7 << (quint8)0x43 << (quint16)0;
-
-    // [Info: 6 bytes]
+    out << (quint8)0xF7 << (quint8)0x43 << (quint16)0; // Header
     out << (quint8)toPid;
     out << (quint8)fromPid;
-    out << (quint32)1;      // Unknown (Always 1)
+    out << (quint32)1;       // Unknown
+    out << (quint32)offset;  // Offset
+    out << (quint32)finalCrc; // 使用 Zlib 的结果写入包中
 
-    // [Offset: 4 bytes]
-    out << (quint32)offset;
-
-    // [CRC: 4 bytes]
-    out << (quint32)crc;
-
-    // [Data]
     out.writeRawData(chunkData.constData(), chunkData.size());
 
-    // 3. 回填包长度
     out.device()->seek(2);
     out << (quint16)packet.size();
 
