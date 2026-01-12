@@ -98,7 +98,7 @@ Client::Client(QObject *parent)
     if (!foundResources) {
         qDebug().noquote() << "      └─ ❌ 致命错误: 未能找到 War3.exe！";
         qDebug().noquote() << "         ├─ 已尝试路径:";
-        for(const QString &p : searchPaths) {
+        for(const QString &p : qAsConst(searchPaths)) {
             qDebug().noquote() << QString("         │  %1").arg(p);
         }
         LOG_ERROR("❌ 致命错误: 未能找到 War3.exe！");
@@ -507,10 +507,9 @@ void Client::handleBNETTcpPacket(BNETPacketID id, const QByteArray &data)
         default:   contentLog = "未知事件"; break;
         }
 
-        // 如果是 Error (0x13)，用 ERROR 级别日志
         if (eventId == 0x13) {
-            LOG_ERROR(QString("❌ [BNET错误] %1").arg(text));
-            qDebug().noquote() << QString("   └─ ❌ 内容: %1").arg(contentLog);
+            LOG_ERROR(QString("📧 [系统消息] %1").arg(text));
+            qDebug().noquote() << QString("   └─ 📝 内容: %1").arg(contentLog);
         } else {
             qDebug().noquote() << QString("   └─ 📝 内容: %1").arg(contentLog);
         }
@@ -741,21 +740,15 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         qDebug().noquote() << QString("   ├─ 🌍 内网IP: %1:%2").arg(iAddr.toString()).arg(clientInternalPort);
         qDebug().noquote() << QString("   ├─ 🔧 监听端口: %1").arg(clientListenPort);
 
-        bool isIncomingPlayerHost = false;
-
         // 1.1 房主校验
         bool nameMatch = (!m_host.isEmpty() && m_host.compare(clientPlayerName, Qt::CaseInsensitive) == 0);
         qDebug().noquote() << QString("   ├─ 🔍 房主校验: 预设[%1] vs 玩家[%2] -> %3")
                                   .arg(m_host, clientPlayerName, nameMatch ? "✅ 匹配" : "❌ 不匹配");
 
-        if (nameMatch) {
-            isIncomingPlayerHost = true;
-        }
-
         // 1.2 逻辑判断：房主是否在场
-        if (!m_isHostJoined) {
+        if (!isHostJoined()) {
             // A. 如果来的不是房主 -> 拒绝
-            if (!isIncomingPlayerHost) {
+            if (!nameMatch) {
                 qDebug().noquote() << QString("   └─ 🛑 [拒绝加入] 原因: 等待房主 [%1] 进场中...").arg(m_host);
                 socket->write(createW3GSRejectJoinPacket(FULL));
                 socket->flush();
@@ -764,14 +757,13 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
             }
             // B. 如果来的是房主 -> 允许
             else {
-                m_isHostJoined = true;
                 qDebug().noquote() << QString("   ├─ 👑 [房主到达] 房间锁定解除，允许其他人加入");
                 emit hostJoinedGame(clientPlayerName);
             }
         }
         else {
             // C. 房主已在场，防止重名攻击
-            if (isIncomingPlayerHost) {
+            if (nameMatch) {
                 qDebug().noquote() << QString("   └─ ⚠️ [拒绝加入] 原因: 检测到重复的房主名 [%1]").arg(clientPlayerName);
                 socket->write(createW3GSRejectJoinPacket(FULL));
                 socket->disconnectFromHost();
@@ -822,7 +814,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         playerData.codec = QTextCodec::codecForName("Windows-1252");
         playerData.lastResponseTime = now;
         playerData.lastDownloadTime = now;
-        playerData.isVisualHost = isIncomingPlayerHost;
+        playerData.isVisualHost = nameMatch;
 
         m_players.insert(hostId, playerData);
 
@@ -1118,7 +1110,6 @@ void Client::onPlayerDisconnected() {
 
                 // 2. 更新全局房主名字
                 m_host = heirName;
-                m_isHostJoined = true;
 
                 qDebug().noquote() << QString("   │  ├─ 🔍 继承人: %1 (PID: %2)").arg(heirName).arg(heirPid);
                 qDebug().noquote() << "   │  └─ ✅ 结果: 权限移交完成";
@@ -2253,7 +2244,26 @@ QString Client::getSlotInfoString() const
 }
 
 // =========================================================
-// 10. 辅助工具函数
+// 10. 玩家辅助函数
+// =========================================================
+
+bool Client::isHostJoined()
+{
+    if (m_host.isEmpty()) {
+        return false;
+    }
+
+    for (auto it = m_players.begin(); it != m_players.end(); ++it) {
+        const QString &existingName = it.value().name;
+        if (existingName.compare(m_host, Qt::CaseInsensitive) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// =========================================================
+// 11. 辅助工具函数
 // =========================================================
 
 bool Client::bindToRandomPort()

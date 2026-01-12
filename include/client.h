@@ -398,6 +398,7 @@ public:
     void joinChannel(const QString &channelName);       // 加入频道
 
     // --- 游戏主机管理 ---
+    bool isHostJoined();
     void setHost(QString creatorName) { m_host = creatorName; };
     void createGame(const QString &gameName, const QString &password,
                     ProviderVersion providerVersion, ComboGameType comboGameType,
@@ -522,7 +523,6 @@ private:
     War3Map                         m_war3Map;
     QVector<GameSlot>               m_slots;
     QStringList                     m_channelList;
-    bool                            m_isHostJoined;
 
     quint8                          m_layoutStyle           = CustomForces;
     quint32                         m_randomSeed            = 0;
