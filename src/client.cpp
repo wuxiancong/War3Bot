@@ -1050,7 +1050,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
                             sendNextMapPart(currentPid);
                         }
                         else if (clientMapSize == playerData.downloadOffset) {
-
+                            qDebug().noquote() << "   └─ ℹ️ [进度同步] 状态一致，等待 ACK";
                         }
                     }
                 }
