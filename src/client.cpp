@@ -329,6 +329,10 @@ void Client::sendNextMapPart(quint8 toPid, quint8 fromPid)
         chunkSize = totalSize - playerData.downloadOffset;
     }
 
+    if (chunkSize <= 0) {
+        return;
+    }
+
     QByteArray chunk = mapData.mid(playerData.downloadOffset, chunkSize);
 
     // 构造包 (0x43)
@@ -2216,40 +2220,39 @@ QByteArray Client::createW3GSStartDownloadPacket(quint8 fromPid)
 
 QByteArray Client::createW3GSMapPartPacket(quint8 toPid, quint8 fromPid, quint32 offset, const QByteArray &chunkData)
 {
-    // 1. 你的手动算法 (确保已应用之前的 unsigned 修复)
-    quint32 myCrc = m_war3Map.calcCrc32(chunkData);
+    // 1. 使用工业标准 zlib 计算 CRC32
+    uLong zCrc = crc32(0L, Z_NULL, 0);
+    zCrc = crc32(zCrc, reinterpret_cast<const Bytef*>(chunkData.constData()), chunkData.size());
+    quint32 finalCrc = static_cast<quint32>(zCrc);
 
-    // 2. Zlib 标准算法
-    // zlib 的 crc32 函数签名: uLong crc32(uLong crc, const Bytef *buf, uInt len);
-    // 初始种子传 0
-    quint32 zlibCrc = (quint32)crc32(0L, (const Bytef*)chunkData.constData(), chunkData.size());
-
-    // 3. 对比日志
-    if (myCrc != zlibCrc) {
-        qDebug().noquote() << "❌ [CRC 严重不匹配]";
-        qDebug().noquote() << QString("   ├─ My   CRC   : 0x%1").arg(myCrc, 8, 16, QChar('0')).toUpper();
-        qDebug().noquote() << QString("   └─ Zlib CRC   : 0x%1").arg(zlibCrc, 8, 16, QChar('0')).toUpper();
-    } else {
-        qDebug().noquote() << QString("✅ CRC           : 0x%1").arg(myCrc, 8, 16, QChar('0')).toUpper();
-    }
-
-    quint32 finalCrc = zlibCrc;
-
+    // 2. 构建数据包
     QByteArray packet;
     QDataStream out(&packet, QIODevice::WriteOnly);
     out.setByteOrder(QDataStream::LittleEndian);
 
+    // 包头 (Header)
     out << (quint8)0xF7 << (quint8)0x43 << (quint16)0;
-    out << (quint8)toPid;
-    out << (quint8)fromPid;
-    out << (quint32)1;
-    out << (quint32)offset;
-    out << (quint32)finalCrc;
 
-    out.writeRawData(chunkData.constData(), chunkData.size());
+    // 协议字段 (Fields)
+    out << (quint8)toPid;      // 目标 PID
+    out << (quint8)fromPid;    // 来源 PID (主机)
+    out << (quint32)1;         // Unknown (固定为 1)
+    out << (quint32)offset;    // 当前分片的偏移量
+    out << (quint32)finalCrc;  // 数据内容的 CRC32
 
+    if (chunkData.size() > 0) {
+        out.writeRawData(chunkData.constData(), chunkData.size());
+    }
+
+    // 3. 回填包长度
     out.device()->seek(2);
     out << (quint16)packet.size();
+
+    // 调试输出
+    if (offset == 1442) {
+        qDebug() << "Sending Chunk 1442. Size:" << chunkData.size()
+                 << "CRC:" << QString::number(finalCrc, 16);
+    }
 
     return packet;
 }

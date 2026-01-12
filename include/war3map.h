@@ -85,9 +85,6 @@ public:
 
     // === 工具函数 (Static) ===
 
-    // 标准 IEEE 802.3 CRC-32 算法
-    quint32 calcCrc32(const QByteArray &data);
-
     // 暴雪自定义哈希 (原 computeXoroCRC，纯净版)
     static quint32 calcBlizzardHash(const QByteArray &data);
 
