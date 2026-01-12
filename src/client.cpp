@@ -947,7 +947,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
             qDebug().noquote() << "   └─ 🚀 响应: 启动下载序列";
 
             // --- 步骤 A: 发送开始信号 (0x3F) ---
-            socket->write(createW3GSStartDownloadPacket(currentPid));
+            socket->write(createW3GSStartDownloadPacket(1));
             socket->flush();
 
             // --- 步骤 B: 更新大厅槽位状态 (0x09) ---
@@ -1027,7 +1027,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
                         qDebug().noquote() << "      ├─ 2️⃣ 发送 SlotInfo (0x09) [Flush]";
                         qDebug().noquote() << "      └─ 3️⃣ 延迟 200ms 发送 First Chunk (0x43)";
 
-                        socket->write(createW3GSStartDownloadPacket(currentPid));
+                        socket->write(createW3GSStartDownloadPacket(1));
                         socket->flush();
 
                         socket->write(createW3GSSlotInfoPacket());
@@ -2171,7 +2171,7 @@ QByteArray Client::createW3GSMapCheckPacket()
     return packet;
 }
 
-QByteArray Client::createW3GSStartDownloadPacket(quint8 toPid)
+QByteArray Client::createW3GSStartDownloadPacket(quint8 fromPid)
 {
     QByteArray packet;
     QDataStream out(&packet, QIODevice::WriteOnly);
@@ -2183,7 +2183,7 @@ QByteArray Client::createW3GSStartDownloadPacket(quint8 toPid)
     out << (quint32)1;
 
     // (UINT8) Player number
-    out << (quint8)toPid;
+    out << (quint8)fromPid;
 
     QDataStream lenStream(&packet, QIODevice::ReadWrite);
     lenStream.setByteOrder(QDataStream::LittleEndian);

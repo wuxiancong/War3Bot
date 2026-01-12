@@ -469,7 +469,7 @@ private:
     QByteArray createW3GSSlotInfoPacket();
     QByteArray createW3GSMapCheckPacket();
     QByteArray createW3GSPingFromHostPacket();
-    QByteArray createW3GSStartDownloadPacket(quint8 toPid);
+    QByteArray createW3GSStartDownloadPacket(quint8 fromPid);
     QByteArray createW3GSRejectJoinPacket(RejectReason reason);
     QByteArray createW3GSPlayerLeftPacket(quint8 pid, quint32 reason);
     QByteArray createW3GSSlotInfoJoinPacket(quint8 playerID, const QHostAddress& externalIp, quint16 localPort);
