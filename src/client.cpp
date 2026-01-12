@@ -958,28 +958,17 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
             playerData.isDownloading = true;
             playerData.downloadOffset = 0;
 
-            // --- 步骤 D: 延迟发送第一块数据 ---
-            QTimer::singleShot(200, this, [this, currentPid]() {
-                if (!m_players.contains(currentPid)) return;
-                PlayerData &p = m_players[currentPid];
-                if (!p.isDownloading) return;
+            const QByteArray &mapData = m_war3Map.getMapRawData();
+            int chunkSize = 1442;
+            if (mapData.size() < chunkSize) chunkSize = mapData.size();
+            QByteArray firstChunk = mapData.mid(0, chunkSize);
 
-                QTcpSocket *s = p.socket;
-                if (!s || s->state() != QAbstractSocket::ConnectedState) return;
+            socket->write(createW3GSMapPartPacket(currentPid, 1, 0, firstChunk));
+            socket->flush();
 
-                qDebug().noquote() << QString("      └─ ⏰ [延迟触发] 发送首个地图分片给 PID %1").arg(currentPid);
+            playerData.downloadOffset += chunkSize;
 
-                const QByteArray &mapData = m_war3Map.getMapRawData();
-                int chunkSize = 1442;
-                if (mapData.size() < chunkSize) chunkSize = mapData.size();
-                QByteArray firstChunk = mapData.mid(0, chunkSize);
-
-                s->write(createW3GSMapPartPacket(currentPid, 1, 0, firstChunk));
-                s->flush();
-
-                p.downloadOffset += chunkSize;
-            });
-
+            qDebug().noquote() << QString("   └─ 📤 已发送首块数据 (Size: %1)").arg(chunkSize);
         } else {
             qDebug().noquote() << "   └─ ℹ️ 忽略: 玩家已有地图或槽位无效";
         }
@@ -1047,27 +1036,16 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
                         playerData.isDownloading = true;
                         playerData.downloadOffset = 0;
 
-                        // --- 延迟发送 ---
-                        QTimer::singleShot(200, this, [this, currentPid]() {
-                            if (!m_players.contains(currentPid)) return;
-                            PlayerData &p = m_players[currentPid];
-                            if (!p.isDownloading) return;
+                        const QByteArray &mapData = m_war3Map.getMapRawData();
+                        int chunkSize = 1442;
+                        if (mapData.size() < chunkSize) chunkSize = mapData.size();
+                        QByteArray firstChunk = mapData.mid(0, chunkSize);
 
-                            QTcpSocket *s = p.socket;
-                            if (!s || s->state() != QAbstractSocket::ConnectedState) return;
+                        socket->write(createW3GSMapPartPacket(currentPid, 1, 0, firstChunk));
+                        socket->flush();
 
-                            qDebug().noquote() << QString("      └─ ⏰ [延迟触发] 发送首个地图分片给 PID %1").arg(currentPid);
-
-                            const QByteArray &mapData = m_war3Map.getMapRawData();
-                            int chunkSize = 1442;
-                            if (mapData.size() < chunkSize) chunkSize = mapData.size();
-                            QByteArray firstChunk = mapData.mid(0, chunkSize);
-
-                            s->write(createW3GSMapPartPacket(currentPid, 1, 0, firstChunk));
-                            s->flush();
-
-                            p.downloadOffset += chunkSize;
-                        });
+                        playerData.downloadOffset += chunkSize;
+                        qDebug().noquote() << QString("   └─ 📤 已发送首块数据 (Size: %1)").arg(chunkSize);
                     } else {
                         qDebug().noquote() << "   └─ ⚠️ 状态: 正在下载中 (忽略重复请求)";
                     }
