@@ -147,6 +147,7 @@ private:
     QMap<QString, RegisterInfo> m_registerInfos;
     QMap<quint32, QString> m_sessionIndex;
     QMap<QString, int> m_crcCounts;
+    QString m_crcRootPath;
 
     // 上传安全
     QReadWriteLock m_tokenLock;

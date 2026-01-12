@@ -7,6 +7,7 @@
 #include <QFileInfo>
 #include <QDateTime>
 #include <QDataStream>
+#include <QStandardPaths>
 #include <QCoreApplication>
 #include <QNetworkDatagram>
 #include <QRandomGenerator>
@@ -36,6 +37,20 @@ NetManager::NetManager(QObject *parent)
     , m_nextSessionId(1000)
     , m_serverSeq(0)
 {
+    // 1. 获取系统标准数据目录
+    QString dataRoot = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
+    if (dataRoot.isEmpty()) {
+        dataRoot = QCoreApplication::applicationDirPath();
+    }
+
+    // 2. 拼接好完整的 CRC 根目录路径
+    m_crcRootPath = dataRoot + "/war3files/crc";
+
+    // 3. 提前创建好根目录，避免每次操作都检查根目录是否存在
+    QDir dir;
+    if (!dir.mkpath(m_crcRootPath)) {
+        qWarning() << "❌ 初始化失败: 无法创建 CRC 存储目录" << m_crcRootPath;
+    }
 }
 
 NetManager::~NetManager()
@@ -644,42 +659,29 @@ void NetManager::handleTcpUploadMessage(QTcpSocket *socket)
 
         // ==================== 阶段 1: 解析头部 ====================
         if (!socket->property("HeaderParsed").toBool()) {
-
-            // 基础头部长度: Magic(4) + Token(8) + NameLen(4) = 16 字节
             const int MIN_HEADER_SIZE = 16;
             if (socket->bytesAvailable() < MIN_HEADER_SIZE) return;
-
-            // ⚡ 关键修正 1: 预读 (Peek) 检查完整性
-            // 防止读了 Magic 发现后面数据不够，导致下次重入时数据错位
             QByteArray headerPeep = socket->peek(MIN_HEADER_SIZE);
-
-            // 提取文件名长度 (最后4字节)
             QDataStream peepStream(headerPeep);
             peepStream.skipRawData(12); // 跳过 Magic(4) + Token(8)
             quint32 nameLenPreview;
             peepStream >> nameLenPreview;
 
-            // 🛡️ 安全检查: 文件名长度过长
             if (nameLenPreview > 256) {
                 LOG_WARNING("❌ TCP 拒绝: 文件名过长");
-                // 此时还没读 socket，但为了发回执需要读出 token (为了逻辑简单，这里直接断开即可)
-                // 或者手动读出 token 发回执
                 socket->disconnectFromHost();
                 return;
             }
 
-            // ⚡ 关键修正 2: 确保【整个头部 + 文件名】都已到达才开始读取
             if (socket->bytesAvailable() < MIN_HEADER_SIZE + nameLenPreview) {
-                return; // 数据不够，等待下一个包，不做任何读取操作
+                return;
             }
-
-            // ==================== 开始正式读取 ====================
 
             // 1. 验证 Magic
             QByteArray magic = socket->read(4);
             if (magic != "W3UP") {
-                LOG_WARNING("❌ TCP 非法连接: 魔数错误");
                 sendUploadResult(socket, "", "Magic not match", false, UPLOAD_ERR_MAGIC);
+                LOG_WARNING("❌ TCP 非法连接: 魔数错误");
                 socket->disconnectFromHost();
                 return;
             }
@@ -691,12 +693,11 @@ void NetManager::handleTcpUploadMessage(QTcpSocket *socket)
 
             {
                 QReadLocker locker(&m_tokenLock);
-                // 3: 逻辑合并，去掉多余的 if/else
                 if (m_pendingUploadTokens.contains(crcToken)) {
                     linkedSessionId = m_pendingUploadTokens.value(crcToken);
                 } else {
-                    LOG_WARNING(QString("❌ TCP 拒绝上传: 未授权的 Token (%1)").arg(crcToken));
                     sendUploadResult(socket, crcToken, "Unauthorized", false, UPLOAD_ERR_TOKEN);
+                    LOG_WARNING(QString("❌ TCP 拒绝上传: 未授权的 Token (%1)").arg(crcToken));
                     socket->disconnectFromHost();
                     return;
                 }
@@ -716,8 +717,8 @@ void NetManager::handleTcpUploadMessage(QTcpSocket *socket)
             QString fileName = QFileInfo(rawFileName).fileName();
 
             if (!isValidFileName(fileName)) {
-                LOG_WARNING(QString("❌ TCP 拒绝: 非法文件名 %1").arg(rawFileName));
                 sendUploadResult(socket, crcToken, fileName, false, UPLOAD_ERR_FILENAME);
+                LOG_WARNING(QString("❌ TCP 拒绝: 非法文件名 %1").arg(rawFileName));
                 socket->disconnectFromHost();
                 return;
             }
@@ -727,22 +728,27 @@ void NetManager::handleTcpUploadMessage(QTcpSocket *socket)
             qint64 fileSize;
             in >> fileSize;
 
-            if (fileSize <= 0 || fileSize > 20 * 1024 * 1024) {
-                LOG_WARNING("❌ TCP 拒绝: 文件过大");
+            if (fileSize <= 0 || fileSize > 2 * 1024 * 1024) {
                 sendUploadResult(socket, crcToken, fileName, false, UPLOAD_ERR_SIZE);
+                LOG_WARNING("❌ TCP 拒绝: 文件过大");
                 socket->disconnectFromHost();
                 return;
             }
 
             // 6. 准备文件
-            QString saveDir = QCoreApplication::applicationDirPath() + "/war3files/crc/" + crcToken;
-            QDir dir(saveDir);
-            if (!dir.exists()) dir.mkpath(".");
+            QString saveDir = m_crcRootPath + "/" + crcToken;
+
+            QDir dir;
+            if (!dir.mkpath(saveDir)) {
+                LOG_ERROR("❌ 无法创建目录 (权限不足?): " + saveDir);
+                return;
+            }
 
             QString savePath = saveDir + "/" + fileName;
             QFile *file = new QFile(savePath);
+
             if (!file->open(QIODevice::WriteOnly)) {
-                LOG_ERROR("❌ 无法创建文件: " + savePath);
+                LOG_ERROR("❌ 无法创建文件: " + savePath + " 原因: " + file->errorString());
                 sendUploadResult(socket, crcToken, fileName, false, UPLOAD_ERR_IO);
                 delete file;
                 socket->disconnectFromHost();
@@ -776,7 +782,6 @@ void NetManager::handleTcpUploadMessage(QTcpSocket *socket)
                 socket->setProperty("BytesWritten", current);
 
                 if (current > total) {
-                    // 溢出保护
                     file->remove();
                     socket->disconnectFromHost();
                     return;
@@ -808,7 +813,6 @@ void NetManager::handleTcpUploadMessage(QTcpSocket *socket)
                             }
                         }
 
-                        // 备用方案：如果 SessionID 找不到 (极少见)，才去遍历 IP
                         if (!updated) {
                             QString senderIp = cleanAddress(socket->peerAddress().toString());
                             for (auto it = m_registerInfos.begin(); it != m_registerInfos.end(); ++it) {
@@ -848,7 +852,7 @@ void NetManager::handleTcpCommandMessage(QTcpSocket *socket)
         // 1. 检查头部是否完整
         if (socket->bytesAvailable() < (qint64)sizeof(PacketHeader)) return;
 
-        // 2. 预读头部 (Peek 不会移动读取指针)
+        // 2. 预读头部
         PacketHeader header;
         socket->peek(reinterpret_cast<char*>(&header), sizeof(PacketHeader));
 
@@ -869,7 +873,7 @@ void NetManager::handleTcpCommandMessage(QTcpSocket *socket)
         // 4. 检查包体是否已完全到达
         qint64 totalPacketSize = sizeof(PacketHeader) + header.payloadLen;
         if (socket->bytesAvailable() < totalPacketSize) {
-            return; // 数据不够，等待下次 readyRead
+            return;
         }
 
         // 5. 正式读取完整数据包
@@ -880,7 +884,7 @@ void NetManager::handleTcpCommandMessage(QTcpSocket *socket)
         // A. 先尝试获取当前已绑定的 ID
         QString currentClientId = socket->property("clientId").toString();
 
-        // B. 如果未绑定，且包里有 SessionID，尝试进行“首次绑定”
+        // B. 如果未绑定，且包里有 SessionID，尝试进行首次绑定
         if (currentClientId.isEmpty() && pHeader->sessionId != 0) {
             QWriteLocker locker(&m_registerInfosLock);
             if (m_sessionIndex.contains(pHeader->sessionId)) {
@@ -920,11 +924,11 @@ void NetManager::handleTcpCommandMessage(QTcpSocket *socket)
         case PacketType::C_S_COMMAND:
             if (pHeader->payloadLen >= sizeof(CSCommandPacket)) {
                 const CSCommandPacket *cmdPkt = reinterpret_cast<const CSCommandPacket*>(payload);
-                QString cmd = QString::fromUtf8(cmdPkt->command, strnlen(cmdPkt->command, sizeof(cmdPkt->command)));
                 QString text = QString::fromUtf8(cmdPkt->text, strnlen(cmdPkt->text, sizeof(cmdPkt->text)));
+                QString cmd = QString::fromUtf8(cmdPkt->command, strnlen(cmdPkt->command, sizeof(cmdPkt->command)));
                 QString user = QString::fromUtf8(cmdPkt->username, strnlen(cmdPkt->username, sizeof(cmdPkt->username)));
 
-                // 🛡️ 安全检查：如果到现在还没 ClientID，说明这是个未授权的连接发来的指令
+                // 如果到现在还没 ClientID，说明这是个未授权的连接发来的指令
                 if (currentClientId.isEmpty()) {
                     qDebug().noquote() << "🛑 [指令拒绝]";
                     qDebug().noquote() << "   ├─ ❌ 原因: 未鉴权连接 (无有效 SessionID)";
@@ -967,9 +971,9 @@ void NetManager::onNewTcpConnection()
 
         if (!m_watchdog.checkTcpConnection(socket->peerAddress())) {
             LOG_WARNING(QString("🛡️ 拒绝恶意 IP 连接请求: %1").arg(socket->peerAddress().toString()));
-            socket->close(); // 立即关闭
+            socket->close();
             socket->deleteLater();
-            continue; // 跳过这个连接
+            continue;
         }
 
         connect(socket, &QTcpSocket::readyRead, this, &NetManager::onTcpReadyRead);

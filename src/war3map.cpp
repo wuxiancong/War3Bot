@@ -123,8 +123,7 @@ bool War3Map::load(const QString &mapPath)
         return false;
     }
 
-    // [修改开始] ==============================================
-    // 读取所有数据以计算 CRC (修复 MapInfo 为 0 的问题)
+    // 读取所有数据以计算 CRC
     m_mapRawData = file.readAll();
     file.close();
 
@@ -203,7 +202,7 @@ bool War3Map::load(const QString &mapPath)
     // 读取地图脚本 (支持 war3map.j / scripts\war3map.j / war3map.lua)
     QByteArray dataMapScript = readMpqFile("war3map.j");
     if (dataMapScript.isEmpty()) dataMapScript = readMpqFile("scripts\\war3map.j");
-    if (dataMapScript.isEmpty()) dataMapScript = readMpqFile("war3map.lua"); // 兼容 Lua
+    if (dataMapScript.isEmpty()) dataMapScript = readMpqFile("war3map.lua");
 
     if (dataMapScript.isEmpty()) {
         LOG_ERROR("[War3Map] ❌ 严重错误: 无法在地图中找到脚本文件");
