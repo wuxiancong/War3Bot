@@ -449,7 +449,7 @@
 6F682634  | C2 1400                 | ret 14                              |
 
 ; ===========================================================================
-; ESI = 0x1D | Packet ID: 待定
+; ESI = 0x1D | Packet ID: 0x43
 ; ===========================================================================
 6F682637  | 8B4424 14               | mov eax,dword ptr ss:[esp+14]       | esi=1D
 6F68263B  | 50                      | push eax                            |
@@ -458,7 +458,7 @@
 6F682641  | 8B4424 10               | mov eax,dword ptr ss:[esp+10]       |
 6F682645  | 8B00                    | mov eax,dword ptr ds:[eax]          |
 6F682647  | 50                      | push eax                            |
-6F682648  | E8 93CAFFFF             | call game.6F67F0E0                  | 待定
+6F682648  | E8 93CAFFFF             | call game.6F67F0E0                  | 0x43 -> W3GS_MAPPART (地图分片)
 6F68264D  | 5E                      | pop esi                             |
 6F68264E  | C2 1400                 | ret 14                              |
 

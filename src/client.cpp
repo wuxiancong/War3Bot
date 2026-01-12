@@ -2227,28 +2227,24 @@ QByteArray Client::createW3GSMapPartPacket(quint8 toPid, quint8 fromPid, quint32
     // 3. 对比日志
     if (myCrc != zlibCrc) {
         qDebug().noquote() << "❌ [CRC 严重不匹配]";
-        qDebug().noquote() << QString("   ├─ My Algo: 0x%1").arg(myCrc, 8, 16, QChar('0')).toUpper();
-        qDebug().noquote() << QString("   └─ Zlib   : 0x%1 (标准值)").arg(zlibCrc, 8, 16, QChar('0')).toUpper();
+        qDebug().noquote() << QString("   ├─ My   CRC   : 0x%1").arg(myCrc, 8, 16, QChar('0')).toUpper();
+        qDebug().noquote() << QString("   └─ Zlib CRC   : 0x%1").arg(zlibCrc, 8, 16, QChar('0')).toUpper();
     } else {
-        // 调试阶段可以开启这个，确认一致后注释掉
-        // qDebug().noquote() << QString("✅ [CRC 一致] Val: 0x%1").arg(myCrc, 8, 16, QChar('0')).toUpper();
+        qDebug().noquote() << QString("✅ CRC           : 0x%1").arg(myCrc, 8, 16, QChar('0')).toUpper();
     }
 
-    // --------------------------------------------------------
-    // 决策：建议直接使用 zlibCrc，因为它经过了全球数十亿设备的验证
-    // --------------------------------------------------------
     quint32 finalCrc = zlibCrc;
 
     QByteArray packet;
     QDataStream out(&packet, QIODevice::WriteOnly);
     out.setByteOrder(QDataStream::LittleEndian);
 
-    out << (quint8)0xF7 << (quint8)0x43 << (quint16)0; // Header
+    out << (quint8)0xF7 << (quint8)0x43 << (quint16)0;
     out << (quint8)toPid;
     out << (quint8)fromPid;
-    out << (quint32)1;       // Unknown
-    out << (quint32)offset;  // Offset
-    out << (quint32)finalCrc; // 使用 Zlib 的结果写入包中
+    out << (quint32)1;
+    out << (quint32)offset;
+    out << (quint32)finalCrc;
 
     out.writeRawData(chunkData.constData(), chunkData.size());
 
