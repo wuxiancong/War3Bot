@@ -261,7 +261,7 @@ void Client::sendPacket(BNETPacketID id, const QByteArray &payload)
 
 void Client::sendNextMapPart(quint8 toPid, quint8 fromPid)
 {
-    // [异常分支] 找不到玩家
+    // 找不到玩家
     if (!m_players.contains(toPid)) {
         qDebug().noquote() << "❌ [地图上传] 失败";
         qDebug().noquote() << QString("   └─ 原因: 找不到目标 PID %1").arg(toPid);
@@ -317,7 +317,7 @@ void Client::sendNextMapPart(quint8 toPid, quint8 fromPid)
     // 分支 B: 计算与发送分片
 
     // 计算分片
-    quint32 chunkSize = CHUNK_SIZE;
+    int chunkSize = MAX_CHUNK_SIZE;
     if (playerData.downloadOffset + chunkSize > totalSize) {
         chunkSize = totalSize - playerData.downloadOffset;
     }
@@ -959,7 +959,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
             playerData.downloadOffset = 0;
 
             const QByteArray &mapData = m_war3Map.getMapRawData();
-            int chunkSize = CHUNK_SIZE;
+            int chunkSize = MAX_CHUNK_SIZE;
             if (mapData.size() < chunkSize) chunkSize = mapData.size();
             QByteArray firstChunk = mapData.mid(0, chunkSize);
 
