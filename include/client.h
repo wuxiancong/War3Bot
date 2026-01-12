@@ -104,10 +104,16 @@ enum W3GSPacketID {
 
 // 拒绝加入原因
 enum RejectReason {
-    INVALID                     = 0x06, // 无效请求
+    BAD_GAME                    = 0x05, // 指定的游戏不存在
+    GAME_CLOSED                 = 0x06, // 游戏已关闭
     FULL_OLD                    = 0x07, // 房间已满(旧)
     FULL                        = 0x09, // 房间已满
+    REQUIRES_PASS               = 0x0A, // 需要密码
+    TOURNAMENT_REQ              = 0x0B, // 需要进入锦标赛模式
+    TOO_POOR                    = 0x0D, // 指积分不足
+    SOLO_REQ                    = 0x0E, // 需要单人模式
     STARTED                     = 0x10, // 游戏已开始
+    GENERIC_ERROR               = 0x1B, // 版本不匹配、地图不匹配或被主机拉黑
     WRONGPASS                   = 0x27  // 密码错误
 };
 

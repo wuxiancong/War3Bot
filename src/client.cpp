@@ -750,7 +750,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
             // A. 如果来的不是房主 -> 拒绝
             if (!nameMatch) {
                 qDebug().noquote() << QString("   └─ 🛑 [拒绝加入] 原因: 等待房主 [%1] 进场中...").arg(m_host);
-                socket->write(createW3GSRejectJoinPacket(FULL));
+                socket->write(createW3GSRejectJoinPacket(BAD_GAME));
                 socket->flush();
                 socket->disconnectFromHost();
                 return;
@@ -765,7 +765,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
             // C. 房主已在场，防止重名攻击
             if (nameMatch) {
                 qDebug().noquote() << QString("   └─ ⚠️ [拒绝加入] 原因: 检测到重复的房主名 [%1]").arg(clientPlayerName);
-                socket->write(createW3GSRejectJoinPacket(FULL));
+                socket->write(createW3GSRejectJoinPacket(BAD_GAME));
                 socket->disconnectFromHost();
                 return;
             }
