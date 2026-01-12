@@ -387,6 +387,7 @@ class Client : public QObject
 
 public:
     static const quint8 BNET_HEADER = 0xFF;
+    static const quint16 CHUNK_SIZE = 1024;
 
     explicit Client(QObject *parent = nullptr);
     ~Client();
