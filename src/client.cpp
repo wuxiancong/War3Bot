@@ -1039,7 +1039,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
                         playerData.isDownloading = true;
                         playerData.downloadOffset = 0;
 
-                        QTimer::singleShot(200, this, [this, currentPid]() {
+                        QTimer::singleShot(500, this, [this, currentPid]() {
                             // 再次检查玩家是否还在线
                             if (!m_players.contains(currentPid)) return;
 
