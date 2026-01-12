@@ -266,10 +266,13 @@ void Client::sendNextMapPart(quint8 toPid, quint8 fromPid)
         return;
     }
 
-    // 更新下载活跃时间
-    m_players[toPid].lastDownloadTime = QDateTime::currentMSecsSinceEpoch();
-
     PlayerData &playerData = m_players[toPid];
+
+    qint64 now = QDateTime::currentMSecsSinceEpoch();
+
+    // 更新下载活跃时间
+    if (now - playerData.lastDownloadTime < 5) return;
+    playerData.lastDownloadTime = now;
 
     // [检查点 1] 状态检查
     if (!playerData.isDownloading) {
@@ -1049,6 +1052,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
                         }
                         else if (clientMapSize == playerData.downloadOffset) {
                             qDebug().noquote() << "   └─ ℹ️ [进度同步] 状态一致，等待 ACK";
+                            sendNextMapPart(currentPid);
                         }
                     }
                 }
