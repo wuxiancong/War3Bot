@@ -2214,35 +2214,35 @@ QByteArray Client::createW3GSStartDownloadPacket(quint8 fromPid)
 
 QByteArray Client::createW3GSMapPartPacket(quint8 toPid, quint8 fromPid, quint32 offset, const QByteArray &chunkData)
 {
+    // 1. 计算 CRC
+    // 注意：W3GS 协议中，MapPart 包的 CRC 仅仅是 chunkData 的 CRC
+    quint32 crc = m_war3Map.calcCrc32(chunkData);
+
+    // 2. 构造包体
     QByteArray packet;
     QDataStream out(&packet, QIODevice::WriteOnly);
     out.setByteOrder(QDataStream::LittleEndian);
 
-    // Header: F7 43 [Len]
+    // [Header: 4 bytes] F7 43 [Length Placeholder]
     out << (quint8)0xF7 << (quint8)0x43 << (quint16)0;
 
+    // [Info: 6 bytes]
     out << (quint8)toPid;
     out << (quint8)fromPid;
-    out << (quint32)1;      // Unknown
-    out << (quint32)offset; // Current Offset
-    out << (quint32)0;      // CRC Placeholder
+    out << (quint32)1;      // Unknown (Always 1)
 
-    // Data
-    out.writeRawData(chunkData.data(), chunkData.size());
+    // [Offset: 4 bytes]
+    out << (quint32)offset;
 
-    // Length
-    quint16 totalSize = (quint16)packet.size();
-    QDataStream ds(&packet, QIODevice::ReadWrite);
-    ds.setByteOrder(QDataStream::LittleEndian);
-    ds.skipRawData(2);
-    ds << totalSize;
+    // [CRC: 4 bytes]
+    out << (quint32)crc;
 
-    // CRC Calculation (Standard Types)
-    unsigned long crc = m_war3Map.calcCrc32(chunkData.constData(), chunkData.size());
+    // [Data]
+    out.writeRawData(chunkData.constData(), chunkData.size());
 
-    // Fill CRC (Offset 14)
-    ds.device()->seek(14);
-    ds << (quint32)crc;
+    // 3. 回填包长度
+    out.device()->seek(2);
+    out << (quint16)packet.size();
 
     return packet;
 }

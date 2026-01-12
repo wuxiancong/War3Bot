@@ -501,9 +501,9 @@ quint32 War3Map::calcBlizzardHash(const QByteArray &data) {
 // ---------------------------------------------------------
 // 标准 IEEE 802.3 CRC-32 (魔兽争霸3 使用的版本)
 // ---------------------------------------------------------
-unsigned long War3Map::calcCrc32(const char *data, int size)
+quint32 War3Map::calcCrc32(const QByteArray &data)
 {
-    static const unsigned long crc_table[256] = {
+    static const quint32 crc_table[256] = {
         0x00000000, 0x77073096, 0xee0e612c, 0x990951ba, 0x076dc419, 0x706af48f, 0xe963a535, 0x9e6495a3,
         0x0edb8832, 0x79dcb8a4, 0xe0d5e91e, 0x97d2d988, 0x09b64c2b, 0x7eb17cbd, 0xe7b82d07, 0x90bf1d91,
         0x1db71064, 0x6ab020f2, 0xf3b97148, 0x84be41de, 0x1adad47d, 0x6ddde4eb, 0xf4d4b551, 0x83d385c7,
@@ -538,9 +538,13 @@ unsigned long War3Map::calcCrc32(const char *data, int size)
         0xb3667a2e, 0xc4614ab8, 0x5d681b02, 0x2a6f2b94, 0xb40bbe37, 0xc30c8ea1, 0x5a05df1b, 0x2d02ef8d
     };
 
-    unsigned long crc = 0xFFFFFFFF;
+    quint32 crc = 0xFFFFFFFF;
+    const quint8 *p = reinterpret_cast<const quint8 *>(data.constData());
+    int size = data.size();
+
     for (int i = 0; i < size; ++i) {
-        crc = (crc >> 8) ^ crc_table[(crc ^ data[i]) & 0xFF];
+        crc = (crc >> 8) ^ crc_table[(crc ^ p[i]) & 0xFF];
     }
+
     return crc ^ 0xFFFFFFFF;
 }
