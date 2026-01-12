@@ -271,7 +271,11 @@ void Client::sendNextMapPart(quint8 toPid, quint8 fromPid)
     qint64 now = QDateTime::currentMSecsSinceEpoch();
 
     // 更新下载活跃时间
-    if (now - playerData.lastDownloadTime < 5) return;
+    if (now - playerData.lastDownloadTime < 5) {
+        qDebug() << "限速拦截: " << (now - playerData.lastDownloadTime);
+        return;
+    }
+
     playerData.lastDownloadTime = now;
 
     // [检查点 1] 状态检查
@@ -1078,11 +1082,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         if (currentPid == 0) return;
 
         m_players[currentPid].lastResponseTime = QDateTime::currentMSecsSinceEpoch();
-        m_players[currentPid].lastDownloadTime = QDateTime::currentMSecsSinceEpoch();
-        QTimer::singleShot(5, this, [this, currentPid]() {
-            if (m_players.contains(currentPid))
-                sendNextMapPart(currentPid);
-        });
+        if (m_players.contains(currentPid)) sendNextMapPart(currentPid);
     }
     break;
 
