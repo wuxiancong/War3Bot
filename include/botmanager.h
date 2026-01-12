@@ -49,6 +49,7 @@ struct Bot {
     QString username;
     QString password;
     GameInfo gameInfo;
+    bool hostJoined = false;
 
     // 任务挂起数据
     struct Task {
@@ -72,6 +73,7 @@ struct Bot {
         pendingTask = Task();
         commandSource = From_Server;
         state = BotState::Idle;
+        hostJoined = false;
     }
 };
 

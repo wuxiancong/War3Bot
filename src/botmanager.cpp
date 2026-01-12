@@ -12,7 +12,7 @@ BotManager::BotManager(QObject *parent) : QObject(parent)
 {
     QTimer *timer = new QTimer(this);
     connect(timer, &QTimer::timeout, this, &BotManager::onBotPendingTaskTimeout);
-    timer->start(2000);
+    timer->start(1000);
 }
 
 BotManager::~BotManager()
@@ -319,12 +319,14 @@ bool BotManager::createGame(const QString &hostName, const QString &gameName, Co
         qDebug().noquote() << QString("   ├─ ✅ 执行动作: 指派在线空闲机器人 [%1] 创建房间").arg(targetBot->username);
 
         // 更新 Bot 基础信息
+        targetBot->hostJoined = false;
         targetBot->commandSource = commandSource;
+        targetBot->gameInfo.createTime = QDateTime::currentMSecsSinceEpoch();
         targetBot->gameInfo.clientId = clientId;
         targetBot->gameInfo.hostName = hostName;
         targetBot->gameInfo.gameName = gameName;
-        targetBot->state = BotState::Creating;
         targetBot->client->setHost(hostName);
+        targetBot->state = BotState::Creating;
         targetBot->client->createGame(gameName, "", Provider_TFT_New, Game_TFT_Custom, SubType_None, Ladder_None, commandSource);
 
         qDebug().noquote() << "   └─ 🚀 执行动作: 立即发送 CreateGame 指令";
@@ -361,7 +363,9 @@ bool BotManager::createGame(const QString &hostName, const QString &gameName, Co
     // 统一处理: 启动连接流程 (适用于 阶段2 和 阶段3)
     if (needConnect && targetBot) {
         // 1. 更新 Bot 基础信息
+        targetBot->hostJoined = false;
         targetBot->commandSource = commandSource;
+        targetBot->gameInfo.createTime = QDateTime::currentMSecsSinceEpoch();
         targetBot->gameInfo.clientId = clientId;
         targetBot->gameInfo.hostName = hostName;
         targetBot->gameInfo.gameName = gameName;
@@ -686,7 +690,9 @@ void BotManager::onBotGameCreateSuccess(Bot *bot)
     if (!bot) return;
 
     // 1. 更新状态
+    bot->hostJoined = false;
     bot->state = BotState::Reserved;
+    bot->gameInfo.createTime = QDateTime::currentMSecsSinceEpoch();
 
     QString lowerName = bot->gameInfo.gameName.toLower();
     if (!lowerName.isEmpty()) {
@@ -732,7 +738,7 @@ void BotManager::onBotGameCreateFail(Bot *bot)
 
     // 2. 通知客户端
     if (!bot->gameInfo.clientId.isEmpty()) {
-        m_netManager->sendMessageToClient(bot->gameInfo.clientId, S_C_ERROR, ERR_CREATE_FAILED);
+        m_netManager->sendMessageToClient(bot->gameInfo.clientId, S_C_ERROR, ERR_CREATE_FAILED, 1);
         qDebug().noquote() << QString("   ├─ 👤 通知用户: %1 (Code: ERR_CREATE_FAILED)").arg(bot->gameInfo.clientId.left(8));
     }
 
@@ -750,6 +756,7 @@ void BotManager::onHostJoinedGame(Bot *bot, const QString &hostName)
     if (bot->state == BotState::Reserved) {
 
         // 1. 更新状态
+        bot->hostJoined = true;
         bot->state = BotState::Waiting;
 
         // 2. 打印日志
@@ -769,6 +776,7 @@ void BotManager::onBotPendingTaskTimeout()
 {
     quint64 now = QDateTime::currentMSecsSinceEpoch();
     const quint64 TIMEOUT_MS = 3000;
+    const quint64 HOST_JOIN_TIMEOUT_MS = 5000;
 
     for (int i = 0; i < m_bots.size(); ++i) {
         Bot *bot = m_bots[i];
@@ -787,13 +795,36 @@ void BotManager::onBotPendingTaskTimeout()
 
                 // 3. 通知用户 (1 表示超时)
                 if (!bot->pendingTask.clientId.isEmpty()) {
-                    m_netManager->sendMessageToClient(bot->pendingTask.clientId, S_C_ERROR, ERR_CREATE_FAILED, 1);
+                    m_netManager->sendMessageToClient(bot->pendingTask.clientId, S_C_ERROR, ERR_CREATE_FAILED, 3);
                     qDebug().noquote() << QString("   ├─ 👤 通知用户: %1 (Reason: 1-Timeout)").arg(bot->pendingTask.clientId.left(8));
                 }
 
                 // 4. 强制断线
                 bot->state = BotState::Disconnected;
                 qDebug().noquote() << "   └─ 🛡️ [强制动作] 标记为 Disconnected";
+            }
+        }
+
+        // 检查房主加入超时
+        if (bot->state == BotState::Reserved && !bot->hostJoined) {
+
+            const quint64 diff = now - bot->gameInfo.createTime;
+
+            if (diff > HOST_JOIN_TIMEOUT_MS) {
+                // 1. 打印日志
+                qDebug().noquote() << QString("🚨 [加入超时] Bot-%1 (%2)").arg(bot->id).arg(bot->username);
+                qDebug().noquote() << QString("   ├─ ⏱️ 耗时: %1 ms (阈值: %2 ms)").arg(diff).arg(HOST_JOIN_TIMEOUT_MS);
+                qDebug().noquote() << QString("   ├─ 🏠 房间: %1").arg(bot->gameInfo.gameName);
+                qDebug().noquote() << QString("   └─ 👤 等待房主: %1 (未出现)").arg(bot->gameInfo.hostName);
+
+                // 2. 通知客户端
+                if (!bot->gameInfo.clientId.isEmpty()) {
+                    m_netManager->sendMessageToClient(bot->gameInfo.clientId, S_C_ERROR, ERR_CREATE_FAILED, 4);
+                }
+
+                // 3. 取消游戏
+                removeGameName(bot, false);
+                bot->client->cancelGame();
             }
         }
     }
