@@ -1030,7 +1030,6 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
                         // --- 步骤 A: 发送开始信号 ---
                         socket->write(createW3GSStartDownloadPacket(currentPid));
-                        socket->flush();
 
                         // --- 步骤 B: 更新状态 ---
                         socket->write(createW3GSSlotInfoPacket());
@@ -1040,15 +1039,28 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
                         playerData.isDownloading = true;
                         playerData.downloadOffset = 0;
 
-                        const QByteArray &mapData = m_war3Map.getMapRawData();
-                        int chunkSize = 1442;
-                        if (mapData.size() < chunkSize) chunkSize = mapData.size();
-                        QByteArray firstChunk = mapData.mid(0, chunkSize);
+                        QTimer::singleShot(200, this, [this, currentPid]() {
+                            // 再次检查玩家是否还在线
+                            if (!m_players.contains(currentPid)) return;
 
-                        socket->write(createW3GSMapPartPacket(currentPid, 1, 0, firstChunk));
-                        socket->flush();
+                            PlayerData &p = m_players[currentPid];
+                            if (!p.isDownloading) return;
 
-                        playerData.downloadOffset += chunkSize;
+                            QTcpSocket *s = p.socket;
+                            if (!s || s->state() != QAbstractSocket::ConnectedState) return;
+
+                            qDebug().noquote() << QString("      └─ ⏰ 发送首个地图分片给 PID %1").arg(currentPid);
+
+                            const QByteArray &mapData = m_war3Map.getMapRawData();
+                            int chunkSize = 1442;
+                            if (mapData.size() < chunkSize) chunkSize = mapData.size();
+                            QByteArray firstChunk = mapData.mid(0, chunkSize);
+
+                            s->write(createW3GSMapPartPacket(currentPid, 1, 0, firstChunk));
+                            s->flush();
+
+                            p.downloadOffset += chunkSize;
+                        });
                     } else {
                         qDebug().noquote() << "   └─ ⚠️ 状态: 正在下载中 (忽略重复请求)";
                     }
