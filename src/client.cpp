@@ -935,7 +935,6 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         bool validSlot = false;
         for (int i = 0; i < m_slots.size(); ++i) {
             if (m_slots[i].pid == currentPid) {
-                // 如果已经在 Completed 状态，就不重新开始了
                 if (m_slots[i].downloadStatus != Completed) {
                     m_slots[i].downloadStatus = Downloading;
                     validSlot = true;
@@ -945,29 +944,42 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         }
 
         if (validSlot) {
-            qDebug().noquote() << "   └─ 🚀 响应: 启动下载序列 (分包发送)";
+            qDebug().noquote() << "   └─ 🚀 响应: 启动下载序列 (延迟发送首块)";
 
-            // --- 步骤 A: 发送开始信号 ---
+            // --- 步骤 A: 发送开始信号 (0x3F) ---
             socket->write(createW3GSStartDownloadPacket(currentPid));
             socket->flush();
 
-            // --- 步骤 B: 更新大厅槽位状态 ---
+            // --- 步骤 B: 更新大厅槽位状态 (0x09) ---
             socket->write(createW3GSSlotInfoPacket());
             socket->flush();
 
-            // --- 步骤 C: 发送第一块地图数据 ---
+            // --- 步骤 C: 准备状态 ---
             playerData.isDownloading = true;
             playerData.downloadOffset = 0;
 
-            const QByteArray &mapData = m_war3Map.getMapRawData();
-            int chunkSize = 1442;
-            if (mapData.size() < chunkSize) chunkSize = mapData.size();
-            QByteArray firstChunk = mapData.mid(0, chunkSize);
+            // --- 步骤 D: 延迟发送第一块数据 ---
+            QTimer::singleShot(200, this, [this, currentPid]() {
+                if (!m_players.contains(currentPid)) return;
+                PlayerData &p = m_players[currentPid];
+                if (!p.isDownloading) return;
 
-            socket->write(createW3GSMapPartPacket(currentPid, 1, 0, firstChunk));
-            socket->flush();
+                QTcpSocket *s = p.socket;
+                if (!s || s->state() != QAbstractSocket::ConnectedState) return;
 
-            playerData.downloadOffset += chunkSize;
+                qDebug().noquote() << QString("      └─ ⏰ [延迟触发] 发送首个地图分片给 PID %1").arg(currentPid);
+
+                const QByteArray &mapData = m_war3Map.getMapRawData();
+                int chunkSize = 1442;
+                if (mapData.size() < chunkSize) chunkSize = mapData.size();
+                QByteArray firstChunk = mapData.mid(0, chunkSize);
+
+                s->write(createW3GSMapPartPacket(currentPid, 1, 0, firstChunk));
+                s->flush();
+
+                p.downloadOffset += chunkSize;
+            });
+
         } else {
             qDebug().noquote() << "   └─ ℹ️ 忽略: 玩家已有地图或槽位无效";
         }
@@ -1008,7 +1020,6 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         for (int i = 0; i < m_slots.size(); ++i) {
             if (m_slots[i].pid == currentPid) {
                 if (hasMap) {
-                    // --- 情况 A: 玩家已有地图 ---
                     if (m_slots[i].downloadStatus != Completed) {
                         m_slots[i].downloadStatus = Completed;
                         playerData.isDownloading = false;
@@ -1019,37 +1030,33 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
                     }
                 }
                 else {
-                    // --- 情况 B: 需要下载 ---
                     if (m_slots[i].downloadStatus != Downloading) {
-                        m_slots[i].downloadStatus = Downloading; // 界面显示 0%
+                        m_slots[i].downloadStatus = Downloading;
 
-                        qDebug().noquote() << "   └─ 🚀 流程: 触发下载序列";
+                        qDebug().noquote() << "   └─ 🚀 流程: 触发下载序列 (延迟发送首块)";
                         qDebug().noquote() << "      ├─ 1️⃣ 发送 StartDownload (0x3F) [Flush]";
                         qDebug().noquote() << "      ├─ 2️⃣ 发送 SlotInfo (0x09) [Flush]";
-                        qDebug().noquote() << "      └─ 3️⃣ 发送 First Chunk (0x43)";
+                        qDebug().noquote() << "      └─ 3️⃣ 延迟 200ms 发送 First Chunk (0x43)";
 
-                        // --- 步骤 A: 发送开始信号 ---
                         socket->write(createW3GSStartDownloadPacket(currentPid));
+                        socket->flush();
 
-                        // --- 步骤 B: 更新状态 ---
                         socket->write(createW3GSSlotInfoPacket());
                         socket->flush();
 
-                        // --- 步骤 C: 发送第一块数据 ---
                         playerData.isDownloading = true;
                         playerData.downloadOffset = 0;
 
-                        QTimer::singleShot(500, this, [this, currentPid]() {
-                            // 再次检查玩家是否还在线
+                        // --- 延迟发送 ---
+                        QTimer::singleShot(200, this, [this, currentPid]() {
                             if (!m_players.contains(currentPid)) return;
-
                             PlayerData &p = m_players[currentPid];
                             if (!p.isDownloading) return;
 
                             QTcpSocket *s = p.socket;
                             if (!s || s->state() != QAbstractSocket::ConnectedState) return;
 
-                            qDebug().noquote() << QString("      └─ ⏰ 发送首个地图分片给 PID %1").arg(currentPid);
+                            qDebug().noquote() << QString("      └─ ⏰ [延迟触发] 发送首个地图分片给 PID %1").arg(currentPid);
 
                             const QByteArray &mapData = m_war3Map.getMapRawData();
                             int chunkSize = 1442;
@@ -1069,7 +1076,6 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
             }
         }
 
-        // 如果状态变更（变成了 Completed），需要广播给其他人
         if (slotUpdated) broadcastSlotInfo();
     }
     break;
