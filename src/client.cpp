@@ -1002,104 +1002,61 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         bool isMapMatched = (clientMapSize == hostMapSize && sizeFlag == 1);
         bool isDownloadFinished = (clientMapSize == hostMapSize);
 
-        if (sizeFlag == 1 || isDownloadFinished) {
-            qDebug().noquote() << QString("📥 [W3GS] 收到数据包: 0x42 (MapSize)");
-            qDebug().noquote() << QString("   ├─ 👤 玩家: %1 (PID: %2)").arg(playerName).arg(currentPid);
-            qDebug().noquote() << QString("   ├─ 📊 报告: Size=%1 (Host: %2) | Flag=%3")
-                                      .arg(clientMapSize).arg(hostMapSize).arg(sizeFlag);
-        }
-
+        // 2. 核心逻辑
         bool slotUpdated = false;
-
         for (int i = 0; i < m_slots.size(); ++i) {
             if (m_slots[i].pid == currentPid) {
 
-                // --- 情况 A: 玩家已有地图 ---
-                if (isMapMatched) {
+                // [A] 下载完成
+                if (isMapMatched || isDownloadFinished) {
                     if (m_slots[i].downloadStatus != Completed) {
                         m_slots[i].downloadStatus = Completed;
                         playerData.isDownloading = false;
                         slotUpdated = true;
-                        qDebug().noquote() << "   └─ ✅ 状态: 校验通过 (无需下载)";
-                    } else {
-                        qDebug().noquote() << "   └─ ℹ️ 状态: 保持完成状态";
+                        qDebug().noquote() << "   └─ ✅ 状态: 地图完整/校验通过";
                     }
                 }
-                // --- 情况 B: 下载刚刚完成 ---
-                else if (isDownloadFinished) {
-                    if (m_slots[i].downloadStatus != Completed) {
-                        m_slots[i].downloadStatus = Completed;
-                        playerData.isDownloading = false;
-                        slotUpdated = true;
-                        qDebug().noquote() << "   └─ ✅ 状态: 地图完整 (下载流程结束)";
-                    }
-                }
-                // --- 情况 C: 需要下载 / 正在下载 ---
+                // [B] 需要下载
                 else {
-                    // 1. 标记状态
                     if (m_slots[i].downloadStatus != Downloading) {
-                        m_slots[i].downloadStatus = Downloading; // 界面显示 0%
+                        m_slots[i].downloadStatus = Downloading;
                     }
                     playerData.isDownloading = true;
 
-                    // 2. 准备数据块参数
-                    playerData.downloadOffset = clientMapSize;
-
-                    const QByteArray &mapData = m_war3Map.getMapRawData();
-                    int chunkSize = CHUNK_SIZE; // 使用 1024 防止 MTU 问题
-
-                    // 越界修正
-                    if (playerData.downloadOffset >= (quint32)mapData.size()) {
-                        playerData.downloadOffset = 0;
-                    }
-
-                    // 计算实际块大小
-                    if (mapData.size() < chunkSize) chunkSize = mapData.size();
-                    if (playerData.downloadOffset + chunkSize > (quint32)mapData.size()) {
-                        chunkSize = mapData.size() - playerData.downloadOffset;
-                    }
-
-                    QByteArray nextChunk = mapData.mid(playerData.downloadOffset, chunkSize);
-
-                    // --- 分支 C-1: 初始请求 (Size=0, Flag=1) ---
+                    // 情况 1: 初始请求 / 开始下载 (Flag=3)
                     if (sizeFlag == 1 && clientMapSize == 0) {
-                        qDebug().noquote() << "   └─ 🚀 流程: 触发下载序列 (StartDownload)";
-                        qDebug().noquote() << "      ├─ 1️⃣ 发送 StartDownload (0x3F) [Flush]";
-                        qDebug().noquote() << "      ├─ 2️⃣ 发送 SlotInfo (0x09) [Flush]";
-                        qDebug().noquote() << "      └─ 3️⃣ 延迟 200ms 发送 First Chunk (0x43)";
+                        qDebug().noquote() << "   └─ 🚀 流程: 触发初始下载 (0x3F)";
 
-                        // 必须填 Bot PID (1)
                         socket->write(createW3GSStartDownloadPacket(1));
-                        socket->flush();
-
                         socket->write(createW3GSSlotInfoPacket());
                         socket->flush();
 
-                        // 延迟发送第一块，防止秒断
-                        QTimer::singleShot(200, this, [this, currentPid, nextChunk, chunkSize]() {
-                            if (!m_players.contains(currentPid)) return;
-                            QTcpSocket* s = m_players[currentPid].socket;
-                            if (s && s->state() == QAbstractSocket::ConnectedState) {
-                                s->write(createW3GSMapPartPacket(currentPid, 1, 0, nextChunk));
-                                s->flush();
-                                m_players[currentPid].downloadOffset += chunkSize;
+                        // 初始化
+                        playerData.downloadOffset = 0;
 
-                                qDebug().noquote() << QString("      └─ ⏰ [延迟触发] 已发送首块数据 (PID: %1)").arg(currentPid);
-                            }
+                        // 延时发第一块
+                        QTimer::singleShot(200, this, [this, currentPid]() {
+                            if (m_players.contains(currentPid))
+                                sendNextMapPart(currentPid);
                         });
                     }
-                    // --- 分支 C-2: 进度同步 / 补包请求 (Flag=3 或 Size>0) ---
+                    // 情况 2: 进度同步 / 重传请求 (Flag=3)
                     else {
-                        socket->write(createW3GSMapPartPacket(currentPid, 1, playerData.downloadOffset, nextChunk));
-                        socket->flush();
+                        if (clientMapSize < playerData.downloadOffset) {
+                            qDebug().noquote() << QString("   └─ 🔄 [回滚重传] Client: %1 < Server: %2 -> 重发块")
+                                                      .arg(clientMapSize).arg(playerData.downloadOffset);
 
-                        playerData.downloadOffset += chunkSize;
+                            playerData.downloadOffset = clientMapSize;
+                            sendNextMapPart(currentPid);
+                        }
+                        else if (clientMapSize == playerData.downloadOffset) {
+
+                        }
                     }
                 }
                 break;
             }
         }
-
         if (slotUpdated) broadcastSlotInfo();
     }
     break;
@@ -1121,6 +1078,17 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         m_players[currentPid].lastResponseTime = QDateTime::currentMSecsSinceEpoch();
         m_players[currentPid].lastDownloadTime = QDateTime::currentMSecsSinceEpoch();
         sendNextMapPart(currentPid);
+    }
+    break;
+
+    case W3GS_MAPPARTNOTOK: // [0x45] 客户端报告 CRC 校验失败
+    {
+        quint8 currentPid = 0;
+        for (auto it = m_players.begin(); it != m_players.end(); ++it) {
+            if (it.value().socket == socket) { currentPid = it.key(); break; }
+        }
+
+        qDebug().noquote() << QString("      └─ ⚠️ [下载错误] PID %1 报告 CRC 校验失败 (0x45) -> 等待 0x42 重同步").arg(currentPid);
     }
     break;
 
