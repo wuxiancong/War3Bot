@@ -355,7 +355,7 @@ void Client::sendNextMapPart(quint8 toPid, quint8 fromPid)
                 for (int i = 0; i < m_slots.size(); ++i) {
                     if (m_slots[i].pid == toPid) {
                         quint8 oldStatus = m_slots[i].downloadStatus;
-                        if (oldStatus != Completed && percent > oldStatus && (percent - oldStatus >= 1)) {
+                        if (oldStatus != Completed && percent > oldStatus && (percent - oldStatus >= 5)) {
                             m_slots[i].downloadStatus = static_cast<quint8>(percent);
                             needBroadcast = true;
                         }
