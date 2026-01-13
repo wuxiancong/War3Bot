@@ -362,7 +362,26 @@ int main(int argc, char *argv[]) {
         // ---------------------------------------------------------
         // 命令: connect [用户名] [密码] [地址] [端口]
         // ---------------------------------------------------------
-        if (action == "connect") {
+        if (action == "log") {
+            QString subOption = (parts.size() > 1) ? parts[1].toLower() : "";
+
+            if (subOption == "off" || subOption == "0") {
+                // 关闭控制台输出 (但文件日志依然会记录)
+                Logger::instance()->enableConsoleOutput(false);
+                // 这句话只能在日志文件里看到
+                LOG_INFO("控制台日志已暂停 (输入 'log on' 恢复)");
+                printf("🔇 控制台日志已暂停。现在可以清爽地输入命令了。\n");
+            }
+            else if (subOption == "on" || subOption == "1") {
+                Logger::instance()->enableConsoleOutput(true);
+                printf("🔊 控制台日志已恢复。\n");
+                LOG_INFO("控制台日志已恢复");
+            }
+            else {
+                printf("用法: log [on|off]\n");
+            }
+            return; // 处理完直接返回
+        } else if (action == "connect") {
             QString user   = (parts.size() > 1) ? parts[1] : "";
             QString pass   = (parts.size() > 2) ? parts[2] : "";
             QString server = (parts.size() > 3) ? parts[3] : configServer;
