@@ -714,7 +714,7 @@ void Client::onPlayerReadyRead()
 void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &payload)
 {
     // 忽略高频包的入口日志，避免刷屏
-    if (id != 0x44 && id != 0x46) {
+    if (id != 0x42 && id != 0x44 && id != 0x46) {
         qDebug().noquote() << QString("📥 [W3GS] 收到数据包: 0x%1").arg(QString::number(id, 16).toUpper());
     }
 
