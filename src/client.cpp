@@ -281,7 +281,7 @@ void Client::sendNextMapPart(quint8 toPid, quint8 fromPid)
     playerData.lastDownloadTime = now;
 
     // [检查点 1] 状态检查
-    if (!playerData.isDownloading) {
+    if (!playerData.isDownloadStart   ) {
         // 这种警告通常不需要树状结构，单行即可
         qDebug().noquote() << QString("⚠️ [地图上传] 忽略请求: 玩家 [%1] 未处于下载状态").arg(playerData.name);
         return;
@@ -304,7 +304,7 @@ void Client::sendNextMapPart(quint8 toPid, quint8 fromPid)
         qDebug().noquote() << QString("   ├─ 📊 数据统计: %1 / %2 bytes").arg(playerData.downloadOffset).arg(totalSize);
         qDebug().noquote() << "   └─ 🚀 动作: 标记完成 -> 广播 SlotInfo -> 发送确认包";
 
-        playerData.isDownloading = false;
+        playerData.isDownloadStart    = false;
 
         // 更新槽位并广播
         for (int i = 0; i < m_slots.size(); ++i) {
@@ -344,14 +344,31 @@ void Client::sendNextMapPart(quint8 toPid, quint8 fromPid)
     // 分支 C: 发送结果处理
     if (written > 0) {
         if (playerData.downloadOffset == 0 || playerData.downloadOffset % (1024 * 1024) < 2000) {
-            int percent = (int)((double)playerData.downloadOffset / totalSize * 100);
-
+            int percent = (int)((double)playerData.downloadOffset / totalSize * 100);            
+            if (percent > 99) percent = 99;
             // 使用简化的树状结构显示进度节点
             qDebug().noquote() << QString("📤 [地图上传] 传输中: %1").arg(playerData.name);
             qDebug().noquote() << QString("   └─ 📦 进度: %1% (Offset: %2 | Chunk: %3)")
                                       .arg(percent, 2) // 占位对齐
                                       .arg(playerData.downloadOffset)
                                       .arg(chunkSize);
+
+            bool needBroadcast = false;
+            for (int i = 0; i < m_slots.size(); ++i) {
+                if (m_slots[i].pid == toPid) {
+                    quint8 oldStatus = m_slots[i].downloadStatus;
+                    if (oldStatus != Completed && percent > oldStatus && (percent - oldStatus >= 5)) {
+                        m_slots[i].downloadStatus = static_cast<quint8>(percent);
+                        needBroadcast = true;
+                        qDebug().noquote() << QString("   └─ 🔄 更新槽位显示: %1%").arg(percent);
+                    }
+                    break;
+                }
+            }
+
+            if (needBroadcast) {
+                broadcastSlotInfo();
+            }
         }
 
         // 更新偏移量
@@ -361,7 +378,7 @@ void Client::sendNextMapPart(quint8 toPid, quint8 fromPid)
         qDebug().noquote() << QString("   ├─ 📝 错误信息: %1").arg(playerData.socket->errorString());
         qDebug().noquote() << "   └─ 🛡️ 动作: 终止下载状态";
 
-        playerData.isDownloading = false; // 终止下载
+        playerData.isDownloadStart    = false; // 终止下载
     }
 }
 
@@ -937,7 +954,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         qDebug().noquote() << QString("   └─ 👤 玩家: %1 (PID: %2)").arg(playerData.name).arg(currentPid);
 
         // 2. 防重复检查
-        if (playerData.isDownloading) {
+        if (playerData.isDownloadStart   ) {
             qDebug().noquote() << "   └─ ⚠️ 忽略: 已经在下载进程中";
             return;
         }
@@ -947,7 +964,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         for (int i = 0; i < m_slots.size(); ++i) {
             if (m_slots[i].pid == currentPid) {
                 if (m_slots[i].downloadStatus != Completed) {
-                    m_slots[i].downloadStatus = Downloading;
+                    m_slots[i].downloadStatus = DownloadStart   ;
                     validSlot = true;
                 }
                 break;
@@ -955,7 +972,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         }
 
         if (validSlot) {
-            qDebug().noquote() << "   └─ 🚀 响应: 启动下载序列 (握手)";
+            qDebug().noquote() << "   └─ 🚀 响应: 启动下载序列";
 
             // --- 步骤 A: 发送开始信号 (0x3F) ---
             socket->write(createW3GSStartDownloadPacket(1));
@@ -966,7 +983,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
             socket->flush();
 
             // --- 步骤 C: 准备状态 ---
-            playerData.isDownloading = true;
+            playerData.isDownloadStart    = true;
             qDebug().noquote() << QString("   └─ 📤 等待客户端发送 0x42(size=0) 包过来");
         } else {
             qDebug().noquote() << "   └─ ℹ️ 忽略: 玩家已有地图或槽位无效";
@@ -1010,21 +1027,21 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
                 if (isMapMatched || isDownloadFinished) {
                     if (m_slots[i].downloadStatus != Completed) {
                         m_slots[i].downloadStatus = Completed;
-                        playerData.isDownloading = false;
+                        playerData.isDownloadStart    = false;
                         slotUpdated = true;
                         qDebug().noquote() << "   └─ ✅ 状态: 地图完整/校验通过";
                     }
                 }
                 // [B] 需要下载
                 else {
-                    if (m_slots[i].downloadStatus != Downloading) {
-                        m_slots[i].downloadStatus = Downloading;
+                    if (m_slots[i].downloadStatus != DownloadStart   ) {
+                        m_slots[i].downloadStatus = DownloadStart   ;
                     }
-                    playerData.isDownloading = true;
+                    playerData.isDownloadStart    = true;
 
                     // 情况 1: 初始请求 / 开始下载 (Flag=3)
                     if (sizeFlag == 1 && clientMapSize == 0) {
-                        qDebug().noquote() << "   └─ 🚀 流程: 触发初始下载 (由 0x42 驱动)";
+                        qDebug().noquote() << "   └─ 🚀 流程: 触发初始下载";
 
                         socket->write(createW3GSStartDownloadPacket(1));
                         socket->write(createW3GSSlotInfoPacket());
@@ -1061,11 +1078,11 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
     case W3GS_MAPPARTOK: //  [0x44] 客户端确认地图 OK
     {
-        if (payload.size() < 9) return;
+        if (payload.size() < 10) return;
         QDataStream in(payload);
         in.setByteOrder(QDataStream::LittleEndian);
-        quint8 fromPid, toPid; quint32 clientOffset;
-        in >> fromPid >> toPid >> clientOffset;
+        quint8 fromPid, toPid; quint32 unknownFlag, clientOffset;
+        in >> fromPid >> toPid >> unknownFlag >> clientOffset;
 
         quint8 currentPid = 0;
         for (auto it = m_players.begin(); it != m_players.end(); ++it) {
@@ -2483,7 +2500,7 @@ void Client::checkPlayerTimeout()
             timeDetails = QString("%1 秒无响应 (阈值: %2)").arg(silenceTime / 1000).arg(TIMEOUT_CONNECTION / 1000);
         }
         // 2. 检查下载超时 (仅针对正在下载的玩家)
-        else if (playerData.isDownloading && downloadSilenceTime > TIMEOUT_DOWNLOAD) {
+        else if (playerData.isDownloadStart    && downloadSilenceTime > TIMEOUT_DOWNLOAD) {
             kick = true;
             reasonCategory = "下载卡死 (Download Stalled)";
             timeDetails = QString("%1 秒无进度 (阈值: %2)").arg(downloadSilenceTime / 1000).arg(TIMEOUT_DOWNLOAD / 1000);

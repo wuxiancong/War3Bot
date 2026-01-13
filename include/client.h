@@ -229,7 +229,7 @@ enum SlotStatus {
 
 // 下载状态
 enum DownloadStatus {
-    Downloading                 = 0,    // 0-99%
+    DownloadStart               = 0,    // 0-99%
     Completed                   = 100,  // 100%
     NotStarted                  = 255   // 无地图
 };
@@ -334,7 +334,7 @@ struct PlayerData {
     QTextCodec*     codec           = nullptr;
 
     // 下载状态
-    bool            isDownloading   = false;
+    bool            isDownloadStart      = false;
     quint32         downloadOffset  = 0;
 
     // 时间检测
