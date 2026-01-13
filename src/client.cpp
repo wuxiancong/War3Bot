@@ -311,7 +311,6 @@ void Client::sendNextMapPart(quint8 toPid, quint8 fromPid)
         qint64 written = playerData.socket->write(packet);
 
         if (written > 0) {
-            playerData.downloadOffset += chunkSize;
             // 每传输 ~1MB 触发一次
             if (playerData.downloadOffset % (1024 * 1024) < 2000) {
                 int percent = (int)((double)playerData.downloadOffset / totalSize * 100);
@@ -1024,22 +1023,21 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
                         sendNextMapPart(currentPid);
                         qDebug().noquote() << QString("   └─ 📤 等待客户端发送 0x42(size=0) 包过来");
                     }
-                    // 情况 2: 进度同步 / 重传请求
+                    // 情况 2: 进度同步 / 重传请求 (Flag=3)
                     else {
-                        bool isJustProgressReport = (sizeFlag == 1) && (playerData.downloadOffset >= hostMapSize);
-
-                        if (!isJustProgressReport && clientMapSize < playerData.downloadOffset) {
-                            qDebug().noquote() << QString("   └─ 🔄 回滚重传: Client(%1) < Server(%2)")
-                                                      .arg(clientMapSize).arg(playerData.downloadOffset);
-                            playerData.downloadOffset = clientMapSize;
+                        if (clientMapSize < playerData.downloadOffset) {
+                            // 限制日志频率
+                            if(clientMapSize % (1024 * 1024) < 2000) {
+                                qDebug().noquote() << QString("   └─ 🔄 [回滚重传] Client: %1 < Server: %2 -> 重发分块")
+                                                          .arg(clientMapSize).arg(playerData.downloadOffset);
+                            }
                             sendNextMapPart(currentPid);
                         }
                         else if (clientMapSize == playerData.downloadOffset) {
-                            sendNextMapPart(currentPid);
-                        }
-                        else {
-                            if (sizeFlag == 1) {
-                                qDebug() << "🔄 进度更新:" << clientMapSize;
+                            // 限制日志频率
+                            if(clientMapSize % (1024 * 1024) < 2000) {
+                                qDebug().noquote() << QString("   └─ ℹ️ [进度同步] Client: %1 = Server: %2 -> 状态一致")
+                                                          .arg(clientMapSize).arg(playerData.downloadOffset);
                             }
                         }
                     }
@@ -1066,12 +1064,15 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         if (currentPid == 0) return;
 
         if (m_players.contains(currentPid)) {
-            PlayerData &player = m_players[currentPid];
+            PlayerData &playerData = m_players[currentPid];
             // 限制日志频率
             if(clientOffset % (1024 * 1024) < 2000) {
                 qDebug().noquote() << QString("   └─ ✅ [ACK] 客户端确认接收至: %1").arg(clientOffset);
             }
-            player.lastResponseTime = QDateTime::currentMSecsSinceEpoch();
+
+
+            playerData.downloadOffset = clientOffset;
+            playerData.lastResponseTime = QDateTime::currentMSecsSinceEpoch();
 
             // 发送下一块
             sendNextMapPart(currentPid);
