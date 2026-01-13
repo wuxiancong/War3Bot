@@ -15,6 +15,7 @@ INSTALL_PREFIX="/opt/War3Bot"
 CONFIG_DIR="/etc/War3Bot"
 LOG_DIR="/var/log/War3Bot"
 SERVICE_NAME="war3bot"
+SERVICE_PORT=6116
 USER_NAME="war3bot"
 
 info() { echo -e "${GREEN}[INFO] $1${NC}"; }
@@ -129,7 +130,7 @@ User=$USER_NAME
 Group=$USER_NAME
 WorkingDirectory=$INSTALL_PREFIX
 # 显式指定配置文件路径
-ExecStart=$INSTALL_PREFIX/War3Bot --config $CONFIG_DIR/war3bot.ini -p 6116
+ExecStart=$INSTALL_PREFIX/War3Bot --config $CONFIG_DIR/war3bot.ini -p $SERVICE_PORT
 
 # 自动重启策略
 Restart=always
