@@ -39,8 +39,13 @@ Client::Client(QObject *parent)
     m_tcpServer = new QTcpServer(this);
     m_tcpSocket = new QTcpSocket(this);
 
+    m_startTimer = new QTimer(this);
+    m_startTimer->setSingleShot(true);
+
     // 2. 信号槽连接
     connect(m_pingTimer, &QTimer::timeout, this, &Client::sendPingLoop);
+    connect(m_startTimer, &QTimer::timeout, this, &Client::onGameStarted);
+
     connect(m_tcpSocket, &QTcpSocket::connected, this, &Client::onConnected);
     connect(m_tcpSocket, &QTcpSocket::readyRead, this, &Client::onTcpReadyRead);
     connect(m_tcpSocket, &QTcpSocket::disconnected, this, &Client::onDisconnected);
@@ -1264,6 +1269,24 @@ void Client::onPlayerDisconnected() {
     }
 }
 
+void Client::onGameStarted()
+{
+    // 1. 标记状态
+    m_gameStarted = true;
+
+    // 2. 发送倒计时结束包
+    broadcastPacket(createW3GSCountdownEndPacket(), 0);
+
+    // 3. 停止 Ping 循环
+    if (m_pingTimer && m_pingTimer->isActive()) {
+        m_pingTimer->stop();
+    }
+
+    qDebug().noquote() << "🚀 [游戏启动] 倒计时结束，进入加载界面";
+
+    emit gameStarted();
+}
+
 // =========================================================
 // 4. UDP 核心处理
 // =========================================================
@@ -1774,6 +1797,9 @@ void Client::cancelGame() {
     qDebug().noquote() << "   ├─ 🧹 内存清理: 槽位重置 & 容器清空";
 
     // 7. 重置标志位
+    if (m_startTimer->isActive()) {
+        m_startTimer->stop();
+    }
     m_gameStarted = false;
     m_hostCounter++;
 
@@ -1881,6 +1907,44 @@ void Client::createGame(const QString &gameName, const QString &password, Provid
     }
 }
 
+void Client::startGame()
+{
+    // 1. 状态检查
+    if (m_gameStarted) return;
+    if (m_startTimer->isActive()) return;
+
+    // 2. 发送开始倒计时包
+    broadcastPacket(createW3GSCountdownStartPacket(), 0);
+
+    // 3. 广播聊天提示
+    MultiLangMsg msg;
+    msg.add("CN", "游戏将于 5 秒后开始...")
+        .add("EN", "Game starts in 5 seconds...");
+    broadcastChatMessage(msg);
+
+    // 4. 停止 UDP 广播 (停止进人)
+    stopAdv();
+
+    // 5. 启动内部定时器 (5秒)
+    m_startTimer->start(5000);
+
+    qDebug().noquote() << "⏳ [游戏启动] 开始倒计时...";
+}
+
+void Client::abortGame()
+{
+    if (m_startTimer->isActive()) {
+        m_startTimer->stop();
+        MultiLangMsg msg;
+        msg.add("CN", "倒计时已取消。")
+            .add("EN", "Countdown aborted.");
+        broadcastChatMessage(msg);
+
+        // 恢复广播
+        // sendPacket(SID_STARTADVEX3, ...);
+    }
+}
+
 // =========================================================
 // 8. 地图数据处理
 // =========================================================
@@ -1927,6 +1991,26 @@ QByteArray Client::createW3GSPingFromHostPacket()
     // 客户端收到后会在 0x46 (Pong) 包里原样发回来，用于计算延迟
     out << (quint32)QDateTime::currentMSecsSinceEpoch();
 
+    return packet;
+}
+
+QByteArray Client::createW3GSCountdownStartPacket()
+{
+    QByteArray packet;
+    QDataStream out(&packet, QIODevice::WriteOnly);
+    out.setByteOrder(QDataStream::LittleEndian);
+    // Header: F7 0A 04 00 (长度固定为4)
+    out << (quint8)0xF7 << (quint8)0x0A << (quint16)4;
+    return packet;
+}
+
+QByteArray Client::createW3GSCountdownEndPacket()
+{
+    QByteArray packet;
+    QDataStream out(&packet, QIODevice::WriteOnly);
+    out.setByteOrder(QDataStream::LittleEndian);
+    // Header: F7 0B 04 00
+    out << (quint8)0xF7 << (quint8)0x0B << (quint16)4;
     return packet;
 }
 
@@ -2426,26 +2510,39 @@ void Client::swapSlots(int slot1, int slot2)
 
     // 3. 越界检查
     if (idx1 < 0 || idx1 >= maxSlots || idx2 < 0 || idx2 >= maxSlots) {
-        LOG_WARNING(QString("⚠️ [Swap] 索引越界: %1 <-> %2 (Max: %3)").arg(slot1).arg(slot2).arg(maxSlots));
+        qDebug().noquote() << QString("⚠️ [Swap] 索引越界: %1 <-> %2 (Max: %3)").arg(slot1).arg(slot2).arg(maxSlots);
         return;
     }
 
-    // 4. 保护检查
+    // 4. 保护检查 (防止交换 HostBot 自身，通常 Bot 在 PID 1)
     if (m_slots[idx1].pid == 1 || m_slots[idx2].pid == 1) {
+        // 可选：发送聊天提示
         return;
     }
 
-    // 5. 执行交换
-    std::swap(m_slots[idx1], m_slots[idx2]);
+    // 5. 只交换玩家数据，不交换房间属性
+    GameSlot &s1 = m_slots[idx1];
+    GameSlot &s2 = m_slots[idx2];
 
-    // 6. 重新分配颜色 (可选)
-    // m_slots[idx1].color = idx1 + 1;
-    // m_slots[idx2].color = idx2 + 1;
+    // [A] 交换玩家身份与状态
+    std::swap(s1.pid,            s2.pid);            // 交换 PID
+    std::swap(s1.downloadStatus, s2.downloadStatus); // 交换下载进度
+    std::swap(s1.slotStatus,     s2.slotStatus);     // 交换开/关/占用状态
+    std::swap(s1.computer,       s2.computer);       // 交换电脑标志
+    std::swap(s1.computerType,   s2.computerType);   // 交换电脑难度
+    std::swap(s1.handicap,       s2.handicap);       // 交换生命值设定
 
-    // 7. 打印日志
-    qDebug().noquote() << QString("🔄 [Slot] 交换槽位: %1 <-> %2").arg(slot1).arg(slot2);
+    // [B] 以下属性不要交换，保留在原槽位上：
+    // s1.team  vs s2.team   (队伍必须固定在槽位上)
+    // s1.color vs s2.color  (颜色通常固定在槽位上)
+    // s1.race  vs s2.race   (DotA中 1-5是暗夜, 6-10是不死，必须固定)
 
-    // 8. 广播更新
+    // 6. 打印日志
+    qDebug().noquote() << QString("🔄 [Slot] 交换完成: %1 (Team %2) <-> %3 (Team %4)")
+                              .arg(slot1).arg(s1.team)
+                              .arg(slot2).arg(s2.team);
+
+    // 7. 广播更新
     broadcastSlotInfo();
 }
 

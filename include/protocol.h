@@ -53,7 +53,8 @@ enum ErrorCode : quint8 {
     ERR_NAME_TOO_LONG               = 7,
     ERR_GAME_NAME_EXISTS            = 8,
     ERR_NO_BOTS_AVAILABLE           = 9,
-    ERR_CREATE_FAILED               = 10
+    ERR_CREATE_FAILED               = 10,
+    ERR_NOT_ENOUGH_PLAYERS          = 11
 };
 
 enum MessageCode : quint8 {

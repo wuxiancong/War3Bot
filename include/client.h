@@ -413,6 +413,8 @@ public:
                     ProviderVersion providerVersion, ComboGameType comboGameType,
                     SubGameType subGameType, LadderType ladderType,CommandSource commandSource);
     void cancelGame();                                  // 取消/解散游戏
+    void abortGame();
+    void startGame();
     void stopAdv();                                     // 停止广播
 
     // --- 工具函数 ---
@@ -437,6 +439,7 @@ public:
     void setBotFlag(bool isBot) { m_isBot = isBot; }
 signals:
     void connected();
+    void gameStarted();
     void gameCanceled();
     void disconnected();
     void authenticated();
@@ -450,6 +453,7 @@ signals:
 private slots:
     // --- 网络事件 ---
     void onConnected();
+    void onGameStarted();
     void onDisconnected();
     void onTcpReadyRead();
     void onUdpReadyRead();
@@ -472,6 +476,8 @@ private:
     QByteArray createW3GSSlotInfoPacket();
     QByteArray createW3GSMapCheckPacket();
     QByteArray createW3GSPingFromHostPacket();
+    QByteArray createW3GSCountdownEndPacket();
+    QByteArray createW3GSCountdownStartPacket();
     QByteArray createW3GSStartDownloadPacket(quint8 fromPid);
     QByteArray createW3GSRejectJoinPacket(RejectReason reason);
     QByteArray createW3GSPlayerLeftPacket(quint8 pid, quint32 reason);
@@ -561,8 +567,11 @@ private:
     // 连接管理
     QUdpSocket                      *m_udpSocket            = nullptr;
     QTcpSocket                      *m_tcpSocket            = nullptr;      // 战网连接
-    QTcpServer                      *m_tcpServer            = nullptr;      // 玩家监听
+    QTcpServer                      *m_tcpServer            = nullptr;      // 玩家监听|
+
+    // 时间管理
     QTimer                          *m_pingTimer            = nullptr;
+    QTimer                          *m_startTimer           = nullptr;
 
     // 设置标志
     bool m_isBot = false;

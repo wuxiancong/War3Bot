@@ -707,6 +707,42 @@ void BotManager::onCommandReceived(const QString &userName, const QString &clien
             qDebug().noquote() << "   └─ ❌ 格式错误: 参数必须为数字";
         }
     }
+    else if (command == "/start") {
+        qDebug().noquote() << "🚀 [启动请求记录]";
+
+        // 1. 寻找 Bot
+        Bot *targetBot = nullptr;
+        for (Bot *bot : qAsConst(m_bots)) {
+            // 必须是 Waiting 状态 (即已经在房间里) 且是房主
+            if (bot->state == BotState::Waiting && bot->gameInfo.clientId == clientId) {
+                targetBot = bot;
+                break;
+            }
+        }
+
+        if (!targetBot) {
+            m_netManager->sendMessageToClient(clientId, S_C_ERROR, ERR_PERMISSION_DENIED);
+            return;
+        }
+
+        qDebug().noquote() << QString("   ├─ 👤 房主: %1").arg(userName);
+
+        // 2. 执行启动
+        if (targetBot->client) {
+            // 可选：检查人数
+            if (targetBot->client->getOccupiedSlots() < 2) {
+                // m_netManager->sendMessageToClient(clientId, S_C_ERROR, ERR_NOT_ENOUGH_PLAYERS);
+                // return;
+            }
+
+            qDebug().noquote() << "   └─ 🚀 执行动作: 调用 startGame()";
+            targetBot->client->startGame();
+
+            // 更新 Bot 状态为 Starting
+            targetBot->state = BotState::Starting;
+            emit botStateChanged(targetBot->id, targetBot->username, targetBot->state);
+        }
+    }
     // ==================== 处理 /unhost ====================
     else if (command == "/unhost") {
         qDebug().noquote() << "🛑 [取消房间流程]";
