@@ -309,7 +309,7 @@ void Client::sendNextMapPart(quint8 toPid, quint8 fromPid)
     while (playerData.socket->bytesToWrite() < 64 * 1024)
     {
         // 传输完成判断
-        if (playerData.currentDownloadOffset >= totalSize) {
+        if (playerData.lastDownloadOffset >= totalSize) {
             qDebug().noquote() << QString("✅ [分块传输] 传输完成: %1").arg(playerData.name);
             qDebug().noquote() << QString("   ├─ 📊 数据统计: %1 / %2 bytes").arg(playerData.currentDownloadOffset).arg(totalSize);
 
