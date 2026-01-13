@@ -1174,7 +1174,7 @@ void Client::onPlayerDisconnected() {
     QString nameToRemove = "Unknown";
     bool wasVisualHost = false;
 
-    // 1. 查找玩家
+    // 1. 查找玩家并移除 Map 记录
     auto it = m_players.begin();
     while (it != m_players.end()) {
         if (it.value().socket == socket) {
@@ -1194,12 +1194,20 @@ void Client::onPlayerDisconnected() {
     socket->deleteLater();
 
     if (pidToRemove != 0) {
-        // 1. 打印根节点
         qDebug().noquote() << QString("🔌 [断开连接] 玩家离线: %1 (PID: %2)").arg(nameToRemove).arg(pidToRemove);
+
+        // 记录被清理的槽位索引
+        int oldHostSlotIndex = -1;
 
         // 2. 释放槽位逻辑
         for (int i = 0; i < m_slots.size(); ++i) {
             if (m_slots[i].pid == pidToRemove) {
+
+                // 如果是房主离开，记录下这个位置 (通常是 0)
+                if (wasVisualHost) {
+                    oldHostSlotIndex = i;
+                }
+
                 m_slots[i].pid = 0;
                 m_slots[i].slotStatus = Open;
                 m_slots[i].downloadStatus = NotStarted;
@@ -1240,19 +1248,50 @@ void Client::onPlayerDisconnected() {
                 m_host = heirName;
 
                 qDebug().noquote() << QString("   │  ├─ 🔍 继承人: %1 (PID: %2)").arg(heirName).arg(heirPid);
+
+                // 执行槽位移动 (Move Heir to Host Slot)
+                if (oldHostSlotIndex != -1) {
+                    int heirSlotIndex = -1;
+
+                    // 寻找继承人当前的槽位索引
+                    for (int i = 0; i < m_slots.size(); ++i) {
+                        if (m_slots[i].pid == heirPid) {
+                            heirSlotIndex = i;
+                            break;
+                        }
+                    }
+
+                    // 如果找到了，并且位置不一样，则交换内容
+                    if (heirSlotIndex != -1 && heirSlotIndex != oldHostSlotIndex) {
+
+                        GameSlot &hostSlot = m_slots[oldHostSlotIndex]; // 此时它是空的 (PID=0, Open)
+                        GameSlot &heirSlot = m_slots[heirSlotIndex];    // 此时它有人 (PID=Heir, Occupied)
+
+                        std::swap(hostSlot.pid,            heirSlot.pid);
+                        std::swap(hostSlot.downloadStatus, heirSlot.downloadStatus);
+                        std::swap(hostSlot.slotStatus,     heirSlot.slotStatus);
+                        std::swap(hostSlot.computer,       heirSlot.computer);
+                        std::swap(hostSlot.computerType,   heirSlot.computerType);
+                        std::swap(hostSlot.handicap,       heirSlot.handicap);
+
+                        // 不需要交换 Team/Color/Race，继承人直接继承房主槽位的队伍和颜色
+
+                        qDebug().noquote() << QString("   │  ├─ 🔄 位置调整: 继承人从 Slot %1 移至 Slot %2 (Host位)")
+                                                  .arg(heirSlotIndex).arg(oldHostSlotIndex);
+                    }
+                }
+
                 qDebug().noquote() << "   │  └─ ✅ 结果: 权限移交完成";
 
                 // 3. 广播移交通知
                 MultiLangMsg transferMsg;
                 transferMsg.add("CN", QString("系统: 房主已离开，[%1] 成为新房主。").arg(heirName))
                     .add("EN", QString("System: Host left. [%1] is the new host.").arg(heirName));
-                broadcastChatMessage(transferMsg, 0); // 发给所有人
-
-                // TODO: performSlotSwap(heirPid, 0);
+                broadcastChatMessage(transferMsg, 0);
             }
         }
 
-        // 4. 广播协议层离开包 (0x07)
+        // 4. 广播协议层离开包
         QByteArray leftPacket = createW3GSPlayerLeftPacket(pidToRemove, 0x0D);
         broadcastPacket(leftPacket, pidToRemove);
 
@@ -1262,7 +1301,7 @@ void Client::onPlayerDisconnected() {
             .add("EN", QString("Player [%1] has left the game.").arg(nameToRemove));
         broadcastChatMessage(leaveMsg, pidToRemove);
 
-        // 6. 广播槽位更新 (0x09)
+        // 6. 广播槽位更新
         broadcastSlotInfo(pidToRemove);
 
         qDebug().noquote() << "   └─ 📢 广播同步: 离开包(0x07) + 聊天通知 + 槽位刷新(0x09)";
@@ -1956,7 +1995,7 @@ void Client::setMapData(const QByteArray &data)
 
     // 可选：打印日志
     if (m_mapSize > 0) {
-        qDebug() << "🗺️ [Client] 地图数据初始化完成，大小:" << m_mapSize;
+        qDebug().noquote() << "🗺️ [Client] 地图数据初始化完成，大小:" << m_mapSize;
     }
 }
 
@@ -1964,10 +2003,10 @@ void Client::setCurrentMap(const QString &filePath)
 {
     if (filePath.isEmpty()) {
         m_currentMapPath = m_dota683dPath;
-        qDebug() << "🗺️ [设置地图] 恢复默认地图:" << QFileInfo(m_currentMapPath).fileName();
+        qDebug().noquote() << "🗺️ [设置地图] 恢复默认地图:" << QFileInfo(m_currentMapPath).fileName();
     } else {
         m_currentMapPath = filePath;
-        qDebug() << "🗺️ [设置地图] 切换为:" << QFileInfo(m_currentMapPath).fileName();
+        qDebug().noquote() << "🗺️ [设置地图] 切换为:" << QFileInfo(m_currentMapPath).fileName();
     }
 }
 
@@ -2330,7 +2369,7 @@ QByteArray Client::createW3GSMapPartPacket(quint8 toPid, quint8 fromPid, quint32
 
     // 调试输出
     if (offset == 1442) {
-        qDebug() << "Sending Chunk 1442. Size:" << chunkData.size()
+        qDebug().noquote() << "Sending Chunk 1442. Size:" << chunkData.size()
         << "CRC:" << QString::number(finalCrc, 16);
     }
 
