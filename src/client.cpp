@@ -1911,84 +1911,6 @@ void Client::setCurrentMap(const QString &filePath)
 // 8. 游戏数据处理
 // =========================================================
 
-void Client::initSlots(quint8 maxPlayers)
-{
-    qDebug().noquote() << QString("🧹 [槽位重置] 初始化房间槽位 (Max: %1)").arg(maxPlayers);
-
-    // 1. 清空旧数据
-    m_slots.clear();
-    m_slots.resize(maxPlayers);
-
-    // 2. 清空连接
-    if (!m_playerSockets.isEmpty()) {
-        qDebug().noquote() << QString("   ├─ 🔌 断开连接: %1 个残留 Socket").arg(m_playerSockets.size());
-        for (auto socket : qAsConst(m_playerSockets)) {
-            if (socket->state() == QAbstractSocket::ConnectedState) {
-                socket->disconnectFromHost();
-            }
-        }
-    }
-    m_playerSockets.clear();
-    m_playerBuffers.clear();
-
-    // 3. 初始化槽位状态
-    for (quint8 i = 0; i < maxPlayers; ++i) {
-        m_slots[i] = GameSlot();
-        m_slots[i].downloadStatus = NotStarted;
-        m_slots[i].computer = Human;
-        m_slots[i].color = i + 1;
-
-        // Bot 占据最后一个槽位
-        if (i == 11) {
-            m_slots[i].pid = 1;
-            m_slots[i].downloadStatus = Completed;
-            m_slots[i].slotStatus = Occupied;
-            m_slots[i].computer = Human;
-            m_slots[i].team = (quint8)SlotTeam::Observer;
-            m_slots[i].race = (quint8)SlotRace::Observer;
-            continue;
-        }
-
-        // --- 正常玩家槽位 ---
-        m_slots[i].pid = 0;
-        m_slots[i].slotStatus = Open;
-
-        if (i < 5) { // Sentinel
-            m_slots[i].team = (quint8)SlotTeam::Sentinel;
-            m_slots[i].race = (quint8)SlotRace::NightElf;
-        } else if (i < 10) { // Scourge
-            m_slots[i].team = (quint8)SlotTeam::Scourge;
-            m_slots[i].race = (quint8)SlotRace::Undead;
-        } else { // Slot 10 (Observer)
-            m_slots[i].team = (quint8)SlotTeam::Observer;
-            m_slots[i].race = (quint8)SlotRace::Observer;
-        }
-    }
-
-    qDebug().noquote() << "   └─ ✨ 状态: 初始化完成 (Bot -> Slot 11)";
-}
-
-QByteArray Client::serializeSlotData() {
-    QByteArray data;
-    QDataStream ds(&data, QIODevice::WriteOnly);
-    ds.setByteOrder(QDataStream::LittleEndian);
-
-    ds << (quint8)m_slots.size(); // Num Slots
-
-    for (const auto &slot : qAsConst(m_slots)) {
-        ds << slot.pid;
-        ds << slot.downloadStatus;
-        ds << slot.slotStatus;
-        ds << slot.computer;
-        ds << slot.team;
-        ds << slot.color;
-        ds << slot.race;
-        ds << slot.computerType;
-        ds << slot.handicap;
-    }
-    return data;
-}
-
 QByteArray Client::createW3GSPingFromHostPacket()
 {
     QByteArray packet;
@@ -2393,6 +2315,84 @@ void Client::broadcastSlotInfo(quint8 excludePid)
 // 9. 槽位辅助函数
 // =========================================================
 
+void Client::initSlots(quint8 maxPlayers)
+{
+    qDebug().noquote() << QString("🧹 [槽位重置] 初始化房间槽位 (Max: %1)").arg(maxPlayers);
+
+    // 1. 清空旧数据
+    m_slots.clear();
+    m_slots.resize(maxPlayers);
+
+    // 2. 清空连接
+    if (!m_playerSockets.isEmpty()) {
+        qDebug().noquote() << QString("   ├─ 🔌 断开连接: %1 个残留 Socket").arg(m_playerSockets.size());
+        for (auto socket : qAsConst(m_playerSockets)) {
+            if (socket->state() == QAbstractSocket::ConnectedState) {
+                socket->disconnectFromHost();
+            }
+        }
+    }
+    m_playerSockets.clear();
+    m_playerBuffers.clear();
+
+    // 3. 初始化槽位状态
+    for (quint8 i = 0; i < maxPlayers; ++i) {
+        m_slots[i] = GameSlot();
+        m_slots[i].downloadStatus = NotStarted;
+        m_slots[i].computer = Human;
+        m_slots[i].color = i + 1;
+
+        // Bot 占据最后一个槽位
+        if (i == 11) {
+            m_slots[i].pid = 1;
+            m_slots[i].downloadStatus = Completed;
+            m_slots[i].slotStatus = Occupied;
+            m_slots[i].computer = Human;
+            m_slots[i].team = (quint8)SlotTeam::Observer;
+            m_slots[i].race = (quint8)SlotRace::Observer;
+            continue;
+        }
+
+        // --- 正常玩家槽位 ---
+        m_slots[i].pid = 0;
+        m_slots[i].slotStatus = Open;
+
+        if (i < 5) { // Sentinel
+            m_slots[i].team = (quint8)SlotTeam::Sentinel;
+            m_slots[i].race = (quint8)SlotRace::NightElf;
+        } else if (i < 10) { // Scourge
+            m_slots[i].team = (quint8)SlotTeam::Scourge;
+            m_slots[i].race = (quint8)SlotRace::Undead;
+        } else { // Slot 10 (Observer)
+            m_slots[i].team = (quint8)SlotTeam::Observer;
+            m_slots[i].race = (quint8)SlotRace::Observer;
+        }
+    }
+
+    qDebug().noquote() << "   └─ ✨ 状态: 初始化完成 (Bot -> Slot 11)";
+}
+
+QByteArray Client::serializeSlotData() {
+    QByteArray data;
+    QDataStream ds(&data, QIODevice::WriteOnly);
+    ds.setByteOrder(QDataStream::LittleEndian);
+
+    ds << (quint8)m_slots.size(); // Num Slots
+
+    for (const auto &slot : qAsConst(m_slots)) {
+        ds << slot.pid;
+        ds << slot.downloadStatus;
+        ds << slot.slotStatus;
+        ds << slot.computer;
+        ds << slot.team;
+        ds << slot.color;
+        ds << slot.race;
+        ds << slot.computerType;
+        ds << slot.handicap;
+    }
+    return data;
+}
+
 int Client::getTotalSlots() const
 {
     if (m_slots.isEmpty()) return 10;
@@ -2411,6 +2411,42 @@ int Client::getOccupiedSlots() const
         }
     }
     return count;
+}
+
+void Client::swapSlots(int slot1, int slot2)
+{
+    // 1. 基础校验：游戏未开始且处于连接状态
+    if (m_gameStarted || !isConnected()) return;
+
+    int maxSlots = m_slots.size();
+
+    // 2. 转换索引 (用户输入 1-12 -> 数组索引 0-11)
+    int idx1 = slot1 - 1;
+    int idx2 = slot2 - 1;
+
+    // 3. 越界检查
+    if (idx1 < 0 || idx1 >= maxSlots || idx2 < 0 || idx2 >= maxSlots) {
+        LOG_WARNING(QString("⚠️ [Swap] 索引越界: %1 <-> %2 (Max: %3)").arg(slot1).arg(slot2).arg(maxSlots));
+        return;
+    }
+
+    // 4. 保护检查
+    if (m_slots[idx1].pid == 1 || m_slots[idx2].pid == 1) {
+        return;
+    }
+
+    // 5. 执行交换
+    std::swap(m_slots[idx1], m_slots[idx2]);
+
+    // 6. 重新分配颜色 (可选)
+    // m_slots[idx1].color = idx1 + 1;
+    // m_slots[idx2].color = idx2 + 1;
+
+    // 7. 打印日志
+    qDebug().noquote() << QString("🔄 [Slot] 交换槽位: %1 <-> %2").arg(slot1).arg(slot2);
+
+    // 8. 广播更新
+    broadcastSlotInfo();
 }
 
 QString Client::getSlotInfoString() const

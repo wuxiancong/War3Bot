@@ -666,6 +666,47 @@ void BotManager::onCommandReceived(const QString &userName, const QString &clien
             // 暂时无法创建房间，请稍后再试。
             m_netManager->sendMessageToClient(clientId, S_C_ERROR, ERR_NO_BOTS_AVAILABLE);
         }
+    } else if (command == "/swap") {
+        qDebug().noquote() << "🔄 [交换请求记录]";
+
+        // 1. 寻找用户当前所在的、且处于等待状态的 Bot
+        Bot *targetBot = nullptr;
+        for (Bot *bot : qAsConst(m_bots)) {
+            if (bot->state == BotState::Waiting && bot->gameInfo.clientId == clientId) {
+                targetBot = bot;
+                break;
+            }
+        }
+
+        if (!targetBot) {
+            // 用户没有正在主持的房间，或者房间已经开始
+            m_netManager->sendMessageToClient(clientId, S_C_ERROR, ERR_PERMISSION_DENIED);
+            return;
+        }
+
+        // 2. 解析参数
+        QStringList parts = text.split(" ", Qt::SkipEmptyParts);
+        if (parts.size() < 2) {
+            // 参数不足
+            m_netManager->sendMessageToClient(clientId, S_C_ERROR, ERR_PARAM_ERROR);
+            return;
+        }
+
+        bool ok1, ok2;
+        int s1 = parts[0].toInt(&ok1);
+        int s2 = parts[1].toInt(&ok2);
+
+        if (ok1 && ok2) {
+            qDebug().noquote() << QString("   ├─ 🔢 参数: %1 <-> %2").arg(s1).arg(s2);
+            qDebug().noquote() << QString("   └─ 🚀 执行动作: 调用 swapSlots()");
+
+            // 3. 调用 Client 执行交换
+            if (targetBot->client) {
+                targetBot->client->swapSlots(s1, s2);
+            }
+        } else {
+            qDebug().noquote() << "   └─ ❌ 格式错误: 参数必须为数字";
+        }
     }
     // ==================== 处理 /unhost ====================
     else if (command == "/unhost") {

@@ -407,6 +407,7 @@ public:
 
     // --- 游戏主机管理 ---
     bool isHostJoined();
+    void swapSlots(int slot1, int slot2);
     void setHost(QString creatorName) { m_host = creatorName; };
     void createGame(const QString &gameName, const QString &password,
                     ProviderVersion providerVersion, ComboGameType comboGameType,
