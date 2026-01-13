@@ -520,21 +520,7 @@ void BotManager::onBotAccountCreated(Bot *bot)
 
 void BotManager::onCommandReceived(const QString &userName, const QString &clientId, const QString &command, const QString &text)
 {
-
-    // 1. 全局前置检查：是否已经拥有房间？
-    for (Bot *bot : qAsConst(m_bots)) {
-        if (bot->state != BotState::Disconnected &&
-            bot->state != BotState::InLobby &&
-            bot->state != BotState::Idle &&
-            bot->gameInfo.clientId == clientId) {
-            // 你已经有一个正在进行的游戏/房间了！请先 /unhost 或结束游戏。
-            LOG_WARNING(QString("   └─ ⚠️ 拦截重复开房请求: 用户 %1 已在 Bot-%2 中").arg(userName).arg(bot->id));
-            m_netManager->sendMessageToClient(clientId, S_C_ERROR, ERR_ALREADY_IN_GAME);
-            return;
-        }
-    }
-
-    // 2. 频率限制 (Cooldown) - 防止恶意刷屏
+    // 1. 频率限制 (Cooldown) - 防止恶意刷屏
     const qint64 CREATE_COOLDOWN_MS = 5000;
     qint64 now = QDateTime::currentMSecsSinceEpoch();
 
@@ -551,7 +537,7 @@ void BotManager::onCommandReceived(const QString &userName, const QString &clien
     // 更新最后操作时间
     m_lastHostTime.insert(clientId, now);
 
-    // 3. 权限检查
+    // 2. 权限检查
     if (!m_netManager->isClientRegistered(clientId)) {
         m_netManager->sendMessageToClient(clientId, S_C_ERROR, ERR_PERMISSION_DENIED);
         LOG_WARNING(QString("   └─ ⚠️ 忽略未注册用户的指令: %1 (%2)").arg(userName, clientId));
@@ -564,8 +550,21 @@ void BotManager::onCommandReceived(const QString &userName, const QString &clien
     qDebug().noquote() << QString("   ├─ 👤 发送者: %1 (UUID: %2...)").arg(userName, clientId.left(8));
     qDebug().noquote() << QString("   └─ 💬 内容:   %1").arg(fullCmd);
 
-    // 4. 处理 /host 指令
-    if (command == "/host") {
+    // 3. 处理 /host 指令
+    if (command == "/host") {        
+        // 全局前置检查：是否已经拥有房间？
+        for (Bot *bot : qAsConst(m_bots)) {
+            if (bot->state != BotState::Disconnected &&
+                bot->state != BotState::InLobby &&
+                bot->state != BotState::Idle &&
+                bot->gameInfo.clientId == clientId) {
+                // 你已经有一个正在进行的游戏/房间了！请先 /unhost 或结束游戏。
+                LOG_WARNING(QString("   └─ ⚠️ 拦截重复开房请求: 用户 %1 已在 Bot-%2 中").arg(userName).arg(bot->id));
+                m_netManager->sendMessageToClient(clientId, S_C_ERROR, ERR_ALREADY_IN_GAME);
+                return;
+            }
+        }
+
         qDebug().noquote() << "🎮 [创建房间请求记录]";
 
         QStringList parts = text.split(" ", Qt::SkipEmptyParts);
