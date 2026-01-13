@@ -263,27 +263,18 @@ void Client::sendNextMapPart(quint8 toPid, quint8 fromPid)
 {
     // 找不到玩家
     if (!m_players.contains(toPid)) {
-        qDebug().noquote() << "❌ [地图上传] 失败";
+        qDebug().noquote() << "❌ [分块传输] 失败";
         qDebug().noquote() << QString("   └─ 原因: 找不到目标 PID %1").arg(toPid);
         return;
     }
 
     PlayerData &playerData = m_players[toPid];
 
-    qint64 now = QDateTime::currentMSecsSinceEpoch();
-
-    // 更新下载活跃时间
-    if (now - playerData.lastDownloadTime < 5) {
-        qDebug() << "限速拦截: " << (now - playerData.lastDownloadTime);
-        return;
-    }
-
-    playerData.lastDownloadTime = now;
+    playerData.lastDownloadTime = QDateTime::currentMSecsSinceEpoch();
 
     // [检查点 1] 状态检查
-    if (!playerData.isDownloadStart   ) {
-        // 这种警告通常不需要树状结构，单行即可
-        qDebug().noquote() << QString("⚠️ [地图上传] 忽略请求: 玩家 [%1] 未处于下载状态").arg(playerData.name);
+    if (!playerData.isDownloadStart) {
+        qDebug().noquote() << QString("⚠️ [分块传输] 忽略请求: 玩家 [%1] 未处于下载状态").arg(playerData.name);
         return;
     }
 
@@ -293,14 +284,14 @@ void Client::sendNextMapPart(quint8 toPid, quint8 fromPid)
 
     // [检查点 2] 数据有效性
     if (totalSize == 0) {
-        qDebug().noquote() << "❌ [地图上传] 严重错误";
+        qDebug().noquote() << "❌ [分块传输] 严重错误";
         qDebug().noquote() << "   └─ 原因: 内存中没有地图数据 (Size=0)";
         return;
     }
 
     // 分支 A: 传输完成
     if (playerData.downloadOffset >= totalSize) {
-        qDebug().noquote() << QString("✅ [地图上传] 传输完成: %1").arg(playerData.name);
+        qDebug().noquote() << QString("✅ [分块传输] 传输完成: %1").arg(playerData.name);
         qDebug().noquote() << QString("   ├─ 📊 数据统计: %1 / %2 bytes").arg(playerData.downloadOffset).arg(totalSize);
         qDebug().noquote() << "   └─ 🚀 动作: 标记完成 -> 广播 SlotInfo -> 发送确认包";
 
@@ -343,11 +334,11 @@ void Client::sendNextMapPart(quint8 toPid, quint8 fromPid)
 
     // 分支 C: 发送结果处理
     if (written > 0) {
+        // 控制日志频率
         if (playerData.downloadOffset == 0 || playerData.downloadOffset % (1024 * 1024) < 2000) {
             int percent = (int)((double)playerData.downloadOffset / totalSize * 100);            
             if (percent > 99) percent = 99;
-            // 使用简化的树状结构显示进度节点
-            qDebug().noquote() << QString("📤 [地图上传] 传输中: %1").arg(playerData.name);
+            qDebug().noquote() << QString("📤 [分块传输] 传输中: %1").arg(playerData.name);
             qDebug().noquote() << QString("   └─ 📦 进度: %1% (Offset: %2 | Chunk: %3)")
                                       .arg(percent, 2) // 占位对齐
                                       .arg(playerData.downloadOffset)
@@ -370,11 +361,8 @@ void Client::sendNextMapPart(quint8 toPid, quint8 fromPid)
                 broadcastSlotInfo();
             }
         }
-
-        // 更新偏移量
-        playerData.downloadOffset += chunkSize;
     } else {
-        qDebug().noquote() << QString("❌ [地图上传] Socket 写入失败: %1").arg(playerData.name);
+        qDebug().noquote() << QString("❌ [分块传输] Socket 写入失败: %1").arg(playerData.name);
         qDebug().noquote() << QString("   ├─ 📝 错误信息: %1").arg(playerData.socket->errorString());
         qDebug().noquote() << "   └─ 🛡️ 动作: 终止下载状态";
 
@@ -954,7 +942,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         qDebug().noquote() << QString("   └─ 👤 玩家: %1 (PID: %2)").arg(playerData.name).arg(currentPid);
 
         // 2. 防重复检查
-        if (playerData.isDownloadStart   ) {
+        if (playerData.isDownloadStart) {
             qDebug().noquote() << "   └─ ⚠️ 忽略: 已经在下载进程中";
             return;
         }
@@ -972,7 +960,10 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         }
 
         if (validSlot) {
-            qDebug().noquote() << "   └─ 🚀 响应: 启动下载序列";
+            qDebug().noquote() << QString("🚀 下载错误 (C>S 0x3F W3GS_STARTDOWNLOAD) [pID: %1]").arg(currentPid);
+            qDebug().noquote() << "   ├─ ❶ (UINT32) Unknown";
+            qDebug().noquote() << "   ├─ ❷ (UINT8)  Size Flag";
+            qDebug().noquote() << "   └─ ❸ (UINT32) Map Size";
 
             // --- 步骤 A: 发送开始信号 (0x3F) ---
             socket->write(createW3GSStartDownloadPacket(1));
@@ -983,7 +974,11 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
             socket->flush();
 
             // --- 步骤 C: 准备状态 ---
-            playerData.isDownloadStart    = true;
+            playerData.isDownloadStart      = true;
+            playerData.downloadOffset       = 0;
+
+            // --- 步骤 C: 发第一块 ---
+            sendNextMapPart(currentPid);
             qDebug().noquote() << QString("   └─ 📤 等待客户端发送 0x42(size=0) 包过来");
         } else {
             qDebug().noquote() << "   └─ ℹ️ 忽略: 玩家已有地图或槽位无效";
@@ -1037,35 +1032,37 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
                     if (m_slots[i].downloadStatus != DownloadStart   ) {
                         m_slots[i].downloadStatus = DownloadStart   ;
                     }
-                    playerData.isDownloadStart    = true;
 
                     // 情况 1: 初始请求 / 开始下载 (Flag=3)
                     if (sizeFlag == 1 && clientMapSize == 0) {
-                        qDebug().noquote() << "   └─ 🚀 流程: 触发初始下载";
 
+                        // --- 步骤 A: 发送开始信号 (0x3F) ---
                         socket->write(createW3GSStartDownloadPacket(1));
+                        socket->flush();
+
+                        // --- 步骤 B: 更新大厅槽位状态 (0x09) ---
                         socket->write(createW3GSSlotInfoPacket());
                         socket->flush();
 
-                        // 初始化
-                        playerData.downloadOffset = 0;
+                        // --- 步骤 C: 准备状态 ---
+                        playerData.isDownloadStart      = true;
+                        playerData.downloadOffset       = 0;
 
-                        // 发第一块
+                        // --- 步骤 C: 发第一块 ---
                         sendNextMapPart(currentPid);
+                        qDebug().noquote() << QString("   └─ 📤 等待客户端发送 0x42(size=0) 包过来");
                     }
                     // 情况 2: 进度同步 / 重传请求 (Flag=3)
                     else {
-                        // 客户端进度落后 -> 回滚
                         if (clientMapSize < playerData.downloadOffset) {
-                            qDebug().noquote() << QString("   └─ 🔄 [回滚重传] Client: %1 < Server: %2 -> 重发块")
+                            qDebug().noquote() << QString("   └─ 🔄 [回滚重传] Client: %1 < Server: %2 -> 重发分块")
                                                       .arg(clientMapSize).arg(playerData.downloadOffset);
 
-                            playerData.downloadOffset = clientMapSize;
                             sendNextMapPart(currentPid);
                         }
-                        // 客户端进度一致 -> 此时应该等待 ACK (0x44)，不要主动发下一块！
                         else if (clientMapSize == playerData.downloadOffset) {
-                            qDebug().noquote() << "   └─ ℹ️ [进度同步] 状态一致，等待 ACK (不发送)";
+                            qDebug().noquote() << QString("   └─ ℹ️ [进度同步] Client: %1 = Server: %2 -> 状态一致")
+                                                      .arg(clientMapSize).arg(playerData.downloadOffset);
                         }
                     }
                 }
@@ -1076,7 +1073,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
     }
     break;
 
-    case W3GS_MAPPARTOK: //  [0x44] 客户端确认地图 OK
+    case W3GS_MAPPARTOK: //  [0x44] 客户端报告成功
     {
         if (payload.size() < 10) return;
         QDataStream in(payload);
@@ -1105,14 +1102,19 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
     }
     break;
 
-    case W3GS_MAPPARTNOTOK: // [0x45] 客户端报告 CRC 校验失败
+    case W3GS_MAPPARTNOTOK: // [0x45] 客户端报告失败
     {
         quint8 currentPid = 0;
         for (auto it = m_players.begin(); it != m_players.end(); ++it) {
             if (it.value().socket == socket) { currentPid = it.key(); break; }
         }
 
-        qDebug().noquote() << QString("      └─ ⚠️ [下载错误] PID %1 报告 CRC 校验失败 (0x45) -> 等待 0x42 重同步").arg(currentPid);
+        qDebug().noquote() << QString("🚀 下载错误 (C>S 0x45 W3GS_MAPPARTNOTOK) [pID: %1]").arg(currentPid);
+        qDebug().noquote() << " 可能原因: (以下错误会跳转到 Game.dll + 67FBF9) [v1.26.0.6401]";
+        qDebug().noquote() << "   ├─ ❶ [Game.dll + 67FA78] 状态异常: 客户端期望偏移量 >= 地图总大小 (已下载完却收到新包?)";
+        qDebug().noquote() << "   ├─ ❷ [Game.dll + 67FA82] 偏移量不匹配: Packet Offset != Client Expected";
+        qDebug().noquote() << "   ├─ ❸ [Game.dll + 67FA8C] 数据越界: (Offset + ChunkSize) > MapTotalSize";
+        qDebug().noquote() << "   └─ ❹ [Game.dll + 67FAA3] CRC 校验失败: 算出值(EAX) != 包内值(Stack)";
     }
     break;
 
@@ -1914,7 +1916,7 @@ QByteArray Client::serializeSlotData() {
 
     ds << (quint8)m_slots.size(); // Num Slots
 
-    for (const auto& slot : qAsConst(m_slots)) {
+    for (const auto &slot : qAsConst(m_slots)) {
         ds << slot.pid;
         ds << slot.downloadStatus;
         ds << slot.slotStatus;
