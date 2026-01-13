@@ -521,7 +521,7 @@ void BotManager::onBotAccountCreated(Bot *bot)
 void BotManager::onCommandReceived(const QString &userName, const QString &clientId, const QString &command, const QString &text)
 {
     // 1. 频率限制 (Cooldown) - 防止恶意刷屏
-    const qint64 CREATE_COOLDOWN_MS = 5000;
+    const qint64 CREATE_COOLDOWN_MS = 1000;
     qint64 now = QDateTime::currentMSecsSinceEpoch();
 
     if (m_lastHostTime.contains(clientId)) {
