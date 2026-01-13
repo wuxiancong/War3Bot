@@ -261,113 +261,85 @@ void Client::sendPacket(BNETPacketID id, const QByteArray &payload)
 
 void Client::sendNextMapPart(quint8 toPid, quint8 fromPid)
 {
-    // 找不到玩家
-    if (!m_players.contains(toPid)) {
-        qDebug().noquote() << "❌ [分块传输] 失败";
-        qDebug().noquote() << QString("   └─ 原因: 找不到目标 PID %1").arg(toPid);
-        return;
-    }
-
+    // 1. 基础校验
+    if (!m_players.contains(toPid)) return;
     PlayerData &playerData = m_players[toPid];
 
+    // 更新活跃时间
     playerData.lastDownloadTime = QDateTime::currentMSecsSinceEpoch();
 
-    // [检查点 1] 状态检查
-    if (!playerData.isDownloadStart) {
-        qDebug().noquote() << QString("⚠️ [分块传输] 忽略请求: 玩家 [%1] 未处于下载状态").arg(playerData.name);
-        return;
-    }
+    if (!playerData.isDownloadStart) return;
 
-    // 获取原始地图数据
     const QByteArray &mapData = m_war3Map.getMapRawData();
     quint32 totalSize = (quint32)mapData.size();
+    if (totalSize == 0) return;
 
-    // [检查点 2] 数据有效性
-    if (totalSize == 0) {
-        qDebug().noquote() << "❌ [分块传输] 严重错误";
-        qDebug().noquote() << "   └─ 原因: 内存中没有地图数据 (Size=0)";
-        return;
-    }
+    while (playerData.socket->bytesToWrite() < 64 * 1024)
+    {
+        // 传输完成判断
+        if (playerData.downloadOffset >= totalSize) {
+            qDebug().noquote() << QString("✅ [分块传输] 传输完成: %1").arg(playerData.name);
+            qDebug().noquote() << QString("   ├─ 📊 数据统计: %1 / %2 bytes").arg(playerData.downloadOffset).arg(totalSize);
 
-    // 分支 A: 传输完成
-    if (playerData.downloadOffset >= totalSize) {
-        qDebug().noquote() << QString("✅ [分块传输] 传输完成: %1").arg(playerData.name);
-        qDebug().noquote() << QString("   ├─ 📊 数据统计: %1 / %2 bytes").arg(playerData.downloadOffset).arg(totalSize);
-        qDebug().noquote() << "   └─ 🚀 动作: 标记完成 -> 广播 SlotInfo -> 发送确认包";
+            playerData.isDownloadStart = false;
 
-        playerData.isDownloadStart    = false;
-
-        // 更新槽位并广播
-        for (int i = 0; i < m_slots.size(); ++i) {
-            if (m_slots[i].pid == toPid) {
-                m_slots[i].downloadStatus = 100;
-                break;
-            }
-        }
-        broadcastSlotInfo();
-
-        // 发送最后一个 SlotInfo 给该玩家确认
-        playerData.socket->write(createW3GSSlotInfoPacket());
-        playerData.socket->flush();
-        return;
-    }
-
-    // 分支 B: 计算与发送分片
-
-    // 计算分片
-    int chunkSize = MAX_CHUNK_SIZE;
-    if (playerData.downloadOffset + chunkSize > totalSize) {
-        chunkSize = totalSize - playerData.downloadOffset;
-    }
-
-    if (chunkSize <= 0) {
-        return;
-    }
-
-    QByteArray chunk = mapData.mid(playerData.downloadOffset, chunkSize);
-
-    // 构造包 (0x43)
-    QByteArray packet = createW3GSMapPartPacket(toPid, fromPid, playerData.downloadOffset, chunk);
-
-    qint64 written = playerData.socket->write(packet);
-    playerData.socket->flush();
-
-    // 分支 C: 发送结果处理
-    if (written > 0) {
-        // 控制日志频率
-        if (playerData.downloadOffset == 0 || playerData.downloadOffset % (1024 * 1024) < 2000) {
-            int percent = (int)((double)playerData.downloadOffset / totalSize * 100);            
-            if (percent > 99) percent = 99;
-            qDebug().noquote() << QString("📤 [分块传输] 传输中: %1").arg(playerData.name);
-            qDebug().noquote() << QString("   └─ 📦 进度: %1% (Offset: %2 | Chunk: %3)")
-                                      .arg(percent, 2) // 占位对齐
-                                      .arg(playerData.downloadOffset)
-                                      .arg(chunkSize);
-
-            bool needBroadcast = false;
+            // 更新槽位为 100%
             for (int i = 0; i < m_slots.size(); ++i) {
                 if (m_slots[i].pid == toPid) {
-                    quint8 oldStatus = m_slots[i].downloadStatus;
-                    if (oldStatus != Completed && percent > oldStatus && (percent - oldStatus >= 5)) {
-                        m_slots[i].downloadStatus = static_cast<quint8>(percent);
-                        needBroadcast = true;
-                        qDebug().noquote() << QString("   └─ 🔄 更新槽位显示: %1%").arg(percent);
-                    }
+                    m_slots[i].downloadStatus = 100;
                     break;
                 }
             }
+            broadcastSlotInfo();
 
-            if (needBroadcast) {
-                broadcastSlotInfo();
-            }
+            // 发送完成确认包
+            playerData.socket->write(createW3GSSlotInfoPacket());
+            playerData.socket->flush();
+            return;
         }
-    } else {
-        qDebug().noquote() << QString("❌ [分块传输] Socket 写入失败: %1").arg(playerData.name);
-        qDebug().noquote() << QString("   ├─ 📝 错误信息: %1").arg(playerData.socket->errorString());
-        qDebug().noquote() << "   └─ 🛡️ 动作: 终止下载状态";
 
-        playerData.isDownloadStart    = false; // 终止下载
+        // 计算分片大小
+        int chunkSize = MAX_CHUNK_SIZE; // 1442
+        if (playerData.downloadOffset + chunkSize > totalSize) {
+            chunkSize = totalSize - playerData.downloadOffset;
+        }
+
+        // 发送数据
+        QByteArray chunk = mapData.mid(playerData.downloadOffset, chunkSize);
+        QByteArray packet = createW3GSMapPartPacket(toPid, fromPid, playerData.downloadOffset, chunk);
+
+        qint64 written = playerData.socket->write(packet);
+
+        if (written > 0) {
+            playerData.downloadOffset += chunkSize;
+            // 每传输 ~1MB 触发一次
+            if (playerData.downloadOffset % (1024 * 1024) < 2000) {
+                int percent = (int)((double)playerData.downloadOffset / totalSize * 100);
+                if (percent > 99) percent = 99;
+                qDebug().noquote() << QString("📤 [分块传输] 缓冲中... %1% (Offset: %2)")
+                                          .arg(percent)
+                                          .arg(playerData.downloadOffset);
+                bool needBroadcast = false;
+                for (int i = 0; i < m_slots.size(); ++i) {
+                    if (m_slots[i].pid == toPid) {
+                        quint8 oldStatus = m_slots[i].downloadStatus;
+                        if (oldStatus != Completed && percent > oldStatus && (percent - oldStatus >= 1)) {
+                            m_slots[i].downloadStatus = static_cast<quint8>(percent);
+                            needBroadcast = true;
+                        }
+                        break;
+                    }
+                }
+                if (needBroadcast) broadcastSlotInfo();
+            }
+        } else {
+            qDebug().noquote() << QString("❌ [分块传输] Socket 写入失败: %1").arg(playerData.socket->errorString());
+            playerData.isDownloadStart = false;
+            return;
+        }
     }
+
+    playerData.socket->flush();
 }
 
 void Client::onTcpReadyRead()
@@ -1060,9 +1032,12 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
                             sendNextMapPart(currentPid);
                         }
-                        else if (clientMapSize == playerData.downloadOffset) {
-                            qDebug().noquote() << QString("   └─ ℹ️ [进度同步] Client: %1 = Server: %2 -> 状态一致")
-                                                      .arg(clientMapSize).arg(playerData.downloadOffset);
+                        else if (clientMapSize == playerData.downloadOffset) {                            
+                            // 限制日志频率
+                            if(clientMapSize % (1024 * 1024) < 2000) {
+                                qDebug().noquote() << QString("   └─ ℹ️ [进度同步] Client: %1 = Server: %2 -> 状态一致")
+                                                          .arg(clientMapSize).arg(playerData.downloadOffset);
+                            }
                         }
                     }
                 }
@@ -1089,11 +1064,10 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
         if (m_players.contains(currentPid)) {
             PlayerData &player = m_players[currentPid];
-
-            qDebug().noquote() << QString("   └─ ✅ [ACK] 客户端确认接收至: %1").arg(clientOffset);
-
-            // 更新进度
-            player.downloadOffset = clientOffset;
+            // 限制日志频率
+            if(clientOffset % (1024 * 1024) < 2000) {
+                qDebug().noquote() << QString("   └─ ✅ [ACK] 客户端确认接收至: %1").arg(clientOffset);
+            }
             player.lastResponseTime = QDateTime::currentMSecsSinceEpoch();
 
             // 发送下一块
