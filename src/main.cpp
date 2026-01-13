@@ -155,6 +155,9 @@ int main(int argc, char *argv[]) {
     QCommandLineOption attachOption({"a", "attach"}, "附着到运行中的服务 (查看日志并发送命令)");
     parser.addOption(attachOption);
 
+    QCommandLineOption silentOption(QStringList() << "s" << "silent", "静默模式：禁用所有日志输出（不占用日志内存）");
+    parser.addOption(silentOption);
+
     parser.process(app);
 
     if (parser.isSet(execOption)) {
@@ -267,6 +270,11 @@ int main(int argc, char *argv[]) {
 
     if (parser.isSet(logLevelOption)) {
         Logger::instance()->setLogLevel(Logger::logLevelFromString(parser.value(logLevelOption).toLower()));
+    }
+
+    if (parser.isSet(silentOption)) {
+        Logger::instance()->setDisabled(true);
+        printf("🔇 静默模式已启用，日志系统已关闭。\n");
     }
 
     // === 2. 端口检查与清理 ===

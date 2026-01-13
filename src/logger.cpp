@@ -35,8 +35,9 @@ Logger::Logger(QObject *parent)
     , m_stream(nullptr)
     , m_logLevel(LOG_INFO)
     , m_consoleOutput(true)
-    , m_maxFileSize(10 * 1024 * 1024) // 默认10MB
-    , m_backupCount(5) // 默认5个备份
+    , m_maxFileSize(10 * 1024 * 1024)   // 默认10MB
+    , m_backupCount(5)                  // 默认5个备份
+    , m_disabled(false)
 {
 #ifdef Q_OS_WIN
     // Windows 下强制设置控制台编码为 UTF-8
@@ -105,7 +106,9 @@ void Logger::setLogFile(const QString &filename)
     // 确保目录存在
     QDir dir = fileInfo.dir();
     if (!dir.exists()) {
-        dir.mkpath(".");
+        if (!dir.mkpath(".")) {
+            consoleOutput("FATAL: 无法创建日志目录 (可能是权限不足): " + dir.absolutePath(), true);
+        }
     }
 
     m_logFile = new QFile(filename);
@@ -263,36 +266,45 @@ void Logger::log(LogLevel level, const QString &message)
     QString timestamp = QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss.zzz");
     QString logMessage = QString("[%1] [%2] %3").arg(timestamp, levelStr, message);
 
-    // 控制台输出
+    // 1. 控制台输出
     if (m_consoleOutput) {
         consoleOutput(logMessage);
     }
 
-    // 文件输出
-    if (!m_stream && !m_logFileName.isEmpty()) {
+    // 2. 文件输出
+    if ((!m_stream || !m_logFile || !m_logFile->isOpen()) && !m_logFileName.isEmpty()) {
+        if (m_stream) { delete m_stream; m_stream = nullptr; }
+        if (m_logFile) { delete m_logFile; m_logFile = nullptr; }
+        QFileInfo fileInfo(m_logFileName);
+        QDir dir = fileInfo.dir();
+        if (!dir.exists()) {
+            if (!dir.mkpath(".")) {
+                if (m_consoleOutput) {
+                    consoleOutput("CRITICAL: 无法创建日志目录: " + dir.absolutePath(), true);
+                }
+                return;
+            }
+        }
+
         // 尝试重新打开文件
         m_logFile = new QFile(m_logFileName);
         if (m_logFile->open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text)) {
             m_stream = new QTextStream(m_logFile);
             m_stream->setCodec("UTF-8");
             m_stream->setGenerateByteOrderMark(true);
-
-            consoleOutput("重新打开日志文件成功: " + m_logFileName);
         } else {
-            consoleOutput("无法打开日志文件: " + m_logFileName + " 错误: " + m_logFile->errorString(), true);
+            if (m_consoleOutput) {
+                consoleOutput("无法打开日志文件: " + m_logFileName + " 错误: " + m_logFile->errorString(), true);
+            }
             delete m_logFile;
             m_logFile = nullptr;
             return;
         }
     }
 
+    // 写入日志
     if (m_stream) {
         *m_stream << logMessage << "\n";
         m_stream->flush();
-    }
-
-    // 如果文件流不可用，输出错误
-    if (!m_stream && m_consoleOutput) {
-        consoleOutput("日志文件流不可用，消息丢失: " + logMessage, true);
     }
 }
