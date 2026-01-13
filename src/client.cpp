@@ -1024,19 +1024,22 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
                         sendNextMapPart(currentPid);
                         qDebug().noquote() << QString("   └─ 📤 等待客户端发送 0x42(size=0) 包过来");
                     }
-                    // 情况 2: 进度同步 / 重传请求 (Flag=3)
+                    // 情况 2: 进度同步 / 重传请求
                     else {
-                        if (clientMapSize < playerData.downloadOffset) {
-                            qDebug().noquote() << QString("   └─ 🔄 [回滚重传] Client: %1 < Server: %2 -> 重发分块")
-                                                      .arg(clientMapSize).arg(playerData.downloadOffset);
+                        bool isJustProgressReport = (sizeFlag == 1) && (playerData.downloadOffset >= hostMapSize);
 
+                        if (!isJustProgressReport && clientMapSize < playerData.downloadOffset) {
+                            qDebug().noquote() << QString("   └─ 🔄 回滚重传: Client(%1) < Server(%2)")
+                                                      .arg(clientMapSize).arg(playerData.downloadOffset);
+                            playerData.downloadOffset = clientMapSize;
                             sendNextMapPart(currentPid);
                         }
-                        else if (clientMapSize == playerData.downloadOffset) {                            
-                            // 限制日志频率
-                            if(clientMapSize % (1024 * 1024) < 2000) {
-                                qDebug().noquote() << QString("   └─ ℹ️ [进度同步] Client: %1 = Server: %2 -> 状态一致")
-                                                          .arg(clientMapSize).arg(playerData.downloadOffset);
+                        else if (clientMapSize == playerData.downloadOffset) {
+                            sendNextMapPart(currentPid);
+                        }
+                        else {
+                            if (sizeFlag == 1) {
+                                qDebug() << "🔄 进度更新:" << clientMapSize;
                             }
                         }
                     }
