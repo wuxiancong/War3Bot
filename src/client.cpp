@@ -1034,9 +1034,12 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
                         qDebug().noquote() << QString("   ├─ 💻 客户端报告: %1").arg(clientMapSize);
                         qDebug().noquote() << QString("   ├─ 💻 服务端最后: %1").arg(playerData.lastDownloadOffset);
                         qDebug().noquote() << QString("   ├─ 💻 服务端当前: %1").arg(playerData.currentDownloadOffset);
-                        qDebug().noquote() << QString("   └─ 🔄 重新从 %1 开始重传...").arg(playerData.lastDownloadOffset);
-
-                        // sendNextMapPart(currentPid);
+                        if(playerData.lastDownloadOffset != clientMapSize) {
+                            sendNextMapPart(currentPid);
+                            qDebug().noquote() << QString("   └─ ❌ 客户端(%1) != 服务端(%2) 需要重传").arg(clientMapSize, playerData.lastDownloadOffset);
+                        } else {
+                            qDebug().noquote() << QString("   └─ ✅ 客户端(%1) == 服务端(%2) 无需重传").arg(clientMapSize, playerData.lastDownloadOffset);
+                        }
                     }
                 }
                 break;
