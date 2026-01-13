@@ -301,15 +301,15 @@ enum CommandSource {
 // 1. 游戏槽位数据 (Game Slot)
 // =========================================================
 struct GameSlot {
-    quint8 pid                  = 0;    // 玩家ID
-    quint8 downloadStatus       = 0;    // 下载进度 (0-100, 255=无)
-    quint8 slotStatus           = 0;    // 状态 (Open/Closed/Occupied)
-    quint8 computer             = 0;    // 是否电脑 (0=人, 1=电脑)
-    quint8 team                 = 0;    // 队伍ID
-    quint8 color                = 0;    // 颜色ID
-    quint8 race                 = 32;   // 种族标识 (默认随机)
-    quint8 computerType         = 1;    // 电脑难度
-    quint8 handicap             = 100;  // 生命值百分比
+    quint8      pid                     = 0;    // 玩家ID
+    quint8      downloadStatus          = 0;    // 下载进度 (0-100, 255=无)
+    quint8      slotStatus              = 0;    // 状态 (Open/Closed/Occupied)
+    quint8      computer                = 0;    // 是否电脑 (0=人, 1=电脑)
+    quint8      team                    = 0;    // 队伍ID
+    quint8      color                   = 0;    // 颜色ID
+    quint8      race                    = 32;   // 种族标识 (默认随机)
+    quint8      computerType            = 1;    // 电脑难度
+    quint8      handicap                = 100;  // 生命值百分比
 };
 
 // =========================================================
@@ -317,34 +317,31 @@ struct GameSlot {
 // =========================================================
 struct PlayerData {
     // 基础信息
-    quint8          pid             = 0;
-    QString         name;
-    QString         clientUuid      = "";
-    bool            isVisualHost    = false;
+    quint8       pid                     = 0;
+    QString      name;
+    QString      clientUuid              = "";
+    bool         isVisualHost            = false;
 
     // 网络连接
-    QTcpSocket*     socket          = nullptr;
-    QHostAddress    extIp;          // 公网IP
-    quint16         extPort         = 0;
-    QHostAddress    intIp;          // 内网IP (0x1E提供)
-    quint16         intPort         = 0;
+    QTcpSocket*  socket                  = nullptr;
+    QHostAddress extIp;                  // 公网IP
+    quint16      extPort                 = 0;
+    QHostAddress intIp;                  // 内网IP (0x1E提供)
+    quint16      intPort                 = 0;
 
     // 语言与编码
-    QString         language        = "EN";
-    QTextCodec*     codec           = nullptr;
+    QString      language                = "EN";
+    QTextCodec*  codec                   = nullptr;
 
     // 下载状态
-    bool            isDownloadStart      = false;
-    quint32         downloadOffset  = 0;
+    bool         isDownloadStart         = false;
+    quint32      lastDownloadOffset      = 0;
+    quint32      currentDownloadOffset   = 0;
 
     // 时间检测
-    qint64 lastDownloadTime         = 0;
-    qint64 lastResponseTime         = 0;
-    quint32 currentLatency          = 0;
-
-    // 地图下载
-    quint32 lastDownloadOffset;
-    quint32 currentDownloadOffset;
+    qint64       lastDownloadTime        = 0;
+    qint64       lastResponseTime        = 0;
+    quint32      currentLatency          = 0;
 };
 
 // =========================================================
@@ -494,6 +491,9 @@ private:
 
     // --- 频道管理 ---
     void joinRandomChannel();
+
+    // --- 地图下载 ---
+    void initiateMapDownload(quint8 pid);
 
     // --- 认证流程 ---
     void sendAuthInfo();
