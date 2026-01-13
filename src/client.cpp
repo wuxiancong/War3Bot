@@ -1034,9 +1034,9 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
                         qDebug().noquote() << QString("   ├─ 💻 客户端报告: %1").arg(clientMapSize);
                         qDebug().noquote() << QString("   ├─ 💻 服务端最后: %1").arg(playerData.lastDownloadOffset);
                         qDebug().noquote() << QString("   ├─ 💻 服务端当前: %1").arg(playerData.currentDownloadOffset);
-                        qDebug().noquote() << QString("   └─ 🔄 重新从 %d 开始重传...").arg(playerData.lastDownloadOffset);
-                        playerData.currentDownloadOffset = playerData.lastDownloadOffset;
-                        sendNextMapPart(currentPid);
+                        qDebug().noquote() << QString("   └─ 🔄 重新从 %1 开始重传...").arg(playerData.lastDownloadOffset);
+
+                        // sendNextMapPart(currentPid);
                     }
                 }
                 break;
@@ -1062,9 +1062,10 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
         if (m_players.contains(currentPid)) {
             PlayerData &playerData = m_players[currentPid];
-            qDebug().noquote() << QString("   └─ ✅ [ACK] 客户端确认接收至: %1").arg(clientOffset);
+            qDebug().noquote() << QString("🔄 接收成功");
+            qDebug().noquote() << QString("   └─ ✅ 客户端接收: %1").arg(clientOffset);
             playerData.lastResponseTime = QDateTime::currentMSecsSinceEpoch();
-            playerData.lastDownloadOffset = playerData.currentDownloadOffset;
+            playerData.lastDownloadOffset = clientOffset;
 
             // 发送下一块
             sendNextMapPart(currentPid);
