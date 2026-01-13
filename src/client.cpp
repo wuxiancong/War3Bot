@@ -791,7 +791,13 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         }
 
         // 分配 PID
-        quint8 hostId = slotIndex + 2;
+        quint8 hostId = findFreePid();
+        if (hostId == 0) {
+            socket->write(createW3GSRejectJoinPacket(FULL));
+            socket->disconnectFromHost();
+            return;
+        }
+
         m_slots[slotIndex].pid = hostId;
         m_slots[slotIndex].slotStatus = Occupied;
         m_slots[slotIndex].downloadStatus = NotStarted;
@@ -2516,17 +2522,17 @@ QByteArray Client::serializeSlotData() {
     return data;
 }
 
-int Client::getTotalSlots() const
+quint8  Client::getTotalSlots() const
 {
     if (m_slots.isEmpty()) return 10;
     return m_slots.size();
 }
 
-int Client::getOccupiedSlots() const
+quint8  Client::getOccupiedSlots() const
 {
     if (m_slots.isEmpty()) return 1;
 
-    int count = 0;
+    quint8  count = 0;
     for (const auto &slot : m_slots) {
         // 统计状态为 Occupied 的槽位
         if (slot.slotStatus == Occupied) {
@@ -2584,6 +2590,27 @@ void Client::swapSlots(int slot1, int slot2)
     // 7. 广播更新
     broadcastSlotInfo();
 }
+
+quint8 Client::findFreePid() const
+{
+    for (quint8 pid = 2; pid < 255; ++pid) {
+        // 1. 检查 m_players 中是否已存在
+        if (m_players.contains(pid)) continue;
+
+        // 2. 双重检查 m_slots 中是否引用了该 PID
+        bool usedInSlot = false;
+        for (const auto &slot : m_slots) {
+            if (slot.pid == pid) {
+                usedInSlot = true;
+                break;
+            }
+        }
+        if (usedInSlot) continue;
+
+        return pid;
+    }
+    return 0;
+};
 
 QString Client::getSlotInfoString() const
 {

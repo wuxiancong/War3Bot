@@ -431,8 +431,9 @@ public:
     quint32 ipToUint32(const QHostAddress &address);
 
     // --- 槽位信息辅助 ---
-    int getTotalSlots() const;                          // 获取总槽位数
-    int getOccupiedSlots() const;                       // 获取已占用槽位数 (包括Bot/Host)
+    quint8 findFreePid() const;
+    quint8 getTotalSlots() const;                          // 获取总槽位数
+    quint8 getOccupiedSlots() const;                       // 获取已占用槽位数 (包括Bot/Host)
     QString getSlotInfoString() const;                  // 返回 "(1/10)" 格式字符串
 
     // --- 设置机器人标志 ---
