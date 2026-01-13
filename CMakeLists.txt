@@ -203,7 +203,7 @@ install(TARGETS War3Bot RUNTIME DESTINATION bin)
 
 # B. Linux 系统级资源安装
 if(UNIX AND NOT APPLE)
-    set(CONF_INSTALL_DIR "/etc/War3Bot")
+    set(CONF_INSTALL_DIR "/opt/War3Bot")
 
     # 1. 安装 config 文件夹 (静态资源 .ini 等)
     install(DIRECTORY config

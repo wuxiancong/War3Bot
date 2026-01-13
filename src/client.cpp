@@ -63,7 +63,7 @@ Client::Client(QObject *parent)
     QStringList searchPaths;
     searchPaths << QCoreApplication::applicationDirPath() + "/war3files";
 #ifdef Q_OS_LINUX
-    searchPaths << "/etc/War3Bot/war3files";
+    searchPaths << "/opt/War3Bot/war3files";
 #endif
     searchPaths << QDir::currentPath() + "/war3files";
     searchPaths << QCoreApplication::applicationDirPath();

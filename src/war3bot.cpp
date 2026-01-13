@@ -36,8 +36,8 @@ bool War3Bot::startServer(quint16 port, const QString &configFile)
         searchPaths << "config/war3bot.ini";
         searchPaths << QCoreApplication::applicationDirPath() + "/config/war3bot.ini";
 #ifdef Q_OS_LINUX
-        searchPaths << "/etc/War3Bot/config/war3bot.ini";
-        searchPaths << "/etc/War3Bot/war3bot.ini";
+        searchPaths << "/opt/War3Bot/config/war3bot.ini";
+        searchPaths << "/opt/War3Bot/war3bot.ini";
 #endif
         bool foundConfig = false;
         for (const QString &path : qAsConst(searchPaths)) {
