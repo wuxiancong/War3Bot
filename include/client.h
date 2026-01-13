@@ -559,6 +559,9 @@ private:
 
     // 设置标志
     bool m_isBot = false;
+
+    // 地图下载
+    quint32                         m_mapTotalSize          = 0;
 };
 
 #endif // CLIENT_H
