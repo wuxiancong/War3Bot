@@ -1030,15 +1030,20 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
                     }
                     // 情况 2: 进度同步 / 重传请求 (Flag=3)
                     else {
-                        qDebug().noquote() << QString("🔄 重发分块");
-                        qDebug().noquote() << QString("   ├─ 💻 客户端报告: %1").arg(clientMapSize);
-                        qDebug().noquote() << QString("   ├─ 💻 服务端最后: %1").arg(playerData.lastDownloadOffset);
-                        qDebug().noquote() << QString("   ├─ 💻 服务端当前: %1").arg(playerData.currentDownloadOffset);
+                        // 每传输 ~1MB 触发一次
+                        if (clientMapSize % (1024 * 1024) < 2000) {
+                            qDebug().noquote() << QString("🔄 重发分块");
+                            qDebug().noquote() << QString("   ├─ 💻 客户端报告: %1").arg(clientMapSize);
+                            qDebug().noquote() << QString("   ├─ 💻 服务端最后: %1").arg(playerData.lastDownloadOffset);
+                            qDebug().noquote() << QString("   ├─ 💻 服务端当前: %1").arg(playerData.currentDownloadOffset);
+                        }
                         if(playerData.lastDownloadOffset != clientMapSize) {
                             sendNextMapPart(currentPid);
                             qDebug().noquote() << QString("   └─ ❌ 客户端(%1) != 服务端(%2) 需要重传").arg(clientMapSize, playerData.lastDownloadOffset);
                         } else {
-                            qDebug().noquote() << QString("   └─ ✅ 客户端(%1) == 服务端(%2) 无需重传").arg(clientMapSize, playerData.lastDownloadOffset);
+                            if (clientMapSize % (1024 * 1024) < 2000) {
+                                qDebug().noquote() << QString("   └─ ✅ 客户端(%1) == 服务端(%2) 无需重传").arg(clientMapSize, playerData.lastDownloadOffset);
+                            }
                         }
                     }
                 }
@@ -1065,8 +1070,11 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
         if (m_players.contains(currentPid)) {
             PlayerData &playerData = m_players[currentPid];
-            qDebug().noquote() << QString("🔄 接收成功");
-            qDebug().noquote() << QString("   └─ ✅ 客户端接收: %1").arg(clientOffset);
+            // 每传输 ~1MB 触发一次
+            if (clientOffset % (1024 * 1024) < 2000) {
+                qDebug().noquote() << QString("🔄 接收成功");
+                qDebug().noquote() << QString("   └─ ✅ 客户端接收: %1").arg(clientOffset);
+            }
             playerData.lastResponseTime = QDateTime::currentMSecsSinceEpoch();
             playerData.lastDownloadOffset = clientOffset;
 
