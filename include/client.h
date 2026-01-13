@@ -555,6 +555,10 @@ private:
 
     // 设置标志
     bool m_isBot = false;
+
+    // 地图下载
+    QMap<quint8, quint32>           g_lastDownloadOffset;
+    QMap<quint8, quint32>           g_currentDownloadOffset;
 };
 
 #endif // CLIENT_H

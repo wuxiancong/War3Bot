@@ -12,37 +12,30 @@
 
 ```mermaid
 graph TD
-    Entry([入口 6F67F930]) --> PktSizeCheck{包长度 > 14?}
-    PktSizeCheck --No--> Drop[丢弃/返回]
-    PktSizeCheck --Yes--> PeerCheck[Call 6F679B80<br/>查找发送者连接对象]
+    Entry[入口 6F67F930] --> PktCheck{包长度合法?}
+    PktCheck --No--> ErrorExit[丢弃/退出]
+    PktCheck --Yes--> GetState[获取下载状态结构 ESI]
     
-    PeerCheck --Null--> Drop
-    PeerCheck --Valid--> GetSession[Call 6F67EA80<br/>获取地图下载会话 ESI]
+    GetState --> StateCheck{状态有效且正在下载?}
+    StateCheck --No--> SendReject[发送 0x45 MAPPARTNOTOK]
     
-    GetSession --Null--> Drop
-    GetSession --> StateCheck{状态有效?}
-    StateCheck --No--> SendNACK[发送 0x45 MAPPARTNOTOK]
+    StateCheck --Yes--> OffsetCheck{本地偏移 == 包偏移?}
+    OffsetCheck --Mismatch--> SendReject
     
-    StateCheck --Yes--> OffsetCheck{当前进度 == 包内偏移?}
-    OffsetCheck --Mismatch--> SendNACK[发送 0x45 (常见故障点)]
+    OffsetCheck --Match--> CRCCheck{计算CRC == 包CRC?}
+    CRCCheck --Mismatch--> SendReject
     
-    OffsetCheck --Match--> DataChecksum{计算分片 CRC32<br/>vs 包内 Checksum}
-    DataChecksum --Mismatch--> SendNACK[发送 0x45]
+    CRCCheck --Match--> WriteMem[memcpy 写入地图缓冲区]
+    WriteMem --> UpdateOffset[CurrentOffset += ChunkSize]
     
-    DataChecksum --Match--> SetStateRecv[状态设为 3 (接收中)]
-    SetStateRecv --> WriteMem[memcpy<br/>写入 MapBuffer]
-    WriteMem --> UpdateProgress[CurrentOffset += ChunkSize]
+    UpdateOffset --> SendACK[发送 0x44 MAPPARTOK]
     
-    UpdateProgress --> SendACK[发送 0x44 MAPPARTOK]
+    SendACK --> FinishCheck{CurrentOffset >= TotalSize?}
+    FinishCheck --No--> WaitNext[退出，等待下一块]
     
-    SendACK --> IsFinished{CurrentOffset >= TotalSize?}
-    IsFinished --No--> Exit([等待下一包])
-    
-    IsFinished --Yes--> SetStateVerify[状态设为 1 (校验中)]
-    SetStateVerify --> FinalVerify{全图 CRC32<br/>vs 期望 Checksum}
-    FinalVerify --Pass--> SaveDisk[重命名/写入 .w3x 文件]
-    SaveDisk --> SetStateDone[状态设为 5 (完成)]
-    FinalVerify --Fail--> Reset[重置进度/报错]
+    FinishCheck --Yes--> FinalVerify{全图 CRC 校验}
+    FinalVerify --Pass--> MapReady[地图下载完成 logic]
+    FinalVerify --Fail--> FileCorrupt[报错/重下]
 ```
 
 ---
