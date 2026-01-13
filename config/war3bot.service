@@ -7,14 +7,17 @@ Type=simple
 
 User=war3bot
 Group=war3bot
-WorkingDirectory=/etc/War3Bot
+WorkingDirectory=/opt/War3Bot
 
-ExecStart=/usr/local/War3Bot/bin/War3Bot -p 6116
+ExecStart=/usr/local/War3Bot/bin/War3Bot -p 6116 --config /etc/War3Bot/war3bot.ini
 Restart=always
 RestartSec=5
 StandardOutput=journal
 StandardError=journal
 PrivateTmp=false
+
+ProtectSystem=full
+ProtectHome=true
 
 [Install]
 WantedBy=multi-user.target

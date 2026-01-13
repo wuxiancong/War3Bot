@@ -76,21 +76,44 @@ make -j$(nproc)
 
 为了让 War3Bot 在后台稳定运行，建议配置 Systemd 服务。
 
-### 1. 创建专用用户和目录
-
-为了安全起见，建议使用非 root 用户运行服务。
-
-```bash
-# 创建系统用户 War3Bot
+# 1. 创建专用系统用户 (无登录权限)
+# -r: 系统账户
+# -d: 指定主目录
+# -s: 禁止 shell 登录
 sudo useradd -r -s /bin/false -d /opt/War3Bot war3bot
 
-# 创建日志与配置目录
-sudo mkdir -p /var/log/War3Bot /etc/War3Bot
+# 2. 创建目录结构
+# /opt/War3Bot      -> 存放程序本体、war3files 资源、地图
+# /etc/War3Bot      -> 仅存放 .ini 配置文件
+# /var/log/War3Bot  -> 存放日志
+sudo mkdir -p /opt/War3Bot/war3files
+sudo mkdir -p /etc/War3Bot
+sudo mkdir -p /var/log/War3Bot
 
-# 设置目录权限
-sudo chown -R War3Bot:War3Bot /var/log/war3bot
-sudo chown -R War3Bot:War3Bot /etc/war3bot
-sudo chmod -R 755 /root/War3Bot/build/war3files/
+# 3. 设置权限 (修正版)
+
+# --- A. 核心程序目录 (/opt) ---
+# 将所有权给 war3bot 用户
+sudo chown -R war3bot:war3bot /opt/War3Bot
+# 权限设为 755 (目录) 或 644 (文件) 是可以的，因为这些是二进制文件，不怕看
+sudo chmod -R 755 /opt/War3Bot
+
+# --- B. 日志目录 (/var/log) ---
+# 必须给 war3bot 用户写入权限
+sudo chown -R war3bot:war3bot /var/log/War3Bot
+# 权限设为 750 (只有拥有者和组可读，其他人无权访问)
+# 防止其他用户偷看日志里的 IP 或聊天记录
+sudo chmod 750 /var/log/War3Bot
+
+# --- C. 配置文件目录 (/etc) ---
+# ⚠️ 关键安全设置 ⚠️
+# 将目录所有权给 war3bot
+sudo chown -R war3bot:war3bot /etc/War3Bot
+# 权限设为 700 (drwx------) 或 600 (-rw-------)
+# **只允许 war3bot 用户读写，拒绝任何其他人偷看密码**
+sudo chmod 700 /etc/War3Bot
+# 如果里面已经有文件，确保文件也是保密的
+sudo chmod 600 /etc/War3Bot/war3bot.ini 2>/dev/null || true
 ```
 
 ### 2. 安装配置文件
@@ -99,24 +122,29 @@ sudo chmod -R 755 /root/War3Bot/build/war3files/
 
 ```ini
 [server]
+control_port=6116
 broadcast_port=6112
-enable_broadcast=false
 peer_timeout=300000
 cleanup_interval=60000
+enable_broadcast=false
 broadcast_interval=30000
 
 [log]
 level=info
 enable_console=true
-log_file=/var/log/war3bot/war3bot.log
+log_file=/var/log/War3Bot/war3bot.log
 max_size=10485760
 backup_count=5
 
 [bnet]
-server=your_server_ip
-port=your_server_port
-username=your_bot_username
-password=your_bot_password
+server=139.155.155.166
+port=6112
+
+[bots]
+count=10
+# 不同服务器使用不同值 防止挤掉线
+norepeat=abcd
+
 
 ```
 
@@ -138,14 +166,17 @@ Type=simple
 
 User=war3bot
 Group=war3bot
-WorkingDirectory=/etc/War3Bot
+WorkingDirectory=/opt/War3Bot
 
-ExecStart=/usr/local/War3Bot/bin/War3Bot -p 6116
+ExecStart=/usr/local/War3Bot/bin/War3Bot -p 6116 --config /etc/War3Bot/war3bot.ini
 Restart=always
 RestartSec=5
 StandardOutput=journal
 StandardError=journal
 PrivateTmp=false
+
+ProtectSystem=full
+ProtectHome=true
 
 [Install]
 WantedBy=multi-user.target

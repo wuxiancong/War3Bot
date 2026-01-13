@@ -359,9 +359,6 @@ int main(int argc, char *argv[]) {
         QString configServer = settings.value("bnet/server", "").toString();
         ushort configPort = settings.value("bnet/port", 6112).toUInt();
 
-        // ---------------------------------------------------------
-        // 命令: connect [用户名] [密码] [地址] [端口]
-        // ---------------------------------------------------------
         if (action == "log") {
             QString subOption = (parts.size() > 1) ? parts[1].toLower() : "";
 
@@ -381,7 +378,11 @@ int main(int argc, char *argv[]) {
                 printf("用法: log [on|off]\n");
             }
             return; // 处理完直接返回
-        } else if (action == "connect") {
+        }
+        // ---------------------------------------------------------
+        // 命令: connect [用户名] [密码] [地址] [端口]
+        // ---------------------------------------------------------
+        else if (action == "connect") {
             QString user   = (parts.size() > 1) ? parts[1] : "";
             QString pass   = (parts.size() > 2) ? parts[2] : "";
             QString server = (parts.size() > 3) ? parts[3] : configServer;
