@@ -210,8 +210,8 @@ int main(int argc, char *argv[]) {
 
         // 3. Linux 系统标准安装路径
 #ifdef Q_OS_LINUX
-        searchPaths << "/opt/War3Bot/config/war3bot.ini";
-        searchPaths << "/opt/War3Bot/war3bot.ini";
+        searchPaths << "/etc/War3Bot/config/war3bot.ini";
+        searchPaths << "/etc/War3Bot/war3bot.ini";
 #endif
 
         // 遍历查找

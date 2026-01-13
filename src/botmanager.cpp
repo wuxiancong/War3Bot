@@ -988,7 +988,7 @@ bool BotManager::createBotAccountFilesIfNotExist()
     QStringList searchPaths;
 
 #ifdef Q_OS_LINUX
-    searchPaths << "/opt/War3Bot/config";
+    searchPaths << "/etc/War3Bot/config";
 #endif
     // 只检查当前运行目录相关的路径
     searchPaths << QCoreApplication::applicationDirPath() + "/config";
@@ -1026,7 +1026,7 @@ bool BotManager::createBotAccountFilesIfNotExist()
         else {
 #ifdef Q_OS_LINUX
             // --- 尝试从系统目录复制 ---
-            QString sysConfigPath = "/opt/War3Bot/config";
+            QString sysConfigPath = "/etc/War3Bot/config";
             QDir sysDir(sysConfigPath);
 
             if (sysDir.exists() && !sysDir.isEmpty()) {

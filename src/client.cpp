@@ -966,6 +966,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
         quint32 hostMapSize = m_war3Map.getMapSize();
         PlayerData &playerData = m_players[currentPid];
+        playerData.lastResponseTime = QDateTime::currentMSecsSinceEpoch();
 
         if (sizeFlag != 1 && sizeFlag != 3) {
             qDebug().noquote() << QString("⚠️ [W3GS] 收到罕见 Flag: %1 (Size: %2)").arg(sizeFlag).arg(clientMapSize);
@@ -2480,6 +2481,8 @@ bool Client::isBlackListedPort(quint16 port)
 
 void Client::sendPingLoop()
 {
+    checkPlayerTimeout();
+
     if (m_players.isEmpty()) return;
 
     QByteArray pingPacket = createW3GSPingFromHostPacket();
@@ -2556,14 +2559,12 @@ void Client::checkPlayerTimeout()
         // 1. 检查连接超时 (常规心跳)
         if (silenceTime > TIMEOUT_CONNECTION) {
             kick = true;
-            reasonCategory = "连接超时 (Connection Timeout)";
-            timeDetails = QString("%1 秒无响应 (阈值: %2)").arg(silenceTime / 1000).arg(TIMEOUT_CONNECTION / 1000);
+            reasonCategory = QString("心跳超时 (%1s > %2s)").arg(silenceTime/1000).arg(TIMEOUT_CONNECTION/1000);
         }
         // 2. 检查下载超时 (仅针对正在下载的玩家)
-        else if (playerData.isDownloadStart    && downloadSilenceTime > TIMEOUT_DOWNLOAD) {
+        else if (playerData.isDownloadStart && downloadSilenceTime > TIMEOUT_DOWNLOAD) {
             kick = true;
-            reasonCategory = "下载卡死 (Download Stalled)";
-            timeDetails = QString("%1 秒无进度 (阈值: %2)").arg(downloadSilenceTime / 1000).arg(TIMEOUT_DOWNLOAD / 1000);
+            reasonCategory = QString("下载卡死 (%1s > %2s)").arg(downloadSilenceTime/1000).arg(TIMEOUT_DOWNLOAD/1000);
         }
 
         if (kick) {
@@ -2577,12 +2578,10 @@ void Client::checkPlayerTimeout()
                 // 这会触发 onDisconnected 信号，由槽函数处理 Map 移除和广播
                 playerData.socket->disconnectFromHost();
             }
-
-            // 继续检查下一个，不要在这里 erase，交给 onDisconnected 处理
-            ++it;
-        } else {
-            ++it;
+            // 注意：这里不要手动 erase(it)，因为 onPlayerDisconnected 会做这件事
+            // 如果这里 erase，socket 信号触发时可能会访问野指针
         }
+        ++it;
     }
 }
 
