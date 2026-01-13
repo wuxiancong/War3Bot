@@ -36,6 +36,223 @@ graph TD
     FinalVerify --Fail--> FileCorrupt[报错/重下]
 ```
 
+```assembly
+6F67F930  | 6A FF                   | push FFFFFFFF                                     |
+6F67F932  | 68 C84C846F             | push game.6F844CC8                                |
+6F67F937  | 64:A1 00000000          | mov eax,dword ptr fs:[0]                          |
+6F67F93D  | 50                      | push eax                                          |
+6F67F93E  | 83EC 44                 | sub esp,44                                        |
+6F67F941  | 53                      | push ebx                                          |
+6F67F942  | 55                      | push ebp                                          |
+6F67F943  | 56                      | push esi                                          |
+6F67F944  | 57                      | push edi                                          |
+6F67F945  | A1 40E1AA6F             | mov eax,dword ptr ds:[6FAAE140]                   |
+6F67F94A  | 33C4                    | xor eax,esp                                       |
+6F67F94C  | 50                      | push eax                                          |
+6F67F94D  | 8D4424 58               | lea eax,dword ptr ss:[esp+58]                     |
+6F67F951  | 64:A3 00000000          | mov dword ptr fs:[0],eax                          |
+6F67F957  | 894C24 14               | mov dword ptr ss:[esp+14],ecx                     |
+6F67F95B  | 8B7C24 70               | mov edi,dword ptr ss:[esp+70]                     |
+6F67F95F  | 8D6F F2                 | lea ebp,dword ptr ds:[edi-E]                      |
+6F67F962  | 81FD A2050000           | cmp ebp,5A2                                       |
+6F67F968  | 77 6C                   | ja game.6F67F9D6                                  |
+6F67F96A  | 8B7424 6C               | mov esi,dword ptr ss:[esp+6C]                     |
+6F67F96E  | 33C0                    | xor eax,eax                                       |
+6F67F970  | BB 082C936F             | mov ebx,game.6F932C08                             |
+6F67F975  | 895C24 40               | mov dword ptr ss:[esp+40],ebx                     |
+6F67F979  | 897424 44               | mov dword ptr ss:[esp+44],esi                     |
+6F67F97D  | 894424 48               | mov dword ptr ss:[esp+48],eax                     |
+6F67F981  | C74424 4C FFFFFFFF      | mov dword ptr ss:[esp+4C],FFFFFFFF                |
+6F67F989  | 897C24 50               | mov dword ptr ss:[esp+50],edi                     |
+6F67F98D  | 894424 54               | mov dword ptr ss:[esp+54],eax                     |
+6F67F991  | 8D5424 30               | lea edx,dword ptr ss:[esp+30]                     |
+6F67F995  | 8D4C24 40               | lea ecx,dword ptr ss:[esp+40]                     |
+6F67F999  | 894424 60               | mov dword ptr ss:[esp+60],eax                     |
+6F67F99D  | E8 FE4F0000             | call game.6F6849A0                                |
+6F67F9A2  | 8B4424 54               | mov eax,dword ptr ss:[esp+54]                     |
+6F67F9A6  | 3B4424 50               | cmp eax,dword ptr ss:[esp+50]                     |
+6F67F9AA  | 895C24 40               | mov dword ptr ss:[esp+40],ebx                     |
+6F67F9AE  | 76 30                   | jbe game.6F67F9E0                                 |
+6F67F9B0  | 83C8 FF                 | or eax,FFFFFFFF                                   |
+6F67F9B3  | 394424 4C               | cmp dword ptr ss:[esp+4C],eax                     |
+6F67F9B7  | 894424 60               | mov dword ptr ss:[esp+60],eax                     |
+6F67F9BB  | 74 19                   | je game.6F67F9D6                                  |
+6F67F9BD  | 8D4C24 4C               | lea ecx,dword ptr ss:[esp+4C]                     |
+6F67F9C1  | 51                      | push ecx                                          |
+6F67F9C2  | 8D5424 4C               | lea edx,dword ptr ss:[esp+4C]                     |
+6F67F9C6  | 52                      | push edx                                          |
+6F67F9C7  | 8D4424 4C               | lea eax,dword ptr ss:[esp+4C]                     |
+6F67F9CB  | 50                      | push eax                                          |
+6F67F9CC  | 8D4C24 4C               | lea ecx,dword ptr ss:[esp+4C]                     |
+6F67F9D0  | FF15 0C2C936F           | call dword ptr ds:[6F932C0C]                      |
+6F67F9D6  | B8 01000000             | mov eax,1                                         |
+6F67F9DB  | E9 69020000             | jmp game.6F67FC49                                 |
+6F67F9E0  | 2BF5                    | sub esi,ebp                                       |
+6F67F9E2  | 83C8 FF                 | or eax,FFFFFFFF                                   |
+6F67F9E5  | 03F7                    | add esi,edi                                       |
+6F67F9E7  | 394424 4C               | cmp dword ptr ss:[esp+4C],eax                     |
+6F67F9EB  | 897424 6C               | mov dword ptr ss:[esp+6C],esi                     |
+6F67F9EF  | 894424 60               | mov dword ptr ss:[esp+60],eax                     |
+6F67F9F3  | 74 19                   | je game.6F67FA0E                                  |
+6F67F9F5  | 8D4C24 4C               | lea ecx,dword ptr ss:[esp+4C]                     |
+6F67F9F9  | 51                      | push ecx                                          |
+6F67F9FA  | 8D5424 4C               | lea edx,dword ptr ss:[esp+4C]                     |
+6F67F9FE  | 52                      | push edx                                          |
+6F67F9FF  | 8D4424 4C               | lea eax,dword ptr ss:[esp+4C]                     |
+6F67FA03  | 50                      | push eax                                          |
+6F67FA04  | 8D4C24 4C               | lea ecx,dword ptr ss:[esp+4C]                     |
+6F67FA08  | FF15 0C2C936F           | call dword ptr ds:[6F932C0C]                      |
+6F67FA0E  | 8B5424 68               | mov edx,dword ptr ss:[esp+68]                     |
+6F67FA12  | 8B42 40                 | mov eax,dword ptr ds:[edx+40]                     |
+6F67FA15  | 6A 01                   | push 1                                            |
+6F67FA17  | 6A 00                   | push 0                                            |
+6F67FA19  | 8D4C24 20               | lea ecx,dword ptr ss:[esp+20]                     |
+6F67FA1D  | 51                      | push ecx                                          |
+6F67FA1E  | 6A 01                   | push 1                                            |
+6F67FA20  | 50                      | push eax                                          |
+6F67FA21  | B9 70FFAC6F             | mov ecx,game.6FACFF70                             |
+6F67FA26  | C78424 84000000 0000000 | mov dword ptr ss:[esp+84],0                       |
+6F67FA31  | E8 4AA1FFFF             | call game.6F679B80                                |
+6F67FA36  | 8BF8                    | mov edi,eax                                       |
+6F67FA38  | 85FF                    | test edi,edi                                      |
+6F67FA3A  | 0F84 05020000           | je game.6F67FC45                                  |
+6F67FA40  | 8B5424 32               | mov edx,dword ptr ss:[esp+32]                     |
+6F67FA44  | 8BCF                    | mov ecx,edi                                       |
+6F67FA46  | C74424 70 02000000      | mov dword ptr ss:[esp+70],2                       |
+6F67FA4E  | E8 2DF0FFFF             | call game.6F67EA80                                |
+6F67FA53  | 8BF0                    | mov esi,eax                                       |
+6F67FA55  | 85F6                    | test esi,esi                                      |
+6F67FA57  | 0F84 CC010000           | je game.6F67FC29                                  |
+6F67FA5D  | 83BE 40020000 00        | cmp dword ptr ds:[esi+240],0                      |
+6F67FA64  | 0F84 8F010000           | je game.6F67FBF9                                  |
+6F67FA6A  | 8B86 3C020000           | mov eax,dword ptr ds:[esi+23C]                    |
+6F67FA70  | 8B8E 14020000           | mov ecx,dword ptr ds:[esi+214]                    |
+6F67FA76  | 3BC1                    | cmp eax,ecx                                       |
+6F67FA78  | 0F83 7B010000           | jae game.6F67FBF9                                 |
+6F67FA7E  | 394424 36               | cmp dword ptr ss:[esp+36],eax                     |
+6F67FA82  | 0F85 71010000           | jne game.6F67FBF9                                 |
+6F67FA88  | 03C5                    | add eax,ebp                                       |
+6F67FA8A  | 3BC1                    | cmp eax,ecx                                       |
+6F67FA8C  | 0F87 67010000           | ja game.6F67FBF9                                  |
+6F67FA92  | 8B5C24 6C               | mov ebx,dword ptr ss:[esp+6C]                     |
+6F67FA96  | 8BD5                    | mov edx,ebp                                       |
+6F67FA98  | 8BCB                    | mov ecx,ebx                                       |
+6F67FA9A  | E8 A140FDFF             | call game.6F653B40                                |
+6F67FA9F  | 394424 3A               | cmp dword ptr ss:[esp+3A],eax                     |
+6F67FAA3  | 0F85 50010000           | jne game.6F67FBF9                                 |
+6F67FAA9  | 8B4C24 31               | mov ecx,dword ptr ss:[esp+31]                     |
+6F67FAAD  | 8B5424 68               | mov edx,dword ptr ss:[esp+68]                     |
+6F67FAB1  | 51                      | push ecx                                          |
+6F67FAB2  | 8BCF                    | mov ecx,edi                                       |
+6F67FAB4  | E8 C79DFFFF             | call game.6F679880                                |
+6F67FAB9  | 85C0                    | test eax,eax                                      |
+6F67FABB  | 0F84 2E010000           | je game.6F67FBEF                                  |
+6F67FAC1  | 83BF 48010000 00        | cmp dword ptr ds:[edi+148],0                      |
+6F67FAC8  | 0F84 21010000           | je game.6F67FBEF                                  |
+6F67FACE  | 8B86 3C020000           | mov eax,dword ptr ds:[esi+23C]                    |
+6F67FAD4  | 0386 38020000           | add eax,dword ptr ds:[esi+238]                    |
+6F67FADA  | 55                      | push ebp                                          |
+6F67FADB  | C786 40020000 03000000  | mov dword ptr ds:[esi+240],3                      |
+6F67FAE5  | 8A5424 35               | mov dl,byte ptr ss:[esp+35]                       |
+6F67FAE9  | 53                      | push ebx                                          |
+6F67FAEA  | 50                      | push eax                                          |
+6F67FAEB  | 8896 44020000           | mov byte ptr ds:[esi+244],dl                      |
+6F67FAF1  | E8 F61A1600             | call <JMP.&memcpy>                                |
+6F67FAF6  | 01AE 3C020000           | add dword ptr ds:[esi+23C],ebp                    |
+6F67FAFC  | 0FB64C24 3D             | movzx ecx,byte ptr ss:[esp+3D]                    |
+6F67FB01  | 8B97 48010000           | mov edx,dword ptr ds:[edi+148]                    |
+6F67FB07  | 8B86 3C020000           | mov eax,dword ptr ds:[esi+23C]                    |
+6F67FB0D  | 884C24 30               | mov byte ptr ss:[esp+30],cl                       |
+6F67FB11  | 0FB68A B4000000         | movzx ecx,byte ptr ds:[edx+B4]                    |
+6F67FB18  | 8B56 08                 | mov edx,dword ptr ds:[esi+8]                      |
+6F67FB1B  | 884C24 31               | mov byte ptr ss:[esp+31],cl                       |
+6F67FB1F  | 8B4C24 20               | mov ecx,dword ptr ss:[esp+20]                     |
+6F67FB23  | 895424 32               | mov dword ptr ss:[esp+32],edx                     |
+6F67FB27  | 83C4 0C                 | add esp,C                                         |
+6F67FB2A  | 8D5424 24               | lea edx,dword ptr ss:[esp+24]                     |
+6F67FB2E  | 894424 2A               | mov dword ptr ss:[esp+2A],eax                     |
+6F67FB32  | E8 A9AEFEFF             | call game.6F66A9E0                                |
+6F67FB37  | 8B96 14020000           | mov edx,dword ptr ds:[esi+214]                    |
+6F67FB3D  | 3996 3C020000           | cmp dword ptr ds:[esi+23C],edx                    |
+6F67FB43  | 0F82 9B000000           | jb game.6F67FBE4                                  |
+6F67FB49  | 8B8E 38020000           | mov ecx,dword ptr ds:[esi+238]                    |
+6F67FB4F  | C786 40020000 01000000  | mov dword ptr ds:[esi+240],1                      |
+6F67FB59  | C686 44020000 00        | mov byte ptr ds:[esi+244],0                       |
+6F67FB60  | E8 DB3FFDFF             | call game.6F653B40                                |
+6F67FB65  | 3986 1C020000           | cmp dword ptr ds:[esi+21C],eax                    |
+6F67FB6B  | 74 18                   | je game.6F67FB85                                  |
+6F67FB6D  | 8BD6                    | mov edx,esi                                       |
+6F67FB6F  | 8BCF                    | mov ecx,edi                                       |
+6F67FB71  | C786 3C020000 00000000  | mov dword ptr ds:[esi+23C],0                      |
+6F67FB7B  | E8 B09AFFFF             | call game.6F679630                                |
+6F67FB80  | E9 A4000000             | jmp game.6F67FC29                                 |
+6F67FB85  | 8B8E 14020000           | mov ecx,dword ptr ds:[esi+214]                    |
+6F67FB8B  | 8B96 38020000           | mov edx,dword ptr ds:[esi+238]                    |
+6F67FB91  | 8B5F 58                 | mov ebx,dword ptr ds:[edi+58]                     |
+6F67FB94  | 68 04010000             | push 104                                          |
+6F67FB99  | 8DAE 10010000           | lea ebp,dword ptr ds:[esi+110]                    |
+6F67FB9F  | 55                      | push ebp                                          |
+6F67FBA0  | 51                      | push ecx                                          |
+6F67FBA1  | 8D46 0C                 | lea eax,dword ptr ds:[esi+C]                      |
+6F67FBA4  | 52                      | push edx                                          |
+6F67FBA5  | 50                      | push eax                                          |
+6F67FBA6  | 8BCB                    | mov ecx,ebx                                       |
+6F67FBA8  | E8 9372FDFF             | call game.6F656E40                                |
+6F67FBAD  | 8B96 14020000           | mov edx,dword ptr ds:[esi+214]                    |
+6F67FBB3  | 8D8E 24020000           | lea ecx,dword ptr ds:[esi+224]                    |
+6F67FBB9  | 51                      | push ecx                                          |
+6F67FBBA  | 52                      | push edx                                          |
+6F67FBBB  | 55                      | push ebp                                          |
+6F67FBBC  | 8D4E 0C                 | lea ecx,dword ptr ds:[esi+C]                      |
+6F67FBBF  | 51                      | push ecx                                          |
+6F67FBC0  | 8B4E 08                 | mov ecx,dword ptr ds:[esi+8]                      |
+6F67FBC3  | 51                      | push ecx                                          |
+6F67FBC4  | 50                      | push eax                                          |
+6F67FBC5  | 8BCB                    | mov ecx,ebx                                       |
+6F67FBC7  | 898424 80000000         | mov dword ptr ss:[esp+80],eax                     |
+6F67FBCE  | E8 ADB5FDFF             | call game.6F65B180                                |
+6F67FBD3  | 837C24 68 01            | cmp dword ptr ss:[esp+68],1                       |
+6F67FBD8  | 74 0A                   | je game.6F67FBE4                                  |
+6F67FBDA  | C786 40020000 05000000  | mov dword ptr ds:[esi+240],5                      |
+6F67FBE4  | 8BD6                    | mov edx,esi                                       |
+6F67FBE6  | 8BCF                    | mov ecx,edi                                       |
+6F67FBE8  | E8 439AFFFF             | call game.6F679630                                |
+6F67FBED  | EB 3A                   | jmp game.6F67FC29                                 |
+6F67FBEF  | C74424 70 00000000      | mov dword ptr ss:[esp+70],0                       |
+6F67FBF7  | EB 30                   | jmp game.6F67FC29                                 |
+6F67FBF9  | 8BBF 48010000           | mov edi,dword ptr ds:[edi+148]                    |
+6F67FBFF  | 85FF                    | test edi,edi                                      |
+6F67FC01  | 74 26                   | je game.6F67FC29                                  |
+6F67FC03  | 8A5424 31               | mov dl,byte ptr ss:[esp+31]                       |
+6F67FC07  | 8B4E 08                 | mov ecx,dword ptr ds:[esi+8]                      |
+6F67FC0A  | 885424 1C               | mov byte ptr ss:[esp+1C],dl                       |
+6F67FC0E  | 8A87 B4000000           | mov al,byte ptr ds:[edi+B4]                       |
+6F67FC14  | 894C24 1E               | mov dword ptr ss:[esp+1E],ecx                     |
+6F67FC18  | 8B4C24 14               | mov ecx,dword ptr ss:[esp+14]                     |
+6F67FC1C  | 8D5424 1C               | lea edx,dword ptr ss:[esp+1C]                     |
+6F67FC20  | 884424 1D               | mov byte ptr ss:[esp+1D],al                       |
+6F67FC24  | E8 37AFFEFF             | call game.6F66AB60                                |
+6F67FC29  | 8B4424 18               | mov eax,dword ptr ss:[esp+18]                     |
+6F67FC2D  | 83F8 FF                 | cmp eax,FFFFFFFF                                  |
+6F67FC30  | 74 13                   | je game.6F67FC45                                  |
+6F67FC32  | 83F8 01                 | cmp eax,1                                         |
+6F67FC35  | 1BD2                    | sbb edx,edx                                       |
+6F67FC37  | 83C2 01                 | add edx,1                                         |
+6F67FC3A  | 52                      | push edx                                          |
+6F67FC3B  | B9 90FFAC6F             | mov ecx,game.6FACFF90                             |
+6F67FC40  | E8 0B8D0500             | call game.6F6D8950                                |
+6F67FC45  | 8B4424 70               | mov eax,dword ptr ss:[esp+70]                     |
+6F67FC49  | 8B4C24 58               | mov ecx,dword ptr ss:[esp+58]                     |
+6F67FC4D  | 64:890D 00000000        | mov dword ptr fs:[0],ecx                          |
+6F67FC54  | 59                      | pop ecx                                           |
+6F67FC55  | 5F                      | pop edi                                           |
+6F67FC56  | 5E                      | pop esi                                           |
+6F67FC57  | 5D                      | pop ebp                                           |
+6F67FC58  | 5B                      | pop ebx                                           |
+6F67FC59  | 83C4 50                 | add esp,50                                        |
+6F67FC5C  | C2 0C00                 | ret C                                             |
+```
+
 ## 1. 核心架构与关键偏移 (Architecture & Offsets)
 
 | 逻辑层级 | 功能描述 | 绝对地址 | **基址偏移 (Offset)** |
