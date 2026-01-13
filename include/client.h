@@ -341,6 +341,10 @@ struct PlayerData {
     qint64 lastDownloadTime         = 0;
     qint64 lastResponseTime         = 0;
     quint32 currentLatency          = 0;
+
+    // 地图下载
+    quint32 lastDownloadOffset;
+    quint32 currentDownloadOffset;
 };
 
 // =========================================================
@@ -555,10 +559,6 @@ private:
 
     // 设置标志
     bool m_isBot = false;
-
-    // 地图下载
-    QMap<quint8, quint32>           g_lastDownloadOffset;
-    QMap<quint8, quint32>           g_currentDownloadOffset;
 };
 
 #endif // CLIENT_H

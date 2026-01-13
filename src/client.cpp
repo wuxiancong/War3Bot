@@ -277,9 +277,9 @@ void Client::sendNextMapPart(quint8 toPid, quint8 fromPid)
     while (playerData.socket->bytesToWrite() < 64 * 1024)
     {
         // 传输完成判断
-        if (g_currentDownloadOffset[toPid] >= totalSize) {
+        if (playerData.currentDownloadOffset >= totalSize) {
             qDebug().noquote() << QString("✅ [分块传输] 传输完成: %1").arg(playerData.name);
-            qDebug().noquote() << QString("   ├─ 📊 数据统计: %1 / %2 bytes").arg(g_currentDownloadOffset[toPid]).arg(totalSize);
+            qDebug().noquote() << QString("   ├─ 📊 数据统计: %1 / %2 bytes").arg(playerData.currentDownloadOffset).arg(totalSize);
 
             playerData.isDownloadStart = false;
 
@@ -300,25 +300,25 @@ void Client::sendNextMapPart(quint8 toPid, quint8 fromPid)
 
         // 计算分片大小
         int chunkSize = MAX_CHUNK_SIZE; // 1442
-        if (g_currentDownloadOffset[toPid] + chunkSize > totalSize) {
-            chunkSize = totalSize - g_currentDownloadOffset[toPid];
+        if (playerData.currentDownloadOffset + chunkSize > totalSize) {
+            chunkSize = totalSize - playerData.currentDownloadOffset;
         }
 
         // 发送数据
-        QByteArray chunk = mapData.mid(g_currentDownloadOffset[toPid], chunkSize);
-        QByteArray packet = createW3GSMapPartPacket(toPid, fromPid, g_currentDownloadOffset[toPid], chunk);
+        QByteArray chunk = mapData.mid(playerData.currentDownloadOffset, chunkSize);
+        QByteArray packet = createW3GSMapPartPacket(toPid, fromPid, playerData.currentDownloadOffset, chunk);
 
         qint64 written = playerData.socket->write(packet);
 
         if (written > 0) {
-            g_currentDownloadOffset[toPid] += chunkSize;
+            playerData.currentDownloadOffset += chunkSize;
             // 每传输 ~1MB 触发一次
-            if (g_currentDownloadOffset[toPid] % (1024 * 1024) < 2000) {
-                int percent = (int)((double)g_currentDownloadOffset[toPid] / totalSize * 100);
+            if (playerData.currentDownloadOffset % (1024 * 1024) < 2000) {
+                int percent = (int)((double)playerData.currentDownloadOffset / totalSize * 100);
                 if (percent > 99) percent = 99;
                 qDebug().noquote() << QString("📤 [分块传输] 缓冲中... %1% (Offset: %2)")
                                           .arg(percent)
-                                          .arg(g_currentDownloadOffset[toPid]);
+                                          .arg(playerData.currentDownloadOffset);
                 bool needBroadcast = false;
                 for (int i = 0; i < m_slots.size(); ++i) {
                     if (m_slots[i].pid == toPid) {
@@ -948,7 +948,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
             // --- 步骤 C: 准备状态 ---
             playerData.isDownloadStart          = true;
             playerData.downloadOffset           = 0;
-            g_currentDownloadOffset[currentPid] = 0;
+            playerData.currentDownloadOffset = 0;
 
             // --- 步骤 C: 发第一块 ---
             sendNextMapPart(currentPid);
@@ -1024,7 +1024,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
                             // --- 步骤 C: 准备状态 ---
                             playerData.isDownloadStart          = true;
                             playerData.downloadOffset           = 0;
-                            g_currentDownloadOffset[currentPid] = 0;
+                            playerData.currentDownloadOffset    = 0;
 
                             // --- 步骤 C: 发第一块 ---
                             sendNextMapPart(currentPid);
@@ -1035,7 +1035,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
                     else {
                         qDebug().noquote() << QString("   └─ 🔄 [回滚重传] Client: %1 < Server: %2 -> 重发分块")
                                                   .arg(clientMapSize).arg(playerData.downloadOffset);
-                        g_currentDownloadOffset[currentPid] = g_lastDownloadOffset[currentPid];
+                        playerData.currentDownloadOffset = playerData.lastDownloadOffset;
                         sendNextMapPart(currentPid);
                     }
                 }
@@ -1066,9 +1066,9 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
             if(clientOffset % (1024 * 1024) < 2000) {
                 qDebug().noquote() << QString("   └─ ✅ [ACK] 客户端确认接收至: %1").arg(clientOffset);
             }
-            playerData.downloadOffset = g_currentDownloadOffset[fromPid];
+            playerData.downloadOffset = playerData.currentDownloadOffset;
             playerData.lastResponseTime = QDateTime::currentMSecsSinceEpoch();
-            g_lastDownloadOffset[fromPid] = g_currentDownloadOffset[fromPid];
+            playerData.lastDownloadOffset = playerData.currentDownloadOffset;
 
             // 发送下一块
             sendNextMapPart(currentPid);
