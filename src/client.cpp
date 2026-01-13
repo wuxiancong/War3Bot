@@ -25,6 +25,7 @@
 
 Client::Client(QObject *parent)
     : QObject(parent)
+    , m_mapSize(0)
     , m_srp(nullptr)
     , m_udpSocket(nullptr)
     , m_tcpSocket(nullptr)
@@ -38,14 +39,13 @@ Client::Client(QObject *parent)
     m_tcpServer = new QTcpServer(this);
     m_tcpSocket = new QTcpSocket(this);
 
-    // 信号槽连接
+    // 2. 信号槽连接
     connect(m_pingTimer, &QTimer::timeout, this, &Client::sendPingLoop);
     connect(m_tcpSocket, &QTcpSocket::connected, this, &Client::onConnected);
     connect(m_tcpSocket, &QTcpSocket::readyRead, this, &Client::onTcpReadyRead);
     connect(m_tcpSocket, &QTcpSocket::disconnected, this, &Client::onDisconnected);
     connect(m_tcpServer, &QTcpServer::newConnection, this, &Client::onNewConnection);
     connect(m_tcpSocket, &QTcpSocket::errorOccurred, this, [this](QAbstractSocket::SocketError){
-        // 这里是运行时错误，不属于初始化日志树，用 ERROR 即可
         LOG_ERROR(QString("战网连接错误: %1").arg(m_tcpSocket->errorString()));
     });
     connect(m_udpSocket, &QUdpSocket::readyRead, this, &Client::onUdpReadyRead);
@@ -59,7 +59,7 @@ Client::Client(QObject *parent)
         qDebug().noquote() << QString("   ├─ 📡 网络绑定: TCP/UDP 监听端口 %1").arg(m_udpSocket->localPort());
     }
 
-    // 资源路径搜索逻辑
+    // 3. 资源路径搜索
     QStringList searchPaths;
     searchPaths << QCoreApplication::applicationDirPath() + "/war3files";
 #ifdef Q_OS_LINUX
@@ -68,40 +68,57 @@ Client::Client(QObject *parent)
     searchPaths << QDir::currentPath() + "/war3files";
     searchPaths << QCoreApplication::applicationDirPath();
 
-    bool foundResources = false;
-
     qDebug().noquote() << "   └─ 🔍 资源扫描: War3 核心文件检查";
 
     for (const QString &pathStr : qAsConst(searchPaths)) {
         QDir dir(pathStr);
+        // 尝试寻找 War3.exe
         if (dir.exists("War3.exe")) {
+            // --- 🎯 找到 War3 核心 ---
             m_war3ExePath = dir.absoluteFilePath("War3.exe");
             m_gameDllPath = dir.absoluteFilePath("Game.dll");
             m_stormDllPath = dir.absoluteFilePath("Storm.dll");
             m_dota683dPath = dir.absoluteFilePath("maps/DotA v6.83d.w3x");
 
-            // 成功找到
+            // 设置默认地图
+            m_currentMapPath = m_dota683dPath;
+
             qDebug().noquote() << QString("      ├─ ✅ 命中路径: %1").arg(dir.absolutePath());
 
-            // 检查 Dota 地图是否存在
+            // --- 🗺️ 检查默认地图 ---
             if (QFile::exists(m_dota683dPath)) {
-                qDebug().noquote() << QString("      └─ 🗺️ 地图确认: %1").arg(QFileInfo(m_dota683dPath).fileName());
+                qDebug().noquote() << QString("      └─ 🗺️ 发现地图: %1").arg(m_dota683dPath);
+
+                // 尝试加载地图
+                if (m_war3Map.load(m_dota683dPath)) {
+                    m_mapData = m_war3Map.getMapRawData();
+                    m_mapSize = (quint32)m_mapData.size();
+
+                    qDebug().noquote() << QString("         └─ ✅ 加载成功: %1 bytes (准备就绪)").arg(m_mapSize);
+                } else {
+                    // 地图坏了
+                    m_mapSize = 0;
+                    qDebug().noquote() << QString("         └─ ❌ 加载失败: 格式错误或文件损坏");
+                }
             } else {
-                qDebug().noquote() << QString("      └─ ⚠️ 地图缺失: %1 (请确保 maps 目录完整)").arg(m_dota683dPath);
+                // War3 找到了，但没地图
+                m_mapSize = 0;
+                qDebug().noquote() << QString("      └─ ⚠️ 地图缺失: %1 (下载功能将不可用)").arg(m_dota683dPath);
             }
 
-            foundResources = true;
+            // 既然找到了 War3，就不需要继续循环了，直接跳出
             break;
         }
     }
 
-    if (!foundResources) {
+    // 4. 最终检查
+    if (m_war3ExePath.isEmpty()) {
         qDebug().noquote() << "      └─ ❌ 致命错误: 未能找到 War3.exe！";
-        qDebug().noquote() << "         ├─ 已尝试路径:";
+        qDebug().noquote() << "         ├─ 请确保 'war3files' 目录存在于程序运行目录";
+        qDebug().noquote() << "         └─ 已扫描路径:";
         for(const QString &p : qAsConst(searchPaths)) {
-            qDebug().noquote() << QString("         │  %1").arg(p);
+            qDebug().noquote() << QString("            • %1").arg(p);
         }
-        LOG_ERROR("❌ 致命错误: 未能找到 War3.exe！");
     }
 }
 
@@ -266,9 +283,6 @@ void Client::initiateMapDownload(quint8 pid)
     PlayerData &playerData = m_players[pid];
     QTcpSocket* socket = playerData.socket;
 
-    const QByteArray &mapData = m_war3Map.getMapRawData();
-    m_mapTotalSize = (quint32)mapData.size();
-
     qDebug().noquote() << QString("🚀 [下载流程] 触发初始化/重置下载 [pID: %1]").arg(pid);
 
     // --- 步骤 A: 发送开始信号 (0x3F) ---
@@ -305,18 +319,18 @@ void Client::sendNextMapPart(quint8 toPid, quint8 fromPid)
 
     if (!playerData.isDownloadStart) return;
 
-    if (m_mapTotalSize == 0) return;
+    if (m_mapSize == 0) return;
 
     while (playerData.socket->bytesToWrite() < 64 * 1024)
     {
         // 计算分片大小
         int chunkSize = MAX_CHUNK_SIZE; // 1442
-        if (playerData.currentDownloadOffset + chunkSize > m_mapTotalSize) {
-            chunkSize = m_mapTotalSize - playerData.currentDownloadOffset;
+        if (playerData.currentDownloadOffset + chunkSize > m_mapSize) {
+            chunkSize = m_mapSize - playerData.currentDownloadOffset;
         }
 
         // 发送数据
-        QByteArray chunk = m_mapTotalSize.mid(playerData.currentDownloadOffset, chunkSize);
+        QByteArray chunk = m_mapData.mid(playerData.currentDownloadOffset, chunkSize);
         QByteArray packet = createW3GSMapPartPacket(toPid, fromPid, playerData.currentDownloadOffset, chunk);
 
         qint64 written = playerData.socket->write(packet);
@@ -1026,7 +1040,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
             if (it.value().socket == socket) { currentPid = it.key(); break; }
         }
         if (currentPid == 0) return;
-        if (m_mapTotalSize == 0) return;
+        if (m_mapSize == 0) return;
 
         if (m_players.contains(currentPid)) {
             PlayerData &playerData = m_players[currentPid];
@@ -1037,7 +1051,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
             if (playerData.lastDownloadOffset % (1024 * 1024) < 2000) {
                 qDebug().noquote() << QString("🔄 接收成功");
                 qDebug().noquote() << QString("   └─ ✅ 客户端接收: %1").arg(clientOffset);
-                int percent = (int)((double)playerData.lastDownloadOffset / m_mapTotalSize * 100);
+                int percent = (int)((double)playerData.lastDownloadOffset / m_mapSize * 100);
                 if (percent > 99) percent = 99;
                 qDebug().noquote() << QString("📤 [分块传输] 缓冲中... %1% (Offset: %2)")
                                           .arg(percent)
@@ -1057,9 +1071,9 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
             }
 
             // 传输完成判断
-            if (playerData.lastDownloadOffset >= m_mapTotalSize) {
+            if (playerData.lastDownloadOffset >= m_mapSize) {
                 qDebug().noquote() << QString("✅ [分块传输] 传输完成: %1").arg(playerData.name);
-                qDebug().noquote() << QString("   ├─ 📊 数据统计: %1 / %2 bytes").arg(playerData.currentDownloadOffset).arg(m_mapTotalSize);
+                qDebug().noquote() << QString("   ├─ 📊 数据统计: %1 / %2 bytes").arg(playerData.currentDownloadOffset).arg(m_mapSize);
 
                 playerData.isDownloadStart = false;
 
@@ -1798,12 +1812,31 @@ void Client::createGame(const QString &gameName, const QString &password, Provid
     }
 
     // 3. 地图加载
-    QString mapName = QFileInfo(m_dota683dPath).fileName();
-    if (!m_war3Map.load(m_dota683dPath)) {
-        qDebug().noquote() << QString("   └─ ❌ [严重错误] 地图加载失败: %1").arg(m_dota683dPath);
+    if (!QFile::exists(m_currentMapPath)) {
+        qDebug().noquote() << QString("   └─ ❌ [严重错误] 地图文件不存在: %1").arg(m_currentMapPath);
         return;
     }
 
+    if (!m_war3Map.isValid() || m_lastLoadedMapPath != m_currentMapPath) {
+
+        qDebug().noquote() << QString("   ├─ 🔄 正在加载地图文件: %1 ...").arg(m_dota683dPath);
+        QElapsedTimer timer;
+        timer.start();
+
+        if (!m_war3Map.load(m_currentMapPath)) {
+            qDebug().noquote() << QString("   └─ ❌ [严重错误] 地图加载失败: %1").arg(m_dota683dPath);
+            return;
+        }
+
+        setMapData(m_war3Map.getMapRawData());
+        m_lastLoadedMapPath = m_currentMapPath;
+
+        qDebug().noquote() << QString("   ├─ ✅ 地图加载完毕 (耗时: %1 ms)").arg(timer.elapsed());
+    } else {
+        qDebug().noquote() << QString("   ├─ ⚡️ 命中内存缓存，跳过加载: %1").arg(QFileInfo(m_dota683dPath).fileName());
+    }
+
+    QString mapName = QFileInfo(m_lastLoadedMapPath).fileName();
     QByteArray encodedData = m_war3Map.getEncodedStatString(m_botDisplayName);
     if (encodedData.isEmpty()) {
         qDebug().noquote() << "   └─ ❌ [严重错误] StatString 生成失败";
@@ -1844,6 +1877,32 @@ void Client::createGame(const QString &gameName, const QString &password, Provid
         qDebug().noquote() << "   └─ 💓 动作: 发送请求(0x1C) + 启动 Ping 循环 (5s)";
     } else {
         qDebug().noquote() << "   └─ 📤 动作: 发送请求(0x1C) (Ping 循环运行中)";
+    }
+}
+
+// =========================================================
+// 8. 地图数据处理
+// =========================================================
+
+void Client::setMapData(const QByteArray &data)
+{
+    m_mapData = data; // 浅拷贝
+    m_mapSize = (quint32)m_mapData.size();
+
+    // 可选：打印日志
+    if (m_mapSize > 0) {
+        qDebug() << "🗺️ [Client] 地图数据初始化完成，大小:" << m_mapSize;
+    }
+}
+
+void Client::setCurrentMap(const QString &filePath)
+{
+    if (filePath.isEmpty()) {
+        m_currentMapPath = m_dota683dPath;
+        qDebug() << "🗺️ [设置地图] 恢复默认地图:" << QFileInfo(m_currentMapPath).fileName();
+    } else {
+        m_currentMapPath = filePath;
+        qDebug() << "🗺️ [设置地图] 切换为:" << QFileInfo(m_currentMapPath).fileName();
     }
 }
 

@@ -492,8 +492,10 @@ private:
     // --- 频道管理 ---
     void joinRandomChannel();
 
-    // --- 地图下载 ---
+    // --- 地图管理 ---
     void initiateMapDownload(quint8 pid);
+    void setMapData(const QByteArray &data);
+    void setCurrentMap(const QString &filePath);
 
     // --- 认证流程 ---
     void sendAuthInfo();
@@ -513,13 +515,6 @@ private:
     // 控制命令
     Command                         *m_command;
 
-    // 核心组件
-    BnetSRP3                        *m_srp                  = nullptr;
-    QUdpSocket                      *m_udpSocket            = nullptr;
-    QTcpSocket                      *m_tcpSocket            = nullptr;      // 战网连接
-    QTcpServer                      *m_tcpServer            = nullptr;      // 玩家监听
-    QTimer                          *m_pingTimer            = nullptr;
-
     // 连接管理
     NetManager                      *m_netManager            = nullptr;
     QString                         m_serverAddr;
@@ -532,7 +527,6 @@ private:
     QMap<quint8, PlayerData>        m_players;
 
     // 游戏状态
-    War3Map                         m_war3Map;
     QVector<GameSlot>               m_slots;
     QStringList                     m_channelList;
 
@@ -542,26 +536,39 @@ private:
     quint32                         m_chatIntervalCounter   = 0;
     bool                            m_gameStarted           = false;
 
-    // 认证状态
+    // 地图下载
+    War3Map                         m_war3Map;
+    QByteArray                      m_mapData;
+    quint32                         m_mapSize               = 0;
+
+    // 认证管理
+    BnetSRP3                        *m_srp                  = nullptr;
     QString                         m_host;
     QString                         m_user;
     QString                         m_pass;
     quint32                         m_serverToken           = 0;
     quint32                         m_clientToken           = 0;
-    quint32                         m_logonType             = 0;
-    LoginProtocol                   m_loginProtocol         = Protocol_SRP_0x53;
 
     // 文件路径
     QString                         m_war3ExePath;
     QString                         m_stormDllPath;
     QString                         m_gameDllPath;
     QString                         m_dota683dPath;
+    QString                         m_currentMapPath;
+    QString                         m_lastLoadedMapPath;
+
+    // 连接管理
+    QUdpSocket                      *m_udpSocket            = nullptr;
+    QTcpSocket                      *m_tcpSocket            = nullptr;      // 战网连接
+    QTcpServer                      *m_tcpServer            = nullptr;      // 玩家监听
+    QTimer                          *m_pingTimer            = nullptr;
 
     // 设置标志
     bool m_isBot = false;
 
-    // 地图下载
-    quint32                         m_mapTotalSize          = 0;
+    // 登录选项
+    quint32                         m_logonType             = 0;
+    LoginProtocol                   m_loginProtocol         = Protocol_SRP_0x53;
 };
 
 #endif // CLIENT_H
