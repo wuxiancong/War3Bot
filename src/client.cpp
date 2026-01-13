@@ -955,7 +955,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         }
 
         if (validSlot) {
-            qDebug().noquote() << "   └─ 🚀 响应: 启动下载序列";
+            qDebug().noquote() << "   └─ 🚀 响应: 启动下载序列 (握手)";
 
             // --- 步骤 A: 发送开始信号 (0x3F) ---
             socket->write(createW3GSStartDownloadPacket(1));
@@ -967,19 +967,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
             // --- 步骤 C: 准备状态 ---
             playerData.isDownloading = true;
-            playerData.downloadOffset = 0;
-
-            const QByteArray &mapData = m_war3Map.getMapRawData();
-            int chunkSize = MAX_CHUNK_SIZE;
-            if (mapData.size() < chunkSize) chunkSize = mapData.size();
-            QByteArray firstChunk = mapData.mid(0, chunkSize);
-
-            socket->write(createW3GSMapPartPacket(currentPid, 1, 0, firstChunk));
-            socket->flush();
-
-            playerData.downloadOffset += chunkSize;
-
-            qDebug().noquote() << QString("   └─ 📤 已发送首块数据 (Size: %1)").arg(chunkSize);
+            qDebug().noquote() << QString("   └─ 📤 等待客户端发送 0x42(size=0) 包过来");
         } else {
             qDebug().noquote() << "   └─ ℹ️ 忽略: 玩家已有地图或槽位无效";
         }
@@ -1036,7 +1024,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
                     // 情况 1: 初始请求 / 开始下载 (Flag=3)
                     if (sizeFlag == 1 && clientMapSize == 0) {
-                        qDebug().noquote() << "   └─ 🚀 流程: 触发初始下载 (0x3F)";
+                        qDebug().noquote() << "   └─ 🚀 流程: 触发初始下载 (由 0x42 驱动)";
 
                         socket->write(createW3GSStartDownloadPacket(1));
                         socket->write(createW3GSSlotInfoPacket());
@@ -1045,14 +1033,12 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
                         // 初始化
                         playerData.downloadOffset = 0;
 
-                        // 延时发第一块
-                        QTimer::singleShot(200, this, [this, currentPid]() {
-                            if (m_players.contains(currentPid))
-                                sendNextMapPart(currentPid);
-                        });
+                        // 发第一块
+                        sendNextMapPart(currentPid);
                     }
                     // 情况 2: 进度同步 / 重传请求 (Flag=3)
                     else {
+                        // 客户端进度落后 -> 回滚
                         if (clientMapSize < playerData.downloadOffset) {
                             qDebug().noquote() << QString("   └─ 🔄 [回滚重传] Client: %1 < Server: %2 -> 重发块")
                                                       .arg(clientMapSize).arg(playerData.downloadOffset);
@@ -1060,9 +1046,9 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
                             playerData.downloadOffset = clientMapSize;
                             sendNextMapPart(currentPid);
                         }
+                        // 客户端进度一致 -> 此时应该等待 ACK (0x44)，不要主动发下一块！
                         else if (clientMapSize == playerData.downloadOffset) {
-                            qDebug().noquote() << "   └─ ℹ️ [进度同步] 状态一致，等待 ACK";
-                            sendNextMapPart(currentPid);
+                            qDebug().noquote() << "   └─ ℹ️ [进度同步] 状态一致，等待 ACK (不发送)";
                         }
                     }
                 }
@@ -1087,8 +1073,18 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         }
         if (currentPid == 0) return;
 
-        m_players[currentPid].lastResponseTime = QDateTime::currentMSecsSinceEpoch();
-        if (m_players.contains(currentPid)) sendNextMapPart(currentPid);
+        if (m_players.contains(currentPid)) {
+            PlayerData &player = m_players[currentPid];
+
+            qDebug().noquote() << QString("   └─ ✅ [ACK] 客户端确认接收至: %1").arg(clientOffset);
+
+            // 更新进度
+            player.downloadOffset = clientOffset;
+            player.lastResponseTime = QDateTime::currentMSecsSinceEpoch();
+
+            // 发送下一块
+            sendNextMapPart(currentPid);
+        }
     }
     break;
 
@@ -2251,7 +2247,7 @@ QByteArray Client::createW3GSMapPartPacket(quint8 toPid, quint8 fromPid, quint32
     // 调试输出
     if (offset == 1442) {
         qDebug() << "Sending Chunk 1442. Size:" << chunkData.size()
-                 << "CRC:" << QString::number(finalCrc, 16);
+        << "CRC:" << QString::number(finalCrc, 16);
     }
 
     return packet;
