@@ -524,7 +524,6 @@ private:
     void handleSRPLoginResponse(const QByteArray &data);
 
     // --- 游戏算法 ---
-    quint16 calculateActionCRC16(const QByteArray &data);
     static QByteArray calculateBrokenSHA1(const QByteArray &data);
     QByteArray calculateOldLogonProof(const QString &password, quint32 clientToken, quint32 serverToken);
 

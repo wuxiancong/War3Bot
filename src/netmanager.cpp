@@ -1,4 +1,5 @@
 #include "netmanager.h"
+#include "calculate.h"
 #include "war3map.h"
 #include "logger.h"
 #include <QDir>
@@ -1358,20 +1359,6 @@ QList<RegisterInfo> NetManager::getOnlinePlayers() const
 {
     QReadLocker locker(&m_registerInfosLock);
     return m_registerInfos.values();
-}
-
-quint16 NetManager::calculateCRC16(const QByteArray &data)
-{
-    quint16 crc = 0xFFFF;
-    const char *p = data.constData();
-    int len = data.size();
-
-    for (int i = 0; i < len; i++) {
-        unsigned char x = (crc >> 8) ^ (unsigned char)p[i];
-        x ^= x >> 4;
-        crc = (crc << 8) ^ (quint16)(x << 12) ^ (quint16)(x << 5) ^ (quint16)x;
-    }
-    return crc;
 }
 
 bool NetManager::isValidFileName(const QString &name)

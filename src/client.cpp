@@ -3,6 +3,7 @@
 #include "command.h"
 #include "bnethash.h"
 #include "bnetsrp3.h"
+#include "calculate.h"
 #include "bncsutil/checkrevision.h"
 
 #include <QDir>
@@ -1416,14 +1417,12 @@ void Client::onGameTick()
 
     // 1. 构建时间片包
     QByteArray tickPacket = createW3GSIncomingActionPacket (m_gameTickInterval);
+    if (tickPacket.size() > 8) {
+        qDebug() << "🎮 游戏动作数据:" << tickPacket.toHex().toUpper();
+    }
 
     // 2. 广播给所有玩家
     broadcastPacket(tickPacket, 0);
-
-    // 注意：真正的 HostBot 在这里还会：
-    // 1. 检查 m_actionQueue (玩家发来的操作)
-    // 2. 如果有操作，把操作拼接到 tickPacket 后面一起发出去
-    // 3. 如果没发这个包，客户端就会一直卡在上一帧，表现为画面静止或断开
 }
 
 // =========================================================
@@ -1814,35 +1813,6 @@ QByteArray Client::calculateOldLogonProof(const QString &password, quint32 clien
     dsFinalReader.setByteOrder(QDataStream::BigEndian);
     for(int i=0; i<5; i++) { quint32 val; dsFinalReader >> val; dsFinal << val; }
     return proofToSend;
-}
-
-quint16 Client::calculateActionCRC16(const QByteArray &data)
-{
-    unsigned char *p = (unsigned char *)data.data();
-    int len = data.size();
-    quint16 crc = 0;
-
-    for (int i = 0; i < len; i++) {
-        unsigned char x = p[i];
-
-        // 核心混淆逻辑
-        crc = (crc << 8) ^ x;
-        // War3 特有的多项式或位移操作，这里简化为标准 X.25 变体
-        // 注意：真正完美的 HostBot 需要复制 Ghost++ 的 CRC_Calculate 函数
-        // 下面是一个通用的 CRC16-CCITT 近似实现，通常 War3 能接受
-        // 如果发现客户端报错断开，需要找专门的 crc32.cpp 代码
-    }
-
-    // 为了保证准确性，直接给出 Ghost++ 的标准实现代码：
-    crc = 0xFFFF;
-    for (int i = 0; i < len; i++) {
-        unsigned char byte = p[i];
-        unsigned char x = (crc >> 8) ^ byte;
-        x ^= x >> 4;
-        crc = (crc << 8) ^ (quint16)(x << 12) ^ (quint16)(x << 5) ^ (quint16)x;
-    }
-
-    return crc;
 }
 
 // =========================================================
@@ -2536,7 +2506,7 @@ QByteArray Client::createW3GSIncomingActionPacket(quint16 sendInterval)
     // 5. 计算并回填 CRC-16
     quint16 calculatedCRC = 0;
     if (!actionBlock.isEmpty()) {
-        calculatedCRC = calculateActionCRC16(actionBlock);
+        calculatedCRC = calculateCRC16(actionBlock);
     }
 
     // 回到 CRC 位置写入正确的值
