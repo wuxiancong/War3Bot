@@ -274,6 +274,7 @@ void BotManager::addBotInstance(const QString& username, const QString& password
 
     // 设置 Client 属性
     bot->client->setBotFlag(true); // 标记这是机器人连接
+    bot->client->setGameTickInterval(100);
     bot->client->setCredentials(username, password, Protocol_SRP_0x53);
 
     // === 信号绑定 ===
@@ -371,7 +372,8 @@ bool BotManager::createGame(const QString &hostName, const QString &gameName, Co
 
         // 2. 确保 Client 对象存在且信号已绑定
         if (!targetBot->client) {
-            targetBot->client = new class Client(this);
+            targetBot->client = new Client(this);
+            targetBot->client->setGameTickInterval(100);
             targetBot->client->setCredentials(targetBot->username, targetBot->password, Protocol_SRP_0x53);
 
             // 绑定信号
@@ -741,6 +743,28 @@ void BotManager::onCommandReceived(const QString &userName, const QString &clien
             // 更新 Bot 状态为 Starting
             targetBot->state = BotState::Starting;
             emit botStateChanged(targetBot->id, targetBot->username, targetBot->state);
+        }
+    }
+    else if (command == "/latency" || command == "/lat") {
+        qDebug().noquote() << "🚀 [修改游戏延迟]";
+
+        // 1. 寻找用户当前所在的、且处于游戏状态的 Bot
+        Bot *targetBot = nullptr;
+        for (Bot *bot : qAsConst(m_bots)) {
+            if (bot->state == BotState::InGame && bot->gameInfo.clientId == clientId) {
+                targetBot = bot;
+                break;
+            }
+        }
+
+        if (!targetBot) {
+            m_netManager->sendMessageToClient(clientId, S_C_ERROR, ERR_PERMISSION_DENIED);
+            return;
+        }
+
+        int val = text.toInt();
+        if (val > 0) {
+            targetBot->client->setGameTickInterval((quint16)val);
         }
     }
     // ==================== 处理 /unhost ====================

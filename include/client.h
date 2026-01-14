@@ -344,6 +344,11 @@ struct PlayerData {
     quint32      currentLatency          = 0;
 };
 
+struct PlayerAction {
+    quint8 pid;
+    QByteArray data;
+};
+
 // =========================================================
 // 3. 多语言消息封装 (Multi-Language Message)
 // =========================================================
@@ -408,7 +413,9 @@ public:
     // --- 游戏主机管理 ---
     bool isHostJoined();
     void swapSlots(int slot1, int slot2);
+    void setGameTickInterval(quint16 interval);
     void setHost(QString creatorName) { m_host = creatorName; };
+    quint16 getGameTickInterval() const { return m_gameTickInterval; }
     void createGame(const QString &gameName, const QString &password,
                     ProviderVersion providerVersion, ComboGameType comboGameType,
                     SubGameType subGameType, LadderType ladderType,CommandSource commandSource);
@@ -419,7 +426,7 @@ public:
 
     // --- 工具函数 ---
     void sendPingLoop();                                // 定时发送Ping
-    void checkPlayerTimeout();                         // 检查玩家超时
+    void checkPlayerTimeout();                          // 检查玩家超时
     QString getPrimaryIPv4();                           // 获取本机IPv4
     bool bindToRandomPort();                            // 绑定随机UDP端口
     bool isBlackListedPort(quint16 port);               // 检查端口黑名单
@@ -432,8 +439,8 @@ public:
 
     // --- 槽位信息辅助 ---
     quint8 findFreePid() const;
-    quint8 getTotalSlots() const;                          // 获取总槽位数
-    quint8 getOccupiedSlots() const;                       // 获取已占用槽位数 (包括Bot/Host)
+    quint8 getTotalSlots() const;                       // 获取总槽位数
+    quint8 getOccupiedSlots() const;                    // 获取已占用槽位数 (包括Bot/Host)
     QString getSlotInfoString() const;                  // 返回 "(1/10)" 格式字符串
 
     // --- 设置机器人标志 ---
@@ -453,6 +460,7 @@ signals:
 
 private slots:
     // --- 网络事件 ---
+    void onGameTick();
     void onConnected();
     void onGameStarted();
     void onDisconnected();
@@ -482,6 +490,7 @@ private:
     QByteArray createW3GSPlayerLoadedPacket(quint8 pid);
     QByteArray createW3GSStartDownloadPacket(quint8 fromPid);
     QByteArray createW3GSRejectJoinPacket(RejectReason reason);
+    QByteArray createW3GSIncomingActionPacket (quint16 sendInterval);
     QByteArray createW3GSPlayerLeftPacket(quint8 pid, quint32 reason);
     QByteArray createW3GSSlotInfoJoinPacket(quint8 playerID, const QHostAddress& externalIp, quint16 localPort);
     QByteArray createW3GSMapPartPacket(quint8 toPid, quint8 fromPid, quint32 offset, const QByteArray& chunkData);
@@ -511,10 +520,11 @@ private:
     void handleAuthCheck(const QByteArray &data);
     void sendLoginRequest(LoginProtocol protocol);
 
-    // SRP (0x53)
+    // --- SRP(0x53) ---
     void handleSRPLoginResponse(const QByteArray &data);
 
-    // DoubleHash (0x29/0x3A)
+    // --- 游戏算法 ---
+    quint16 calculateActionCRC16(const QByteArray &data);
     static QByteArray calculateBrokenSHA1(const QByteArray &data);
     QByteArray calculateOldLogonProof(const QString &password, quint32 clientToken, quint32 serverToken);
 
@@ -545,6 +555,9 @@ private:
     quint32                         m_chatIntervalCounter   = 0;
     bool                            m_gameStarted           = false;
 
+    // 游戏数据
+    QList<PlayerAction>             m_actionQueue;
+
     // 地图下载
     War3Map                         m_war3Map;
     QByteArray                      m_mapData;
@@ -569,11 +582,13 @@ private:
     // 连接管理
     QUdpSocket                      *m_udpSocket            = nullptr;
     QTcpSocket                      *m_tcpSocket            = nullptr;      // 战网连接
-    QTcpServer                      *m_tcpServer            = nullptr;      // 玩家监听|
+    QTcpServer                      *m_tcpServer            = nullptr;      // 玩家监听
 
     // 时间管理
     QTimer                          *m_pingTimer            = nullptr;
     QTimer                          *m_startTimer           = nullptr;
+    QTimer                          *m_gameTickTimer        = nullptr;
+    quint16                         m_gameTickInterval      = 100;
 
     // 设置标志
     bool m_isBot = false;
