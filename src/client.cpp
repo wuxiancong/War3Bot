@@ -2510,20 +2510,21 @@ QByteArray Client::createW3GSIncomingActionPacket(quint16 sendInterval)
 {
     QByteArray packet;
     QDataStream out(&packet, QIODevice::WriteOnly);
+
+    // 1. 必须小端序 (Little Endian)
     out.setByteOrder(QDataStream::LittleEndian);
 
-    // 1. Header
+    // Header
     out << (quint8)0xF7 << (quint8)0x0C << (quint16)0;
 
-    // 2. Time Increment
+    // Interval
     out << (quint16)sendInterval;
 
-    // 3. 预留 CRC 位置
+    // 2. 预留 CRC 位置 (2字节)
     int crcOffset = packet.size();
     out << (quint16)0;
 
-    // 4. 写入 Action Data (如果有)
-    // 格式: [PID(1)] [Length(2)] [Data(...)]
+    // 3. 写入 Action Block
     QByteArray actionBlock;
     QDataStream actOut(&actionBlock, QIODevice::WriteOnly);
     actOut.setByteOrder(QDataStream::LittleEndian);
@@ -2534,26 +2535,22 @@ QByteArray Client::createW3GSIncomingActionPacket(quint16 sendInterval)
             actOut << (quint16)act.data.size();
             actOut.writeRawData(act.data.constData(), act.data.size());
         }
-        // 清空队列，准备下一帧
         m_actionQueue.clear();
     }
 
-    // 将动作块写入主包
+    // 将 Block 写入主包
     out.writeRawData(actionBlock.constData(), actionBlock.size());
 
-    // 5. 计算并回填 CRC-16
-    quint16 calculatedCRC = 0;
-    if (!actionBlock.isEmpty()) {
-        calculatedCRC = calculateCRC16(actionBlock);
-    }
+    // 4. 计算 CRC
+    quint16 calculatedCRC = calculateCRC16(actionBlock);
 
-    // 回到 CRC 位置写入正确的值
+    // 回填 CRC
     QDataStream crcStream(&packet, QIODevice::ReadWrite);
     crcStream.setByteOrder(QDataStream::LittleEndian);
     crcStream.device()->seek(crcOffset);
     crcStream << calculatedCRC;
 
-    // 6. 回填总长度
+    // 5. 回填总长度
     QDataStream lenStream(&packet, QIODevice::ReadWrite);
     lenStream.setByteOrder(QDataStream::LittleEndian);
     lenStream.device()->seek(2);
