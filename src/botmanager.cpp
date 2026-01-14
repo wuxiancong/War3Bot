@@ -616,8 +616,8 @@ void BotManager::onCommandReceived(const QString &userName, const QString &clien
         int suffixBytes = suffix.toUtf8().size();
         int availableBytes = MAX_BYTES - suffixBytes;
 
-        LOG_INFO(QString("   ├─ 📏 空间计算: 总限 %1 Bytes | 后缀占用 %2 Bytes | 剩余可用 %3 Bytes"))
-                                  .arg(MAX_BYTES).arg(suffixBytes).arg(availableBytes);
+        LOG_INFO(QString("   ├─ 📏 空间计算: 总限 %1 Bytes | 后缀占用 %2 Bytes | 剩余可用 %3 Bytes")
+                                  .arg(MAX_BYTES).arg(suffixBytes).arg(availableBytes));
 
         if (availableBytes <= 0) {
             LOG_ERROR("   └─ ❌ 失败: 后缀过长，无空间容纳房名");
