@@ -2093,24 +2093,25 @@ void Client::startGame()
     if (m_gameStarted) return;
     if (m_startTimer->isActive()) return;
 
+    // 2. 停止 Ping 循环 (防止干扰倒计时)
     if (m_pingTimer && m_pingTimer->isActive()) {
         m_pingTimer->stop();
         LOG_INFO("🛑 [倒计时] 停止 Ping 循环，准备进入游戏");
     }
 
-    // 2. 发送开始倒计时包
+    // 3. 发送倒计时开始包
     broadcastPacket(createW3GSCountdownStartPacket(), 0);
 
-    // 3. 广播聊天提示
+    // 4. 广播聊天提示
     MultiLangMsg msg;
     msg.add("CN", "游戏将于 5 秒后开始...")
         .add("EN", "Game starts in 5 seconds...");
     broadcastChatMessage(msg);
 
-    // 4. 停止 UDP 广播 (停止进人)
+    // 5. 停止 UDP 广播 (停止进人)
     stopAdv();
 
-    // 5. 启动内部定时器 (5秒)
+    // 6. 启动内部定时器 (5秒) -> 触发 onGameStarted
     m_startTimer->start(5000);
 
     LOG_INFO("⏳ [游戏启动] 开始倒计时...");
@@ -2124,6 +2125,12 @@ void Client::abortGame()
         msg.add("CN", "倒计时已取消。")
             .add("EN", "Countdown aborted.");
         broadcastChatMessage(msg);
+
+        // 3. 恢复 Ping 循环
+        if (!m_pingTimer->isActive()) {
+            m_pingTimer->start();
+            LOG_INFO("✅ [状态恢复] Ping 循环已重启");
+        }
 
         // 恢复广播
         // sendPacket(SID_STARTADVEX3, ...);
@@ -2605,6 +2612,10 @@ QByteArray Client::createW3GSMapPartPacket(quint8 toPid, quint8 fromPid, quint32
 
 void Client::broadcastChatMessage(const MultiLangMsg& msg, quint8 excludePid)
 {
+    if (m_gameStarted) {
+        return;
+    }
+
     for (auto it = m_players.begin(); it != m_players.end(); ++it) {
         quint8 pid = it.key();
 
