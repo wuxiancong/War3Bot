@@ -108,7 +108,7 @@ Client::Client(QObject *parent)
                 } else {
                     // 地图坏了
                     m_mapSize = 0;
-                    LOG_INFO(QString("         └─ ❌ 加载失败: 格式错误或文件损坏"));
+                    LOG_ERROR(QString("         └─ ❌ 加载失败: 格式错误或文件损坏"));
                 }
             } else {
                 // War3 找到了，但没地图
@@ -123,7 +123,7 @@ Client::Client(QObject *parent)
 
     // 4. 最终检查
     if (m_war3ExePath.isEmpty()) {
-        LOG_INFO("      └─ ❌ 致命错误: 未能找到 War3.exe！");
+        LOG_CRITICAL("      └─ ❌ 致命错误: 未能找到 War3.exe！");
         LOG_INFO("         ├─ 请确保 'war3files' 目录存在于程序运行目录");
         LOG_INFO("         └─ 已扫描路径:");
         for(const QString &p : qAsConst(searchPaths)) {
@@ -221,8 +221,8 @@ void Client::onNewConnection()
         // 树状日志
         LOG_INFO("🎮 [玩家连接] 检测到新 TCP 请求");
         LOG_INFO(QString("   └─ 🌍 来源: %1:%2")
-                                  .arg(socket->peerAddress().toString())
-                                  .arg(socket->peerPort()));
+                     .arg(socket->peerAddress().toString())
+                     .arg(socket->peerPort()));
 
         m_playerSockets.append(socket);
         m_playerBuffers.insert(socket, QByteArray()); // 初始化缓冲区
@@ -240,7 +240,7 @@ void Client::onNewConnection()
 void Client::sendPacket(BNETPacketID id, const QByteArray &payload)
 {
     if (!m_tcpSocket) {
-        LOG_WARNING("❌ 发送失败: Socket 未初始化");
+        LOG_ERROR("❌ 发送失败: Socket 未初始化");
         return;
     }
 
@@ -348,7 +348,7 @@ void Client::sendNextMapPart(quint8 toPid, quint8 fromPid)
         if (written > 0) {
             playerData.currentDownloadOffset += chunkSize;
         } else {
-            LOG_INFO(QString("❌ [分块传输] Socket 写入失败: %1").arg(playerData.socket->errorString()));
+            LOG_ERROR(QString("❌ [分块传输] Socket 写入失败: %1").arg(playerData.socket->errorString()));
             playerData.isDownloadStart = false;
             return;
         }
@@ -388,7 +388,7 @@ void Client::handleBNETTcpPacket(BNETPacketID id, const QByteArray &data)
         // 1. 打印根节点 (包名 + ID)
         QString packetName = getBnetPacketName(id);
         LOG_INFO(QString("📥 [BNET] 收到数据包: %1 (0x%2)")
-                                  .arg(packetName, QString::number(id, 16).toUpper()));
+                     .arg(packetName, QString::number(id, 16).toUpper()));
     }
 
     switch (id) {
@@ -537,7 +537,7 @@ void Client::handleBNETTcpPacket(BNETPacketID id, const QByteArray &data)
             emit authenticated();
             enterChat();
         } else {
-            LOG_INFO(QString("   └─ ❌ 结果: 失败 (Code: 0x%1)").arg(QString::number(result, 16)));
+            LOG_ERROR(QString("   └─ ❌ 结果: 失败 (Code: 0x%1)").arg(QString::number(result, 16)));
         }
     }
     break;
@@ -566,7 +566,7 @@ void Client::handleBNETTcpPacket(BNETPacketID id, const QByteArray &data)
             LOG_INFO("   └─ 🚀 动作: 尝试直接登录...");
             sendLoginRequest(Protocol_SRP_0x53);
         } else {
-            LOG_INFO(QString("   └─ ❌ 结果: 注册失败 (Code: 0x%1)").arg(QString::number(status, 16)));
+            LOG_ERROR(QString("   └─ ❌ 结果: 注册失败 (Code: 0x%1)").arg(QString::number(status, 16)));
         }
     }
     break;
@@ -593,7 +593,7 @@ void Client::handleBNETTcpPacket(BNETPacketID id, const QByteArray &data)
             if (status == 0x02) reason = "密码错误";
             else if (status == 0x0D) reason = "账号不存在";
 
-            LOG_INFO(QString("   ├─ ❌ 结果: 验证失败 (0x%1)").arg(QString::number(status, 16)));
+            LOG_ERROR(QString("   ├─ ❌ 结果: 验证失败 (0x%1)").arg(QString::number(status, 16)));
             LOG_INFO(QString("   └─ 📝 原因: %1").arg(reason));
         }
     }
@@ -619,7 +619,7 @@ void Client::handleBNETTcpPacket(BNETPacketID id, const QByteArray &data)
             case GameCreate_Error:           errStr = "通用创建错误"; break;
             default:                         errStr = QString("Code 0x%1").arg(QString::number(status, 16)); break;
             }
-            LOG_INFO(QString("   ├─ ❌ 结果: 创建失败"));
+            LOG_ERROR(QString("   ├─ ❌ 结果: 创建失败"));
             LOG_INFO(QString("   └─ 📝 原因: %1").arg(errStr));
 
             // 触发失败信号，BotManager 会处理并通知客户端
@@ -660,7 +660,7 @@ void Client::onPlayerReadyRead()
 
         quint8 header = (quint8)buffer[0];
         if (header != 0xF7) {
-            LOG_WARNING("❌ 非法协议头，断开连接");
+            LOG_ERROR("❌ 非法协议头，断开连接");
             return; // 立即返回，防止后续访问
         }
 
@@ -729,7 +729,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
                 in >> clientUnknown32 >> clientInternalPort >> clientInternalIP;
             }
         } else {
-            LOG_INFO(QString("   └─ ❌ [错误] 包长度不足: %1").arg(payload.size()));
+            LOG_ERROR(QString("   └─ ❌ [错误] 包长度不足: %1").arg(payload.size()));
             return;
         }
 
@@ -743,7 +743,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         // 1.1 房主校验
         bool nameMatch = (!m_host.isEmpty() && m_host.compare(clientPlayerName, Qt::CaseInsensitive) == 0);
         LOG_INFO(QString("   ├─ 🔍 房主校验: 预设[%1] vs 玩家[%2] -> %3")
-                                  .arg(m_host, clientPlayerName, nameMatch ? "✅ 匹配" : "❌ 不匹配"));
+                     .arg(m_host, clientPlayerName, nameMatch ? "✅ 匹配" : "❌ 不匹配"));
 
         // 1.2 逻辑判断：房主是否在场
         if (!isHostJoined()) {
@@ -1083,7 +1083,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
                         }
                         if(playerData.lastDownloadOffset != clientMapSize) {
                             sendNextMapPart(currentPid);
-                            LOG_INFO(QString("   └─ ❌ 客户端(%1) != 服务端(%2) 需要重传").arg(clientMapSize, playerData.lastDownloadOffset));
+                            LOG_ERROR(QString("   └─ ❌ 客户端(%1) != 服务端(%2) 需要重传").arg(clientMapSize, playerData.lastDownloadOffset));
                         } else {
                             if (clientMapSize % (1024 * 1024) < 2000) {
                                 LOG_INFO(QString("   └─ ✅ 客户端(%1) == 服务端(%2) 无需重传").arg(clientMapSize, playerData.lastDownloadOffset));
@@ -1125,8 +1125,8 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
                 int percent = (int)((double)playerData.lastDownloadOffset / m_mapSize * 100);
                 if (percent > 99) percent = 99;
                 LOG_INFO(QString("📤 [分块传输] 缓冲中... %1% (Offset: %2)")
-                                          .arg(percent)
-                                          .arg(playerData.lastDownloadOffset));
+                             .arg(percent)
+                             .arg(playerData.lastDownloadOffset));
                 bool needBroadcast = false;
                 for (int i = 0; i < m_slots.size(); ++i) {
                     if (m_slots[i].pid == toPid) {
@@ -1190,8 +1190,8 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         // 3. 打印详细日志
         LOG_INFO(QString("🚀 下载错误 (C>S 0x45 W3GS_MAPPARTNOTOK) [pID: %1]").arg(currentPid));
         LOG_INFO(QString("   ├─ ❓ [Unknown] Value: %1 (0x%2)")
-                                  .arg(unknownValue)
-                                  .arg(unknownValue, 8, 16, QChar('0')).toUpper());
+                     .arg(unknownValue)
+                     .arg(unknownValue, 8, 16, QChar('0')).toUpper());
         LOG_INFO(QString("   ├─ 📦 [Payload] Raw: %1").arg(rawHex));
 
         LOG_INFO("   └─ 可能原因: (以下错误会跳转到 Game.dll + 67FBF9) [v1.26.0.6401]");
@@ -1283,76 +1283,78 @@ void Client::onPlayerDisconnected() {
 
         // 3. 房主离开处理逻辑
         if (wasVisualHost) {
-            LOG_INFO("   ├─ 👑 [房主交接] 检测到房主离开...");
+            if(!m_gameStarted) {
+                LOG_INFO("   ├─ 👑 [房主交接] 检测到房主离开...");
 
-            // A. 寻找继承人 (排除 PID 1 的机器人)
-            quint8 heirPid = 0;
-            QString heirName = "";
+                // A. 寻找继承人 (排除 PID 1 的机器人)
+                quint8 heirPid = 0;
+                QString heirName = "";
 
-            for (auto pIt = m_players.begin(); pIt != m_players.end(); ++pIt) {
-                if (pIt.key() != 1) {
-                    heirPid = pIt.key();
-                    heirName = pIt.value().name;
-                    break;
+                for (auto pIt = m_players.begin(); pIt != m_players.end(); ++pIt) {
+                    if (pIt.key() != 1) {
+                        heirPid = pIt.key();
+                        heirName = pIt.value().name;
+                        break;
+                    }
                 }
-            }
 
-            // B. 判断结果
-            if (heirPid == 0) {
-                // 情况 1: 房间里没人了 (或者只剩 Bot)
-                LOG_INFO("   │  └─ 🛑 结果: 房间已空 (无继承人) -> 执行 cancelGame()");
-                cancelGame();
-                return; // 结束
-            } else {
-                // 情况 2: 还有其他人，移交房主
+                // B. 判断结果
+                if (heirPid == 0) {
+                    // 情况 1: 房间里没人了 (或者只剩 Bot)
+                    LOG_INFO("   │  └─ 🛑 结果: 房间已空 (无继承人) -> 执行 cancelGame()");
+                    cancelGame();
+                    return; // 结束
+                } else {
+                    // 情况 2: 还有其他人，移交房主
 
-                // 1. 更新玩家标志
-                m_players[heirPid].isVisualHost = true;
+                    // 1. 更新玩家标志
+                    m_players[heirPid].isVisualHost = true;
 
-                // 2. 更新全局房主名字
-                m_host = heirName;
+                    // 2. 更新全局房主名字
+                    m_host = heirName;
 
-                LOG_INFO(QString("   │  ├─ 🔍 继承人: %1 (PID: %2)").arg(heirName).arg(heirPid));
+                    LOG_INFO(QString("   │  ├─ 🔍 继承人: %1 (PID: %2)").arg(heirName).arg(heirPid));
 
-                // 执行槽位移动 (Move Heir to Host Slot)
-                if (oldHostSlotIndex != -1) {
-                    int heirSlotIndex = -1;
+                    // 执行槽位移动 (Move Heir to Host Slot)
+                    if (oldHostSlotIndex != -1) {
+                        int heirSlotIndex = -1;
 
-                    // 寻找继承人当前的槽位索引
-                    for (int i = 0; i < m_slots.size(); ++i) {
-                        if (m_slots[i].pid == heirPid) {
-                            heirSlotIndex = i;
-                            break;
+                        // 寻找继承人当前的槽位索引
+                        for (int i = 0; i < m_slots.size(); ++i) {
+                            if (m_slots[i].pid == heirPid) {
+                                heirSlotIndex = i;
+                                break;
+                            }
+                        }
+
+                        // 如果找到了，并且位置不一样，则交换内容
+                        if (heirSlotIndex != -1 && heirSlotIndex != oldHostSlotIndex) {
+
+                            GameSlot &hostSlot = m_slots[oldHostSlotIndex]; // 此时它是空的 (PID=0, Open)
+                            GameSlot &heirSlot = m_slots[heirSlotIndex];    // 此时它有人 (PID=Heir, Occupied)
+
+                            std::swap(hostSlot.pid,            heirSlot.pid);
+                            std::swap(hostSlot.downloadStatus, heirSlot.downloadStatus);
+                            std::swap(hostSlot.slotStatus,     heirSlot.slotStatus);
+                            std::swap(hostSlot.computer,       heirSlot.computer);
+                            std::swap(hostSlot.computerType,   heirSlot.computerType);
+                            std::swap(hostSlot.handicap,       heirSlot.handicap);
+
+                            // 不需要交换 Team/Color/Race，继承人直接继承房主槽位的队伍和颜色
+
+                            LOG_INFO(QString("   │  ├─ 🔄 位置调整: 继承人从 Slot %1 移至 Slot %2 (Host位)")
+                                         .arg(heirSlotIndex).arg(oldHostSlotIndex));
                         }
                     }
 
-                    // 如果找到了，并且位置不一样，则交换内容
-                    if (heirSlotIndex != -1 && heirSlotIndex != oldHostSlotIndex) {
+                    LOG_INFO("   │  └─ ✅ 结果: 权限移交完成");
 
-                        GameSlot &hostSlot = m_slots[oldHostSlotIndex]; // 此时它是空的 (PID=0, Open)
-                        GameSlot &heirSlot = m_slots[heirSlotIndex];    // 此时它有人 (PID=Heir, Occupied)
-
-                        std::swap(hostSlot.pid,            heirSlot.pid);
-                        std::swap(hostSlot.downloadStatus, heirSlot.downloadStatus);
-                        std::swap(hostSlot.slotStatus,     heirSlot.slotStatus);
-                        std::swap(hostSlot.computer,       heirSlot.computer);
-                        std::swap(hostSlot.computerType,   heirSlot.computerType);
-                        std::swap(hostSlot.handicap,       heirSlot.handicap);
-
-                        // 不需要交换 Team/Color/Race，继承人直接继承房主槽位的队伍和颜色
-
-                        LOG_INFO(QString("   │  ├─ 🔄 位置调整: 继承人从 Slot %1 移至 Slot %2 (Host位)")
-                                                  .arg(heirSlotIndex).arg(oldHostSlotIndex));
-                    }
+                    // 3. 广播移交通知
+                    MultiLangMsg transferMsg;
+                    transferMsg.add("CN", QString("系统: 房主已离开，[%1] 成为新房主。").arg(heirName))
+                        .add("EN", QString("System: Host left. [%1] is the new host.").arg(heirName));
+                    broadcastChatMessage(transferMsg, 0);
                 }
-
-                LOG_INFO("   │  └─ ✅ 结果: 权限移交完成");
-
-                // 3. 广播移交通知
-                MultiLangMsg transferMsg;
-                transferMsg.add("CN", QString("系统: 房主已离开，[%1] 成为新房主。").arg(heirName))
-                    .add("EN", QString("System: Host left. [%1] is the new host.").arg(heirName));
-                broadcastChatMessage(transferMsg, 0);
             }
         }
 
@@ -1414,8 +1416,10 @@ void Client::onGameTick()
 
     // 1. 构建时间片包
     QByteArray tickPacket = createW3GSIncomingActionPacket (m_gameTickInterval);
-    if (tickPacket.size() > 8) {
-        qDebug() << "🎮 游戏动作数据:" << tickPacket.toHex().toUpper();
+    static int logCount = 0;
+    if (logCount == 0 || logCount % 10 < 2) {
+        qDebug() << "🎮 游戏动作数据包:" << tickPacket.toHex().toUpper();
+        logCount++;
     }
 
     // 2. 广播给所有玩家
@@ -1451,7 +1455,7 @@ void Client::handleW3GSUdpPacket(const QByteArray &data, const QHostAddress &sen
     // 3. 打印根节点信息
     LOG_INFO(QString("📨 [UDP] 收到数据包: 0x%1").arg(QString::number(msgId, 16).toUpper()));
     LOG_INFO(QString("   ├─ 🌍 来源: %1:%2 (Len: %3)")
-                              .arg(sender.toString()).arg(senderPort).arg(data.size()));
+                 .arg(sender.toString()).arg(senderPort).arg(data.size()));
 
     // 4. 格式化 Hex 字符串 (每字节加空格)
     QString hexStr = data.toHex().toUpper();
@@ -1555,7 +1559,7 @@ void Client::handleAuthCheck(const QByteArray &data)
     LOG_INFO("🔍 [Auth Check] 处理认证挑战 (0x51)");
 
     if (data.size() < 24) {
-        LOG_INFO(QString("   └─ ❌ [错误] 包长度不足: %1").arg(data.size()));
+        LOG_ERROR(QString("   └─ ❌ [错误] 包长度不足: %1").arg(data.size()));
         return;
     }
 
@@ -1591,7 +1595,7 @@ void Client::handleAuthCheck(const QByteArray &data)
         LOG_INFO(QString("   │  ├─ Core Path: %1").arg(m_war3ExePath));
         LOG_INFO(QString("   │  └─ Checksum:  0x%1").arg(QString::number(checkSum, 16).toUpper()));
     } else {
-        LOG_ERROR(QString("   └─ ❌ [严重错误] War3.exe 缺失: %1").arg(m_war3ExePath));
+        LOG_CRITICAL(QString("   └─ ❌ [严重错误] War3.exe 缺失: %1").arg(m_war3ExePath));
         return;
     }
 
@@ -1703,7 +1707,7 @@ void Client::handleSRPLoginResponse(const QByteArray &data)
             LOG_INFO("   └─ 🔄 动作: 触发自动注册流程 -> createAccount()");
             createAccount();
         } else if (status == 0x05) {
-            LOG_INFO("   └─ ❌ 状态: 密码错误 (Code 0x05)");
+            LOG_ERROR("   └─ ❌ 状态: 密码错误 (Code 0x05)");
         } else {
             LOG_ERROR(QString("   └─ ❌ 状态: 登录拒绝 (Code 0x%1)").arg(QString::number(status, 16)));
         }
@@ -1970,7 +1974,7 @@ void Client::createGame(const QString &gameName, const QString &password, Provid
 
         LOG_INFO(QString("   ├─ 🔧 端口汇报: UDP %1 -> SID_NETGAMEPORT").arg(localPort));
     } else {
-        LOG_INFO("   └─ ❌ [严重错误] UDP 未绑定，无法创建游戏");
+        LOG_CRITICAL("   └─ ❌ [严重错误] UDP 未绑定，无法创建游戏");
         return;
     }
 
@@ -2759,8 +2763,8 @@ void Client::swapSlots(int slot1, int slot2)
 
     // 6. 打印日志
     LOG_INFO(QString("🔄 [Slot] 交换完成: %1 (Team %2) <-> %3 (Team %4)")
-                              .arg(slot1).arg(s1.team)
-                              .arg(slot2).arg(s2.team));
+                 .arg(slot1).arg(s1.team)
+                 .arg(slot2).arg(s2.team));
 
     // 7. 广播更新
     broadcastSlotInfo();

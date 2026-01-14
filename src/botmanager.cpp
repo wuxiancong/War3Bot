@@ -25,7 +25,7 @@ BotManager::~BotManager()
 void BotManager::initializeBots(quint32 initialCount, const QString &configPath)
 {
     // 1. 打印初始化头部
-    qDebug().noquote() << "🤖 [BotManager] 初始化序列启动";
+    LOG_INFO("🤖 [BotManager] 初始化序列启动");
 
     // 2. 清理旧数据
     stopAll();
@@ -37,7 +37,7 @@ void BotManager::initializeBots(quint32 initialCount, const QString &configPath)
     m_allAccountFilePaths.clear();
     m_newAccountFilePaths.clear();
 
-    qDebug().noquote() << "   ├─ 🧹 环境清理: 完成";
+    LOG_INFO("   ├─ 🧹 环境清理: 完成");
 
     // 3. 读取配置文件
     QSettings settings(configPath, QSettings::IniFormat);
@@ -47,16 +47,16 @@ void BotManager::initializeBots(quint32 initialCount, const QString &configPath)
 
     m_initialLoginCount = initialCount;
 
-    qDebug().noquote() << QString("   ├─ ⚙️ 加载配置: %1").arg(QFileInfo(configPath).fileName());
-    qDebug().noquote() << QString("   │  ├─ 🖥️ 服务器: %1:%2").arg(m_targetServer).arg(m_targetPort);
-    qDebug().noquote() << QString("   │  └─ 🔐 种子码: %1").arg(m_norepeatChars);
+    LOG_INFO(QString("   ├─ ⚙️ 加载配置: %1").arg(QFileInfo(configPath).fileName()));
+    LOG_INFO(QString("   │  ├─ 🖥️ 服务器: %1:%2").arg(m_targetServer).arg(m_targetPort));
+    LOG_INFO(QString("   │  └─ 🔐 种子码: %1").arg(m_norepeatChars));
 
     // 4. 生成或加载文件
     bool isNewFiles = createBotAccountFilesIfNotExist();
 
     // 5. 根据文件状态决定流程
     if (isNewFiles) {
-        qDebug().noquote() << "   └─ 🆕 模式切换: [批量注册模式]";
+        LOG_INFO("   └─ 🆕 模式切换: [批量注册模式]");
 
         // 只加载 "新生成的文件" 到注册队列
         m_registrationQueue.clear();
@@ -73,33 +73,33 @@ void BotManager::initializeBots(quint32 initialCount, const QString &configPath)
                     m_registrationQueue.enqueue(qMakePair(obj["u"].toString(), obj["p"].toString()));
                 }
                 file.close();
-                qDebug().noquote() << QString("      ├─ 📄 加载新文件: %1").arg(QFileInfo(path).fileName());
+                LOG_INFO(QString("      ├─ 📄 加载新文件: %1").arg(QFileInfo(path).fileName()));
             }
         }
 
         m_totalRegistrationCount = m_registrationQueue.size();
-        qDebug().noquote() << QString("      ├─ 🔢 待注册总数: %1 个").arg(m_totalRegistrationCount);
+        LOG_INFO(QString("      ├─ 🔢 待注册总数: %1 个").arg(m_totalRegistrationCount));
 
         // 双重检查
         if (m_totalRegistrationCount > 0) {
             m_isMassRegistering = true;
-            qDebug().noquote() << "      └─ 🚀 动作执行: 启动注册队列 (间隔防止封IP)";
+            LOG_INFO("      └─ 🚀 动作执行: 启动注册队列 (间隔防止封IP)");
             processNextRegistration();
         } else {
-            qDebug().noquote() << "      └─ ⚠️ 异常警告: 队列为空 -> 降级为常规加载";
+            LOG_INFO("      └─ ⚠️ 异常警告: 队列为空 -> 降级为常规加载");
             loadMoreBots(initialCount);
             startAll();
         }
 
     } else {
-        qDebug().noquote() << "   └─ ✅ 模式切换: [常规加载模式]";
-        qDebug().noquote() << "      ├─ 📂 状态: 所有账号文件已存在，跳过注册";
-        qDebug().noquote() << QString("      ├─ 📥 目标加载数: %1 个 Bot").arg(initialCount);
+        LOG_INFO("   └─ ✅ 模式切换: [常规加载模式]");
+        LOG_INFO("      ├─ 📂 状态: 所有账号文件已存在，跳过注册");
+        LOG_INFO(QString("      ├─ 📥 目标加载数: %1 个 Bot").arg(initialCount));
 
         loadMoreBots(initialCount);
         startAll();
 
-        qDebug().noquote() << QString("      └─ 🚀 动作执行: 启动连接 (Bot总数: %1)").arg(m_bots.size());
+        LOG_INFO(QString("      └─ 🚀 动作执行: 启动连接 (Bot总数: %1)").arg(m_bots.size()));
     }
 }
 
@@ -107,9 +107,9 @@ void BotManager::processNextRegistration()
 {
     // 1. 队列为空 -> 流程结束 (闭环)
     if (m_registrationQueue.isEmpty()) {
-        qDebug().noquote() << "      └─ 🎉 [批量注册] 流程结束";
-        qDebug().noquote() << QString("         ├─ 📊 总计处理: %1 个账号").arg(m_totalRegistrationCount);
-        qDebug().noquote() << QString("         └─ 🚀 状态切换: 正在启动前 %1 个机器人...").arg(m_initialLoginCount);
+        LOG_INFO("      └─ 🎉 [批量注册] 流程结束");
+        LOG_INFO(QString("         ├─ 📊 总计处理: %1 个账号").arg(m_totalRegistrationCount));
+        LOG_INFO(QString("         └─ 🚀 状态切换: 正在启动前 %1 个机器人...").arg(m_initialLoginCount));
 
         m_isMassRegistering = false;
 
@@ -134,11 +134,11 @@ void BotManager::processNextRegistration()
     if (current == 1 || current % 10 == 0) {
         int percent = (int)((double)current / m_totalRegistrationCount * 100);
         // 使用 ├─ 模拟它是初始化过程中的一个持续子项
-        qDebug().noquote() << QString("      ├─ ⏳ [注册进度] %1/%2 (%3%) -> 当前: %4")
+        LOG_INFO(QString("      ├─ ⏳ [注册进度] %1/%2 (%3%) -> 当前: %4")
                                   .arg(current, 3) // 占位符对齐
                                   .arg(m_totalRegistrationCount)
                                   .arg(percent, 2)
-                                  .arg(user);
+                                  .arg(user));
     }
 
     // 3. 执行注册逻辑
@@ -153,7 +153,7 @@ void BotManager::processNextRegistration()
     // 定义通用结束步骤 (Lambda)
     auto finishStep = [this, user](bool success, QString msg) {
         if (!success) {
-            qDebug().noquote() << QString("      │  ❌ [注册失败] 用户: %1 | 原因: %2").arg(user, msg);
+            LOG_ERROR(QString("      │  ❌ [注册失败] 用户: %1 | 原因: %2").arg(user, msg));
         }
 
         m_tempRegistrationClient->disconnectFromHost();
@@ -190,14 +190,14 @@ void BotManager::processNextRegistration()
 int BotManager::loadMoreBots(int count)
 {
     // 1. 打印头部
-    qDebug().noquote() << QString("   ├─ 📥 [增量加载] 请求增加: %1 个机器人").arg(count);
+    LOG_INFO(QString("   ├─ 📥 [增量加载] 请求增加: %1 个机器人").arg(count));
 
     int loadedCount = 0;
 
     while (loadedCount < count) {
         // 资源耗尽检查
         if (m_currentFileIndex >= m_allAccountFilePaths.size()) {
-            qDebug().noquote() << "   │  └─ ⚠️ [资源耗尽] 所有账号文件已全部加载完毕";
+            LOG_INFO("   │  └─ ⚠️ [资源耗尽] 所有账号文件已全部加载完毕");
             break;
         }
 
@@ -206,7 +206,7 @@ int BotManager::loadMoreBots(int count)
 
         QFile file(currentFullPath);
         if (!file.open(QIODevice::ReadOnly)) {
-            qDebug().noquote() << QString("   │  ❌ [读取失败] %1 -> 跳过").arg(fileName);
+            LOG_ERROR(QString("   │  ❌ [读取失败] %1 -> 跳过").arg(fileName));
             m_currentFileIndex++;
             m_currentAccountIndex = 0;
             continue;
@@ -216,7 +216,7 @@ int BotManager::loadMoreBots(int count)
         file.close();
 
         if (!doc.isArray()) {
-            qDebug().noquote() << QString("   │  ❌ [格式错误] %1 不是 JSON 数组 -> 跳过").arg(fileName);
+            LOG_INFO(QString("   │  ❌ [格式错误] %1 不是 JSON 数组 -> 跳过").arg(fileName));
             m_currentFileIndex++;
             continue;
         }
@@ -226,10 +226,10 @@ int BotManager::loadMoreBots(int count)
         int loadedFromThisFile = 0;
 
         // 打印文件节点信息
-        qDebug().noquote() << QString("   │  ├─ 📂 读取来源: %1 (当前进度: %2/%3)")
+        LOG_INFO(QString("   │  ├─ 📂 读取来源: %1 (当前进度: %2/%3)")
                                   .arg(fileName)
                                   .arg(m_currentAccountIndex)
-                                  .arg(totalInFile);
+                                  .arg(totalInFile));
         // 提取账号循环
         while (loadedCount < count && m_currentAccountIndex < totalInFile) {
             QJsonObject obj = array[m_currentAccountIndex].toObject();
@@ -242,24 +242,24 @@ int BotManager::loadMoreBots(int count)
 
         // 打印本次文件提取结果
         if (loadedFromThisFile > 0) {
-            qDebug().noquote() << QString("   │  │  ├─ ➕ 提取账号: %1 个").arg(loadedFromThisFile);
+            LOG_INFO(QString("   │  │  ├─ ➕ 提取账号: %1 个").arg(loadedFromThisFile));
         }
 
         // 文件切换/状态更新
         if (m_currentAccountIndex >= totalInFile) {
-            qDebug().noquote() << "   │  │  └─ 🏁 文件读完: 切换下一个";
+            LOG_INFO("   │  │  └─ 🏁 文件读完: 切换下一个");
             m_currentFileIndex++;
             m_currentAccountIndex = 0;
         } else {
             // 还没读完，只是满足了本次 count 需求
-            qDebug().noquote() << QString("   │  │  └─ ⏸️ 暂停读取: 剩余 %1 个账号待用").arg(totalInFile - m_currentAccountIndex);
+            LOG_INFO(QString("   │  │  └─ ⏸️ 暂停读取: 剩余 %1 个账号待用").arg(totalInFile - m_currentAccountIndex));
         }
     }
 
     // 2. 打印总结
     QString statusIcon = (loadedCount >= count) ? "✅" : "⚠️";
-    qDebug().noquote() << QString("   └─ %1 [加载统计] 实际增加: %2 / 目标: %3")
-                              .arg(statusIcon).arg(loadedCount).arg(count);
+    LOG_INFO(QString("   └─ %1 [加载统计] 实际增加: %2 / 目标: %3")
+                              .arg(statusIcon).arg(loadedCount).arg(count));
 
     return loadedCount;
 }
@@ -291,7 +291,7 @@ void BotManager::addBotInstance(const QString& username, const QString& password
 
     m_bots.append(bot);
 
-    qDebug().noquote() << QString("   │  │  ├─ 🤖 实例化: %1 (ID: %2)").arg(username).arg(bot->id);
+    LOG_INFO(QString("   │  │  ├─ 🤖 实例化: %1 (ID: %2)").arg(username).arg(bot->id));
 }
 
 bool BotManager::createGame(const QString &hostName, const QString &gameName, CommandSource commandSource, const QString &clientId)
@@ -299,10 +299,10 @@ bool BotManager::createGame(const QString &hostName, const QString &gameName, Co
     // --- 1. 打印任务请求头部 ---
     QString sourceStr = (commandSource == From_Client) ? "客户端聊天窗口" : "服务端命令窗口";
 
-    qDebug().noquote() << "🎮 [创建游戏任务启动]";
-    qDebug().noquote() << QString("   ├─ 👤 虚拟房主: %1").arg(hostName);
-    qDebug().noquote() << QString("   ├─ 📝 游戏名称: %1").arg(gameName);
-    qDebug().noquote() << QString("   ├─ 🆔 命令来源: %1 (%2)").arg(sourceStr, clientId.left(8));
+    LOG_INFO("🎮 [创建游戏任务启动]");
+    LOG_INFO(QString("   ├─ 👤 虚拟房主: %1").arg(hostName));
+    LOG_INFO(QString("   ├─ 📝 游戏名称: %1").arg(gameName));
+    LOG_INFO(QString("   ├─ 🆔 命令来源: %1 (%2)").arg(sourceStr, clientId.left(8)));
 
     Bot *targetBot = nullptr;
     bool needConnect = false;
@@ -316,7 +316,7 @@ bool BotManager::createGame(const QString &hostName, const QString &gameName, Co
     }
 
     if (targetBot) {
-        qDebug().noquote() << QString("   ├─ ✅ 执行动作: 指派在线空闲机器人 [%1] 创建房间").arg(targetBot->username);
+        LOG_INFO(QString("   ├─ ✅ 执行动作: 指派在线空闲机器人 [%1] 创建房间").arg(targetBot->username));
 
         // 更新 Bot 基础信息
         targetBot->hostJoined = false;
@@ -329,7 +329,7 @@ bool BotManager::createGame(const QString &hostName, const QString &gameName, Co
         targetBot->state = BotState::Creating;
         targetBot->client->createGame(gameName, "", Provider_TFT_New, Game_TFT_Custom, SubType_None, Ladder_None, commandSource);
 
-        qDebug().noquote() << "   └─ 🚀 执行动作: 立即发送 CreateGame 指令";
+        LOG_INFO("   └─ 🚀 执行动作: 立即发送 CreateGame 指令");
         return true;
     }
 
@@ -340,7 +340,7 @@ bool BotManager::createGame(const QString &hostName, const QString &gameName, Co
             if (bot->state == BotState::Disconnected) {
                 targetBot = bot;
                 needConnect = true;
-                qDebug().noquote() << QString("   ├─ ♻️ 资源复用: 唤醒离线机器人 [%1] (ID: %2)").arg(targetBot->username).arg(targetBot->id);
+                LOG_INFO(QString("   ├─ ♻️ 资源复用: 唤醒离线机器人 [%1] (ID: %2)").arg(targetBot->username).arg(targetBot->id));
                 break;
             }
         }
@@ -348,14 +348,14 @@ bool BotManager::createGame(const QString &hostName, const QString &gameName, Co
 
     // 3. 动态扩容
     if (!targetBot) {
-        qDebug().noquote() << "   ├─ ⚠️ 当前池中无可用 Bot，尝试从文件加载...";
+        LOG_WARNING("   ├─ ⚠️ 当前池中无可用 Bot，尝试从文件加载...");
 
         if (loadMoreBots(1) > 0) {
             targetBot = m_bots.last();
             needConnect = true;
-            qDebug().noquote() << QString("   ├─ 📂 动态扩容成功: 从文件加载了 [%1]").arg(targetBot->username);
+            LOG_INFO(QString("   ├─ 📂 动态扩容成功: 从文件加载了 [%1]").arg(targetBot->username));
         } else {
-            qDebug().noquote() << "   └─ ❌ 动态扩容失败: 所有账号文件已耗尽！";
+            LOG_ERROR("   └─ ❌ 动态扩容失败: 所有账号文件已耗尽！");
             return false;
         }
     }
@@ -400,7 +400,7 @@ bool BotManager::createGame(const QString &hostName, const QString &gameName, Co
         targetBot->state = BotState::Connecting;
         targetBot->client->connectToHost(m_targetServer, m_targetPort);
 
-        qDebug().noquote() << QString("   └─ ⏳ 执行动作: 启动连接流程 [%1] (任务已挂起，等待登录)").arg(targetBot->username);
+        LOG_INFO(QString("   └─ ⏳ 执行动作: 启动连接流程 [%1] (任务已挂起，等待登录)").arg(targetBot->username));
         return true;
     }
 
@@ -473,14 +473,14 @@ const QVector<Bot*>& BotManager::getAllBots() const
 void BotManager::onBotAuthenticated(Bot *bot)
 {
     // 1. 打印事件根节点
-    qDebug().noquote() << QString("🔑 [认证成功] Bot-%1 (%2)").arg(bot->id).arg(bot->username);
+    LOG_INFO(QString("🔑 [认证成功] Bot-%1 (%2)").arg(bot->id).arg(bot->username));
 
     // 2. 检查是否有挂起的任务 (Pending Task)
     if (bot->pendingTask.hasTask) {
         // 分支 A: 处理任务
-        qDebug().noquote() << "   ├─ 🎮 [发现挂起任务]";
-        qDebug().noquote() << QString("   │  ├─ 👤 虚拟房主: %1").arg(bot->pendingTask.hostName);
-        qDebug().noquote() << QString("   │  └─ 📝 目标房名: %1").arg(bot->pendingTask.gameName);
+        LOG_INFO("   ├─ 🎮 [发现挂起任务]");
+        LOG_INFO(QString("   │  ├─ 👤 虚拟房主: %1").arg(bot->pendingTask.hostName));
+        LOG_INFO(QString("   │  └─ 📝 目标房名: %1").arg(bot->pendingTask.gameName));
 
         // 更新状态
         bot->state = BotState::Creating;
@@ -503,14 +503,14 @@ void BotManager::onBotAuthenticated(Bot *bot)
         bot->pendingTask.hasTask = false;
 
         // 闭环日志
-        qDebug().noquote() << "   └─ 🚀 [动作执行] 发送 CreateGame 指令 -> 状态切换: Creating";
+        LOG_INFO("   └─ 🚀 [动作执行] 发送 CreateGame 指令 -> 状态切换: Creating");
 
     } else {
         // 分支 B: 无任务
         bot->state = BotState::Idle;
 
         // 闭环日志
-        qDebug().noquote() << "   └─ 💤 [状态切换] 无挂起任务 -> 进入 Idle (空闲待机)";
+        LOG_INFO("   └─ 💤 [状态切换] 无挂起任务 -> 进入 Idle (空闲待机)");
     }
 }
 
@@ -548,9 +548,9 @@ void BotManager::onCommandReceived(const QString &userName, const QString &clien
 
     QString fullCmd = command + (text.isEmpty() ? "" : " " + text);
 
-    qDebug().noquote() << "📨 [收到用户指令]";
-    qDebug().noquote() << QString("   ├─ 👤 发送者: %1 (UUID: %2...)").arg(userName, clientId.left(8));
-    qDebug().noquote() << QString("   └─ 💬 内容:   %1").arg(fullCmd);
+    LOG_INFO("📨 [收到用户指令]");
+    LOG_INFO(QString("   ├─ 👤 发送者: %1 (UUID: %2...)").arg(userName, clientId.left(8)));
+    LOG_INFO(QString("   └─ 💬 内容:   %1").arg(fullCmd));
 
     // 3. 处理 /host 指令
     if (command == "/host") {        
@@ -567,7 +567,7 @@ void BotManager::onCommandReceived(const QString &userName, const QString &clien
             }
         }
 
-        qDebug().noquote() << "🎮 [创建房间请求记录]";
+        LOG_INFO("🎮 [创建房间请求记录]");
 
         QStringList parts = text.split(" ", Qt::SkipEmptyParts);
 
@@ -596,18 +596,18 @@ void BotManager::onCommandReceived(const QString &userName, const QString &clien
         commandInfo.timestamp = QDateTime::currentMSecsSinceEpoch();
         m_commandInfos.insert(userName, commandInfo);
 
-        qDebug().noquote() << QString("   ├─ 👤 用户: %1").arg(userName);
-        qDebug().noquote() << QString("   ├─ 🆔 UUID: %1").arg(clientId);
-        qDebug().noquote() << QString("   └─ 💾 已存入 HostMap (当前缓存数: %1)").arg(m_commandInfos.size());
+        LOG_INFO(QString("   ├─ 👤 用户: %1").arg(userName));
+        LOG_INFO(QString("   ├─ 🆔 UUID: %1").arg(clientId));
+        LOG_INFO(QString("   └─ 💾 已存入 HostMap (当前缓存数: %1)").arg(m_commandInfos.size()));
 
         // 4.2 房名预处理与截断
-        qDebug().noquote() << "🎮 [创建房间基本信息]";
+        LOG_INFO("🎮 [创建房间基本信息]");
         QString baseName = text.trimmed();
         if (baseName.isEmpty()) {
             baseName = QString("%1's Game").arg(userName);
-            qDebug().noquote() << QString("   ├─ ℹ️ 自动命名: %1").arg(baseName);
+            LOG_INFO(QString("   ├─ ℹ️ 自动命名: %1").arg(baseName));
         } else {
-            qDebug().noquote() << QString("   ├─ 📝 指定名称: %1").arg(baseName);
+            LOG_INFO(QString("   ├─ 📝 指定名称: %1").arg(baseName));
         }
 
         QString suffix = QString(" (%1/%2)").arg(1).arg(10);
@@ -616,11 +616,11 @@ void BotManager::onCommandReceived(const QString &userName, const QString &clien
         int suffixBytes = suffix.toUtf8().size();
         int availableBytes = MAX_BYTES - suffixBytes;
 
-        qDebug().noquote() << QString("   ├─ 📏 空间计算: 总限 %1 Bytes | 后缀占用 %2 Bytes | 剩余可用 %3 Bytes")
+        LOG_INFO(QString("   ├─ 📏 空间计算: 总限 %1 Bytes | 后缀占用 %2 Bytes | 剩余可用 %3 Bytes"))
                                   .arg(MAX_BYTES).arg(suffixBytes).arg(availableBytes);
 
         if (availableBytes <= 0) {
-            qDebug().noquote() << "   └─ ❌ 失败: 后缀过长，无空间容纳房名";
+            LOG_ERROR("   └─ ❌ 失败: 后缀过长，无空间容纳房名");
             // 房间名过长
             m_netManager->sendMessageToClient(clientId, S_C_ERROR, ERR_NAME_TOO_LONG);
             return;
@@ -654,12 +654,12 @@ void BotManager::onCommandReceived(const QString &userName, const QString &clien
 
         // 打印截断结果
         if (wasTruncated) {
-            qDebug().noquote() << QString("   ├─ ✂️ 触发截断: 原始 %1 Bytes -> 截断后 %2 Bytes")
-                                      .arg(originalSize).arg(nameBytes.size());
+            LOG_INFO(QString("   ├─ ✂️ 触发截断: 原始 %1 Bytes -> 截断后 %2 Bytes")
+                                      .arg(originalSize).arg(nameBytes.size()));
         }
 
-        qDebug().noquote() << QString("   ├─ ✅ 最终房名: [%1]").arg(finalGameName);
-        qDebug().noquote() << "   └─ 🚀 执行动作: 调用 createGame()";
+        LOG_INFO(QString("   ├─ ✅ 最终房名: [%1]").arg(finalGameName));
+        LOG_INFO("   └─ 🚀 执行动作: 调用 createGame()");
 
         // 4.4 执行创建
         bool scheduled = createGame(userName, finalGameName, From_Client, clientId);
@@ -668,7 +668,7 @@ void BotManager::onCommandReceived(const QString &userName, const QString &clien
             m_netManager->sendMessageToClient(clientId, S_C_ERROR, ERR_NO_BOTS_AVAILABLE);
         }
     } else if (command == "/swap") {
-        qDebug().noquote() << "🔄 [交换请求记录]";
+        LOG_INFO("🔄 [交换请求记录]");
 
         // 1. 寻找用户当前所在的、且处于等待状态的 Bot
         Bot *targetBot = nullptr;
@@ -698,19 +698,19 @@ void BotManager::onCommandReceived(const QString &userName, const QString &clien
         int s2 = parts[1].toInt(&ok2);
 
         if (ok1 && ok2) {
-            qDebug().noquote() << QString("   ├─ 🔢 参数: %1 <-> %2").arg(s1).arg(s2);
-            qDebug().noquote() << QString("   └─ 🚀 执行动作: 调用 swapSlots()");
+            LOG_INFO(QString("   ├─ 🔢 参数: %1 <-> %2").arg(s1).arg(s2));
+            LOG_INFO(QString("   └─ 🚀 执行动作: 调用 swapSlots()"));
 
             // 3. 调用 Client 执行交换
             if (targetBot->client) {
                 targetBot->client->swapSlots(s1, s2);
             }
         } else {
-            qDebug().noquote() << "   └─ ❌ 格式错误: 参数必须为数字";
+            LOG_ERROR("   └─ ❌ 格式错误: 参数必须为数字");
         }
     }
     else if (command == "/start") {
-        qDebug().noquote() << "🚀 [启动请求记录]";
+        LOG_INFO("🚀 [启动请求记录]");
 
         // 1. 寻找 Bot
         Bot *targetBot = nullptr;
@@ -727,7 +727,7 @@ void BotManager::onCommandReceived(const QString &userName, const QString &clien
             return;
         }
 
-        qDebug().noquote() << QString("   ├─ 👤 房主: %1").arg(userName);
+        LOG_INFO(QString("   ├─ 👤 房主: %1").arg(userName));
 
         // 2. 执行启动
         if (targetBot->client) {
@@ -737,7 +737,7 @@ void BotManager::onCommandReceived(const QString &userName, const QString &clien
                 // return;
             }
 
-            qDebug().noquote() << "   └─ 🚀 执行动作: 调用 startGame()";
+            LOG_INFO("   └─ 🚀 执行动作: 调用 startGame()");
             targetBot->client->startGame();
 
             // 更新 Bot 状态为 Starting
@@ -746,7 +746,7 @@ void BotManager::onCommandReceived(const QString &userName, const QString &clien
         }
     }
     else if (command == "/latency" || command == "/lat") {
-        qDebug().noquote() << "🚀 [修改游戏延迟]";
+        LOG_INFO("🚀 [修改游戏延迟]");
 
         // 1. 寻找用户当前所在的、且处于游戏状态的 Bot
         Bot *targetBot = nullptr;
@@ -769,18 +769,18 @@ void BotManager::onCommandReceived(const QString &userName, const QString &clien
     }
     // ==================== 处理 /unhost ====================
     else if (command == "/unhost") {
-        qDebug().noquote() << "🛑 [取消房间流程]";
-        qDebug().noquote() << "   └─ 🚀 执行动作: 返回游戏大厅";
+        LOG_INFO("🛑 [取消房间流程]");
+        LOG_INFO("   └─ 🚀 执行动作: 返回游戏大厅");
     }
     // ==================== 处理 /bot ====================
     else if (command == "/bot") {
-        qDebug().noquote() << "🤖 [Bot 切换流程]";
-        qDebug().noquote() << "   └─ 🚀 执行动作: 切换 Bot 状态/所有者";
+        LOG_INFO("🤖 [Bot 切换流程]");
+        LOG_INFO("   └─ 🚀 执行动作: 切换 Bot 状态/所有者");
     }
     // ==================== 未知指令 ====================
     else {
-        qDebug().noquote() << "⚠️ [指令未处理]";
-        qDebug().noquote() << QString("   └─ ❓ 未知命令: %1 (将被忽略)").arg(command);
+        LOG_WARNING("⚠️ [指令未处理]");
+        LOG_INFO(QString("   └─ ❓ 未知命令: %1 (将被忽略)").arg(command));
     }
 }
 
@@ -806,22 +806,22 @@ void BotManager::onBotGameCreateSuccess(Bot *bot)
     QString clientId = bot->gameInfo.clientId;
 
     // 3. 打印头部日志
-    qDebug().noquote() << "🎮 [房间创建完成回调]";
-    qDebug().noquote() << QString("   ├─ 🤖 执行实例: %1").arg(bot->username);
-    qDebug().noquote() << QString("   ├─ 👤 归属用户: %1").arg(clientId);
-    qDebug().noquote() << QString("   └─ 🏠 房间名称: %1").arg(bot->gameInfo.gameName);
+    LOG_INFO("🎮 [房间创建完成回调]");
+    LOG_INFO(QString("   ├─ 🤖 执行实例: %1").arg(bot->username));
+    LOG_INFO(QString("   ├─ 👤 归属用户: %1").arg(clientId));
+    LOG_INFO(QString("   └─ 🏠 房间名称: %1").arg(bot->gameInfo.gameName));
 
     // 4. 发送 TCP 控制指令让客户端进入
     if (m_netManager) {
         bool ok = m_netManager->sendEnterRoomCommand(clientId, m_controlPort, bot->commandSource == From_Server);
 
         if (ok) {
-            qDebug().noquote() << QString("   └─ 🚀 自动进入: 指令已发送 (目标端口: %1)").arg(m_controlPort);
+            LOG_INFO(QString("   └─ 🚀 自动进入: 指令已发送 (目标端口: %1)").arg(m_controlPort));
         } else {
-            qDebug().noquote() << "   └─ ❌ 自动进入: 发送失败 (目标用户不在线或未记录通道)";
+            LOG_ERROR("   └─ ❌ 自动进入: 发送失败 (目标用户不在线或未记录通道)");
         }
     } else {
-        qDebug().noquote() << "   └─ 🛑 系统错误: NetManager 未绑定，无法发送指令";
+        LOG_INFO("   └─ 🛑 系统错误: NetManager 未绑定，无法发送指令");
     }
 
     // 5. 广播状态变更
@@ -833,19 +833,19 @@ void BotManager::onBotGameCreateFail(Bot *bot)
     if (!bot) return;
 
     // 1. 打印根节点
-    qDebug().noquote() << QString("❌ [创建失败] Bot-%1 (%2)").arg(bot->id).arg(bot->username);
+    LOG_ERROR(QString("❌ [创建失败] Bot-%1 (%2)").arg(bot->id).arg(bot->username));
 
     // 2. 通知客户端
     if (!bot->gameInfo.clientId.isEmpty()) {
         m_netManager->sendMessageToClient(bot->gameInfo.clientId, S_C_ERROR, ERR_CREATE_FAILED, 1);
-        qDebug().noquote() << QString("   ├─ 👤 通知用户: %1 (Code: ERR_CREATE_FAILED)").arg(bot->gameInfo.clientId.left(8));
+        LOG_INFO(QString("   ├─ 👤 通知用户: %1 (Code: ERR_CREATE_FAILED)").arg(bot->gameInfo.clientId.left(8)));
     }
 
     // 3. 清理资源
     removeGame(bot);
 
     // 4. 闭环日志
-    qDebug().noquote() << "   └─ 🔄 [状态重置] 游戏信息已清除";
+    LOG_INFO("   └─ 🔄 [状态重置] 游戏信息已清除");
 }
 
 void BotManager::onHostJoinedGame(Bot *bot, const QString &hostName)
@@ -885,9 +885,9 @@ void BotManager::onBotPendingTaskTimeout()
 
             if (now - bot->pendingTask.requestTime > TIMEOUT_MS) {
                 // 1. 打印根节点
-                qDebug().noquote() << QString("🚨 [任务超时] Bot-%1 (%2)").arg(bot->id).arg(bot->username);
-                qDebug().noquote() << QString("   ├─ ⏱️ 耗时: %1 ms (阈值: %2 ms)").arg(now - bot->pendingTask.requestTime).arg(TIMEOUT_MS);
-                qDebug().noquote() << QString("   ├─ 📝 任务: %1").arg(bot->pendingTask.gameName);
+                LOG_INFO(QString("🚨 [任务超时] Bot-%1 (%2)").arg(bot->id).arg(bot->username));
+                LOG_INFO(QString("   ├─ ⏱️ 耗时: %1 ms (阈值: %2 ms)").arg(now - bot->pendingTask.requestTime).arg(TIMEOUT_MS));
+                LOG_INFO(QString("   ├─ 📝 任务: %1").arg(bot->pendingTask.gameName));
 
                 // 2. 清除标记
                 bot->pendingTask.hasTask = false;
@@ -895,12 +895,12 @@ void BotManager::onBotPendingTaskTimeout()
                 // 3. 通知用户 (1 表示超时)
                 if (!bot->pendingTask.clientId.isEmpty()) {
                     m_netManager->sendMessageToClient(bot->pendingTask.clientId, S_C_ERROR, ERR_CREATE_FAILED, 3);
-                    qDebug().noquote() << QString("   ├─ 👤 通知用户: %1 (Reason: 1-Timeout)").arg(bot->pendingTask.clientId.left(8));
+                    LOG_INFO(QString("   ├─ 👤 通知用户: %1 (Reason: 1-Timeout)").arg(bot->pendingTask.clientId.left(8)));
                 }
 
                 // 4. 强制断线
                 bot->state = BotState::Disconnected;
-                qDebug().noquote() << "   └─ 🛡️ [强制动作] 标记为 Disconnected";
+                LOG_INFO("   └─ 🛡️ [强制动作] 标记为 Disconnected");
             }
         }
 
@@ -911,10 +911,10 @@ void BotManager::onBotPendingTaskTimeout()
 
             if (diff > HOST_JOIN_TIMEOUT_MS) {
                 // 1. 打印日志
-                qDebug().noquote() << QString("🚨 [加入超时] Bot-%1 (%2)").arg(bot->id).arg(bot->username);
-                qDebug().noquote() << QString("   ├─ ⏱️ 耗时: %1 ms (阈值: %2 ms)").arg(diff).arg(HOST_JOIN_TIMEOUT_MS);
-                qDebug().noquote() << QString("   ├─ 🏠 房间: %1").arg(bot->gameInfo.gameName);
-                qDebug().noquote() << QString("   └─ 👤 等待房主: %1 (未出现)").arg(bot->gameInfo.hostName);
+                LOG_INFO(QString("🚨 [加入超时] Bot-%1 (%2)").arg(bot->id).arg(bot->username));
+                LOG_INFO(QString("   ├─ ⏱️ 耗时: %1 ms (阈值: %2 ms)").arg(diff).arg(HOST_JOIN_TIMEOUT_MS));
+                LOG_INFO(QString("   ├─ 🏠 房间: %1").arg(bot->gameInfo.gameName));
+                LOG_INFO(QString("   └─ 👤 等待房主: %1 (未出现)").arg(bot->gameInfo.hostName));
 
                 // 2. 通知客户端
                 if (!bot->gameInfo.clientId.isEmpty()) {
@@ -934,19 +934,19 @@ void BotManager::onBotError(Bot *bot, QString error)
     if (!bot) return;
 
     // 1. 打印根节点 (错误详情)
-    qDebug().noquote() << QString("❌ [Bot错误] Bot-%1 (%2)").arg(bot->id).arg(bot->username);
-    qDebug().noquote() << QString("   ├─ 📄 原因: %1").arg(error);
+    LOG_ERROR(QString("❌ [Bot错误] Bot-%1 (%2)").arg(bot->id).arg(bot->username));
+    LOG_INFO(QString("   ├─ 📄 原因: %1").arg(error));
 
     // 2. 检查是否需要通知用户 (任务失败)
     if (bot->pendingTask.hasTask && !bot->pendingTask.clientId.isEmpty()) {
         bot->pendingTask.hasTask = false;
         m_netManager->sendMessageToClient(bot->pendingTask.clientId, S_C_ERROR, ERR_CREATE_FAILED, 2);
-        qDebug().noquote() << QString("   ├─ 👤 [任务中断] 通知用户: %1 (挂起任务)").arg(bot->pendingTask.clientId.left(8));
-        qDebug().noquote() << QString("   │  └─ 📝 取消任务: %1").arg(bot->pendingTask.gameName);
+        LOG_INFO(QString("   ├─ 👤 [任务中断] 通知用户: %1 (挂起任务)").arg(bot->pendingTask.clientId.left(8)));
+        LOG_INFO(QString("   │  └─ 📝 取消任务: %1").arg(bot->pendingTask.gameName));
     }
     else if (bot->state == BotState::Creating && !bot->gameInfo.clientId.isEmpty()) {
         m_netManager->sendMessageToClient(bot->gameInfo.clientId, S_C_ERROR, ERR_CREATE_FAILED, 2);
-        qDebug().noquote() << QString("   ├─ 👤 [创建中断] 通知用户: %1 (创建中途掉线)").arg(bot->gameInfo.clientId.left(8));
+        LOG_INFO(QString("   ├─ 👤 [创建中断] 通知用户: %1 (创建中途掉线)").arg(bot->gameInfo.clientId.left(8)));
     }
 
     // 3. 清理资源 (强制断线模式)
@@ -958,7 +958,7 @@ void BotManager::onBotError(Bot *bot, QString error)
     // 5. 自动重连逻辑
     if (bot->client && !bot->client->isConnected()) {
         int retryDelay = 5000 + (bot->id * 1000);
-        qDebug().noquote() << QString("   └─ 🔄 [自动重连] 计划于 %1 ms 后执行...").arg(retryDelay);
+        LOG_INFO(QString("   └─ 🔄 [自动重连] 计划于 %1 ms 后执行...").arg(retryDelay));
 
         QTimer::singleShot(retryDelay, this, [this, bot]() {
             if (m_bots.contains(bot) && bot->client && !bot->client->isConnected()) {
@@ -966,7 +966,7 @@ void BotManager::onBotError(Bot *bot, QString error)
             }
         });
     } else {
-        qDebug().noquote() << "   └─ 🛑 [流程结束] 无需重连或已连接";
+        LOG_INFO("   └─ 🛑 [流程结束] 无需重连或已连接");
     }
 }
 
@@ -975,7 +975,7 @@ void BotManager::onBotDisconnected(Bot *bot)
     if (!bot) return;
 
     // 1. 打印根节点
-    qDebug().noquote() << QString("🔌 [断开连接] Bot-%1 (%2)").arg(bot->id).arg(bot->username);
+    LOG_INFO(QString("🔌 [断开连接] Bot-%1 (%2)").arg(bot->id).arg(bot->username));
 
     // 2. 资源清理
     removeGame(bot, true);
@@ -984,7 +984,7 @@ void BotManager::onBotDisconnected(Bot *bot)
     emit botStateChanged(bot->id, bot->username, bot->state);
 
     // 4. 闭环
-    qDebug().noquote() << "   └─ 🧹 [清理完成] 状态已更新为 Disconnected";
+    LOG_INFO("   └─ 🧹 [清理完成] 状态已更新为 Disconnected");
 }
 
 void BotManager::onBotGameCanceled(Bot *bot)
@@ -996,14 +996,14 @@ void BotManager::onBotGameCanceled(Bot *bot)
         return;
     }
 
-    qDebug().noquote() << QString("🔄 [状态同步] 收到 Client 取消信号: Bot-%1").arg(bot->id);
+    LOG_INFO(QString("🔄 [状态同步] 收到 Client 取消信号: Bot-%1").arg(bot->id));
 
     // 2. 从全局活跃游戏列表 (m_activeGames) 中移除
     QString lowerName = bot->gameInfo.gameName.toLower();
     if (!lowerName.isEmpty()) {
         if (m_activeGames.value(lowerName) == bot) {
             m_activeGames.remove(lowerName);
-            qDebug().noquote() << QString("   ├─ 🔓 释放房间名锁定: %1").arg(lowerName);
+            LOG_INFO(QString("   ├─ 🔓 释放房间名锁定: %1").arg(lowerName));
         }
     }
 
@@ -1013,7 +1013,7 @@ void BotManager::onBotGameCanceled(Bot *bot)
     // 4. 通知上层应用
     emit botStateChanged(bot->id, bot->username, bot->state);
 
-    qDebug().noquote() << "   └─ ✅ Bot 状态已更新为 Idle";
+    LOG_INFO("   └─ ✅ Bot 状态已更新为 Idle");
 }
 
 // === 辅助函数 ===
@@ -1081,7 +1081,7 @@ QString BotManager::generateUniqueUsername()
 
 bool BotManager::createBotAccountFilesIfNotExist()
 {
-    qDebug().noquote() << "🔐 [账号管理] 启动账号文件检查流程";
+    LOG_INFO("🔐 [账号管理] 启动账号文件检查流程");
 
     // 1. 确定配置目录 (configDir)
     QString configDir;
@@ -1109,10 +1109,10 @@ bool BotManager::createBotAccountFilesIfNotExist()
     if (!foundExistingDir) {
         QString defaultDir = QCoreApplication::applicationDirPath() + "/config";
 
-        qDebug().noquote() << "------------------------------------------------------------";
-        qDebug().noquote() << "⚠️  [警告] 未在标准搜索路径中找到配置文件。";
-        qDebug().noquote() << QString("❓ 建议路径: %1").arg(defaultDir);
-        qDebug().noquote() << "❓ 是否直接在该路径生成新账号文件? (y/n): ";
+        LOG_INFO("------------------------------------------------------------");
+        LOG_WARNING("⚠️  [警告] 未在标准搜索路径中找到配置文件。");
+        LOG_INFO(QString("❓ 建议路径: %1").arg(defaultDir));
+        LOG_INFO("❓ 是否直接在该路径生成新账号文件? (y/n): ");
 
         fflush(stdout);
         QTextStream qin(stdin);
@@ -1130,8 +1130,8 @@ bool BotManager::createBotAccountFilesIfNotExist()
             QDir sysDir(sysConfigPath);
 
             if (sysDir.exists() && !sysDir.isEmpty()) {
-                qDebug().noquote() << QString("🔍 检测到系统配置: %1").arg(sysConfigPath);
-                qDebug().noquote() << "❓ 是否复制到运行目录? (y/n): ";
+                LOG_INFO(QString("🔍 检测到系统配置: %1").arg(sysConfigPath);
+                LOG_INFO("❓ 是否复制到运行目录? (y/n): ";
 
                 if (qin.readLine().trimmed().toLower().startsWith("y")) {
                     QDir destDir(defaultDir);
@@ -1143,7 +1143,7 @@ bool BotManager::createBotAccountFilesIfNotExist()
 
                     QFileInfoList files = sysDir.entryInfoList(filters, QDir::Files);
                     if (files.isEmpty()) {
-                        qDebug().noquote() << "   ⚠️ 系统目录为空，无法复制。";
+                        LOG_WARNING("   ⚠️ 系统目录为空，无法复制。";
                         return false;
                     }
 
@@ -1151,7 +1151,7 @@ bool BotManager::createBotAccountFilesIfNotExist()
                         QString destFile = destDir.filePath(fileInfo.fileName());
                         if (QFile::exists(destFile)) QFile::remove(destFile);
                         QFile::copy(fileInfo.absoluteFilePath(), destFile);
-                        qDebug().noquote() << QString("   │  ✅ 复制成功: %1").arg(fileInfo.fileName());
+                        LOG_INFO(QString("   │  ✅ 复制成功: %1").arg(fileInfo.fileName());
                     }
                     configDir = defaultDir; // 设定成功
                 } else {
@@ -1166,7 +1166,7 @@ bool BotManager::createBotAccountFilesIfNotExist()
         }
     }
 
-    qDebug().noquote() << QString("   ├─ 📂 配置目录: %1").arg(configDir);
+    LOG_INFO(QString("   ├─ 📂 配置目录: %1").arg(configDir));
 
     // 3. 检查具体账号文件 (JSON)
     QString seed = m_norepeatChars.trimmed();
@@ -1198,12 +1198,12 @@ bool BotManager::createBotAccountFilesIfNotExist()
 
         // Case A: 文件已存在
         if (QFile::exists(fullPath)) {
-            qDebug().noquote() << QString("%1✅ [已就绪] %2").arg(branch, fileName);
+            LOG_INFO(QString("%1✅ [已就绪] %2").arg(branch, fileName));
             continue;
         }
 
         // Case B: 需要生成
-        qDebug().noquote() << QString("%1🆕 [生成中] %2").arg(branch, fileName);
+        LOG_INFO(QString("%1🆕 [生成中] %2").arg(branch, fileName));
 
         // 1. 生成数据
         QJsonArray array;
@@ -1226,16 +1226,16 @@ bool BotManager::createBotAccountFilesIfNotExist()
             m_newAccountFilePaths.append(fullPath);
             generatedAny = true;
 
-            qDebug().noquote() << QString("%1├─ 💾 主文件: 写入成功").arg(indent);
+            LOG_INFO(QString("%1├─ 💾 主文件: 写入成功").arg(indent));
 
             // 3. 写入备份
             QFile copyFile(copyPath);
             if (copyFile.open(QIODevice::WriteOnly)) {
                 copyFile.write(jsonData);
                 copyFile.close();
-                qDebug().noquote() << QString("%1└─ 📋 备份文件: 写入成功").arg(indent);
+                LOG_INFO(QString("%1└─ 📋 备份文件: 写入成功").arg(indent));
             } else {
-                qDebug().noquote() << QString("%1└─ ❌ 备份文件: 写入失败").arg(indent);
+                LOG_INFO(QString("%1└─ ❌ 备份文件: 写入失败").arg(indent));
             }
 
             // 将生成的文件回写到源代码目录 (包含 copy 文件)
@@ -1246,7 +1246,7 @@ bool BotManager::createBotAccountFilesIfNotExist()
 
             // 只有当源码目录真的存在时才执行 (防止非开发环境误操作)
             if (srcDir.exists()) {
-                qDebug().noquote() << QString("%1   🚀 [同步源码] 正在回写到: %2").arg(indent, srcConfigDirStr);
+                LOG_INFO(QString("%1   🚀 [同步源码] 正在回写到: %2").arg(indent, srcConfigDirStr));
 
                 // Lambda: 复制并覆盖的辅助函数
                 auto copyToSource = [&](QString srcFilePath, QString fileNameLog) {
@@ -1258,9 +1258,9 @@ bool BotManager::createBotAccountFilesIfNotExist()
                     }
 
                     if (QFile::copy(srcFilePath, destPath)) {
-                        qDebug().noquote() << QString("%1      ✅ 同步成功: %2").arg(indent, fileNameLog);
+                        LOG_INFO(QString("%1      ✅ 同步成功: %2").arg(indent, fileNameLog));
                     } else {
-                        qDebug().noquote() << QString("%1      ⚠️ 同步失败: %2").arg(indent, fileNameLog);
+                        LOG_WARNING(QString("%1      ⚠️ 同步失败: %2").arg(indent, fileNameLog));
                     }
                 };
 
@@ -1275,7 +1275,7 @@ bool BotManager::createBotAccountFilesIfNotExist()
 #endif
 
         } else {
-            qDebug().noquote() << QString("%1└─ ❌ 主文件: 打开失败 (%2)").arg(indent, file.errorString());
+            LOG_ERROR(QString("%1└─ ❌ 主文件: 打开失败 (%2)").arg(indent, file.errorString()));
         }
     }
 

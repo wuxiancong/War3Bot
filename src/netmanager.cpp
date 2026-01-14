@@ -509,11 +509,10 @@ void NetManager::handleHeartbeat(const PacketHeader *header, const QHostAddress 
 
     if (status == 2) {
         if (ipChanged) {
-            qDebug().noquote() << "🔄 [网络漫游/NAT变更] Session:" << header->sessionId
-                               << " 新地址:" << senderAddr.toString();
+            LOG_INFO(QString("🔄 [网络漫游/NAT变更] Session: %1 新地址: %2").arg(header->sessionId).arg(senderAddr.toString()));
         }
     } else {
-        qDebug().noquote() << "🛑 [心跳拒绝] Session无效:" << header->sessionId;
+        LOG_INFO(QString("🛑 [心跳拒绝] Session无效: %1").arg(header->sessionId));
     }
 }
 
@@ -547,19 +546,19 @@ void NetManager::handleCommand(const PacketHeader *header, const CSCommandPacket
 
     // 3. 安全校验：防伪造检查
     if (pktClientId != serverRecClientId) {
-        qDebug().noquote() << "🚫 [安全拦截] 客户端 ID 不匹配 (疑似伪造包)";
-        qDebug().noquote() << QString("   ├─ 🔒 Session 绑定: %1").arg(serverRecClientId);
-        qDebug().noquote() << QString("   └─ 🔓 数据包声称:   %1").arg(pktClientId);
+        LOG_INFO("🚫 [安全拦截] 客户端 ID 不匹配 (疑似伪造包)");
+        LOG_INFO(QString("   ├─ 🔒 Session 绑定: %1").arg(serverRecClientId));
+        LOG_INFO(QString("   └─ 🔓 数据包声称:   %1").arg(pktClientId));
         return;
     }
 
     // 4. 打印成功日志
     QString fullCmd = cmd + (text.isEmpty() ? "" : " " + text);
 
-    qDebug().noquote() << "🤖 [收到用户指令]";
-    qDebug().noquote() << QString("   ├─ 👤 用户: %1").arg(user);
-    qDebug().noquote() << QString("   ├─ 💬 内容: %1").arg(fullCmd);
-    qDebug().noquote() << QString("   └─ 🔑 验证: 通过 (Session: %1)").arg(header->sessionId);
+    LOG_INFO("🤖 [收到用户指令]");
+    LOG_INFO(QString("   ├─ 👤 用户: %1").arg(user));
+    LOG_INFO(QString("   ├─ 💬 内容: %1").arg(fullCmd));
+    LOG_INFO(QString("   └─ 🔑 验证: 通过 (Session: %1)").arg(header->sessionId));
 
     // 5. 向上层分发
     emit commandReceived(user, serverRecClientId, cmd, text);
@@ -621,10 +620,10 @@ void NetManager::onTcpReadyRead()
     if (head.startsWith("W3UP")) {
         socket->setProperty("ConnType", "UPLOAD");
 
-        qDebug().noquote() << "🔌 [TCP 协议识别]";
-        qDebug().noquote() << QString("   ├─ 👤 来源: %1").arg(peerInfo);
-        qDebug().noquote() << QString("   ├─ 🏷️ 头部: %1 (ASCII: W3UP)").arg(headHex);
-        qDebug().noquote() << "   └─ ✅ 类型: 文件上传通道 (UPLOAD)";
+        LOG_INFO("🔌 [TCP 协议识别]");
+        LOG_INFO(QString("   ├─ 👤 来源: %1").arg(peerInfo));
+        LOG_INFO(QString("   ├─ 🏷️ 头部: %1 (ASCII: W3UP)").arg(headHex));
+        LOG_INFO("   └─ ✅ 类型: 文件上传通道 (UPLOAD)");
 
         handleTcpUploadMessage(socket);
     }
@@ -632,18 +631,18 @@ void NetManager::onTcpReadyRead()
         if (pHeader->magic == PROTOCOL_MAGIC) {
             socket->setProperty("ConnType", "COMMAND");
 
-            qDebug().noquote() << "🔌 [TCP 协议识别]";
-            qDebug().noquote() << QString("   ├─ 👤 来源: %1").arg(peerInfo);
-            qDebug().noquote() << QString("   ├─ 🏷️ 头部: 0x%1").arg(QString::number(pHeader->magic, 16).toUpper());
-            qDebug().noquote() << "   └─ ✅ 类型: 控制指令通道 (COMMAND)";
+            LOG_INFO("🔌 [TCP 协议识别]");
+            LOG_INFO(QString("   ├─ 👤 来源: %1").arg(peerInfo));
+            LOG_INFO(QString("   ├─ 🏷️ 头部: 0x%1").arg(QString::number(pHeader->magic, 16).toUpper()));
+            LOG_INFO("   └─ ✅ 类型: 控制指令通道 (COMMAND)");
 
             handleTcpCommandMessage(socket);
         }
         else {
-            qDebug().noquote() << "🛑 [TCP 协议识别失败]";
-            qDebug().noquote() << QString("   ├─ 👤 来源: %1").arg(peerInfo);
-            qDebug().noquote() << QString("   ├─ 🏷️ 头部: %1 (未知)").arg(headHex);
-            qDebug().noquote() << "   └─ 🛡️ 动作: 断开非法连接";
+            LOG_INFO("🛑 [TCP 协议识别失败]");
+            LOG_INFO(QString("   ├─ 👤 来源: %1").arg(peerInfo));
+            LOG_INFO(QString("   ├─ 🏷️ 头部: %1 (未知)").arg(headHex));
+            LOG_INFO("   └─ 🛡️ 动作: 断开非法连接");
 
             socket->disconnectFromHost();
         }
@@ -862,10 +861,10 @@ void NetManager::handleTcpCommandMessage(QTcpSocket *socket)
             QString peerInfo = QString("%1:%2").arg(socket->peerAddress().toString()).arg(socket->peerPort());
             QString badMagic = QString::number(header.magic, 16).toUpper();
 
-            qDebug().noquote() << "🛑 [TCP 协议违规]";
-            qDebug().noquote() << QString("   ├─ 🔌 来源: %1").arg(peerInfo);
-            qDebug().noquote() << QString("   ├─ ❌ Magic: 0x%1 (预期: 0x%2)").arg(badMagic, QString::number(PROTOCOL_MAGIC, 16).toUpper());
-            qDebug().noquote() << "   └─ 🛡️ 动作: 断开连接";
+            LOG_INFO("🛑 [TCP 协议违规]");
+            LOG_INFO(QString("   ├─ 🔌 来源: %1").arg(peerInfo));
+            LOG_ERROR(QString("   ├─ ❌ Magic: 0x%1 (预期: 0x%2)").arg(badMagic, QString::number(PROTOCOL_MAGIC, 16).toUpper()));
+            LOG_INFO("   └─ 🛡️ 动作: 断开连接");
 
             socket->disconnectFromHost();
             return;
@@ -899,14 +898,14 @@ void NetManager::handleTcpCommandMessage(QTcpSocket *socket)
 
                 currentClientId = clientId;
 
-                qDebug().noquote() << "🔗 [TCP 控制通道绑定]";
-                qDebug().noquote() << QString("   ├─ 🆔 Session: %1").arg(pHeader->sessionId);
-                qDebug().noquote() << QString("   ├─ 👤 用户ID:  %1").arg(clientId);
-                qDebug().noquote() << "   └─ ✅ 状态:    绑定成功";
+                LOG_INFO("🔗 [TCP 控制通道绑定]");
+                LOG_INFO(QString("   ├─ 🆔 Session: %1").arg(pHeader->sessionId));
+                LOG_INFO(QString("   ├─ 👤 用户ID:  %1").arg(clientId));
+                LOG_INFO("   └─ ✅ 状态:    绑定成功");
             } else {
-                qDebug().noquote() << "⚠️ [TCP 绑定失败]";
-                qDebug().noquote() << QString("   ├─ 🆔 Session: %1").arg(pHeader->sessionId);
-                qDebug().noquote() << "   └─ ❌ 原因:    无效的会话 ID";
+                LOG_INFO("⚠️ [TCP 绑定失败]");
+                LOG_INFO(QString("   ├─ 🆔 Session: %1").arg(pHeader->sessionId));
+                LOG_ERROR("   └─ ❌ 原因:    无效的会话 ID");
             }
         }
 
@@ -931,25 +930,25 @@ void NetManager::handleTcpCommandMessage(QTcpSocket *socket)
 
                 // 如果到现在还没 ClientID，说明这是个未授权的连接发来的指令
                 if (currentClientId.isEmpty()) {
-                    qDebug().noquote() << "🛑 [指令拒绝]";
-                    qDebug().noquote() << "   ├─ ❌ 原因: 未鉴权连接 (无有效 SessionID)";
+                    LOG_INFO("🛑 [指令拒绝]");
+                    LOG_ERROR("   ├─ ❌ 原因: 未鉴权连接 (无有效 SessionID)");
                     if (cmd == "/host") {
-                        qDebug().noquote() << "   └─ 🛡️ 动作: 发送 RETRY_HOST 指令";
+                        LOG_INFO("   └─ 🛡️ 动作: 发送 RETRY_HOST 指令");
                         sendRetryCommand(socket);
                         return;
                     }
-                    qDebug().noquote() << "   └─ 🛡️ 动作: 忽略指令";
+                    LOG_INFO("   └─ 🛡️ 动作: 忽略指令");
                     break;
                 }
 
-                qDebug().noquote() << "🎮 [TCP 指令接收]";
-                qDebug().noquote() << QString("   ├─ 👤 发送者: %1").arg(user);
-                qDebug().noquote() << QString("   ├─ 🔗 来源ID: %1").arg(currentClientId);
-                qDebug().noquote() << QString("   ├─ 💬 指令:   %1").arg(cmd);
+                LOG_INFO("🎮 [TCP 指令接收]");
+                LOG_INFO(QString("   ├─ 👤 发送者: %1").arg(user));
+                LOG_INFO(QString("   ├─ 🔗 来源ID: %1").arg(currentClientId));
+                LOG_INFO(QString("   ├─ 💬 指令:   %1").arg(cmd));
                 if (!text.isEmpty()) {
-                    qDebug().noquote() << QString("   ├─ 📄 参数:   %1").arg(text);
+                    LOG_INFO(QString("   ├─ 📄 参数:   %1").arg(text));
                 }
-                qDebug().noquote() << "   └─ 🚀 动作:    分发至 BotManager";
+                LOG_INFO("   └─ 🚀 动作:    分发至 BotManager");
 
                 // 这里直接用 currentClientId，它一定是最新的
                 emit commandReceived(user, currentClientId, cmd, text);
@@ -958,8 +957,8 @@ void NetManager::handleTcpCommandMessage(QTcpSocket *socket)
 
         default:
             // 处理未知包
-            qDebug().noquote() << "❓ [TCP 未知指令]";
-            qDebug().noquote() << QString("   └─ 🔢 Command: %1").arg(pHeader->command);
+            LOG_INFO("❓ [TCP 未知指令]");
+            LOG_INFO(QString("   └─ 🔢 Command: %1").arg(pHeader->command));
             break;
         }
     }
@@ -997,9 +996,9 @@ bool NetManager::sendEnterRoomCommand(const QString &clientId, quint64 port, boo
 
     // 1. 检查 TCP 连接是否存在
     if (!m_tcpClients.contains(clientId)) {
-        qDebug().noquote() << "🛑 [指令发送失败]";
-        qDebug().noquote() << QString("   ├─ 🎯 目标: %1").arg(clientId);
-        qDebug().noquote() << "   └─ ❌ 原因: 用户没有记录";
+        LOG_INFO("🛑 [指令发送失败]");
+        LOG_INFO(QString("   ├─ 🎯 目标: %1").arg(clientId));
+        LOG_ERROR("   └─ ❌ 原因: 用户没有记录");
         return false;
     }
 
@@ -1008,9 +1007,9 @@ bool NetManager::sendEnterRoomCommand(const QString &clientId, quint64 port, boo
     // 2. 检查 Socket 状态
     if (socket->state() != QAbstractSocket::ConnectedState) {
         m_tcpClients.remove(clientId); // 清理死链接
-        qDebug().noquote() << "🛑 [指令发送失败]";
-        qDebug().noquote() << QString("   ├─ 🎯 目标: %1").arg(clientId);
-        qDebug().noquote() << "   └─ ❌ 原因: Socket 连接已断开 (清理僵尸连接)";
+        LOG_INFO("🛑 [指令发送失败]");
+        LOG_INFO(QString("   ├─ 🎯 目标: %1").arg(clientId));
+        LOG_ERROR("   └─ ❌ 原因: Socket 连接已断开 (清理僵尸连接)");
         return false;
     }
 
@@ -1034,14 +1033,14 @@ bool NetManager::sendEnterRoomCommand(const QString &clientId, quint64 port, boo
 
     // 5. 打印结果日志
     if (ok) {
-        qDebug().noquote() << "🚀 [自动进入指令分发]";
-        qDebug().noquote() << QString("   ├─ 👤 目标用户: %1").arg(clientId);
-        qDebug().noquote() << QString("   ├─ 🚪 房间端口: %1").arg(port);
-        qDebug().noquote() << "   └─ ✅ 发送状态: 成功 (TCP)";
+        LOG_INFO("🚀 [自动进入指令分发]");
+        LOG_INFO(QString("   ├─ 👤 目标用户: %1").arg(clientId));
+        LOG_INFO(QString("   ├─ 🚪 房间端口: %1").arg(port));
+        LOG_INFO("   └─ ✅ 发送状态: 成功 (TCP)");
     } else {
-        qDebug().noquote() << "🛑 [指令发送失败]";
-        qDebug().noquote() << QString("   ├─ 🎯 目标: %1").arg(clientId);
-        qDebug().noquote() << "   └─ ❌ 原因: TCP Socket 写入错误";
+        LOG_INFO("🛑 [指令发送失败]");
+        LOG_INFO(QString("   ├─ 🎯 目标: %1").arg(clientId));
+        LOG_ERROR("   └─ ❌ 原因: TCP Socket 写入错误");
     }
 
     return ok;
@@ -1320,9 +1319,9 @@ void NetManager::cleanupExpiredClients()
     }
 
     // 3. 执行清理并打印树状日志
-    qDebug().noquote() << "🗑️ [会话超时清理任务]";
-    qDebug().noquote() << QString("   ├─ ⏱️ 超时阈值: %1 ms").arg(m_peerTimeout);
-    qDebug().noquote() << QString("   ├─ 📉 清理数量: %1 人").arg(expiredList.size());
+    LOG_INFO("🗑️ [会话超时清理任务]");
+    LOG_INFO(QString("   ├─ ⏱️ 超时阈值: %1 ms").arg(m_peerTimeout));
+    LOG_INFO(QString("   ├─ 📉 清理数量: %1 人").arg(expiredList.size()));
 
     for (int i = 0; i < expiredList.size(); ++i) {
         const auto &client = expiredList.at(i);
@@ -1330,9 +1329,9 @@ void NetManager::cleanupExpiredClients()
         QString prefix = isLast ? "   └─ " : "   ├─ ";
 
         // 打印详情：显示用户名、UUID前8位、沉默秒数
-        qDebug().noquote() << QString("%1🚫 移除: %2 (UUID: %3...) | 已沉默: %4s")
+        LOG_INFO(QString("%1🚫 移除: %2 (UUID: %3...) | 已沉默: %4s")
                                   .arg(prefix, client.username, client.uuid.left(8))
-                                  .arg(client.silenceDuration / 1000.0, 0, 'f', 1);
+                                  .arg(client.silenceDuration / 1000.0, 0, 'f', 1));
 
         // 执行移除
         removeClientInternal(client.uuid);
