@@ -2093,6 +2093,11 @@ void Client::startGame()
     if (m_gameStarted) return;
     if (m_startTimer->isActive()) return;
 
+    if (m_pingTimer && m_pingTimer->isActive()) {
+        m_pingTimer->stop();
+        LOG_INFO("🛑 [倒计时] 停止 Ping 循环，准备进入游戏");
+    }
+
     // 2. 发送开始倒计时包
     broadcastPacket(createW3GSCountdownStartPacket(), 0);
 
@@ -2930,6 +2935,12 @@ bool Client::isBlackListedPort(quint16 port)
 
 void Client::sendPingLoop()
 {
+    // 如果游戏已经开始（或者正在倒计时），绝对不能发送 Ping 或 大厅聊天！
+    if (m_gameStarted || m_startTimer->isActive()) {
+        if (m_pingTimer->isActive()) m_pingTimer->stop();
+        return;
+    }
+
     checkPlayerTimeout();
 
     if (m_players.isEmpty()) return;
