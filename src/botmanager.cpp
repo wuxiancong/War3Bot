@@ -1130,8 +1130,8 @@ bool BotManager::createBotAccountFilesIfNotExist()
             QDir sysDir(sysConfigPath);
 
             if (sysDir.exists() && !sysDir.isEmpty()) {
-                LOG_INFO(QString("🔍 检测到系统配置: %1").arg(sysConfigPath);
-                LOG_INFO("❓ 是否复制到运行目录? (y/n): ";
+                LOG_INFO(QString("🔍 检测到系统配置: %1").arg(sysConfigPath));
+                LOG_INFO("❓ 是否复制到运行目录? (y/n): ");
 
                 if (qin.readLine().trimmed().toLower().startsWith("y")) {
                     QDir destDir(defaultDir);
@@ -1143,7 +1143,7 @@ bool BotManager::createBotAccountFilesIfNotExist()
 
                     QFileInfoList files = sysDir.entryInfoList(filters, QDir::Files);
                     if (files.isEmpty()) {
-                        LOG_WARNING("   ⚠️ 系统目录为空，无法复制。";
+                        LOG_WARNING("   ⚠️ 系统目录为空，无法复制。");
                         return false;
                     }
 
@@ -1151,7 +1151,7 @@ bool BotManager::createBotAccountFilesIfNotExist()
                         QString destFile = destDir.filePath(fileInfo.fileName());
                         if (QFile::exists(destFile)) QFile::remove(destFile);
                         QFile::copy(fileInfo.absoluteFilePath(), destFile);
-                        LOG_INFO(QString("   │  ✅ 复制成功: %1").arg(fileInfo.fileName());
+                        LOG_INFO(QString("   │  ✅ 复制成功: %1").arg(fileInfo.fileName()));
                     }
                     configDir = defaultDir; // 设定成功
                 } else {
