@@ -1409,21 +1409,21 @@ void Client::onGameStarted()
 
 void Client::onGameTick()
 {
-    if (!m_gameStarted) {
-        m_gameTickTimer->stop();
-        return;
-    }
+    // if (!m_gameStarted) {
+    //     m_gameTickTimer->stop();
+    //     return;
+    // }
 
-    // 1. 构建时间片包
-    QByteArray tickPacket = createW3GSIncomingActionPacket (m_gameTickInterval);
-    static int logCount = 0;
-    if (logCount == 0 || logCount % 10 < 2) {
-        qDebug() << "🎮 游戏动作数据包:" << tickPacket.toHex().toUpper();
-        logCount++;
-    }
+    // // 1. 构建时间片包
+    // QByteArray tickPacket = createW3GSIncomingActionPacket (m_gameTickInterval);
+    // static int logCount = 0;
+    // if (logCount == 0 || logCount % 10 < 2) {
+    //     LOG_INFO(QString("🎮 游戏动作数据包: %1").arg(QString(tickPacket.toHex().toUpper())));
+    //     logCount++;
+    // }
 
-    // 2. 广播给所有玩家
-    broadcastPacket(tickPacket, 0);
+    // // 2. 广播给所有玩家
+    // broadcastPacket(tickPacket, 0);
 }
 
 // =========================================================
