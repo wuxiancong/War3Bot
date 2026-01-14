@@ -878,13 +878,17 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
         if (currentPid == 0) return;
 
+        // 2. 标记该玩家已加载
+        m_players[currentPid].isFinishedLoading = true;
+
         LOG_INFO(QString("⏳ [加载进度] 玩家加载完成: %1 (PID: %2)").arg(m_players[currentPid].name).arg(currentPid));
 
-        // 2. 构造 0x08 (Player Loaded) 包
+        // 3. 构造并广播 0x08 (Player Loaded) 包
         QByteArray loadedPacket = createW3GSPlayerLoadedPacket(currentPid);
-
-        // 3. 广播给所有人 (包括发送者自己，确认收到)
         broadcastPacket(loadedPacket, 0);
+
+        // 4. 检查是否所有人都加载完了
+        checkAllPlayersLoaded();
     }
     break;
 
@@ -1380,7 +1384,7 @@ void Client::onGameStarted()
     // 1. 标记状态
     m_gameStarted = true;
 
-    // 2. 发送倒计时结束包
+    // 2. 发送倒计时结束包 (0x0B)
     broadcastPacket(createW3GSCountdownEndPacket(), 0);
 
     // 3. 停止 Ping 循环
@@ -1390,40 +1394,40 @@ void Client::onGameStarted()
 
     LOG_INFO("🚀 [游戏启动] 倒计时结束，进入加载界面");
 
-    // 4. 模拟 Bot (PID 1) 加载完成
+    // 4. 重置所有玩家的加载状态 (防止残留状态)
+    for (auto &player : m_players) {
+        player.isFinishedLoading = false;
+    }
+
+    // 5. 模拟 Bot (PID 1) 加载完成
+    // Bot 是主机，秒加载
     QByteArray botLoadedPacket = createW3GSPlayerLoadedPacket(1);
     broadcastPacket(botLoadedPacket, 0);
 
-    LOG_INFO("🚀 [游戏启动] Bot 加载完成");
+    LOG_INFO("🚀 [游戏启动] Bot 加载完成 (PID 1)");
 
-    // 启动游戏心跳时钟
-    QTimer::singleShot(1000, this, [this](){
-        if (m_gameStarted && !m_gameTickTimer->isActive()) {
-            LOG_INFO("⏰ [游戏循环] 启动时钟同步 (Tick: 100ms)");
-            m_gameTickTimer->start();
-        }
-    });
+    checkAllPlayersLoaded();
 
     emit gameStarted();
 }
 
 void Client::onGameTick()
 {
-    // if (!m_gameStarted) {
-    //     m_gameTickTimer->stop();
-    //     return;
-    // }
+    if (!m_gameStarted) {
+        m_gameTickTimer->stop();
+        return;
+    }
 
-    // // 1. 构建时间片包
-    // QByteArray tickPacket = createW3GSIncomingActionPacket (m_gameTickInterval);
-    // static int logCount = 0;
-    // if (logCount == 0 || logCount % 10 < 2) {
-    //     LOG_INFO(QString("🎮 游戏动作数据包: %1").arg(QString(tickPacket.toHex().toUpper())));
-    //     logCount++;
-    // }
+    // 1. 构建时间片包
+    QByteArray tickPacket = createW3GSIncomingActionPacket (m_gameTickInterval);
+    static int logCount = 0;
+    if (logCount == 0 || logCount % 10 < 2) {
+        LOG_INFO(QString("🎮 游戏动作数据包: %1").arg(QString(tickPacket.toHex().toUpper())));
+        logCount++;
+    }
 
-    // // 2. 广播给所有玩家
-    // broadcastPacket(tickPacket, 0);
+    // 2. 广播给所有玩家
+    broadcastPacket(tickPacket, 0);
 }
 
 // =========================================================
@@ -2814,6 +2818,40 @@ bool Client::isHostJoined()
         }
     }
     return false;
+}
+
+void Client::checkAllPlayersLoaded()
+{
+    // 如果已经在运行了，就不要重复启动
+    if (m_gameTickTimer->isActive()) return;
+    if (!m_gameStarted) return;
+
+    bool allLoaded = true;
+    int loadedCount = 0;
+    int totalCount = 0;
+
+    // 遍历所有真实玩家
+    for (auto it = m_players.begin(); it != m_players.end(); ++it) {
+        if (it.key() == 1) continue;
+
+        totalCount++;
+
+        if (!it.value().isFinishedLoading) {
+            allLoaded = false;
+        } else {
+            loadedCount++;
+        }
+    }
+
+    LOG_INFO(QString("📊 [加载统计] 进度: %1/%2").arg(loadedCount).arg(totalCount));
+
+    if (allLoaded) {
+        LOG_INFO("✅ [游戏就绪] 所有玩家加载完毕！");
+        LOG_INFO(QString("⏰ [游戏循环] 启动时钟同步 (Tick: %1 ms)").arg(m_gameTickInterval));
+
+        // 启动心跳，正式开始游戏逻辑
+        m_gameTickTimer->start();
+    }
 }
 
 // =========================================================

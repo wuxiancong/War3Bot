@@ -338,6 +338,9 @@ struct PlayerData {
     quint32      lastDownloadOffset      = 0;
     quint32      currentDownloadOffset   = 0;
 
+    // 加载状态
+    bool         isFinishedLoading       = false;
+
     // 时间检测
     qint64       lastDownloadTime        = 0;
     qint64       lastResponseTime        = 0;
@@ -509,6 +512,9 @@ private:
 
     // --- 频道管理 ---
     void joinRandomChannel();
+
+    // --- 状态管理 ---
+    void checkAllPlayersLoaded();
 
     // --- 地图管理 ---
     void initiateMapDownload(quint8 pid);
