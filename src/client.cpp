@@ -2089,29 +2089,26 @@ void Client::createGame(const QString &gameName, const QString &password, Provid
 
 void Client::startGame()
 {
-    // 1. 状态检查
     if (m_gameStarted) return;
     if (m_startTimer->isActive()) return;
 
-    // 2. 停止 Ping 循环 (防止干扰倒计时)
+    // 1. 先关大门：停止广播，停止 Ping
+    stopAdv(); // 停止 UDP 广播
     if (m_pingTimer && m_pingTimer->isActive()) {
         m_pingTimer->stop();
-        LOG_INFO("🛑 [倒计时] 停止 Ping 循环，准备进入游戏");
     }
 
-    // 3. 发送倒计时开始包
+    // 2. 发送倒计时包
     broadcastPacket(createW3GSCountdownStartPacket(), 0);
 
-    // 4. 广播聊天提示
+    // 3. 发送最后一条大厅消息
     MultiLangMsg msg;
     msg.add("CN", "游戏将于 5 秒后开始...")
         .add("EN", "Game starts in 5 seconds...");
+
     broadcastChatMessage(msg);
 
-    // 5. 停止 UDP 广播 (停止进人)
-    stopAdv();
-
-    // 6. 启动内部定时器 (5秒) -> 触发 onGameStarted
+    // 4. 最后启动定时器
     m_startTimer->start(5000);
 
     LOG_INFO("⏳ [游戏启动] 开始倒计时...");
@@ -2612,7 +2609,8 @@ QByteArray Client::createW3GSMapPartPacket(quint8 toPid, quint8 fromPid, quint32
 
 void Client::broadcastChatMessage(const MultiLangMsg& msg, quint8 excludePid)
 {
-    if (m_gameStarted) {
+    if (m_gameStarted || m_startTimer->isActive()) {
+        qDebug() << "🛑 [拦截] 试图在游戏/倒计时期间发送大厅消息，已阻止：" << msg.get("EN");
         return;
     }
 
@@ -2946,9 +2944,12 @@ bool Client::isBlackListedPort(quint16 port)
 
 void Client::sendPingLoop()
 {
-    // 如果游戏已经开始（或者正在倒计时），绝对不能发送 Ping 或 大厅聊天！
+    // 状态检查：如果游戏已开始或正在倒计时，必须停止！
     if (m_gameStarted || m_startTimer->isActive()) {
-        if (m_pingTimer->isActive()) m_pingTimer->stop();
+        if (m_pingTimer->isActive()) {
+            m_pingTimer->stop();
+            LOG_INFO("🛑 [自动修正] 检测到 Ping 循环在游戏期间运行，已强制停止");
+        }
         return;
     }
 
