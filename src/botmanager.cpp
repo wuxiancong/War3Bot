@@ -280,8 +280,9 @@ void BotManager::addBotInstance(const QString& username, const QString& password
     // === 信号绑定 ===
 
     // 基础状态信号
-    connect(bot->client, &Client::disconnected, this, [this, bot]() { this->onBotDisconnected(bot); });
+    connect(bot->client, &Client::gameStarted, this, [this, bot]() { this->onBotGameStarted(bot); });
     connect(bot->client, &Client::gameCanceled, this, [this, bot]() { this->onBotGameCanceled(bot); });
+    connect(bot->client, &Client::disconnected, this, [this, bot]() { this->onBotDisconnected(bot); });
     connect(bot->client, &Client::authenticated, this, [this, bot]() { this->onBotAuthenticated(bot); });
     connect(bot->client, &Client::accountCreated, this, [this, bot]() { this->onBotAccountCreated(bot); });
     connect(bot->client, &Client::gameCreateFail, this, [this, bot]() { this->onBotGameCreateFail(bot); });
@@ -377,8 +378,9 @@ bool BotManager::createGame(const QString &hostName, const QString &gameName, Co
             targetBot->client->setCredentials(targetBot->username, targetBot->password, Protocol_SRP_0x53);
 
             // 绑定信号
-            connect(targetBot->client, &Client::disconnected, this, [this, targetBot]() { this->onBotDisconnected(targetBot); });
+            connect(targetBot->client, &Client::gameStarted, this, [this, targetBot]() { this->onBotGameStarted(targetBot); });
             connect(targetBot->client, &Client::gameCanceled, this, [this, targetBot]() { this->onBotGameCanceled(targetBot); });
+            connect(targetBot->client, &Client::disconnected, this, [this, targetBot]() { this->onBotDisconnected(targetBot); });
             connect(targetBot->client, &Client::authenticated, this, [this, targetBot]() { this->onBotAuthenticated(targetBot); });
             connect(targetBot->client, &Client::accountCreated, this, [this, targetBot]() { this->onBotAccountCreated(targetBot); });
             connect(targetBot->client, &Client::gameCreateFail, this, [this, targetBot]() { this->onBotGameCreateFail(targetBot); });
@@ -1014,6 +1016,33 @@ void BotManager::onBotGameCanceled(Bot *bot)
     emit botStateChanged(bot->id, bot->username, bot->state);
 
     LOG_INFO("   └─ ✅ Bot 状态已更新为 Idle");
+}
+
+void BotManager::onBotGameStarted(Bot *bot)
+{
+    if (!bot) return;
+
+    // 1. 防止重复处理
+    if (bot->state == BotState::InGame) {
+        return;
+    }
+
+    // 2. 更新 Bot 状态
+    bot->state = BotState::InGame;
+
+    // 3. 记录游戏开始时间
+    bot->gameInfo.gameStartTime = QDateTime::currentMSecsSinceEpoch();
+
+    // 4. 打印日志
+    LOG_INFO(QString("⚔️ [游戏开始] Bot-%1 (%2) 进入游戏状态").arg(bot->id).arg(bot->username));
+    LOG_INFO(QString("   ├─ 🏠 房间: %1").arg(bot->gameInfo.gameName));
+
+    // 获取当前人数
+    if (bot->client) {
+        LOG_INFO(QString("   └─ 👥 玩家: %1").arg(bot->client->getSlotInfoString()));
+    }
+
+    emit botStateChanged(bot->id, bot->username, bot->state);
 }
 
 // === 辅助函数 ===

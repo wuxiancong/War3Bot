@@ -896,7 +896,6 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
     {
         if (payload.size() > 4) {
             quint8 currentPid = 0;
-            // 查找发送者的 PID
             for (auto it = m_players.begin(); it != m_players.end(); ++it) {
                 if (it.value().socket == socket) {
                     currentPid = it.key();
@@ -905,10 +904,15 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
             }
 
             if (currentPid != 0) {
-                // 提取纯动作数据 (跳过前4字节的 CRC32)
                 QByteArray actionData = payload.mid(4);
-                // 存入队列，等待下一个 Tick 发送
-                m_actionQueue.append({currentPid, actionData});
+                if (!actionData.isEmpty()) {
+                    m_actionQueue.append({currentPid, actionData});
+                    static int logCount = 0;
+                    if (logCount == 0 || logCount % m_actionLogFrequency < 2) {
+                        LOG_INFO(QString("🎮 收到玩家 %1 动作: %2").arg(currentPid).arg(QString(actionData.toHex().toUpper())));
+                        logCount++;
+                    }
+                }
             }
         }
     }
@@ -1420,10 +1424,20 @@ void Client::onGameTick()
 
     // 1. 构建时间片包
     QByteArray tickPacket = createW3GSIncomingActionPacket (m_gameTickInterval);
+    bool hasAction = tickPacket.size() > 8;
     static int logCount = 0;
-    if (logCount == 0 || logCount % 10 < 2) {
-        LOG_INFO(QString("🎮 游戏动作数据包: %1").arg(QString(tickPacket.toHex().toUpper())));
-        logCount++;
+
+    if (hasAction) {
+        if (logCount == 0 || logCount % m_actionLogFrequency < 2) {
+            LOG_INFO(QString("🎮 游戏动作数据包: %1").arg(QString(tickPacket.toHex().toUpper())));
+            logCount++;
+        }
+    } else {
+        if (logCount == 0 || logCount % m_actionLogFrequency < 2) {
+            LOG_INFO(QString("💓 游戏空心数据包: %1").arg(QString(tickPacket.toHex().toUpper())));
+            logCount++;
+        }
+
     }
 
     // 2. 广播给所有玩家

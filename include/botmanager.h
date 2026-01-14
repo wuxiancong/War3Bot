@@ -123,6 +123,7 @@ private slots:
     void onBotAuthenticated(Bot *bot);
     void onBotDisconnected(Bot *bot);
     void onBotGameCanceled(Bot *bot);
+    void onBotGameStarted(Bot *bot);
     void onBotPendingTaskTimeout();
 
     // 内部处理注册队列
