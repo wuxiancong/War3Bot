@@ -856,10 +856,33 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
     }
     break;
 
-    case W3GS_LEAVEREQ: // 处理客户端发过来的 0x21 包
+    case W3GS_LEAVEREQ: // [0x21] 客户端发送离开房间
     {
         qDebug().noquote() << QString("   └─ 👋 [离开请求] 来源: %1").arg(socket->peerAddress().toString());
         socket->disconnectFromHost();
+    }
+    break;
+
+    case W3GS_GAMELOADED_SELF: // [0x23] 客户端发送加载完成
+    {
+        // 1. 查找发送者 PID
+        quint8 currentPid = 0;
+        for (auto it = m_players.begin(); it != m_players.end(); ++it) {
+            if (it.value().socket == socket) {
+                currentPid = it.key();
+                break;
+            }
+        }
+
+        if (currentPid == 0) return;
+
+        qDebug().noquote() << QString("⏳ [加载进度] 玩家加载完成: %1 (PID: %2)").arg(m_players[currentPid].name).arg(currentPid);
+
+        // 2. 构造 0x08 (Player Loaded) 包
+        QByteArray loadedPacket = createW3GSPlayerLoadedPacket(currentPid);
+
+        // 3. 广播给所有人 (包括发送者自己，确认收到)
+        broadcastPacket(loadedPacket, 0);
     }
     break;
 
@@ -1328,6 +1351,11 @@ void Client::onGameStarted()
     }
 
     qDebug().noquote() << "🚀 [游戏启动] 倒计时结束，进入加载界面";
+
+    // 4. 模拟 Bot (PID 1) 加载完成
+    // Bot 是主机，必须第一个告诉大家它好了，否则所有人都会卡在进度条
+    QByteArray botLoadedPacket = createW3GSPlayerLoadedPacket(1);
+    broadcastPacket(botLoadedPacket, 0);
 
     emit gameStarted();
 }
@@ -2056,6 +2084,18 @@ QByteArray Client::createW3GSCountdownEndPacket()
     out.setByteOrder(QDataStream::LittleEndian);
     // Header: F7 0B 04 00
     out << (quint8)0xF7 << (quint8)0x0B << (quint16)4;
+    return packet;
+}
+
+QByteArray Client::createW3GSPlayerLoadedPacket(quint8 pid)
+{
+    QByteArray packet;
+    QDataStream out(&packet, QIODevice::WriteOnly);
+    out.setByteOrder(QDataStream::LittleEndian);
+    // Header: F7 08 05 00
+    out << (quint8)0xF7 << (quint8)0x08 << (quint16)5;
+    // Payload: PID (1 byte)
+    out << (quint8)pid;
     return packet;
 }
 

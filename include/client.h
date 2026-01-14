@@ -479,6 +479,7 @@ private:
     QByteArray createW3GSPingFromHostPacket();
     QByteArray createW3GSCountdownEndPacket();
     QByteArray createW3GSCountdownStartPacket();
+    QByteArray createW3GSPlayerLoadedPacket(quint8 pid);
     QByteArray createW3GSStartDownloadPacket(quint8 fromPid);
     QByteArray createW3GSRejectJoinPacket(RejectReason reason);
     QByteArray createW3GSPlayerLeftPacket(quint8 pid, quint32 reason);
