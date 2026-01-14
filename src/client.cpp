@@ -1389,18 +1389,22 @@ void Client::onPlayerDisconnected() {
         }
 
         // 4. 广播离开
-        if (!m_playerSockets.isEmpty()) {
-            QByteArray leftPacket = createW3GSPlayerLeftPacket(pidToRemove, 0x0D);
-            broadcastPacket(leftPacket, pidToRemove);
+        if (!m_gameStarted) {
+            if (!m_playerSockets.isEmpty()) {
+                QByteArray leftPacket = createW3GSPlayerLeftPacket(pidToRemove, 0x0D);
+                broadcastPacket(leftPacket, pidToRemove);
 
-            MultiLangMsg leaveMsg;
-            leaveMsg.add("CN", QString("玩家 [%1] 离开了游戏。").arg(nameToRemove))
-                .add("EN", QString("Player [%1] has left the game.").arg(nameToRemove));
-            broadcastChatMessage(leaveMsg, pidToRemove);
+                MultiLangMsg leaveMsg;
+                leaveMsg.add("CN", QString("玩家 [%1] 离开了游戏。").arg(nameToRemove))
+                    .add("EN", QString("Player [%1] has left the game.").arg(nameToRemove));
+                broadcastChatMessage(leaveMsg, pidToRemove);
 
-            broadcastSlotInfo(pidToRemove);
+                broadcastSlotInfo(pidToRemove);
 
-            LOG_INFO("   └─ 📢 广播同步: 离开包(0x07) + 聊天通知 + 槽位刷新(0x09)");
+                LOG_INFO("   └─ 📢 广播同步: 离开包(0x07) + 聊天通知 + 槽位刷新(0x09)");
+            }
+        } else {
+            LOG_INFO("   └─ 🎮 [游戏内] 玩家断线，仅在服务端清理，不发送大厅协议包");
         }
     }
 }
