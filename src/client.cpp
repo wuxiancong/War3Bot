@@ -1275,8 +1275,6 @@ void Client::onPlayerDisconnected() {
         // 2. 释放槽位逻辑
         for (int i = 0; i < m_slots.size(); ++i) {
             if (m_slots[i].pid == pidToRemove) {
-
-                // 如果是房主离开，记录下这个位置 (通常是 0)
                 if (wasVisualHost) {
                     oldHostSlotIndex = i;
                 }
@@ -1287,6 +1285,30 @@ void Client::onPlayerDisconnected() {
                 break;
             }
         }
+
+        bool humanRemains = false;
+        for (const auto &p : qAsConst(m_players)) {
+            if (p.pid != 1) {
+                humanRemains = true;
+                break;
+            }
+        }
+
+        if (!humanRemains) {
+            LOG_INFO("🛑 [游戏终止] 所有真实玩家已离开，停止游戏循环");
+            // 1. 停止时钟
+            if (m_gameTickTimer->isActive()) {
+                m_gameTickTimer->stop();
+            }
+            m_gameStarted = false;
+
+            // 2. 重置游戏
+            cancelGame();
+
+            // 3. 直接返回
+            return;
+        }
+
         LOG_INFO("   ├─ 🧹 资源清理: Socket 移除 & 槽位重置");
 
         // 3. 房主离开处理逻辑
@@ -1366,20 +1388,20 @@ void Client::onPlayerDisconnected() {
             }
         }
 
-        // 4. 广播协议层离开包
-        QByteArray leftPacket = createW3GSPlayerLeftPacket(pidToRemove, 0x0D);
-        broadcastPacket(leftPacket, pidToRemove);
+        // 4. 广播离开
+        if (!m_playerSockets.isEmpty()) {
+            QByteArray leftPacket = createW3GSPlayerLeftPacket(pidToRemove, 0x0D);
+            broadcastPacket(leftPacket, pidToRemove);
 
-        // 5. 广播聊天消息
-        MultiLangMsg leaveMsg;
-        leaveMsg.add("CN", QString("玩家 [%1] 离开了游戏。").arg(nameToRemove))
-            .add("EN", QString("Player [%1] has left the game.").arg(nameToRemove));
-        broadcastChatMessage(leaveMsg, pidToRemove);
+            MultiLangMsg leaveMsg;
+            leaveMsg.add("CN", QString("玩家 [%1] 离开了游戏。").arg(nameToRemove))
+                .add("EN", QString("Player [%1] has left the game.").arg(nameToRemove));
+            broadcastChatMessage(leaveMsg, pidToRemove);
 
-        // 6. 广播槽位更新
-        broadcastSlotInfo(pidToRemove);
+            broadcastSlotInfo(pidToRemove);
 
-        LOG_INFO("   └─ 📢 广播同步: 离开包(0x07) + 聊天通知 + 槽位刷新(0x09)");
+            LOG_INFO("   └─ 📢 广播同步: 离开包(0x07) + 聊天通知 + 槽位刷新(0x09)");
+        }
     }
 }
 
@@ -1433,7 +1455,7 @@ void Client::onGameTick()
             logCount++;
         }
     } else {
-        if (logCount == 0 || logCount % m_actionLogFrequency < 2) {
+        if (logCount == 0 || logCount % m_actionLogFrequency * 10 < 2) {
             LOG_INFO(QString("💓 游戏空心数据包: %1").arg(QString(tickPacket.toHex().toUpper())));
             logCount++;
         }

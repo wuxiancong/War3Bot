@@ -562,7 +562,7 @@ private:
 
     // 游戏数据
     QList<PlayerAction>             m_actionQueue;
-    quint8                          m_actionLogFrequency    = 1;
+    quint8                          m_actionLogFrequency    = 5;
 
     // 地图下载
     War3Map                         m_war3Map;

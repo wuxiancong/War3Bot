@@ -2,16 +2,18 @@
 
 quint16 calculateCRC16(const QByteArray &data)
 {
-    quint16 crc = 0xFFFF;
-    const char *p = data.constData();
+    unsigned char *p = (unsigned char *)data.data();
     int len = data.size();
+    quint16 crc = 0xFFFF;
 
     for (int i = 0; i < len; i++) {
-        unsigned char byte = (unsigned char)p[i];
+        unsigned char byte = p[i];
 
-        unsigned char x = (crc >> 8) ^ byte;
+        // 注意这里的位运算逻辑，和标准 CRC16-CCITT 有区别
+        unsigned char x = (unsigned char)((crc >> 8) ^ byte);
         x ^= x >> 4;
-        crc = (crc << 8) ^ (quint16)(x << 12) ^ (quint16)(x << 5) ^ (quint16)x;
+        crc = (quint16)((crc << 8) ^ (quint16)(x << 12) ^ (quint16)(x << 5) ^ (quint16)x);
     }
+
     return crc;
 }
