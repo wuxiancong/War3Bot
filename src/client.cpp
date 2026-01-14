@@ -33,7 +33,7 @@ Client::Client(QObject *parent)
     , m_loginProtocol(Protocol_Old_0x29)
 {
     // 1. 打印根节点
-    qDebug().noquote() << "🧩 [Client] 实例初始化启动";
+    LOG_INFO("🧩 [Client] 实例初始化启动");
 
     m_pingTimer = new QTimer(this);
     m_udpSocket = new QUdpSocket(this);
@@ -60,13 +60,13 @@ Client::Client(QObject *parent)
     });
     connect(m_udpSocket, &QUdpSocket::readyRead, this, &Client::onUdpReadyRead);
 
-    qDebug().noquote() << "   ├─ ⚙️ 环境构建: 定时器/Socket对象已创建，信号已连接";
+    LOG_INFO("   ├─ ⚙️ 环境构建: 定时器/Socket对象已创建，信号已连接");
 
     // 初始化 UDP
     if (!bindToRandomPort()) {
-        qDebug().noquote() << "   ├─ ❌ 网络绑定: 随机端口绑定失败";
+        LOG_ERROR("   ├─ ❌ 网络绑定: 随机端口绑定失败");
     } else {
-        qDebug().noquote() << QString("   ├─ 📡 网络绑定: TCP/UDP 监听端口 %1").arg(m_udpSocket->localPort());
+        LOG_INFO(QString("   ├─ 📡 网络绑定: TCP/UDP 监听端口 %1").arg(m_udpSocket->localPort()));
     }
 
     // 3. 资源路径搜索
@@ -78,7 +78,7 @@ Client::Client(QObject *parent)
     searchPaths << QDir::currentPath() + "/war3files";
     searchPaths << QCoreApplication::applicationDirPath();
 
-    qDebug().noquote() << "   └─ 🔍 资源扫描: War3 核心文件检查";
+    LOG_INFO("   └─ 🔍 资源扫描: War3 核心文件检查");
 
     for (const QString &pathStr : qAsConst(searchPaths)) {
         QDir dir(pathStr);
@@ -93,27 +93,27 @@ Client::Client(QObject *parent)
             // 设置默认地图
             m_currentMapPath = m_dota683dPath;
 
-            qDebug().noquote() << QString("      ├─ ✅ 命中路径: %1").arg(dir.absolutePath());
+            LOG_INFO(QString("      ├─ ✅ 命中路径: %1").arg(dir.absolutePath()));
 
             // --- 🗺️ 检查默认地图 ---
             if (QFile::exists(m_dota683dPath)) {
-                qDebug().noquote() << QString("      └─ 🗺️ 发现地图: %1").arg(m_dota683dPath);
+                LOG_INFO(QString("      └─ 🗺️ 发现地图: %1").arg(m_dota683dPath));
 
                 // 尝试加载地图
                 if (m_war3Map.load(m_dota683dPath)) {
                     m_mapData = m_war3Map.getMapRawData();
                     m_mapSize = (quint32)m_mapData.size();
 
-                    qDebug().noquote() << QString("         └─ ✅ 加载成功: %1 bytes (准备就绪)").arg(m_mapSize);
+                    LOG_INFO(QString("         └─ ✅ 加载成功: %1 bytes (准备就绪)").arg(m_mapSize));
                 } else {
                     // 地图坏了
                     m_mapSize = 0;
-                    qDebug().noquote() << QString("         └─ ❌ 加载失败: 格式错误或文件损坏");
+                    LOG_INFO(QString("         └─ ❌ 加载失败: 格式错误或文件损坏"));
                 }
             } else {
                 // War3 找到了，但没地图
                 m_mapSize = 0;
-                qDebug().noquote() << QString("      └─ ⚠️ 地图缺失: %1 (下载功能将不可用)").arg(m_dota683dPath);
+                LOG_INFO(QString("      └─ ⚠️ 地图缺失: %1 (下载功能将不可用)").arg(m_dota683dPath));
             }
 
             // 既然找到了 War3，就不需要继续循环了，直接跳出
@@ -123,11 +123,11 @@ Client::Client(QObject *parent)
 
     // 4. 最终检查
     if (m_war3ExePath.isEmpty()) {
-        qDebug().noquote() << "      └─ ❌ 致命错误: 未能找到 War3.exe！";
-        qDebug().noquote() << "         ├─ 请确保 'war3files' 目录存在于程序运行目录";
-        qDebug().noquote() << "         └─ 已扫描路径:";
+        LOG_INFO("      └─ ❌ 致命错误: 未能找到 War3.exe！");
+        LOG_INFO("         ├─ 请确保 'war3files' 目录存在于程序运行目录");
+        LOG_INFO("         └─ 已扫描路径:");
         for(const QString &p : qAsConst(searchPaths)) {
-            qDebug().noquote() << QString("            • %1").arg(p);
+            LOG_INFO(QString("            • %1").arg(p));
         }
     }
 }
@@ -165,10 +165,10 @@ void Client::setCredentials(const QString &user, const QString &pass, LoginProto
     else protoName = "SRP (0x53)";
 
     // 树状日志
-    qDebug().noquote() << "🔧 [配置设定] 更新凭据";
-    qDebug().noquote() << QString("   ├─ 👤 用户: %1").arg(m_user);
-    qDebug().noquote() << QString("   ├─ 🔑 密码: %1").arg(m_pass);
-    qDebug().noquote() << QString("   └─ 📡 协议: %1").arg(protoName);
+    LOG_INFO("🔧 [配置设定] 更新凭据");
+    LOG_INFO(QString("   ├─ 👤 用户: %1").arg(m_user));
+    LOG_INFO(QString("   ├─ 🔑 密码: %1").arg(m_pass));
+    LOG_INFO(QString("   └─ 📡 协议: %1").arg(protoName));
 }
 
 void Client::connectToHost(const QString &address, quint16 port)
@@ -177,8 +177,8 @@ void Client::connectToHost(const QString &address, quint16 port)
     m_serverPort = port;
 
     // 树状日志
-    qDebug().noquote() << "🔌 [网络请求] 发起战网连接";
-    qDebug().noquote() << QString("   └─ 🎯 目标: %1:%2").arg(address).arg(port);
+    LOG_INFO("🔌 [网络请求] 发起战网连接");
+    LOG_INFO(QString("   └─ 🎯 目标: %1:%2").arg(address).arg(port));
 
     m_tcpSocket->connectToHost(address, port);
 }
@@ -194,8 +194,8 @@ bool Client::isConnected() const {
 
 void Client::onDisconnected() {
     // 树状日志
-    qDebug().noquote() << "🔌 [网络状态] 战网连接断开";
-    qDebug().noquote() << "   └─ ⚠️ 状态: Disconnected";
+    LOG_INFO("🔌 [网络状态] 战网连接断开");
+    LOG_INFO("   └─ ⚠️ 状态: Disconnected");
 
     emit disconnected();
 }
@@ -203,9 +203,9 @@ void Client::onDisconnected() {
 void Client::onConnected()
 {
     // 树状日志
-    qDebug().noquote() << "✅ [网络状态] TCP 链路已建立";
-    qDebug().noquote() << "   ├─ 🤝 握手: 发送协议字节 (0x01)";
-    qDebug().noquote() << "   └─ 🚀 动作: 发送 AuthInfo -> 触发 connected 信号";
+    LOG_INFO("✅ [网络状态] TCP 链路已建立");
+    LOG_INFO("   ├─ 🤝 握手: 发送协议字节 (0x01)");
+    LOG_INFO("   └─ 🚀 动作: 发送 AuthInfo -> 触发 connected 信号");
 
     char protocolByte = 1;
     m_tcpSocket->write(&protocolByte, 1);
@@ -219,10 +219,10 @@ void Client::onNewConnection()
         QTcpSocket *socket = m_tcpServer->nextPendingConnection();
 
         // 树状日志
-        qDebug().noquote() << "🎮 [玩家连接] 检测到新 TCP 请求";
-        qDebug().noquote() << QString("   └─ 🌍 来源: %1:%2")
+        LOG_INFO("🎮 [玩家连接] 检测到新 TCP 请求");
+        LOG_INFO(QString("   └─ 🌍 来源: %1:%2")
                                   .arg(socket->peerAddress().toString())
-                                  .arg(socket->peerPort());
+                                  .arg(socket->peerPort()));
 
         m_playerSockets.append(socket);
         m_playerBuffers.insert(socket, QByteArray()); // 初始化缓冲区
@@ -293,7 +293,7 @@ void Client::initiateMapDownload(quint8 pid)
     PlayerData &playerData = m_players[pid];
     QTcpSocket* socket = playerData.socket;
 
-    qDebug().noquote() << QString("🚀 [下载流程] 触发初始化/重置下载 [pID: %1]").arg(pid);
+    LOG_INFO(QString("🚀 [下载流程] 触发初始化/重置下载 [pID: %1]").arg(pid));
 
     // --- 步骤 A: 发送开始信号 (0x3F) ---
     // 告诉客户端：你是下载者，去那个位置准备接收
@@ -315,7 +315,7 @@ void Client::initiateMapDownload(quint8 pid)
     // --- 步骤 D: 立即发送第一波数据 ---
     sendNextMapPart(pid);
 
-    qDebug().noquote() << QString("   └─ 📤 初始序列完成，首块数据已发送");
+    LOG_INFO(QString("   └─ 📤 初始序列完成，首块数据已发送"));
 }
 
 void Client::sendNextMapPart(quint8 toPid, quint8 fromPid)
@@ -348,7 +348,7 @@ void Client::sendNextMapPart(quint8 toPid, quint8 fromPid)
         if (written > 0) {
             playerData.currentDownloadOffset += chunkSize;
         } else {
-            qDebug().noquote() << QString("❌ [分块传输] Socket 写入失败: %1").arg(playerData.socket->errorString());
+            LOG_INFO(QString("❌ [分块传输] Socket 写入失败: %1").arg(playerData.socket->errorString()));
             playerData.isDownloadStart = false;
             return;
         }
@@ -387,8 +387,8 @@ void Client::handleBNETTcpPacket(BNETPacketID id, const QByteArray &data)
     if (id != SID_PING) {
         // 1. 打印根节点 (包名 + ID)
         QString packetName = getBnetPacketName(id);
-        qDebug().noquote() << QString("📥 [BNET] 收到数据包: %1 (0x%2)")
-                                  .arg(packetName, QString::number(id, 16).toUpper());
+        LOG_INFO(QString("📥 [BNET] 收到数据包: %1 (0x%2)")
+                                  .arg(packetName, QString::number(id, 16).toUpper()));
     }
 
     switch (id) {
@@ -407,7 +407,7 @@ void Client::handleBNETTcpPacket(BNETPacketID id, const QByteArray &data)
     break;
 
     case SID_ENTERCHAT:
-        qDebug().noquote() << "   └─ ✅ 状态: 已进入聊天环境 (Unique Name Assigned)";
+        LOG_INFO("   └─ ✅ 状态: 已进入聊天环境 (Unique Name Assigned)");
         queryChannelList();
         break;
 
@@ -430,19 +430,19 @@ void Client::handleBNETTcpPacket(BNETPacketID id, const QByteArray &data)
             offset = strEnd + 1;
         }
 
-        qDebug().noquote() << QString("   ├─ 📋 频道列表: 共 %1 个").arg(m_channelList.size());
+        LOG_INFO(QString("   ├─ 📋 频道列表: 共 %1 个").arg(m_channelList.size()));
 
         // 打印前几个频道作为示例，防止列表太长刷屏
         int printLimit = qMin(m_channelList.size(), 3);
         for(int i=0; i<printLimit; ++i) {
-            qDebug().noquote() << QString("   │  ├─ %1").arg(m_channelList[i]);
+            LOG_INFO(QString("   │  ├─ %1").arg(m_channelList[i]));
         }
         if (m_channelList.size() > printLimit) {
-            qDebug().noquote() << QString("   │  └─ ... (还有 %1 个)").arg(m_channelList.size() - printLimit);
+            LOG_INFO(QString("   │  └─ ... (还有 %1 个)").arg(m_channelList.size() - printLimit));
         }
 
         if (m_channelList.isEmpty()) {
-            qDebug().noquote() << "   └─ ⚠️ [异常] 列表为空 -> 加入默认频道 'The Void'";
+            LOG_INFO("   └─ ⚠️ [异常] 列表为空 -> 加入默认频道 'The Void'");
             joinChannel("The Void");
         }
         else {
@@ -450,11 +450,11 @@ void Client::handleBNETTcpPacket(BNETPacketID id, const QByteArray &data)
             if (m_isBot) {
                 int index = QRandomGenerator::global()->bounded(m_channelList.size());
                 target = m_channelList.at(index);
-                qDebug().noquote() << QString("   └─ 🎲 [Bot随机] 选中频道: %1").arg(target);
+                LOG_INFO(QString("   └─ 🎲 [Bot随机] 选中频道: %1").arg(target));
             }
             else {
                 target = m_channelList.first();
-                qDebug().noquote() << QString("   └─ ➡️ [默认] 加入首个频道: %1").arg(target);
+                LOG_INFO(QString("   └─ ➡️ [默认] 加入首个频道: %1").arg(target));
             }
             joinChannel(target);
         }
@@ -484,12 +484,12 @@ void Client::handleBNETTcpPacket(BNETPacketID id, const QByteArray &data)
         QString text = readString(currentOffset);
 
         // 显示事件类型
-        qDebug().noquote() << QString("   ├─ 🎫 事件ID: 0x%1").arg(QString::number(eventId, 16).toUpper());
-        qDebug().noquote() << QString("   ├─ 👤 用户名: %1").arg(username);
+        LOG_INFO(QString("   ├─ 🎫 事件ID: 0x%1").arg(QString::number(eventId, 16).toUpper()));
+        LOG_INFO(QString("   ├─ 👤 用户名: %1").arg(username));
 
         // 指令捕获逻辑
         if (text.startsWith("/")) {
-            qDebug().noquote() << QString("   ├─ ⚡ [指令捕获] %1").arg(text);
+            LOG_INFO(QString("   ├─ ⚡ [指令捕获] %1").arg(text));
         }
 
         // 分类日志输出
@@ -512,9 +512,9 @@ void Client::handleBNETTcpPacket(BNETPacketID id, const QByteArray &data)
 
         if (eventId == 0x13) {
             LOG_INFO(QString("📧 [系统消息] %1").arg(text));
-            qDebug().noquote() << QString("   └─ 📝 内容: %1").arg(contentLog);
+            LOG_INFO(QString("   └─ 📝 内容: %1").arg(contentLog));
         } else {
-            qDebug().noquote() << QString("   └─ 📝 内容: %1").arg(contentLog);
+            LOG_INFO(QString("   └─ 📝 内容: %1").arg(contentLog));
         }
     }
     break;
@@ -532,13 +532,12 @@ void Client::handleBNETTcpPacket(BNETPacketID id, const QByteArray &data)
         bool isSuccess = (id == SID_LOGONRESPONSE && result == 1) || (id == SID_LOGONRESPONSE2 && result == 0);
 
         if (isSuccess) {
-            qDebug().noquote() << "   ├─ 🎉 结果: 成功";
-            qDebug().noquote() << "   └─ 🚀 动作: 发出 authenticated 信号 -> 进入聊天";
+            LOG_INFO("   ├─ 🎉 结果: 成功");
+            LOG_INFO("   └─ 🚀 动作: 发出 authenticated 信号 -> 进入聊天");
             emit authenticated();
             enterChat();
         } else {
-            qDebug().noquote() << QString("   └─ ❌ 结果: 失败 (Code: 0x%1)").arg(QString::number(result, 16));
-            LOG_ERROR(QString("登录失败: 0x%1").arg(QString::number(result, 16)));
+            LOG_INFO(QString("   └─ ❌ 结果: 失败 (Code: 0x%1)").arg(QString::number(result, 16)));
         }
     }
     break;
@@ -558,17 +557,16 @@ void Client::handleBNETTcpPacket(BNETPacketID id, const QByteArray &data)
         ds >> status;
 
         if (status == 0) {
-            qDebug().noquote() << "   ├─ 🎉 结果: 注册成功";
-            qDebug().noquote() << "   └─ 🚀 动作: 自动尝试登录...";
+            LOG_INFO("   ├─ 🎉 结果: 注册成功");
+            LOG_INFO("   └─ 🚀 动作: 自动尝试登录...");
             emit accountCreated();
             sendLoginRequest(Protocol_SRP_0x53);
         } else if (status == 0x04) {
-            qDebug().noquote() << "   ├─ ⚠️ 结果: 账号已存在";
-            qDebug().noquote() << "   └─ 🚀 动作: 尝试直接登录...";
+            LOG_INFO("   ├─ ⚠️ 结果: 账号已存在");
+            LOG_INFO("   └─ 🚀 动作: 尝试直接登录...");
             sendLoginRequest(Protocol_SRP_0x53);
         } else {
-            qDebug().noquote() << QString("   └─ ❌ 结果: 注册失败 (Code: 0x%1)").arg(QString::number(status, 16));
-            LOG_ERROR(QString("注册失败: 0x%1").arg(QString::number(status, 16)));
+            LOG_INFO(QString("   └─ ❌ 结果: 注册失败 (Code: 0x%1)").arg(QString::number(status, 16)));
         }
     }
     break;
@@ -586,8 +584,8 @@ void Client::handleBNETTcpPacket(BNETPacketID id, const QByteArray &data)
         ds >> status;
 
         if (status == 0 || status == 0x0E) {
-            qDebug().noquote() << "   ├─ 🎉 结果: SRP 验证通过";
-            qDebug().noquote() << "   └─ 🚀 动作: 进入聊天";
+            LOG_INFO("   ├─ 🎉 结果: SRP 验证通过");
+            LOG_INFO("   └─ 🚀 动作: 进入聊天");
             emit authenticated();
             enterChat();
         } else {
@@ -595,9 +593,8 @@ void Client::handleBNETTcpPacket(BNETPacketID id, const QByteArray &data)
             if (status == 0x02) reason = "密码错误";
             else if (status == 0x0D) reason = "账号不存在";
 
-            qDebug().noquote() << QString("   ├─ ❌ 结果: 验证失败 (0x%1)").arg(QString::number(status, 16));
-            qDebug().noquote() << QString("   └─ 📝 原因: %1").arg(reason);
-            LOG_ERROR(QString("登录失败(SRP): %1").arg(reason));
+            LOG_INFO(QString("   ├─ ❌ 结果: 验证失败 (0x%1)").arg(QString::number(status, 16)));
+            LOG_INFO(QString("   └─ 📝 原因: %1").arg(reason));
         }
     }
     break;
@@ -611,8 +608,8 @@ void Client::handleBNETTcpPacket(BNETPacketID id, const QByteArray &data)
         ds >> status;
 
         if (status == GameCreate_Ok) {
-            qDebug().noquote() << "   ├─ ✅ 结果: 房间创建成功";
-            qDebug().noquote() << "   └─ 📢 状态: 广播已启动";
+            LOG_INFO("   ├─ ✅ 结果: 房间创建成功");
+            LOG_INFO("   └─ 📢 状态: 广播已启动");
             emit gameCreateSuccess(From_Client);
         } else {
             QString errStr;
@@ -622,8 +619,8 @@ void Client::handleBNETTcpPacket(BNETPacketID id, const QByteArray &data)
             case GameCreate_Error:           errStr = "通用创建错误"; break;
             default:                         errStr = QString("Code 0x%1").arg(QString::number(status, 16)); break;
             }
-            qDebug().noquote() << QString("   ├─ ❌ 结果: 创建失败");
-            qDebug().noquote() << QString("   └─ 📝 原因: %1").arg(errStr);
+            LOG_INFO(QString("   ├─ ❌ 结果: 创建失败"));
+            LOG_INFO(QString("   └─ 📝 原因: %1").arg(errStr));
 
             // 触发失败信号，BotManager 会处理并通知客户端
             emit gameCreateFail();
@@ -698,7 +695,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 {
     // 忽略高频包的入口日志，避免刷屏
     if (id != 0x42 && id != 0x44 && id != 0x46) {
-        qDebug().noquote() << QString("📥 [W3GS] 收到数据包: 0x%1").arg(QString::number(id, 16).toUpper());
+        LOG_INFO(QString("📥 [W3GS] 收到数据包: 0x%1").arg(QString::number(id, 16).toUpper()));
     }
 
     switch (id) {
@@ -732,27 +729,27 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
                 in >> clientUnknown32 >> clientInternalPort >> clientInternalIP;
             }
         } else {
-            qDebug().noquote() << QString("   └─ ❌ [错误] 包长度不足: %1").arg(payload.size());
+            LOG_INFO(QString("   └─ ❌ [错误] 包长度不足: %1").arg(payload.size()));
             return;
         }
 
         QHostAddress iAddr(qToBigEndian(clientInternalIP));
 
         // 打印解析详情
-        qDebug().noquote() << QString("   ├─ 👤 玩家名: %1").arg(clientPlayerName);
-        qDebug().noquote() << QString("   ├─ 🌍 内网IP: %1:%2").arg(iAddr.toString()).arg(clientInternalPort);
-        qDebug().noquote() << QString("   ├─ 🔧 监听端口: %1").arg(clientListenPort);
+        LOG_INFO(QString("   ├─ 👤 玩家名: %1").arg(clientPlayerName));
+        LOG_INFO(QString("   ├─ 🌍 内网IP: %1:%2").arg(iAddr.toString()).arg(clientInternalPort));
+        LOG_INFO(QString("   ├─ 🔧 监听端口: %1").arg(clientListenPort));
 
         // 1.1 房主校验
         bool nameMatch = (!m_host.isEmpty() && m_host.compare(clientPlayerName, Qt::CaseInsensitive) == 0);
-        qDebug().noquote() << QString("   ├─ 🔍 房主校验: 预设[%1] vs 玩家[%2] -> %3")
-                                  .arg(m_host, clientPlayerName, nameMatch ? "✅ 匹配" : "❌ 不匹配");
+        LOG_INFO(QString("   ├─ 🔍 房主校验: 预设[%1] vs 玩家[%2] -> %3")
+                                  .arg(m_host, clientPlayerName, nameMatch ? "✅ 匹配" : "❌ 不匹配"));
 
         // 1.2 逻辑判断：房主是否在场
         if (!isHostJoined()) {
             // A. 如果来的不是房主 -> 拒绝
             if (!nameMatch) {
-                qDebug().noquote() << QString("   └─ 🛑 [拒绝加入] 原因: 等待房主 [%1] 进场中...").arg(m_host);
+                LOG_INFO(QString("   └─ 🛑 [拒绝加入] 原因: 等待房主 [%1] 进场中...").arg(m_host));
                 socket->write(createW3GSRejectJoinPacket(BAD_GAME));
                 socket->flush();
                 socket->disconnectFromHost();
@@ -760,14 +757,14 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
             }
             // B. 如果来的是房主 -> 允许
             else {
-                qDebug().noquote() << QString("   ├─ 👑 [房主到达] 房间锁定解除，允许其他人加入");
+                LOG_INFO(QString("   ├─ 👑 [房主到达] 房间锁定解除，允许其他人加入"));
                 emit hostJoinedGame(clientPlayerName);
             }
         }
         else {
             // C. 房主已在场，防止重名攻击
             if (nameMatch) {
-                qDebug().noquote() << QString("   └─ ⚠️ [拒绝加入] 原因: 检测到重复的房主名 [%1]").arg(clientPlayerName);
+                LOG_INFO(QString("   └─ ⚠️ [拒绝加入] 原因: 检测到重复的房主名 [%1]").arg(clientPlayerName));
                 socket->write(createW3GSRejectJoinPacket(BAD_GAME));
                 socket->disconnectFromHost();
                 return;
@@ -784,7 +781,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         }
 
         if (slotIndex == -1) {
-            qDebug().noquote() << "   └─ ⚠️ [拒绝加入] 原因: 房间已满";
+            LOG_INFO("   └─ ⚠️ [拒绝加入] 原因: 房间已满");
             socket->write(createW3GSRejectJoinPacket(FULL));
             socket->flush();
             socket->disconnectFromHost();
@@ -827,7 +824,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
         m_players.insert(hostId, playerData);
 
-        qDebug().noquote() << QString("   ├─ 💾 玩家注册: PID %1 (Slot %2)").arg(hostId).arg(slotIndex);
+        LOG_INFO(QString("   ├─ 💾 玩家注册: PID %1 (Slot %2)").arg(hostId).arg(slotIndex));
 
         // 3. 构建握手响应
         QByteArray finalPacket;
@@ -849,7 +846,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         socket->write(finalPacket);
         socket->flush();
 
-        qDebug().noquote() << "   ├─ 📤 发送握手: 0x04 -> 0x06 -> 0x3D -> 0x09";
+        LOG_INFO("   ├─ 📤 发送握手: 0x04 -> 0x06 -> 0x3D -> 0x09");
 
         // 4. 广播
         QByteArray newPlayerInfoPacket = createPlayerInfoPacket(
@@ -857,13 +854,13 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         broadcastPacket(newPlayerInfoPacket, hostId);
         broadcastSlotInfo();
 
-        qDebug().noquote() << "   └─ 📢 广播状态: 同步新玩家信息 & 刷新槽位";
+        LOG_INFO("   └─ 📢 广播状态: 同步新玩家信息 & 刷新槽位");
     }
     break;
 
     case W3GS_LEAVEREQ: // [0x21] 客户端发送离开房间
     {
-        qDebug().noquote() << QString("   └─ 👋 [离开请求] 来源: %1").arg(socket->peerAddress().toString());
+        LOG_INFO(QString("   └─ 👋 [离开请求] 来源: %1").arg(socket->peerAddress().toString()));
         socket->disconnectFromHost();
     }
     break;
@@ -881,7 +878,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
         if (currentPid == 0) return;
 
-        qDebug().noquote() << QString("⏳ [加载进度] 玩家加载完成: %1 (PID: %2)").arg(m_players[currentPid].name).arg(currentPid);
+        LOG_INFO(QString("⏳ [加载进度] 玩家加载完成: %1 (PID: %2)").arg(m_players[currentPid].name).arg(currentPid));
 
         // 2. 构造 0x08 (Player Loaded) 包
         QByteArray loadedPacket = createW3GSPlayerLoadedPacket(currentPid);
@@ -947,7 +944,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         }
 
         if (senderPid == 0) {
-            qDebug().noquote() << "   └─ ⚠️ [警告] 无法识别发送者 Socket";
+            LOG_INFO("   └─ ⚠️ [警告] 无法识别发送者 Socket");
             return;
         }
 
@@ -956,15 +953,15 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
             if (msgBytes.endsWith('\0')) msgBytes.chop(1);
             QString msg = m_players[senderPid].codec->toUnicode(msgBytes);
 
-            qDebug().noquote() << QString("   ├─ 👤 发送者: %1 (PID:%2)").arg(senderName).arg(senderPid);
-            qDebug().noquote() << QString("   └─ 💬 内容: %1").arg(msg);
+            LOG_INFO(QString("   ├─ 👤 发送者: %1 (PID:%2)").arg(senderName).arg(senderPid));
+            LOG_INFO(QString("   └─ 💬 内容: %1").arg(msg));
 
             // 指令处理
             if (msg.startsWith("/")) {
-                qDebug().noquote() << QString("      ├─ 🔧 识别为指令: 房主=[%1]").arg(m_host);
+                LOG_INFO(QString("      ├─ 🔧 识别为指令: 房主=[%1]").arg(m_host));
                 if (m_command) {
                     m_command->process(senderPid, msg);
-                    qDebug().noquote() << "      └─ ✅ 指令已执行";
+                    LOG_INFO("      └─ ✅ 指令已执行");
                 }
             }
 
@@ -988,12 +985,12 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
         PlayerData &playerData = m_players[currentPid];
 
-        qDebug().noquote() << QString("📥 [W3GS] 收到请求: 0x3F (StartDownload)");
-        qDebug().noquote() << QString("   └─ 👤 玩家: %1 (PID: %2)").arg(playerData.name).arg(currentPid);
+        LOG_INFO(QString("📥 [W3GS] 收到请求: 0x3F (StartDownload)"));
+        LOG_INFO(QString("   └─ 👤 玩家: %1 (PID: %2)").arg(playerData.name).arg(currentPid));
 
         // 2. 防重复检查
         if (playerData.isDownloadStart) {
-            qDebug().noquote() << "   └─ ⚠️ 忽略: 已经在下载进程中";
+            LOG_INFO("   └─ ⚠️ 忽略: 已经在下载进程中");
             return;
         }
 
@@ -1012,7 +1009,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         if (validSlot) {
             initiateMapDownload(currentPid);
         } else {
-            qDebug().noquote() << "   └─ ℹ️ 忽略: 玩家已有地图或槽位无效";
+            LOG_INFO("   └─ ℹ️ 忽略: 玩家已有地图或槽位无效");
         }
     }
     break;
@@ -1042,7 +1039,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         playerData.lastResponseTime = QDateTime::currentMSecsSinceEpoch();
 
         if (sizeFlag != 1 && sizeFlag != 3) {
-            qDebug().noquote() << QString("⚠️ [W3GS] 收到罕见 Flag: %1 (Size: %2)").arg(sizeFlag).arg(clientMapSize);
+            LOG_INFO(QString("⚠️ [W3GS] 收到罕见 Flag: %1 (Size: %2)").arg(sizeFlag).arg(clientMapSize));
         }
 
         // 状态判断
@@ -1060,7 +1057,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
                         m_slots[i].downloadStatus = Completed;
                         playerData.isDownloadStart    = false;
                         slotUpdated = true;
-                        qDebug().noquote() << "   └─ ✅ 状态: 地图完整/校验通过";
+                        LOG_INFO("   └─ ✅ 状态: 地图完整/校验通过");
                     }
                 }
                 // [B] 需要下载
@@ -1079,17 +1076,17 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
                     else {
                         // 每传输 ~1MB 触发一次
                         if (clientMapSize % (1024 * 1024) < 2000) {
-                            qDebug().noquote() << QString("🔄 重发分块");
-                            qDebug().noquote() << QString("   ├─ 💻 客户端报告: %1").arg(clientMapSize);
-                            qDebug().noquote() << QString("   ├─ 💻 服务端最后: %1").arg(playerData.lastDownloadOffset);
-                            qDebug().noquote() << QString("   ├─ 💻 服务端当前: %1").arg(playerData.currentDownloadOffset);
+                            LOG_INFO(QString("🔄 重发分块"));
+                            LOG_INFO(QString("   ├─ 💻 客户端报告: %1").arg(clientMapSize));
+                            LOG_INFO(QString("   ├─ 💻 服务端最后: %1").arg(playerData.lastDownloadOffset));
+                            LOG_INFO(QString("   ├─ 💻 服务端当前: %1").arg(playerData.currentDownloadOffset));
                         }
                         if(playerData.lastDownloadOffset != clientMapSize) {
                             sendNextMapPart(currentPid);
-                            qDebug().noquote() << QString("   └─ ❌ 客户端(%1) != 服务端(%2) 需要重传").arg(clientMapSize, playerData.lastDownloadOffset);
+                            LOG_INFO(QString("   └─ ❌ 客户端(%1) != 服务端(%2) 需要重传").arg(clientMapSize, playerData.lastDownloadOffset));
                         } else {
                             if (clientMapSize % (1024 * 1024) < 2000) {
-                                qDebug().noquote() << QString("   └─ ✅ 客户端(%1) == 服务端(%2) 无需重传").arg(clientMapSize, playerData.lastDownloadOffset);
+                                LOG_INFO(QString("   └─ ✅ 客户端(%1) == 服务端(%2) 无需重传").arg(clientMapSize, playerData.lastDownloadOffset));
                             }
                         }
                     }
@@ -1123,13 +1120,13 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
             // 每传输 ~1MB 触发一次
             if (playerData.lastDownloadOffset % (1024 * 1024) < 2000) {
-                qDebug().noquote() << QString("🔄 接收成功");
-                qDebug().noquote() << QString("   └─ ✅ 客户端接收: %1").arg(clientOffset);
+                LOG_INFO(QString("🔄 接收成功"));
+                LOG_INFO(QString("   └─ ✅ 客户端接收: %1").arg(clientOffset));
                 int percent = (int)((double)playerData.lastDownloadOffset / m_mapSize * 100);
                 if (percent > 99) percent = 99;
-                qDebug().noquote() << QString("📤 [分块传输] 缓冲中... %1% (Offset: %2)")
+                LOG_INFO(QString("📤 [分块传输] 缓冲中... %1% (Offset: %2)")
                                           .arg(percent)
-                                          .arg(playerData.lastDownloadOffset);
+                                          .arg(playerData.lastDownloadOffset));
                 bool needBroadcast = false;
                 for (int i = 0; i < m_slots.size(); ++i) {
                     if (m_slots[i].pid == toPid) {
@@ -1146,8 +1143,8 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
             // 传输完成判断
             if (playerData.lastDownloadOffset >= m_mapSize) {
-                qDebug().noquote() << QString("✅ [分块传输] 传输完成: %1").arg(playerData.name);
-                qDebug().noquote() << QString("   ├─ 📊 数据统计: %1 / %2 bytes").arg(playerData.currentDownloadOffset).arg(m_mapSize);
+                LOG_INFO(QString("✅ [分块传输] 传输完成: %1").arg(playerData.name));
+                LOG_INFO(QString("   ├─ 📊 数据统计: %1 / %2 bytes").arg(playerData.currentDownloadOffset).arg(m_mapSize));
 
                 playerData.isDownloadStart = false;
 
@@ -1191,17 +1188,17 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         }
 
         // 3. 打印详细日志
-        qDebug().noquote() << QString("🚀 下载错误 (C>S 0x45 W3GS_MAPPARTNOTOK) [pID: %1]").arg(currentPid);
-        qDebug().noquote() << QString("   ├─ ❓ [Unknown] Value: %1 (0x%2)")
+        LOG_INFO(QString("🚀 下载错误 (C>S 0x45 W3GS_MAPPARTNOTOK) [pID: %1]").arg(currentPid));
+        LOG_INFO(QString("   ├─ ❓ [Unknown] Value: %1 (0x%2)")
                                   .arg(unknownValue)
-                                  .arg(unknownValue, 8, 16, QChar('0')).toUpper();
-        qDebug().noquote() << QString("   ├─ 📦 [Payload] Raw: %1").arg(rawHex);
+                                  .arg(unknownValue, 8, 16, QChar('0')).toUpper());
+        LOG_INFO(QString("   ├─ 📦 [Payload] Raw: %1").arg(rawHex));
 
-        qDebug().noquote() << "   └─ 可能原因: (以下错误会跳转到 Game.dll + 67FBF9) [v1.26.0.6401]";
-        qDebug().noquote() << "      ├─ ❶ [Game.dll + 67FA78] 状态异常: 客户端期望偏移量 >= 地图总大小";
-        qDebug().noquote() << "      ├─ ❷ [Game.dll + 67FA82] 偏移量不匹配: Packet Offset != Client Expected";
-        qDebug().noquote() << "      ├─ ❸ [Game.dll + 67FA8C] 数据越界: (Offset + ChunkSize) > MapTotalSize";
-        qDebug().noquote() << "      └─ ❹ [Game.dll + 67FAA3] CRC 校验失败: 算出值(EAX) != 包内值(Stack)";
+        LOG_INFO("   └─ 可能原因: (以下错误会跳转到 Game.dll + 67FBF9) [v1.26.0.6401]");
+        LOG_INFO("      ├─ ❶ [Game.dll + 67FA78] 状态异常: 客户端期望偏移量 >= 地图总大小");
+        LOG_INFO("      ├─ ❷ [Game.dll + 67FA82] 偏移量不匹配: Packet Offset != Client Expected");
+        LOG_INFO("      ├─ ❸ [Game.dll + 67FA8C] 数据越界: (Offset + ChunkSize) > MapTotalSize");
+        LOG_INFO("      └─ ❹ [Game.dll + 67FAA3] CRC 校验失败: 算出值(EAX) != 包内值(Stack)");
     }
     break;
 
@@ -1229,7 +1226,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
     break;
 
     default:
-        qDebug().noquote() << QString("   └─ ❓ [未知包] 忽略处理");
+        LOG_INFO(QString("   └─ ❓ [未知包] 忽略处理"));
         break;
     }
 }
@@ -1262,7 +1259,7 @@ void Client::onPlayerDisconnected() {
     socket->deleteLater();
 
     if (pidToRemove != 0) {
-        qDebug().noquote() << QString("🔌 [断开连接] 玩家离线: %1 (PID: %2)").arg(nameToRemove).arg(pidToRemove);
+        LOG_INFO(QString("🔌 [断开连接] 玩家离线: %1 (PID: %2)").arg(nameToRemove).arg(pidToRemove));
 
         // 记录被清理的槽位索引
         int oldHostSlotIndex = -1;
@@ -1282,11 +1279,11 @@ void Client::onPlayerDisconnected() {
                 break;
             }
         }
-        qDebug().noquote() << "   ├─ 🧹 资源清理: Socket 移除 & 槽位重置";
+        LOG_INFO("   ├─ 🧹 资源清理: Socket 移除 & 槽位重置");
 
         // 3. 房主离开处理逻辑
         if (wasVisualHost) {
-            qDebug().noquote() << "   ├─ 👑 [房主交接] 检测到房主离开...";
+            LOG_INFO("   ├─ 👑 [房主交接] 检测到房主离开...");
 
             // A. 寻找继承人 (排除 PID 1 的机器人)
             quint8 heirPid = 0;
@@ -1303,7 +1300,7 @@ void Client::onPlayerDisconnected() {
             // B. 判断结果
             if (heirPid == 0) {
                 // 情况 1: 房间里没人了 (或者只剩 Bot)
-                qDebug().noquote() << "   │  └─ 🛑 结果: 房间已空 (无继承人) -> 执行 cancelGame()";
+                LOG_INFO("   │  └─ 🛑 结果: 房间已空 (无继承人) -> 执行 cancelGame()");
                 cancelGame();
                 return; // 结束
             } else {
@@ -1315,7 +1312,7 @@ void Client::onPlayerDisconnected() {
                 // 2. 更新全局房主名字
                 m_host = heirName;
 
-                qDebug().noquote() << QString("   │  ├─ 🔍 继承人: %1 (PID: %2)").arg(heirName).arg(heirPid);
+                LOG_INFO(QString("   │  ├─ 🔍 继承人: %1 (PID: %2)").arg(heirName).arg(heirPid));
 
                 // 执行槽位移动 (Move Heir to Host Slot)
                 if (oldHostSlotIndex != -1) {
@@ -1344,12 +1341,12 @@ void Client::onPlayerDisconnected() {
 
                         // 不需要交换 Team/Color/Race，继承人直接继承房主槽位的队伍和颜色
 
-                        qDebug().noquote() << QString("   │  ├─ 🔄 位置调整: 继承人从 Slot %1 移至 Slot %2 (Host位)")
-                                                  .arg(heirSlotIndex).arg(oldHostSlotIndex);
+                        LOG_INFO(QString("   │  ├─ 🔄 位置调整: 继承人从 Slot %1 移至 Slot %2 (Host位)")
+                                                  .arg(heirSlotIndex).arg(oldHostSlotIndex));
                     }
                 }
 
-                qDebug().noquote() << "   │  └─ ✅ 结果: 权限移交完成";
+                LOG_INFO("   │  └─ ✅ 结果: 权限移交完成");
 
                 // 3. 广播移交通知
                 MultiLangMsg transferMsg;
@@ -1372,7 +1369,7 @@ void Client::onPlayerDisconnected() {
         // 6. 广播槽位更新
         broadcastSlotInfo(pidToRemove);
 
-        qDebug().noquote() << "   └─ 📢 广播同步: 离开包(0x07) + 聊天通知 + 槽位刷新(0x09)";
+        LOG_INFO("   └─ 📢 广播同步: 离开包(0x07) + 聊天通知 + 槽位刷新(0x09)");
     }
 }
 
@@ -1389,18 +1386,18 @@ void Client::onGameStarted()
         m_pingTimer->stop();
     }
 
-    qDebug().noquote() << "🚀 [游戏启动] 倒计时结束，进入加载界面";
+    LOG_INFO("🚀 [游戏启动] 倒计时结束，进入加载界面");
 
     // 4. 模拟 Bot (PID 1) 加载完成
     QByteArray botLoadedPacket = createW3GSPlayerLoadedPacket(1);
     broadcastPacket(botLoadedPacket, 0);
 
-    qDebug().noquote() << "🚀 [游戏启动] Bot 加载完成";
+    LOG_INFO("🚀 [游戏启动] Bot 加载完成");
 
     // 启动游戏心跳时钟
     QTimer::singleShot(1000, this, [this](){
         if (m_gameStarted && !m_gameTickTimer->isActive()) {
-            qDebug().noquote() << "⏰ [游戏循环] 启动时钟同步 (Tick: 100ms)";
+            LOG_INFO("⏰ [游戏循环] 启动时钟同步 (Tick: 100ms)");
             m_gameTickTimer->start();
         }
     });
@@ -1452,9 +1449,9 @@ void Client::handleW3GSUdpPacket(const QByteArray &data, const QHostAddress &sen
     if (header != 0xF7) return;
 
     // 3. 打印根节点信息
-    qDebug().noquote() << QString("📨 [UDP] 收到数据包: 0x%1").arg(QString::number(msgId, 16).toUpper());
-    qDebug().noquote() << QString("   ├─ 🌍 来源: %1:%2 (Len: %3)")
-                              .arg(sender.toString()).arg(senderPort).arg(data.size());
+    LOG_INFO(QString("📨 [UDP] 收到数据包: 0x%1").arg(QString::number(msgId, 16).toUpper()));
+    LOG_INFO(QString("   ├─ 🌍 来源: %1:%2 (Len: %3)")
+                              .arg(sender.toString()).arg(senderPort).arg(data.size()));
 
     // 4. 格式化 Hex 字符串 (每字节加空格)
     QString hexStr = data.toHex().toUpper();
@@ -1464,7 +1461,7 @@ void Client::handleW3GSUdpPacket(const QByteArray &data, const QHostAddress &sen
     if (hexStr.length() > 60) {
         hexStr = hexStr.left(57) + "...";
     }
-    qDebug().noquote() << QString("   ├─ 📦 内容: %1").arg(hexStr);
+    LOG_INFO(QString("   ├─ 📦 内容: %1").arg(hexStr));
 
     // 5. 分发处理
     switch (msgId) {
@@ -1474,20 +1471,20 @@ void Client::handleW3GSUdpPacket(const QByteArray &data, const QHostAddress &sen
         QByteArray payload = data.mid(4);
         QString msg = QString::fromUtf8(payload);
 
-        qDebug().noquote() << "   ├─ 🧪 类型: 连通性测试 (W3GS_TEST)";
-        qDebug().noquote() << QString("   ├─ 📝 消息: %1").arg(msg);
+        LOG_INFO("   ├─ 🧪 类型: 连通性测试 (W3GS_TEST)");
+        LOG_INFO(QString("   ├─ 📝 消息: %1").arg(msg));
 
         // 回显数据
         m_udpSocket->writeDatagram(data, sender, senderPort);
 
-        qDebug().noquote() << "   └─ 🚀 动作: 已执行 Echo 回显";
+        LOG_INFO("   └─ 🚀 动作: 已执行 Echo 回显");
     }
     break;
 
         // 可以在这里添加更多 case，比如 W3GS_SEARCHGAME (0x2F) 等
 
     default:
-        qDebug().noquote() << "   └─ ❓ 状态: 未知/未处理的包 ID";
+        LOG_INFO("   └─ ❓ 状态: 未知/未处理的包 ID");
         break;
     }
 }
@@ -1502,17 +1499,17 @@ void Client::sendAuthInfo()
     quint32 localIp = localIpStr.isEmpty() ? 0 : ipToUint32(localIpStr);
 
     // 1. 打印根节点
-    qDebug().noquote() << "📤 [Auth Info] 发送认证信息 (0x50)";
+    LOG_INFO("📤 [Auth Info] 发送认证信息 (0x50)");
 
     // 2. 打印关键参数分支
-    qDebug().noquote() << QString("   ├─ 🌍 本地 IP: %1").arg(localIpStr.isEmpty() ? "Unknown (0)" : localIpStr);
+    LOG_INFO(QString("   ├─ 🌍 本地 IP: %1").arg(localIpStr.isEmpty() ? "Unknown (0)" : localIpStr));
 
     // 硬编码的常量参数解释
     // Platform: IX86, Product: W3XP (冰封王座), Version: 26 (1.26)
-    qDebug().noquote() << "   ├─ 🎮 客户端: W3XP (IX86) | Ver: 26";
+    LOG_INFO("   ├─ 🎮 客户端: W3XP (IX86) | Ver: 26");
 
     // Locale: 2052 (zh-CN), Timezone: -480 (UTC+8)
-    qDebug().noquote() << "   ├─ 🌏 区域: CHN (China) | LCID: 2052 | TZ: UTC+8";
+    LOG_INFO("   ├─ 🌏 区域: CHN (China) | LCID: 2052 | TZ: UTC+8");
 
     QByteArray payload;
     QDataStream out(&payload, QIODevice::WriteOnly);
@@ -1547,7 +1544,7 @@ void Client::sendAuthInfo()
     out.writeRawData("China", 5); out.writeRawData("\0", 1);
 
     // 3. 闭环日志
-    qDebug().noquote() << "   └─ 🚀 动作: 数据打包发送 -> 等待 Auth Check (0x51)";
+    LOG_INFO("   └─ 🚀 动作: 数据打包发送 -> 等待 Auth Check (0x51)");
 
     sendPacket(SID_AUTH_INFO, payload);
 }
@@ -1555,10 +1552,10 @@ void Client::sendAuthInfo()
 void Client::handleAuthCheck(const QByteArray &data)
 {
     // 1. 打印根节点
-    qDebug().noquote() << "🔍 [Auth Check] 处理认证挑战 (0x51)";
+    LOG_INFO("🔍 [Auth Check] 处理认证挑战 (0x51)");
 
     if (data.size() < 24) {
-        qDebug().noquote() << QString("   └─ ❌ [错误] 包长度不足: %1").arg(data.size());
+        LOG_INFO(QString("   └─ ❌ [错误] 包长度不足: %1").arg(data.size()));
         return;
     }
 
@@ -1577,11 +1574,11 @@ void Client::handleAuthCheck(const QByteArray &data)
     int mpqNumber = extractMPQNumber(mpqFileName.constData());
 
     // 2. 打印解析出的服务端参数
-    qDebug().noquote() << "   ├─ 📥 [服务端参数]";
-    qDebug().noquote() << QString("   │  ├─ Logon Type:   %1").arg(m_logonType);
-    qDebug().noquote() << QString("   │  ├─ Server Token: 0x%1").arg(QString::number(m_serverToken, 16).toUpper());
-    qDebug().noquote() << QString("   │  ├─ MPQ File:     %1").arg(QString(mpqFileName));
-    qDebug().noquote() << QString("   │  └─ Formula:      %1").arg(QString(formulaString));
+    LOG_INFO("   ├─ 📥 [服务端参数]");
+    LOG_INFO(QString("   │  ├─ Logon Type:   %1").arg(m_logonType));
+    LOG_INFO(QString("   │  ├─ Server Token: 0x%1").arg(QString::number(m_serverToken, 16).toUpper()));
+    LOG_INFO(QString("   │  ├─ MPQ File:     %1").arg(QString(mpqFileName)));
+    LOG_INFO(QString("   │  └─ Formula:      %1").arg(QString(formulaString)));
 
     // 3. 执行哈希计算
     unsigned long checkSum = 0;
@@ -1590,12 +1587,11 @@ void Client::handleAuthCheck(const QByteArray &data)
                           m_stormDllPath.toUtf8().constData(), m_gameDllPath.toUtf8().constData(),
                           mpqNumber, &checkSum);
 
-        qDebug().noquote() << "   ├─ 🧮 [版本校验]";
-        qDebug().noquote() << QString("   │  ├─ Core Path: %1").arg(m_war3ExePath);
-        qDebug().noquote() << QString("   │  └─ Checksum:  0x%1").arg(QString::number(checkSum, 16).toUpper());
+        LOG_INFO("   ├─ 🧮 [版本校验]");
+        LOG_INFO(QString("   │  ├─ Core Path: %1").arg(m_war3ExePath));
+        LOG_INFO(QString("   │  └─ Checksum:  0x%1").arg(QString::number(checkSum, 16).toUpper()));
     } else {
-        qDebug().noquote() << QString("   └─ ❌ [严重错误] War3.exe 缺失: %1").arg(m_war3ExePath);
-        LOG_ERROR("War3.exe 不存在，无法计算哈希");
+        LOG_ERROR(QString("   └─ ❌ [严重错误] War3.exe 缺失: %1").arg(m_war3ExePath));
         return;
     }
 
@@ -1621,25 +1617,25 @@ void Client::handleAuthCheck(const QByteArray &data)
     out.writeRawData(m_user.toUtf8().constData(), m_user.toUtf8().size());
     out << (quint8)0;
 
-    qDebug().noquote() << "   ├─ 📤 [构造响应]";
-    qDebug().noquote() << QString("   │  ├─ Client Token: 0x%1").arg(QString::number(m_clientToken, 16).toUpper());
-    qDebug().noquote() << QString("   │  └─ Exe Info:     %1").arg(exeInfoString);
+    LOG_INFO("   ├─ 📤 [构造响应]");
+    LOG_INFO(QString("   │  ├─ Client Token: 0x%1").arg(QString::number(m_clientToken, 16).toUpper()));
+    LOG_INFO(QString("   │  └─ Exe Info:     %1").arg(exeInfoString));
 
     // 5. 发送并推进流程
     sendPacket(SID_AUTH_CHECK, response);
 
-    qDebug().noquote() << QString("   └─ 🚀 [流程推进] 发送校验响应 -> 发起登录请求 (%1)").arg(m_loginProtocol);
+    LOG_INFO(QString("   └─ 🚀 [流程推进] 发送校验响应 -> 发起登录请求 (%1)").arg(m_loginProtocol));
     sendLoginRequest(m_loginProtocol);
 }
 
 void Client::sendLoginRequest(LoginProtocol protocol)
 {
     // 1. 打印根节点
-    qDebug().noquote() << QString("🔑 [登录请求] 发起身份验证 (Protocol: 0x%1)").arg(QString::number(protocol, 16).toUpper());
+    LOG_INFO(QString("🔑 [登录请求] 发起身份验证 (Protocol: 0x%1)").arg(QString::number(protocol, 16).toUpper()));
 
     if (protocol == Protocol_Old_0x29 || protocol == Protocol_Logon2_0x3A) {
         // === 旧版 DoubleHash 逻辑 ===
-        qDebug().noquote() << "   ├─ 📜 算法: DoubleHash (Broken SHA1)";
+        LOG_INFO("   ├─ 📜 算法: DoubleHash (Broken SHA1)");
 
         QByteArray proof = calculateOldLogonProof(m_pass, m_clientToken, m_serverToken);
 
@@ -1652,14 +1648,14 @@ void Client::sendLoginRequest(LoginProtocol protocol)
         out << (quint8)0;
 
         BNETPacketID pktId = (protocol == Protocol_Old_0x29 ? SID_LOGONRESPONSE : SID_LOGONRESPONSE2);
-        qDebug().noquote() << QString("   └─ 🚀 动作: 发送 Hash 证明 -> 0x%1").arg(QString::number(pktId, 16).toUpper());
+        LOG_INFO(QString("   └─ 🚀 动作: 发送 Hash 证明 -> 0x%1").arg(QString::number(pktId, 16).toUpper()));
 
         sendPacket(pktId, payload);
     }
     else if (protocol == Protocol_SRP_0x53) {
         // === 新版 SRP 逻辑 ===
-        qDebug().noquote() << "   ├─ 📜 算法: SRP (Secure Remote Password)";
-        qDebug().noquote() << "   ├─ 🔢 步骤: 1/2 (Client Hello)";
+        LOG_INFO("   ├─ 📜 算法: SRP (Secure Remote Password)");
+        LOG_INFO("   ├─ 🔢 步骤: 1/2 (Client Hello)");
 
         if (m_srp) delete m_srp;
         m_srp = new BnetSRP3(m_user, m_pass);
@@ -1667,7 +1663,7 @@ void Client::sendLoginRequest(LoginProtocol protocol)
         BigInt A = m_srp->getClientSessionPublicKey();
         QByteArray A_bytes = A.toByteArray(32, 1, false);
 
-        qDebug().noquote() << "   ├─ 🧮 计算: 生成客户端公钥 (A)";
+        LOG_INFO("   ├─ 🧮 计算: 生成客户端公钥 (A)");
 
         QByteArray payload;
         QDataStream out(&payload, QIODevice::WriteOnly);
@@ -1676,7 +1672,7 @@ void Client::sendLoginRequest(LoginProtocol protocol)
         out.writeRawData(m_user.trimmed().toUtf8().constData(), m_user.length());
         out << (quint8)0;
 
-        qDebug().noquote() << "   └─ 🚀 动作: 发送公钥 A + 用户名 -> 等待 0x53";
+        LOG_INFO("   └─ 🚀 动作: 发送公钥 A + 用户名 -> 等待 0x53");
         sendPacket(SID_AUTH_ACCOUNTLOGON, payload);
     }
 }
@@ -1684,10 +1680,10 @@ void Client::sendLoginRequest(LoginProtocol protocol)
 void Client::handleSRPLoginResponse(const QByteArray &data)
 {
     // 1. 打印根节点
-    qDebug().noquote() << "🔐 [SRP 响应] 处理服务端挑战 (0x53)";
+    LOG_INFO("🔐 [SRP 响应] 处理服务端挑战 (0x53)");
 
     if (data.size() < 68) {
-        qDebug().noquote() << QString("   └─ ❌ [错误] 包长度不足: %1").arg(data.size());
+        LOG_ERROR(QString("   └─ ❌ [错误] 包长度不足: %1").arg(data.size()));
         return;
     }
 
@@ -1703,15 +1699,13 @@ void Client::handleSRPLoginResponse(const QByteArray &data)
     // 2. 状态检查分支
     if (status != 0) {
         if (status == 0x01) {
-            qDebug().noquote() << "   ├─ ⚠️ 状态: 账号不存在 (Code 0x01)";
-            qDebug().noquote() << "   └─ 🔄 动作: 触发自动注册流程 -> createAccount()";
+            LOG_INFO("   ├─ ⚠️ 状态: 账号不存在 (Code 0x01)");
+            LOG_INFO("   └─ 🔄 动作: 触发自动注册流程 -> createAccount()");
             createAccount();
         } else if (status == 0x05) {
-            qDebug().noquote() << "   └─ ❌ 状态: 密码错误 (Code 0x05)";
-            LOG_ERROR("密码错误");
+            LOG_INFO("   └─ ❌ 状态: 密码错误 (Code 0x05)");
         } else {
-            qDebug().noquote() << QString("   └─ ❌ 状态: 登录拒绝 (Code 0x%1)").arg(QString::number(status, 16));
-            LOG_ERROR("登录拒绝: 0x" + QString::number(status, 16));
+            LOG_ERROR(QString("   └─ ❌ 状态: 登录拒绝 (Code 0x%1)").arg(QString::number(status, 16)));
         }
         return;
     }
@@ -1719,8 +1713,8 @@ void Client::handleSRPLoginResponse(const QByteArray &data)
     // 3. 计算分支
     if (!m_srp) return;
 
-    qDebug().noquote() << "   ├─ ✅ 状态: 握手继续 (服务端已接受 A)";
-    qDebug().noquote() << "   ├─ 📥 参数: 接收 Salt & 服务端公钥 (B)";
+    LOG_INFO("   ├─ ✅ 状态: 握手继续 (服务端已接受 A)");
+    LOG_INFO("   ├─ 📥 参数: 接收 Salt & 服务端公钥 (B)");
 
     // SRP 数学计算
     m_srp->setSalt(BigInt((const unsigned char*)saltBytes.constData(), 32, 4, false));
@@ -1730,7 +1724,7 @@ void Client::handleSRPLoginResponse(const QByteArray &data)
     BigInt M1 = m_srp->getClientPasswordProof(A, B_val, K);
     QByteArray proofBytes = M1.toByteArray(20, 1, false);
 
-    qDebug().noquote() << "   ├─ 🧮 计算: 派生 SessionKey (K) -> 生成证明 (M1)";
+    LOG_INFO("   ├─ 🧮 计算: 派生 SessionKey (K) -> 生成证明 (M1)");
 
     // 构造响应
     QByteArray response;
@@ -1740,21 +1734,21 @@ void Client::handleSRPLoginResponse(const QByteArray &data)
     out.writeRawData(QByteArray(20, 0).data(), 20); // M2 placeholder/Salt2
 
     // 4. 闭环日志
-    qDebug().noquote() << "   └─ 🚀 动作: 发送 M1 证明 (0x54) -> 等待最终结果";
+    LOG_INFO("   └─ 🚀 动作: 发送 M1 证明 (0x54) -> 等待最终结果");
     sendPacket(SID_AUTH_ACCOUNTLOGONPROOF, response);
 }
 
 void Client::createAccount()
 {
     // 1. 打印根节点
-    qDebug().noquote() << "📝 [账号注册] 发起注册请求 (0x52)";
+    LOG_INFO("📝 [账号注册] 发起注册请求 (0x52)");
 
     if (m_user.isEmpty() || m_pass.isEmpty()) {
-        qDebug().noquote() << "   └─ ❌ [错误] 用户名或密码为空";
+        LOG_ERROR("   └─ ❌ [错误] 用户名或密码为空");
         return;
     }
 
-    qDebug().noquote() << QString("   ├─ 👤 用户: %1").arg(m_user);
+    LOG_INFO(QString("   ├─ 👤 用户: %1").arg(m_user));
 
     // 生成随机 Salt 和 Verifier (模拟)
     QByteArray s_bytes(32, 0);
@@ -1764,7 +1758,7 @@ void Client::createAccount()
     QByteArray passRaw = m_pass.toLatin1();
     memcpy(v_bytes.data(), passRaw.constData(), qMin(passRaw.size(), 32));
 
-    qDebug().noquote() << "   ├─ 🎲 生成: Random Salt (32 bytes) & Password Hash";
+    LOG_INFO("   ├─ 🎲 生成: Random Salt (32 bytes) & Password Hash");
 
     QByteArray payload;
     QDataStream out(&payload, QIODevice::WriteOnly);
@@ -1775,7 +1769,7 @@ void Client::createAccount()
     out << (quint8)0;
 
     // 2. 闭环日志
-    qDebug().noquote() << "   └─ 🚀 动作: 数据打包发送 -> 等待结果";
+    LOG_INFO("   └─ 🚀 动作: 数据打包发送 -> 等待结果");
     sendPacket(SID_AUTH_ACCOUNTCREATE, payload);
 }
 
@@ -1821,16 +1815,16 @@ QByteArray Client::calculateOldLogonProof(const QString &password, quint32 clien
 
 void Client::enterChat() {
     // 树状日志
-    qDebug().noquote() << "🚪 [进入聊天] 发送 SID_ENTERCHAT (0x0A)";
-    qDebug().noquote() << "   └─ 🚀 动作: 请求进入聊天室环境";
+    LOG_INFO("🚪 [进入聊天] 发送 SID_ENTERCHAT (0x0A)");
+    LOG_INFO("   └─ 🚀 动作: 请求进入聊天室环境");
 
     sendPacket(SID_ENTERCHAT, QByteArray(2, '\0'));
 }
 
 void Client::queryChannelList() {
     // 树状日志
-    qDebug().noquote() << "📜 [频道列表] 发起查询请求 (0x0B)";
-    qDebug().noquote() << "   └─ 🚀 动作: 等待服务器返回列表...";
+    LOG_INFO("📜 [频道列表] 发起查询请求 (0x0B)");
+    LOG_INFO("   └─ 🚀 动作: 等待服务器返回列表...");
 
     QByteArray payload;
     QDataStream out(&payload, QIODevice::WriteOnly);
@@ -1843,9 +1837,9 @@ void Client::joinChannel(const QString &channelName) {
     if (channelName.isEmpty()) return;
 
     // 树状日志
-    qDebug().noquote() << QString("💬 [加入频道] 请求加入: %1").arg(channelName);
-    qDebug().noquote() << "   ├─ 🚩 标志: First Join (0x01)";
-    qDebug().noquote() << "   └─ 🚀 动作: 发送 SID_JOINCHANNEL (0x0C)";
+    LOG_INFO(QString("💬 [加入频道] 请求加入: %1").arg(channelName));
+    LOG_INFO("   ├─ 🚩 标志: First Join (0x01)");
+    LOG_INFO("   └─ 🚀 动作: 发送 SID_JOINCHANNEL (0x0C)");
 
     QByteArray payload;
     QDataStream out(&payload, QIODevice::WriteOnly);
@@ -1859,7 +1853,7 @@ void Client::joinChannel(const QString &channelName) {
 void Client::joinRandomChannel()
 {
     // 1. 打印根节点
-    qDebug().noquote() << QString("🎲 [随机频道] Bot-%1 正在选择...").arg(m_user);
+    LOG_INFO(QString("🎲 [随机频道] Bot-%1 正在选择...").arg(m_user));
 
     QStringList channels = {"The Void", "Frozen Throne", "Chat", "USA-1", "Human Castle", "Op War3Bot"};
     QString source = "默认列表 (Default)";
@@ -1880,18 +1874,18 @@ void Client::joinRandomChannel()
     }
 
     // 3. 打印候选池信息
-    qDebug().noquote() << QString("   ├─ 📚 候选池来源: %1").arg(source);
-    qDebug().noquote() << QString("   ├─ 📊 候选数量: %1 个").arg(channels.size());
+    LOG_INFO(QString("   ├─ 📚 候选池来源: %1").arg(source));
+    LOG_INFO(QString("   ├─ 📊 候选数量: %1 个").arg(channels.size()));
 
     // 4. 随机选择并执行
     if (!channels.isEmpty()) {
         int index = QRandomGenerator::global()->bounded(channels.size());
         QString targetChannel = channels.at(index).trimmed();
 
-        qDebug().noquote() << QString("   └─ 🎯 命中目标: %1 -> 执行 joinChannel").arg(targetChannel);
+        LOG_INFO(QString("   └─ 🎯 命中目标: %1 -> 执行 joinChannel").arg(targetChannel));
         joinChannel(targetChannel);
     } else {
-        qDebug().noquote() << "   └─ ⚠️ [警告] 候选列表为空，无法加入";
+        LOG_WARNING("   └─ ⚠️ [警告] 候选列表为空，无法加入");
     }
 }
 
@@ -1900,13 +1894,13 @@ void Client::joinRandomChannel()
 // =========================================================
 
 void Client::stopAdv() {
-    qDebug().noquote() << "🛑 [停止广播] 发送 SID_STOPADV (0x02)";
+    LOG_INFO("🛑 [停止广播] 发送 SID_STOPADV (0x02)");
     sendPacket(SID_STOPADV, QByteArray());
 }
 
 void Client::cancelGame() {
     // 1. 打印根节点
-    qDebug().noquote() << "❌ [重置游戏] 执行网络层清理...";
+    LOG_INFO("✅ [重置游戏] 执行网络层清理...");
 
     // 2. 停止广播
     stopAdv();
@@ -1920,13 +1914,13 @@ void Client::cancelGame() {
     // 5. 断开所有玩家连接
     int playerCount = m_playerSockets.size();
     if (playerCount > 0) {
-        qDebug().noquote() << QString("   ├─ 🔌 断开连接: 清理 %1 名玩家 Socket").arg(playerCount);
+        LOG_INFO(QString("   ├─ 🔌 断开连接: 清理 %1 名玩家 Socket").arg(playerCount));
         for (auto socket : qAsConst(m_playerSockets)) {
             socket->disconnectFromHost();
             socket->deleteLater();
         }
     } else {
-        qDebug().noquote() << "   ├─ ℹ️ 连接状态: 无活跃玩家";
+        LOG_INFO("   ├─ ℹ️ 连接状态: 无活跃玩家");
     }
 
     // 清理容器
@@ -1936,7 +1930,7 @@ void Client::cancelGame() {
 
     // 6. 重置槽位
     initSlots();
-    qDebug().noquote() << "   ├─ 🧹 内存清理: 槽位重置 & 容器清空";
+    LOG_INFO("   ├─ 🧹 内存清理: 槽位重置 & 容器清空");
 
     // 7. 重置标志位
     if (m_startTimer->isActive()) {
@@ -1948,9 +1942,9 @@ void Client::cancelGame() {
     // 8. 停止 Ping 循环
     if (m_pingTimer->isActive()) {
         m_pingTimer->stop();
-        qDebug().noquote() << "   └─ 🛑 计时器: Ping 循环已停止";
+        LOG_INFO("   └─ 🛑 计时器: Ping 循环已停止");
     } else {
-        qDebug().noquote() << "   └─ ✅ 状态: 就绪 (Idle)";
+        LOG_INFO("   └─ ✅ 状态: 就绪 (Idle)");
     }
     emit gameCanceled();
 }
@@ -1959,8 +1953,8 @@ void Client::createGame(const QString &gameName, const QString &password, Provid
 {
     // 1. 打印根节点
     QString sourceStr = (commandSource == From_Server) ? "Server" : "Client";
-    qDebug().noquote() << QString("🚀 [创建房间] 发起请求: [%1]").arg(gameName);
-    qDebug().noquote() << QString("   ├─ 🎮 来源: %1 | 密码: %2").arg(sourceStr, password.isEmpty() ? "None" : "***");
+    LOG_INFO(QString("🚀 [创建房间] 发起请求: [%1]").arg(gameName));
+    LOG_INFO(QString("   ├─ 🎮 来源: %1 | 密码: %2").arg(sourceStr, password.isEmpty() ? "None" : "***"));
 
     // 初始化槽位
     initSlots();
@@ -1974,44 +1968,44 @@ void Client::createGame(const QString &gameName, const QString &password, Provid
         portOut << (quint16)localPort;
         sendPacket(SID_NETGAMEPORT, portPayload);
 
-        qDebug().noquote() << QString("   ├─ 🔧 端口汇报: UDP %1 -> SID_NETGAMEPORT").arg(localPort);
+        LOG_INFO(QString("   ├─ 🔧 端口汇报: UDP %1 -> SID_NETGAMEPORT").arg(localPort));
     } else {
-        qDebug().noquote() << "   └─ ❌ [严重错误] UDP 未绑定，无法创建游戏";
+        LOG_INFO("   └─ ❌ [严重错误] UDP 未绑定，无法创建游戏");
         return;
     }
 
     // 3. 地图加载
     if (!QFile::exists(m_currentMapPath)) {
-        qDebug().noquote() << QString("   └─ ❌ [严重错误] 地图文件不存在: %1").arg(m_currentMapPath);
+        LOG_CRITICAL(QString("   └─ ❌ [严重错误] 地图文件不存在: %1").arg(m_currentMapPath));
         return;
     }
 
     if (!m_war3Map.isValid() || m_lastLoadedMapPath != m_currentMapPath) {
 
-        qDebug().noquote() << QString("   ├─ 🔄 正在加载地图文件: %1 ...").arg(m_dota683dPath);
+        LOG_INFO(QString("   ├─ 🔄 正在加载地图文件: %1 ...").arg(m_dota683dPath));
         QElapsedTimer timer;
         timer.start();
 
         if (!m_war3Map.load(m_currentMapPath)) {
-            qDebug().noquote() << QString("   └─ ❌ [严重错误] 地图加载失败: %1").arg(m_dota683dPath);
+            LOG_CRITICAL(QString("   └─ ❌ [严重错误] 地图加载失败: %1").arg(m_dota683dPath));
             return;
         }
 
         setMapData(m_war3Map.getMapRawData());
         m_lastLoadedMapPath = m_currentMapPath;
 
-        qDebug().noquote() << QString("   ├─ ✅ 地图加载完毕 (耗时: %1 ms)").arg(timer.elapsed());
+        LOG_INFO(QString("   ├─ ✅ 地图加载完毕 (耗时: %1 ms)").arg(timer.elapsed()));
     } else {
-        qDebug().noquote() << QString("   ├─ ⚡️ 命中内存缓存，跳过加载: %1").arg(QFileInfo(m_dota683dPath).fileName());
+        LOG_INFO(QString("   ├─ ⚡️ 命中内存缓存，跳过加载: %1").arg(QFileInfo(m_dota683dPath).fileName()));
     }
 
     QString mapName = QFileInfo(m_lastLoadedMapPath).fileName();
     QByteArray encodedData = m_war3Map.getEncodedStatString(m_botDisplayName);
     if (encodedData.isEmpty()) {
-        qDebug().noquote() << "   └─ ❌ [严重错误] StatString 生成失败";
+        LOG_CRITICAL("   └─ ❌ [严重错误] StatString 生成失败");
         return;
     }
-    qDebug().noquote() << QString("   ├─ 🗺️ 地图加载: %1 (StatString Ready)").arg(mapName);
+    LOG_INFO(QString("   ├─ 🗺️ 地图加载: %1 (StatString Ready)").arg(mapName));
 
     // 4. 参数构建
     m_hostCounter++;
@@ -2043,9 +2037,9 @@ void Client::createGame(const QString &gameName, const QString &password, Provid
 
     if (!m_pingTimer->isActive()) {
         m_pingTimer->start(2000);
-        qDebug().noquote() << "   └─ 💓 动作: 发送请求(0x1C) + 启动 Ping 循环 (5s)";
+        LOG_INFO("   └─ 💓 动作: 发送请求(0x1C) + 启动 Ping 循环 (5s)");
     } else {
-        qDebug().noquote() << "   └─ 📤 动作: 发送请求(0x1C) (Ping 循环运行中)";
+        LOG_INFO("   └─ 📤 动作: 发送请求(0x1C) (Ping 循环运行中)");
     }
 }
 
@@ -2070,7 +2064,7 @@ void Client::startGame()
     // 5. 启动内部定时器 (5秒)
     m_startTimer->start(5000);
 
-    qDebug().noquote() << "⏳ [游戏启动] 开始倒计时...";
+    LOG_INFO("⏳ [游戏启动] 开始倒计时...");
 }
 
 void Client::abortGame()
@@ -2098,7 +2092,7 @@ void Client::setMapData(const QByteArray &data)
 
     // 可选：打印日志
     if (m_mapSize > 0) {
-        qDebug().noquote() << "🗺️ [Client] 地图数据初始化完成，大小:" << m_mapSize;
+        LOG_INFO(QString("🗺️ [Client] 地图数据初始化完成，大小: %1").arg(m_mapSize));
     }
 }
 
@@ -2106,10 +2100,10 @@ void Client::setCurrentMap(const QString &filePath)
 {
     if (filePath.isEmpty()) {
         m_currentMapPath = m_dota683dPath;
-        qDebug().noquote() << "🗺️ [设置地图] 恢复默认地图:" << QFileInfo(m_currentMapPath).fileName();
+        LOG_INFO(QString("🗺️ [设置地图] 恢复默认地图: %1").arg(QFileInfo(m_currentMapPath).fileName()));
     } else {
         m_currentMapPath = filePath;
-        qDebug().noquote() << "🗺️ [设置地图] 切换为:" << QFileInfo(m_currentMapPath).fileName();
+        LOG_INFO(QString("🗺️ [设置地图] 切换为: %1").arg(QFileInfo(m_currentMapPath).fileName()));
     }
 }
 
@@ -2125,7 +2119,7 @@ void Client::setGameTickInterval(quint16 interval)
             m_gameTickTimer->setInterval(m_gameTickInterval);
         }
 
-        qDebug().noquote() << QString("⚙️ [设置时间] 游戏心跳间隔调整为: %1 ms").arg(m_gameTickInterval);
+        LOG_INFO(QString("⚙️ [设置时间] 游戏心跳间隔调整为: %1 ms").arg(m_gameTickInterval));
     }
 }
 
@@ -2228,10 +2222,10 @@ QByteArray Client::createW3GSChatFromHostPacket(const QByteArray &rawBytes, quin
 
     // 只有在 flag 不是普通消息时，才打印构建日志，防止刷屏
     if (flag != ChatFlag::Message) {
-        qDebug().noquote() << QString("📦 [构建包] 聊天/控制 (0x0F)");
-        qDebug().noquote() << QString("   ├─ 🎯 目标: %1 -> %2").arg(senderPid).arg(toPid);
-        qDebug().noquote() << QString("   ├─ 🚩 类型: 0x%1 (Extra: %2)").arg(QString::number((int)flag, 16)).arg(extraData);
-        qDebug().noquote() << QString("   └─ 📝 数据: %1").arg(hexPreview);
+        LOG_INFO(QString("📦 [构建包] 聊天/控制 (0x0F)"));
+        LOG_INFO(QString("   ├─ 🎯 目标: %1 -> %2").arg(senderPid).arg(toPid));
+        LOG_INFO(QString("   ├─ 🚩 类型: 0x%1 (Extra: %2)").arg(QString::number((int)flag, 16)).arg(extraData));
+        LOG_INFO(QString("   └─ 📝 数据: %1").arg(hexPreview));
     }
 
     return packet;
@@ -2240,7 +2234,7 @@ QByteArray Client::createW3GSChatFromHostPacket(const QByteArray &rawBytes, quin
 QByteArray Client::createW3GSSlotInfoJoinPacket(quint8 playerID, const QHostAddress& externalIp, quint16 localPort)
 {
     // 这个包很重要，保留详细日志
-    qDebug().noquote() << "📦 [构建包] W3GS_SLOTINFOJOIN (0x04)";
+    LOG_INFO("📦 [构建包] W3GS_SLOTINFOJOIN (0x04)");
 
     QByteArray packet;
     QDataStream out(&packet, QIODevice::WriteOnly);
@@ -2265,15 +2259,15 @@ QByteArray Client::createW3GSSlotInfoJoinPacket(quint8 playerID, const QHostAddr
     lenStream.skipRawData(2);
     lenStream << totalSize;
 
-    qDebug().noquote() << QString("   ├─ 📏 尺寸: 总长 %1 / 块长 %2").arg(totalSize).arg(slotBlockSize);
-    qDebug().noquote() << QString("   └─ 👤 专属: PID %1 (IP: %2)").arg(playerID).arg(externalIp.toString());
+    LOG_INFO(QString("   ├─ 📏 尺寸: 总长 %1 / 块长 %2").arg(totalSize).arg(slotBlockSize));
+    LOG_INFO(QString("   └─ 👤 专属: PID %1 (IP: %2)").arg(playerID).arg(externalIp.toString()));
 
     // 校验逻辑保持不变，但换成 tree log
     if (packet.size() > 6 + slotBlockSize) {
         int pidOffset = 6 + slotBlockSize;
         quint8 pidInPacket = (quint8)packet.at(pidOffset);
         if (pidInPacket != playerID) {
-            qDebug().noquote() << QString("   └─ ❌ [严重警告] PID 偏移校验失败! (读到: %1)").arg(pidInPacket);
+            LOG_CRITICAL(QString("   └─ ❌ [严重警告] PID 偏移校验失败! (读到: %1)").arg(pidInPacket));
         }
     }
 
@@ -2407,7 +2401,7 @@ QByteArray Client::createW3GSSlotInfoPacket()
 
 QByteArray Client::createW3GSMapCheckPacket()
 {
-    qDebug().noquote() << "📦 [构建包] W3GS_MAPCHECK (0x3D)";
+    LOG_INFO("📦 [构建包] W3GS_MAPCHECK (0x3D)");
 
     QByteArray packet;
     QDataStream out(&packet, QIODevice::WriteOnly);
@@ -2428,7 +2422,7 @@ QByteArray Client::createW3GSMapCheckPacket()
     out << fileSize << fileInfo << fileCRC;
 
     if (sha1.size() != 20) {
-        qDebug().noquote() << QString("   ├─ ⚠️ SHA1 长度异常 (%1) -> 补零").arg(sha1.size());
+        LOG_INFO(QString("   ├─ ⚠️ SHA1 长度异常 (%1) -> 补零").arg(sha1.size()));
         sha1.resize(20);
     }
     out.writeRawData(sha1.data(), 20);
@@ -2440,8 +2434,8 @@ QByteArray Client::createW3GSMapCheckPacket()
     lenStream << totalSize;
 
     QString sha1Hex = sha1.toHex().toUpper();
-    qDebug().noquote() << QString("   ├─ 📊 参数: Size=%1 | CRC=0x%2").arg(fileSize).arg(QString::number(fileCRC, 16).toUpper());
-    qDebug().noquote() << QString("   └─ 🔐 SHA1: %1...").arg(sha1Hex.left(20));
+    LOG_INFO(QString("   ├─ 📊 参数: Size=%1 | CRC=0x%2").arg(fileSize).arg(QString::number(fileCRC, 16).toUpper()));
+    LOG_INFO(QString("   └─ 🔐 SHA1: %1...").arg(sha1Hex.left(20)));
 
     return packet;
 }
@@ -2556,8 +2550,8 @@ QByteArray Client::createW3GSMapPartPacket(quint8 toPid, quint8 fromPid, quint32
 
     // 调试输出
     if (offset == 1442) {
-        qDebug().noquote() << "Sending Chunk 1442. Size:" << chunkData.size()
-        << "CRC:" << QString::number(finalCrc, 16);
+        LOG_INFO(QString("Sending Chunk 1442. Size: %1 CRC: %2")
+                     .arg(QString::number(chunkData.size()), QString::number(finalCrc, 16)));
     }
 
     return packet;
@@ -2618,7 +2612,7 @@ void Client::broadcastSlotInfo(quint8 excludePid)
     broadcastPacket(slotPacket, excludePid);
 
     QString excludeStr = (excludePid != 0) ? QString(" (排除 PID: %1)").arg(excludePid) : "";
-    qDebug().noquote() << QString("📢 [广播状态] 槽位更新 (0x09)%1").arg(excludeStr);
+    LOG_INFO(QString("📢 [广播状态] 槽位更新 (0x09)%1").arg(excludeStr));
 }
 
 // =========================================================
@@ -2627,7 +2621,7 @@ void Client::broadcastSlotInfo(quint8 excludePid)
 
 void Client::initSlots(quint8 maxPlayers)
 {
-    qDebug().noquote() << QString("🧹 [槽位重置] 初始化房间槽位 (Max: %1)").arg(maxPlayers);
+    LOG_INFO(QString("🧹 [槽位重置] 初始化房间槽位 (Max: %1)").arg(maxPlayers));
 
     // 1. 清空旧数据
     m_slots.clear();
@@ -2635,7 +2629,7 @@ void Client::initSlots(quint8 maxPlayers)
 
     // 2. 清空连接
     if (!m_playerSockets.isEmpty()) {
-        qDebug().noquote() << QString("   ├─ 🔌 断开连接: %1 个残留 Socket").arg(m_playerSockets.size());
+        LOG_INFO(QString("   ├─ 🔌 断开连接: %1 个残留 Socket").arg(m_playerSockets.size()));
         for (auto socket : qAsConst(m_playerSockets)) {
             if (socket->state() == QAbstractSocket::ConnectedState) {
                 socket->disconnectFromHost();
@@ -2679,7 +2673,7 @@ void Client::initSlots(quint8 maxPlayers)
         }
     }
 
-    qDebug().noquote() << "   └─ ✨ 状态: 初始化完成 (Bot -> Slot 11)";
+    LOG_INFO("   └─ ✨ 状态: 初始化完成 (Bot -> Slot 11)");
 }
 
 QByteArray Client::serializeSlotData() {
@@ -2736,7 +2730,7 @@ void Client::swapSlots(int slot1, int slot2)
 
     // 3. 越界检查
     if (idx1 < 0 || idx1 >= maxSlots || idx2 < 0 || idx2 >= maxSlots) {
-        qDebug().noquote() << QString("⚠️ [Swap] 索引越界: %1 <-> %2 (Max: %3)").arg(slot1).arg(slot2).arg(maxSlots);
+        LOG_INFO(QString("⚠️ [Swap] 索引越界: %1 <-> %2 (Max: %3)").arg(slot1).arg(slot2).arg(maxSlots));
         return;
     }
 
@@ -2764,9 +2758,9 @@ void Client::swapSlots(int slot1, int slot2)
     // s1.race  vs s2.race   (DotA中 1-5是暗夜, 6-10是不死，必须固定)
 
     // 6. 打印日志
-    qDebug().noquote() << QString("🔄 [Slot] 交换完成: %1 (Team %2) <-> %3 (Team %4)")
+    LOG_INFO(QString("🔄 [Slot] 交换完成: %1 (Team %2) <-> %3 (Team %4)")
                               .arg(slot1).arg(s1.team)
-                              .arg(slot2).arg(s2.team);
+                              .arg(slot2).arg(s2.team));
 
     // 7. 广播更新
     broadcastSlotInfo();
@@ -2959,8 +2953,8 @@ void Client::checkPlayerTimeout()
 
         // 3. 执行踢人
         if (kick) {
-            qDebug().noquote() << QString("👢 [超时踢人] 移除玩家: %1 (PID: %2)").arg(playerData.name).arg(pid);
-            qDebug().noquote() << QString("   └─ 原因: %1").arg(reasonCategory);
+            LOG_INFO(QString("👢 [超时踢人] 移除玩家: %1 (PID: %2)").arg(playerData.name).arg(pid));
+            LOG_INFO(QString("   └─ 原因: %1").arg(reasonCategory));
 
             if (playerData.socket) {
                 // 强制断开，触发 onPlayerDisconnected 清理槽位
