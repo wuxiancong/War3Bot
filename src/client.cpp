@@ -963,15 +963,6 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
             LOG_INFO(QString("   ├─ 👤 发送者: %1 (PID:%2)").arg(senderName).arg(senderPid));
             LOG_INFO(QString("   └─ 💬 内容: %1").arg(msg));
 
-            // 指令处理
-            if (msg.startsWith("/")) {
-                LOG_INFO(QString("      ├─ 🔧 识别为指令: 房主=[%1]").arg(m_host));
-                if (m_command) {
-                    m_command->process(senderPid, msg);
-                    LOG_INFO("      └─ ✅ 指令已执行");
-                }
-            }
-
             // 转发聊天
             MultiLangMsg chatMsg;
             chatMsg.add("CN", QString("%1: %2").arg(senderName, msg));

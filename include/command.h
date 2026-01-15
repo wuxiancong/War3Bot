@@ -12,9 +12,6 @@ public:
     explicit Command(QObject *parent = nullptr);
     ~Command() override;
 
-    // 解析聊天命令
-    void process(quint8 hostPid, const QString &command);
-
 protected:
     void run() override;
 
