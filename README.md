@@ -76,36 +76,42 @@ make -j$(nproc)
 
 为了让 War3Bot 在后台稳定运行，建议配置 Systemd 服务。
 
-# 1. 创建专用系统用户 (无登录权限)
-# -r: 系统账户
-# -d: 指定主目录
-# -s: 禁止 shell 登录
+### 1. 创建专用系统用户 (无登录权限)
+- -r: 系统账户
+- -d: 指定主目录
+- -s: 禁止 shell 登录
+```bash
 sudo useradd -r -s /bin/false -d /opt/War3Bot war3bot
-
-# 2. 创建目录结构
+```
+### 2. 创建目录结构
+```bash
 # /opt/War3Bot      -> 存放程序本体、war3files 资源、地图
 # /etc/War3Bot      -> 仅存放 .ini 配置文件
 # /var/log/War3Bot  -> 存放日志
 sudo mkdir -p /opt/War3Bot/war3files
 sudo mkdir -p /etc/War3Bot
 sudo mkdir -p /var/log/War3Bot
+```
 
-# 3. 设置权限 (修正版)
+### 3. 设置权限 (修正版)
 
-# --- A. 核心程序目录 (/opt) ---
+#### --- A. 核心程序目录 (/opt) ---
+```bash
 # 将所有权给 war3bot 用户
 sudo chown -R war3bot:war3bot /opt/War3Bot
 # 权限设为 755 (目录) 或 644 (文件) 是可以的，因为这些是二进制文件，不怕看
 sudo chmod -R 755 /opt/War3Bot
-
-# --- B. 日志目录 (/var/log) ---
+```
+#### --- B. 日志目录 (/var/log) ---
+```bash
 # 必须给 war3bot 用户写入权限
 sudo chown -R war3bot:war3bot /var/log/War3Bot
 # 权限设为 750 (只有拥有者和组可读，其他人无权访问)
 # 防止其他用户偷看日志里的 IP 或聊天记录
 sudo chmod 750 /var/log/War3Bot
-
-# --- C. 配置文件目录 (/etc) ---
+```
+#### --- C. 配置文件目录 (/etc) ---
+```bash
 # ⚠️ 关键安全设置 ⚠️
 # 将目录所有权给 war3bot
 sudo chown -R war3bot:war3bot /etc/War3Bot
