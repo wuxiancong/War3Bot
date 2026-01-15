@@ -1419,7 +1419,11 @@ void Client::onGameStarted()
 
     // 3. 重置剩余玩家的加载状态
     for (auto it = m_players.begin(); it != m_players.end(); ++it) {
-        it.value().isFinishedLoading = false;
+        if (it.key() != 1) {
+            it.value().isFinishedLoading = false;
+        } else {
+            it.value().isFinishedLoading = true;
+        }
         LOG_INFO(QString("⏳ [加载追踪] 正在等待玩家: %1 (PID: %2)").arg(it.value().name).arg(it.key()));
     }
 
