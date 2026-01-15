@@ -2691,10 +2691,12 @@ void Client::broadcastSlotInfo(quint8 excludePid)
 
 void Client::initSlots(quint8 maxPlayers, bool showBotAtObserver)
 {
-    if (maxPlayers < 1) maxPlayers = 12;
     quint8 actualSlotCount = maxPlayers;
+    if (maxPlayers < 1) actualSlotCount = 10;
     if (maxPlayers == 12) {
         actualSlotCount = 13;
+    } else if(maxPlayers == 10) {
+        actualSlotCount = 11;
     }
 
     LOG_INFO(QString("🧹 [槽位重置] 请求: %1 | 实际分配: %2 | Bot安排到裁判位: %3")
