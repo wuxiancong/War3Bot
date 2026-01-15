@@ -2705,7 +2705,7 @@ void Client::initSlots(quint8 maxPlayers)
     // 2. 初始化槽位
     for (quint8 i = 0; i < maxPlayers; ++i) {
         m_slots[i] = GameSlot();
-        m_slots[i].color = i + 1;
+        m_slots[i].color = i;
 
         if (i < 5) {
             m_slots[i].team = (quint8)SlotTeam::Sentinel;
@@ -2735,7 +2735,7 @@ void Client::initSlots(quint8 maxPlayers)
             m_slots[i].computer = Human;
             m_slots[i].slotStatus = Occupied;
             m_slots[i].downloadStatus = Completed;
-            m_slots[i].computerType = Normal;
+            m_slots[i].computerType = Easy;
             m_slots[i].handicap = 100;
         }
     }
@@ -2896,10 +2896,10 @@ bool Client::isHostJoined()
 
 void Client::checkAllPlayersLoaded()
 {
-    // 如果游戏逻辑时钟已经在跑了，就不要再检查了
+    // 如果游戏逻辑时钟已经在跑，不要再检查
     if (m_gameTickTimer->isActive()) return;
 
-    // 如果游戏还没正式开始（还在倒计时或大厅），也不检查
+    // 如果游戏还没正式开始，也不检查
     if (!m_gameStarted) return;
 
     bool allLoaded = true;
@@ -2923,18 +2923,13 @@ void Client::checkAllPlayersLoaded()
         }
     }
 
-    // 只有当存在真实玩家时才打印进度，避免刷屏
     if (totalCount > 0) {
         LOG_INFO(QString("📊 [加载统计] 进度: %1/%2").arg(loadedCount).arg(totalCount));
     }
 
-    // 如果所有人都好了（或者房间里只有机器人，用来测试的情况）
     if (allLoaded) {
         LOG_INFO("✅ [游戏就绪] 所有玩家加载完毕！");
         LOG_INFO(QString("⏰ [游戏循环] 启动时钟同步 (Tick: %1 ms)").arg(m_gameTickInterval));
-
-        // 启动心跳，这是真正开始传输游戏数据的时刻
-        // 客户端收到第一个 0x0C 包后，加载条才会消失进入游戏画面
         m_gameTickTimer->start();
     }
 }
