@@ -305,14 +305,13 @@ int BotManager::loadMoreBots(int count)
     int loadedCount = 0;
 
     while (loadedCount < count) {
-        // 资源耗尽检查
         if (m_currentFileIndex >= m_allAccountFilePaths.size()) {
             LOG_INFO("   │  └─ ⚠️ [资源耗尽] 所有账号文件已全部加载完毕");
             break;
         }
 
         QString currentFullPath = m_allAccountFilePaths[m_currentFileIndex];
-        QString fileName = QFileInfo(currentFullPath).fileName(); // 只显示文件名，保持日志整洁
+        QString fileName = QFileInfo(currentFullPath).fileName();
 
         QFile file(currentFullPath);
         if (!file.open(QIODevice::ReadOnly)) {
@@ -1498,7 +1497,9 @@ bool BotManager::createBotAccountFilesIfNotExist(bool allowAutoGenerate, int tar
     }
 
     if (m_allAccountFilePaths.isEmpty()) {
-        LOG_WARNING(QString("   └─ ⚠️ 警告: 列表 #%1 的文件未找到或未生成！").arg(targetListNumber));
+        LOG_WARNING(QString("   └─ ⚠️ [警告] 最终加载列表为空！请检查 list_number=%1 是否有对应的 bots_auto_%2.json 文件").arg(targetListNumber).arg(targetListNumber, 2, 10, QChar('0')));
+    } else {
+        LOG_INFO(QString("   └─ 📋 最终加载列表包含 %1 个文件").arg(m_allAccountFilePaths.size()));
     }
 
     return generatedAny;

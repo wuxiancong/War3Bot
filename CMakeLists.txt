@@ -11,18 +11,13 @@ if(WIN32)
 
     # 1.2 指定 Qt5 路径
     if(MSVC)
-        set(CMAKE_PREFIX_PATH "D:/Qt/5.15.2/msvc2019" CACHE PATH "Qt5 Path" FORCE)
-    elseif(MINGW)
-        # 注意：这里是你之前硬编码的 64位，如果是 32位环境请自行修改
-        set(CMAKE_PREFIX_PATH "D:/Qt/5.15.2/mingw81_64" CACHE PATH "Qt5 Path" FORCE)
+        # 1.3 指定 Ninja (仅在 Windows 下强制指定)
+        set(CMAKE_MAKE_PROGRAM "D:/Qt/Tools/Ninja/ninja.exe" CACHE FILEPATH "Program used to build from makefiles" FORCE)
+
+        # 1.4 指定编译器工具 (rc 和 mt)
+        set(CMAKE_RC_COMPILER "C:/Program Files (x86)/Windows Kits/10/bin/10.0.26100.0/x86/rc.exe" CACHE FILEPATH "Resource Compiler" FORCE)
+        set(CMAKE_MT "C:/Program Files (x86)/Windows Kits/10/bin/10.0.26100.0/x86/mt.exe" CACHE FILEPATH "Manifest Tool" FORCE)
     endif()
-
-    # 1.3 指定 Ninja (仅在 Windows 下强制指定)
-    set(CMAKE_MAKE_PROGRAM "D:/Qt/Tools/Ninja/ninja.exe" CACHE FILEPATH "Program used to build from makefiles" FORCE)
-
-    # 1.4 指定编译器工具 (rc 和 mt)
-    set(CMAKE_RC_COMPILER "C:/Program Files (x86)/Windows Kits/10/bin/10.0.26100.0/x86/rc.exe" CACHE FILEPATH "Resource Compiler" FORCE)
-    set(CMAKE_MT "C:/Program Files (x86)/Windows Kits/10/bin/10.0.26100.0/x86/mt.exe" CACHE FILEPATH "Manifest Tool" FORCE)
 endif()
 
 # 1.5 设置默认构建类型为 Release
