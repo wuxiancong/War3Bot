@@ -94,7 +94,7 @@ public:
 
     // --- 初始化与文件管理 ---
     void initializeBots(quint32 initialCount, const QString &configPath);
-    bool createBotAccountFilesIfNotExist(bool allowAutoGenerate);
+    bool createBotAccountFilesIfNotExist(bool allowAutoGenerate, int targetListNumber);
 
     // --- 机器人控制 ---
     void startAll();

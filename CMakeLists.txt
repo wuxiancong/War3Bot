@@ -1,30 +1,36 @@
 cmake_minimum_required(VERSION 3.16)
+
 # =========================================================
 # 1. 核心环境配置
 # =========================================================
 
-# 1.1 强制指定 Windows SDK 版本
-set(CMAKE_SYSTEM_VERSION "10.0.26100.0" CACHE STRING "Windows SDK Version" FORCE)
+# 将 Windows 特有的硬编码配置限制在 WIN32 范围内
+if(WIN32)
+    # 1.1 强制指定 Windows SDK 版本
+    set(CMAKE_SYSTEM_VERSION "10.0.26100.0" CACHE STRING "Windows SDK Version" FORCE)
 
-# 1.2 指定 Qt5 路径
-if(MSVC)
-    set(CMAKE_PREFIX_PATH "D:/Qt/5.15.2/msvc2019" CACHE PATH "Qt5 Path" FORCE)
-elseif(MINGW)
-    set(CMAKE_PREFIX_PATH "D:/Qt/5.15.2/mingw81_64" CACHE PATH "Qt5 Path" FORCE)
+    # 1.2 指定 Qt5 路径
+    if(MSVC)
+        set(CMAKE_PREFIX_PATH "D:/Qt/5.15.2/msvc2019" CACHE PATH "Qt5 Path" FORCE)
+    elseif(MINGW)
+        # 注意：这里是你之前硬编码的 64位，如果是 32位环境请自行修改
+        set(CMAKE_PREFIX_PATH "D:/Qt/5.15.2/mingw81_64" CACHE PATH "Qt5 Path" FORCE)
+    endif()
+
+    # 1.3 指定 Ninja (仅在 Windows 下强制指定)
+    set(CMAKE_MAKE_PROGRAM "D:/Qt/Tools/Ninja/ninja.exe" CACHE FILEPATH "Program used to build from makefiles" FORCE)
+
+    # 1.4 指定编译器工具 (rc 和 mt)
+    set(CMAKE_RC_COMPILER "C:/Program Files (x86)/Windows Kits/10/bin/10.0.26100.0/x86/rc.exe" CACHE FILEPATH "Resource Compiler" FORCE)
+    set(CMAKE_MT "C:/Program Files (x86)/Windows Kits/10/bin/10.0.26100.0/x86/mt.exe" CACHE FILEPATH "Manifest Tool" FORCE)
 endif()
-
-# 1.3 指定 Ninja
-set(CMAKE_MAKE_PROGRAM "D:/Qt/Tools/Ninja/ninja.exe" CACHE FILEPATH "Program used to build from makefiles" FORCE)
-
-# 1.4 指定编译器工具 (rc 和 mt)
-set(CMAKE_RC_COMPILER "C:/Program Files (x86)/Windows Kits/10/bin/10.0.26100.0/x86/rc.exe" CACHE FILEPATH "Resource Compiler" FORCE)
-set(CMAKE_MT "C:/Program Files (x86)/Windows Kits/10/bin/10.0.26100.0/x86/mt.exe" CACHE FILEPATH "Manifest Tool" FORCE)
 
 # 1.5 设置默认构建类型为 Release
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     message(STATUS ">> 未检测到构建类型，强制默认为: Release")
     set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Choose the type of build." FORCE)
 endif()
+
 # =========================================================
 # 2. 基础配置
 # =========================================================
@@ -52,6 +58,7 @@ endif()
 
 # 编译器选项
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    # Linux (GCC/Clang) 通用选项
     add_compile_options(-Wall -Wextra -O2)
 elseif(MSVC)
     set(CMAKE_GENERATOR_PLATFORM Win32)
@@ -126,22 +133,22 @@ if(MSVC)
         COMMAND ${CMAKE_COMMAND} -E copy_if_different "${GMP_ROOT}/bin/gmp-10.dll" "$<TARGET_FILE_DIR:War3Bot>/gmp-10.dll"
         COMMENT "部署 gmp-10.dll..."
     )
-if(EXISTS "${GMP_ROOT}/bin/gmpxx-4.dll")
-    add_custom_command(TARGET War3Bot POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${GMP_ROOT}/bin/gmpxx-4.dll" "$<TARGET_FILE_DIR:War3Bot>/gmpxx-4.dll"
-        COMMENT "部署 gmpxx-4.dll..."
-    )
-endif()
+    if(EXISTS "${GMP_ROOT}/bin/gmpxx-4.dll")
+        add_custom_command(TARGET War3Bot POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different "${GMP_ROOT}/bin/gmpxx-4.dll" "$<TARGET_FILE_DIR:War3Bot>/gmpxx-4.dll"
+            COMMENT "部署 gmpxx-4.dll..."
+        )
+    endif()
 
-# [StormLib]
-set(STORMLIB_ROOT "${LOCAL_LIB_ROOT}/msvc/stormLib")
-target_include_directories(War3Bot PRIVATE "${STORMLIB_ROOT}/include")
-target_link_libraries(War3Bot PRIVATE
-    "${STORMLIB_ROOT}/lib/StormLib.lib"
-    "${STORMLIB_ROOT}/lib/zlib.lib"
-    "${STORMLIB_ROOT}/lib/bz2.lib"
-)
-target_compile_definitions(War3Bot PRIVATE STORMLIB_NO_AUTO_LINK_LIB)
+    # [StormLib]
+    set(STORMLIB_ROOT "${LOCAL_LIB_ROOT}/msvc/stormLib")
+    target_include_directories(War3Bot PRIVATE "${STORMLIB_ROOT}/include")
+    target_link_libraries(War3Bot PRIVATE
+        "${STORMLIB_ROOT}/lib/StormLib.lib"
+        "${STORMLIB_ROOT}/lib/zlib.lib"
+        "${STORMLIB_ROOT}/lib/bz2.lib"
+    )
+    target_compile_definitions(War3Bot PRIVATE STORMLIB_NO_AUTO_LINK_LIB)
 
 # --- Windows (MinGW) ---
 elseif(MINGW)
@@ -179,18 +186,18 @@ elseif(UNIX)
             pthread
             dl
         )
-else()
-    message(FATAL_ERROR "未在 ${LINUX_STORM_LIB} 找到库文件！请在 Linux 上编译 StormLib 并放入该目录。")
-endif()
+    else()
+        message(FATAL_ERROR "未在 ${LINUX_STORM_LIB} 找到库文件！请在 Linux 上编译 StormLib 并放入该目录。")
+    endif()
 
-# [GMP] (通常使用系统库)
-find_library(GMP_LIB gmp)
-find_library(GMPXX_LIB gmpxx)
-if(GMP_LIB)
-    target_link_libraries(War3Bot PRIVATE ${GMPXX_LIB} ${GMP_LIB})
-else()
-    message(FATAL_ERROR "未找到 GMP 系统库，请运行: apt-get install libgmp-dev")
-endif()
+    # [GMP] (通常使用系统库)
+    find_library(GMP_LIB gmp)
+    find_library(GMPXX_LIB gmpxx)
+    if(GMP_LIB)
+        target_link_libraries(War3Bot PRIVATE ${GMPXX_LIB} ${GMP_LIB})
+    else()
+        message(FATAL_ERROR "未找到 GMP 系统库，请运行: apt-get install libgmp-dev")
+    endif()
 
 endif()
 
@@ -209,6 +216,7 @@ if(WIN32)
         wininet
     )
 endif()
+
 # =========================================================
 # 7. 安装配置
 # =========================================================
@@ -225,10 +233,10 @@ if(UNIX AND NOT APPLE)
         PERMISSIONS OWNER_READ OWNER_WRITE # 默认给 600 权限 (安全)
     )
 
-# 2. 安装 war3files 文件夹 -> /opt/War3Bot/war3files
-install(DIRECTORY war3files
-    DESTINATION "war3files"
-    FILE_PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ
-    DIRECTORY_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
-)
+    # 2. 安装 war3files 文件夹 -> /opt/War3Bot/war3files
+    install(DIRECTORY war3files
+        DESTINATION "war3files"
+        FILE_PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ
+        DIRECTORY_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
+    )
 endif()

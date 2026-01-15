@@ -150,15 +150,19 @@ void BotManager::initializeBots(quint32 initialCount, const QString &configPath)
     m_targetPort = settings.value("bnet/port", 6112).toUInt();
 
     bool autoGenerate = settings.value("bots/auto_generate", false).toBool();
+    int listNumber = settings.value("bots/list_number", 1).toInt();
 
     m_initialLoginCount = initialCount;
+    if (listNumber < 1) listNumber = 1;
+    if (listNumber > 10) listNumber = 10;
 
     LOG_INFO(QString("   ├─ ⚙️ 加载配置: %1").arg(QFileInfo(configPath).fileName()));
     LOG_INFO(QString("   │  ├─ 🖥️ 服务器: %1:%2").arg(m_targetServer).arg(m_targetPort));
-    LOG_INFO(QString("   │  └─ 🏭 自动生成: %1").arg(autoGenerate ? "✅ 开启" : "⛔ 关闭"));
+    LOG_INFO(QString("   │  ├─ 🏭 自动生成: %1").arg(autoGenerate ? "✅ 开启" : "⛔ 关闭"));
+    LOG_INFO(QString("   │  └─ 📑 列表编号: #%1 (仅加载 bots_auto_%2.json)").arg(listNumber).arg(listNumber, 2, 10, QChar('0')));
 
     // 4. 生成或加载文件
-    bool isNewFiles = createBotAccountFilesIfNotExist(autoGenerate);
+    bool isNewFiles = createBotAccountFilesIfNotExist(autoGenerate, listNumber);
 
     // 5. 根据文件状态决定流程
     if (isNewFiles) {
@@ -241,10 +245,10 @@ void BotManager::processNextRegistration()
         int percent = (int)((double)current / m_totalRegistrationCount * 100);
         // 使用 ├─ 模拟它是初始化过程中的一个持续子项
         LOG_INFO(QString("      ├─ ⏳ [注册进度] %1/%2 (%3%) -> 当前: %4")
-                                  .arg(current, 3) // 占位符对齐
-                                  .arg(m_totalRegistrationCount)
-                                  .arg(percent, 2)
-                                  .arg(user));
+                     .arg(current, 3) // 占位符对齐
+                     .arg(m_totalRegistrationCount)
+                     .arg(percent, 2)
+                     .arg(user));
     }
 
     // 3. 执行注册逻辑
@@ -333,9 +337,9 @@ int BotManager::loadMoreBots(int count)
 
         // 打印文件节点信息
         LOG_INFO(QString("   │  ├─ 📂 读取来源: %1 (当前进度: %2/%3)")
-                                  .arg(fileName)
-                                  .arg(m_currentAccountIndex)
-                                  .arg(totalInFile));
+                     .arg(fileName)
+                     .arg(m_currentAccountIndex)
+                     .arg(totalInFile));
         // 提取账号循环
         while (loadedCount < count && m_currentAccountIndex < totalInFile) {
             QJsonObject obj = array[m_currentAccountIndex].toObject();
@@ -365,7 +369,7 @@ int BotManager::loadMoreBots(int count)
     // 2. 打印总结
     QString statusIcon = (loadedCount >= count) ? "✅" : "⚠️";
     LOG_INFO(QString("   └─ %1 [加载统计] 实际增加: %2 / 目标: %3")
-                              .arg(statusIcon).arg(loadedCount).arg(count));
+                 .arg(statusIcon).arg(loadedCount).arg(count));
 
     return loadedCount;
 }
@@ -725,7 +729,7 @@ void BotManager::onCommandReceived(const QString &userName, const QString &clien
         int availableBytes = MAX_BYTES - suffixBytes;
 
         LOG_INFO(QString("   ├─ 📏 空间计算: 总限 %1 Bytes | 后缀占用 %2 Bytes | 剩余可用 %3 Bytes")
-                                  .arg(MAX_BYTES).arg(suffixBytes).arg(availableBytes));
+                     .arg(MAX_BYTES).arg(suffixBytes).arg(availableBytes));
 
         if (availableBytes <= 0) {
             LOG_ERROR("   └─ ❌ 失败: 后缀过长，无空间容纳房名");
@@ -763,7 +767,7 @@ void BotManager::onCommandReceived(const QString &userName, const QString &clien
         // 打印截断结果
         if (wasTruncated) {
             LOG_INFO(QString("   ├─ ✂️ 触发截断: 原始 %1 Bytes -> 截断后 %2 Bytes")
-                                      .arg(originalSize).arg(nameBytes.size()));
+                         .arg(originalSize).arg(nameBytes.size()));
         }
 
         LOG_INFO(QString("   ├─ ✅ 最终房名: [%1]").arg(finalGameName));
@@ -1304,7 +1308,7 @@ QString BotManager::generateUniqueUsername()
     return baseName;
 }
 
-bool BotManager::createBotAccountFilesIfNotExist(bool allowAutoGenerate)
+bool BotManager::createBotAccountFilesIfNotExist(bool allowAutoGenerate, int targetListNumber)
 {
     LOG_INFO("🔐 [账号管理] 启动账号文件检查流程 (目标: 1000 个拟人化账号)");
 
@@ -1402,6 +1406,7 @@ bool BotManager::createBotAccountFilesIfNotExist(bool allowAutoGenerate)
     QSet<QString> generatedSet;
 
     for (int i = 1; i <= FILE_COUNT; ++i) {
+        bool isTargetList = (i == targetListNumber);
         QString fileName = QString("bots_auto_%1.json").arg(i, 2, 10, QChar('0'));
         QString fullPath = configDir + "/" + fileName;
 
@@ -1412,16 +1417,24 @@ bool BotManager::createBotAccountFilesIfNotExist(bool allowAutoGenerate)
 
         // Case A: 文件已存在
         if (QFile::exists(fullPath)) {
-            LOG_INFO(QString("%1✅ [已就绪] %2").arg(branch, fileName));
-            m_allAccountFilePaths.append(fullPath);
+            if (isTargetList) {
+                LOG_INFO(QString("%1✅ [已选中] %2").arg(branch, fileName));
+                m_allAccountFilePaths.append(fullPath);
+            } else {
+                LOG_INFO(QString("%1   [已忽略] %2 (非当前列表)").arg(branch, fileName));
+            }
             continue;
         }
 
         // Case B: 文件不存在，检查开关
         if (!allowAutoGenerate) {
-            LOG_WARNING(QString("%1❌ [缺失] %2 (自动生成已关闭，跳过)").arg(branch, fileName));
+            if (isTargetList) {
+                LOG_WARNING(QString("%1❌ [缺失] %2 (自动生成已关闭，无法启动)").arg(branch, fileName));
+            }
             continue;
         }
+
+        if (!isTargetList) continue;
 
         // Case C: 需要生成
         LOG_INFO(QString("%1🆕 [生成中] %2 (包含 %3 个账号)").arg(branch, fileName).arg(BOTS_PER_FILE));
@@ -1455,10 +1468,15 @@ bool BotManager::createBotAccountFilesIfNotExist(bool allowAutoGenerate)
             file.write(jsonData);
             file.close();
 
-            m_allAccountFilePaths.append(fullPath);
-            m_newAccountFilePaths.append(fullPath);
+            if (isTargetList) {
+                m_allAccountFilePaths.append(fullPath);
+                m_newAccountFilePaths.append(fullPath);
+                LOG_INFO(QString("%1├─ 💾 写入并选中: %2").arg(indent, fileName));
+            } else {
+                LOG_INFO(QString("%1├─ 💾 写入成功: %2").arg(indent, fileName));
+            }
+
             generatedAny = true;
-            LOG_INFO(QString("%1├─ 💾 写入成功: %2").arg(indent, fileName));
 
 #ifdef APP_SOURCE_DIR
             QString srcConfigDirStr = QString(APP_SOURCE_DIR) + "/config";
@@ -1477,6 +1495,10 @@ bool BotManager::createBotAccountFilesIfNotExist(bool allowAutoGenerate)
         } else {
             LOG_ERROR(QString("%1└─ ❌ 写入失败 (%2)").arg(indent, file.errorString()));
         }
+    }
+
+    if (m_allAccountFilePaths.isEmpty()) {
+        LOG_WARNING(QString("   └─ ⚠️ 警告: 列表 #%1 的文件未找到或未生成！").arg(targetListNumber));
     }
 
     return generatedAny;
