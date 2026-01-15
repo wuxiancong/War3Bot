@@ -1414,28 +1414,32 @@ void Client::onGameStarted()
     // 1. 标记状态
     m_gameStarted = true;
 
-    // 2. 发送倒计时结束包 (0x0B)
+    // 2. 发送倒计时结束包 - 告诉客户端进加载画面
     broadcastPacket(createW3GSCountdownEndPacket(), 0);
 
-    // 3. 停止 Ping 循环
+    // 3. 停止 Ping 循环 (防止在大厅外的 Ping 包干扰)
     if (m_pingTimer && m_pingTimer->isActive()) {
         m_pingTimer->stop();
     }
 
     LOG_INFO("🚀 [游戏启动] 倒计时结束，进入加载界面");
 
-    // 4. 重置所有玩家的加载状态 (防止残留状态)
-    for (auto &player : m_players) {
-        player.isFinishedLoading = false;
+    // 4. 重置玩家加载状态
+    for (auto it = m_players.begin(); it != m_players.end(); ++it) {
+        if (it.key() == 1) {
+            it.value().isFinishedLoading = true;
+        } else {
+            it.value().isFinishedLoading = false;
+        }
     }
 
-    // 5. 模拟 Bot (PID 1) 加载完成
-    // Bot 是主机，秒加载
+    // 5. 广播 Bot 加载完成
     QByteArray botLoadedPacket = createW3GSPlayerLoadedPacket(1);
     broadcastPacket(botLoadedPacket, 0);
 
-    LOG_INFO("🚀 [游戏启动] Bot 加载完成 (PID 1)");
+    LOG_INFO("🚀 [游戏启动] Bot 状态已同步 (PID 1 Loaded)");
 
+    // 6. 检查是否所有人都加载完
     checkAllPlayersLoaded();
 
     emit gameStarted();
@@ -2030,12 +2034,12 @@ void Client::createGame(const QString &gameName, const QString &password, Provid
 
     if (!m_war3Map.isValid() || m_lastLoadedMapPath != m_currentMapPath) {
 
-        LOG_INFO(QString("   ├─ 🔄 正在加载地图文件: %1 ...").arg(m_dota683dPath));
+        LOG_INFO(QString("   ├─ 🔄 正在加载地图文件: %1 ...").arg(m_currentMapPath));
         QElapsedTimer timer;
         timer.start();
 
         if (!m_war3Map.load(m_currentMapPath)) {
-            LOG_CRITICAL(QString("   └─ ❌ [严重错误] 地图加载失败: %1").arg(m_dota683dPath));
+            LOG_CRITICAL(QString("   └─ ❌ [严重错误] 地图加载失败: %1").arg(m_currentMapPath));
             return;
         }
 
@@ -2044,7 +2048,7 @@ void Client::createGame(const QString &gameName, const QString &password, Provid
 
         LOG_INFO(QString("   ├─ ✅ 地图加载完毕 (耗时: %1 ms)").arg(timer.elapsed()));
     } else {
-        LOG_INFO(QString("   ├─ ⚡️ 命中内存缓存，跳过加载: %1").arg(QFileInfo(m_dota683dPath).fileName()));
+        LOG_INFO(QString("   ├─ ⚡️ 命中内存缓存，跳过加载: %1").arg(QFileInfo(m_currentMapPath).fileName()));
     }
 
     QString mapName = QFileInfo(m_lastLoadedMapPath).fileName();
@@ -2795,7 +2799,7 @@ quint8  Client::getOccupiedSlots() const
 
 void Client::swapSlots(int slot1, int slot2)
 {
-    // 1. 基础校验：游戏未开始且处于连接状态
+    // 1. 基础校验
     if (m_gameStarted || !isConnected()) return;
 
     int maxSlots = m_slots.size();
@@ -2810,17 +2814,16 @@ void Client::swapSlots(int slot1, int slot2)
         return;
     }
 
-    // 4. 保护检查 (防止交换 HostBot 自身，通常 Bot 在 PID 1)
+    // 4. 保护检查 (防止交换 HostBot，PID 1)
     if (m_slots[idx1].pid == 1 || m_slots[idx2].pid == 1) {
-        // 可选：发送聊天提示
         return;
     }
 
-    // 5. 只交换玩家数据，不交换房间属性
+    // 5. 获取引用
     GameSlot &s1 = m_slots[idx1];
     GameSlot &s2 = m_slots[idx2];
 
-    // [A] 交换玩家身份与状态
+    // [A] 交换玩家身份与状态 (PID, 下载状态, 槽位开关, 电脑设置)
     std::swap(s1.pid,            s2.pid);            // 交换 PID
     std::swap(s1.downloadStatus, s2.downloadStatus); // 交换下载进度
     std::swap(s1.slotStatus,     s2.slotStatus);     // 交换开/关/占用状态
@@ -2834,9 +2837,12 @@ void Client::swapSlots(int slot1, int slot2)
     // s1.race  vs s2.race   (DotA中 1-5是暗夜, 6-10是不死，必须固定)
 
     // 6. 打印日志
+    // s1.team 是 quint8，直接 arg() 会变成不可见字符或导致崩溃
     LOG_INFO(QString("🔄 [Slot] 交换完成: %1 (Team %2) <-> %3 (Team %4)")
-                 .arg(slot1).arg(s1.team)
-                 .arg(slot2).arg(s2.team));
+                 .arg(slot1)
+                 .arg((int)s1.team)
+                 .arg(slot2)
+                 .arg((int)s2.team));
 
     // 7. 广播更新
     broadcastSlotInfo();
@@ -2890,20 +2896,26 @@ bool Client::isHostJoined()
 
 void Client::checkAllPlayersLoaded()
 {
-    // 如果已经在运行了，就不要重复启动
+    // 如果游戏逻辑时钟已经在跑了，就不要再检查了
     if (m_gameTickTimer->isActive()) return;
+
+    // 如果游戏还没正式开始（还在倒计时或大厅），也不检查
     if (!m_gameStarted) return;
 
     bool allLoaded = true;
     int loadedCount = 0;
     int totalCount = 0;
 
-    // 遍历所有真实玩家
+    // 遍历所有玩家
     for (auto it = m_players.begin(); it != m_players.end(); ++it) {
-        if (it.key() == 1) continue;
+        quint8 pid = it.key();
+
+        // 跳过机器人 PID 1
+        if (pid == 1) continue;
 
         totalCount++;
 
+        // 检查真实玩家状态
         if (!it.value().isFinishedLoading) {
             allLoaded = false;
         } else {
@@ -2911,13 +2923,18 @@ void Client::checkAllPlayersLoaded()
         }
     }
 
-    LOG_INFO(QString("📊 [加载统计] 进度: %1/%2").arg(loadedCount).arg(totalCount));
+    // 只有当存在真实玩家时才打印进度，避免刷屏
+    if (totalCount > 0) {
+        LOG_INFO(QString("📊 [加载统计] 进度: %1/%2").arg(loadedCount).arg(totalCount));
+    }
 
+    // 如果所有人都好了（或者房间里只有机器人，用来测试的情况）
     if (allLoaded) {
         LOG_INFO("✅ [游戏就绪] 所有玩家加载完毕！");
         LOG_INFO(QString("⏰ [游戏循环] 启动时钟同步 (Tick: %1 ms)").arg(m_gameTickInterval));
 
-        // 启动心跳，正式开始游戏逻辑
+        // 启动心跳，这是真正开始传输游戏数据的时刻
+        // 客户端收到第一个 0x0C 包后，加载条才会消失进入游戏画面
         m_gameTickTimer->start();
     }
 }
