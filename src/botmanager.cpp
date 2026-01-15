@@ -305,8 +305,15 @@ int BotManager::loadMoreBots(int count)
     int loadedCount = 0;
 
     while (loadedCount < count) {
+        // 资源耗尽检查
         if (m_currentFileIndex >= m_allAccountFilePaths.size()) {
             LOG_INFO("   │  └─ ⚠️ [资源耗尽] 所有账号文件已全部加载完毕");
+            LOG_INFO(QString("   │     ├─ 📊 当前索引: %1").arg(m_currentFileIndex));
+            LOG_INFO(QString("   │     └─ 🗃️ 文件总数: %1").arg(m_allAccountFilePaths.size()));
+            if (m_allAccountFilePaths.isEmpty()) {
+                LOG_ERROR("   │        └─ ❌ [异常] 加载列表为空！(请检查 list_number 配置或文件生成逻辑)");
+            }
+
             break;
         }
 
@@ -1309,7 +1316,7 @@ QString BotManager::generateUniqueUsername()
 
 bool BotManager::createBotAccountFilesIfNotExist(bool allowAutoGenerate, int targetListNumber)
 {
-    LOG_INFO("🔐 [账号管理] 启动账号文件检查流程 (目标: 1000 个拟人化账号)");
+    LOG_INFO("🔐 [账号管理] 启动账号文件检查流程");
 
     // 1. 确定配置目录
     QString configDir;
@@ -1324,70 +1331,32 @@ bool BotManager::createBotAccountFilesIfNotExist(bool allowAutoGenerate, int tar
     bool foundExistingDir = false;
     for (const QString &path : qAsConst(searchPaths)) {
         QDir checkDir(path);
-        if (checkDir.exists() && !checkDir.isEmpty()) {
+        if (checkDir.exists()) {
             configDir = path;
             foundExistingDir = true;
             break;
         }
     }
 
-    if (!foundExistingDir) {
-        QString defaultDir = QCoreApplication::applicationDirPath() + "/config";
+    // 情况 A: 目录没找到，且不允许自动生成 -> 报错并提前返回
+    if (!foundExistingDir && !allowAutoGenerate) {
+        LOG_ERROR("❌ [致命错误] 未找到配置目录，且自动生成已关闭 (auto_gen=false)。");
+        LOG_INFO("   ├─ 请手动创建目录: config/");
+        LOG_INFO("   └─ 或者在 war3bot.ini 中设置 [bots] auto_generate=true");
+        return false;
+    }
 
-        LOG_INFO("------------------------------------------------------------");
-        LOG_WARNING("⚠️  [警告] 未在标准搜索路径中找到配置文件。");
-        LOG_INFO(QString("❓ 建议路径: %1").arg(defaultDir));
-        LOG_INFO("❓ 是否直接在该路径生成新账号文件? (y/n): ");
-
-        fflush(stdout);
-        QTextStream qin(stdin);
-        QString answer = qin.readLine().trimmed().toLower();
-
-        if (answer == "y" || answer == "yes" || answer.isEmpty()) {
-            configDir = defaultDir;
-            QDir dir(configDir);
-            if (!dir.exists()) dir.mkpath(".");
-        }
-        else {
-#ifdef Q_OS_LINUX
-            // --- 尝试从系统目录复制 ---
-            QString sysConfigPath = "/etc/War3Bot/config";
-            QDir sysDir(sysConfigPath);
-
-            if (sysDir.exists() && !sysDir.isEmpty()) {
-                LOG_INFO(QString("🔍 检测到系统配置: %1").arg(sysConfigPath));
-                LOG_INFO("❓ 是否复制到运行目录? (y/n): ");
-
-                if (qin.readLine().trimmed().toLower().startsWith("y")) {
-                    QDir destDir(defaultDir);
-                    if (!destDir.exists()) destDir.mkpath(".");
-
-                    // 确保 .service 也被复制
-                    QStringList filters;
-                    filters << "*.ini" << "*.json" << "*.service";
-
-                    QFileInfoList files = sysDir.entryInfoList(filters, QDir::Files);
-                    if (files.isEmpty()) {
-                        LOG_WARNING("   ⚠️ 系统目录为空，无法复制。");
-                        return false;
-                    }
-
-                    for (const QFileInfo &fileInfo : files) {
-                        QString destFile = destDir.filePath(fileInfo.fileName());
-                        if (QFile::exists(destFile)) QFile::remove(destFile);
-                        QFile::copy(fileInfo.absoluteFilePath(), destFile);
-                        LOG_INFO(QString("   │  ✅ 复制成功: %1").arg(fileInfo.fileName()));
-                    }
-                    configDir = defaultDir; // 设定成功
-                } else {
-                    return false; // 用户放弃
-                }
+    // 情况 B: 目录没找到，但允许自动生成 -> 创建默认目录并继续
+    if (!foundExistingDir && allowAutoGenerate) {
+        configDir = QCoreApplication::applicationDirPath() + "/config";
+        QDir dir(configDir);
+        if (!dir.exists()) {
+            if (dir.mkpath(".")) {
+                LOG_INFO(QString("✨ [自动创建] 已创建配置目录: %1").arg(configDir));
             } else {
-                return false; // 无系统配置
+                LOG_ERROR(QString("❌ [致命错误] 无法创建目录 (权限不足?): %1").arg(configDir));
+                return false;
             }
-#else
-            return false;
-#endif
         }
     }
 

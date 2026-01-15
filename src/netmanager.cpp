@@ -38,19 +38,39 @@ NetManager::NetManager(QObject *parent)
     , m_nextSessionId(1000)
     , m_serverSeq(0)
 {
-    // 1. 获取系统标准数据目录
-    QString dataRoot = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
-    if (dataRoot.isEmpty()) {
-        dataRoot = QCoreApplication::applicationDirPath();
+    // 1. 优先尝试标准的缓存目录 (Linux: ~/.cache/..., Win: AppData/Local/...)
+    QString writeRoot = QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
+
+    // 2. 如果 CacheLocation 不可用，尝试 AppLocalData
+    if (writeRoot.isEmpty()) {
+        writeRoot = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
     }
 
-    // 2. 拼接好完整的 CRC 根目录路径
-    m_crcRootPath = dataRoot + "/war3files/crc";
+    // 3. 定义 CRC 存放路径
+    m_crcRootPath = writeRoot + "/war3files/crc";
 
-    // 3. 提前创建好根目录，避免每次操作都检查根目录是否存在
+    // 4. 尝试创建目录
     QDir dir;
     if (!dir.mkpath(m_crcRootPath)) {
-        qWarning() << "❌ 初始化失败: 无法创建 CRC 存储目录" << m_crcRootPath;
+        // --- 降级方案 1: 尝试程序运行目录 ---
+        QString fallbackPath = QCoreApplication::applicationDirPath() + "/war3files/crc";
+        if (dir.mkpath(fallbackPath)) {
+            LOG_WARNING(QString("⚠️ [权限警告] 标准路径不可写，已回退至运行目录: %1").arg(fallbackPath));
+            m_crcRootPath = fallbackPath;
+        }
+        else {
+            // --- 降级方案 2: 尝试系统临时目录 (/tmp/...) ---
+            fallbackPath = QDir::tempPath() + "/war3files/crc";
+            if (dir.mkpath(fallbackPath)) {
+                LOG_WARNING(QString("⚠️ [权限警告] 运行目录不可写，已回退至临时目录: %1").arg(fallbackPath));
+                m_crcRootPath = fallbackPath;
+            } else {
+                LOG_CRITICAL("❌ [致命错误] 没有任何目录可写！CRC 功能将失效。");
+                m_crcRootPath = QCoreApplication::applicationDirPath() + "/war3files/crc";
+            }
+        }
+    } else {
+        LOG_INFO(QString("✅ CRC 缓存目录已就绪: %1").arg(m_crcRootPath));
     }
 }
 
@@ -1245,7 +1265,6 @@ void NetManager::updateMostFrequentCrc()
         }
     }
 
-    // 找出最大值
     QString maxCrcToken;
     int maxCount = 0;
 
@@ -1259,7 +1278,7 @@ void NetManager::updateMostFrequentCrc()
     }
 
     if (!maxCrcToken.isEmpty()) {
-        QString path = QCoreApplication::applicationDirPath() + "/war3files/crc/" + maxCrcToken;
+        QString path = m_crcRootPath + "/" + maxCrcToken;
         QDir dir(path);
 
         // 确保该目录确实存在 .j 文件，否则设置了也没用
@@ -1268,6 +1287,7 @@ void NetManager::updateMostFrequentCrc()
             LOG_INFO(QString("🔥 更新热门地图 CRC: %1 (在线人数: %2)").arg(maxCrcToken).arg(maxCount));
         } else {
             // 目录不完整，回退
+            LOG_WARNING(QString("⚠️ 热门 CRC %1 数据缺失，回退默认").arg(maxCrcToken));
             War3Map::setPriorityCrcDirectory("");
         }
     } else {
