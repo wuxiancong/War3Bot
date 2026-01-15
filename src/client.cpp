@@ -972,6 +972,10 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
     }
     break;
 
+    case W3GS_CLIENTINFO: // [0x37] 客户端信息
+        LOG_INFO(QString("ℹ️ [W3GS] 客户端 PID %1 已确认收到槽位信息 (0x37)").arg((quint8)payload[8]));
+        break;
+
     case W3GS_STARTDOWNLOAD: // [0x3F] 客户端主动请求开始下载
     {
         // 1. 查找玩家
@@ -2111,15 +2115,15 @@ void Client::startGame()
         m_pingTimer->stop();
     }
 
-    // 2. 发送倒计时包
-    broadcastPacket(createW3GSCountdownStartPacket(), 0);
-
-    // 3. 发送最后一条大厅消息
+    // 2. 发送最后一条大厅消息
     MultiLangMsg msg;
     msg.add("CN", "游戏将于 5 秒后开始...")
         .add("EN", "Game starts in 5 seconds...");
 
     broadcastChatMessage(msg);
+
+    // 3. 发送倒计时包
+    broadcastPacket(createW3GSCountdownStartPacket(), 0);
 
     // 4. 最后启动定时器
     m_startTimer->start(5000);
@@ -2564,13 +2568,13 @@ QByteArray Client::createW3GSIncomingActionPacket(quint16 sendInterval)
     out.writeRawData(actionBlock.constData(), actionBlock.size());
 
     // 4. 计算 CRC
-    //quint16 calculatedCRC = calculateCRC16(actionBlock);
+    quint16 calculatedCRC = calculateGhostCRC(actionBlock);
 
     // 回填 CRC
     QDataStream crcStream(&packet, QIODevice::ReadWrite);
     crcStream.setByteOrder(QDataStream::LittleEndian);
     crcStream.device()->seek(crcOffset);
-    crcStream << 0;
+    crcStream << calculatedCRC;
 
     // 5. 回填总长度
     QDataStream lenStream(&packet, QIODevice::ReadWrite);
@@ -2970,6 +2974,7 @@ void Client::checkAllPlayersLoaded()
         LOG_INFO("✅ [游戏就绪] 所有玩家加载完毕！");
         LOG_INFO(QString("⏰ [游戏循环] 启动时钟同步 (Tick: %1 ms)").arg(m_gameTickInterval));
         m_gameTickTimer->start();
+        onGameTick();
     }
 }
 
