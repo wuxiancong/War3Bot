@@ -875,17 +875,26 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
                 break;
             }
         }
-
         if (currentPid == 0) return;
 
-        // 2. 标记该玩家已加载
+        // 2. 标记自己加载完成
         m_players[currentPid].isFinishedLoading = true;
-
         LOG_INFO(QString("⏳ [加载进度] 玩家加载完成: %1 (PID: %2)").arg(m_players[currentPid].name).arg(currentPid));
 
-        // 3. 构造并广播 0x08 (Player Loaded) 包
-        socket->write(createW3GSPlayerLoadedPacket(1));
-        broadcastPacket(createW3GSPlayerLoadedPacket(currentPid), 0);
+        // 3. 加载状态同步逻辑
+        QByteArray selfLoadedPacket = createW3GSPlayerLoadedPacket(currentPid);
+
+        for (auto it = m_players.begin(); it != m_players.end(); ++it) {
+            quint8 pid = it.key();
+            PlayerData &p = it.value();
+            if (pid == currentPid) continue;
+            if (p.socket && p.socket->state() == QAbstractSocket::ConnectedState) {
+                p.socket->write(selfLoadedPacket);
+            }
+            if (p.isFinishedLoading) {
+                socket->write(createW3GSPlayerLoadedPacket(pid));
+            }
+        }
 
         // 4. 检查是否所有人都加载完了
         checkAllPlayersLoaded();
