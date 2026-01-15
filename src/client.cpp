@@ -884,6 +884,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         LOG_INFO(QString("⏳ [加载进度] 玩家加载完成: %1 (PID: %2)").arg(m_players[currentPid].name).arg(currentPid));
 
         // 3. 构造并广播 0x08 (Player Loaded) 包
+        socket->write(createW3GSPlayerLoadedPacket(1));
         broadcastPacket(createW3GSPlayerLoadedPacket(currentPid), 0);
 
         // 4. 检查是否所有人都加载完了
