@@ -334,30 +334,53 @@ bool War3Map::load(const QString &mapPath)
         in >> rawW >> rawH >> rawFlags;
         quint8 tileset; in >> tileset;
 
-        newData->mapWidth = toBytes16((quint16)rawW);
-        newData->mapHeight = toBytes16((quint16)rawH);
-        newData->mapOptions = rawFlags;
+        newData->mapWidth       = toBytes16((quint16)rawW);
+        newData->mapHeight      = toBytes16((quint16)rawH);
+        newData->mapOptions     = rawFlags;
 
         LOG_INFO(QString("   │  ├─ 📏 尺寸: %1 x %2").arg(rawW).arg(rawH));
         LOG_INFO(QString("   │  └─ 🏳️ 标志: 0x%1").arg(QString::number(rawFlags, 16).toUpper()));
 
         // 5. 加载屏幕信息
-        quint32 loadingScreenID; in >> loadingScreenID;
+        quint32 loadingScreenID;in >> loadingScreenID;
         /* path =               */ readString();
         /* text =               */ readString();
         /* title =              */ readString();
         /* sub =                */ readString();
 
         // 6. 游戏数据设置
-        quint32 gameDataSet; in >> gameDataSet;
+        quint32 gameDataSet;    in >> gameDataSet;
         /* prologuePath =       */ readString();
         /* prologueText =       */ readString();
         /* prologueTitle =      */ readString();
         /* prologueSub =        */ readString();
 
-        // 7. 玩家数据解析 (关键部分!)
-        quint32 maxPlayers; in >> maxPlayers;
-        quint32 numPlayers; in >> numPlayers; // 实际定义的玩家数
+        if (fileFormat >= 25) {
+            in.skipRawData(4); // Fog Type (int)
+            in.skipRawData(4); // Fog Start Z (float)
+            in.skipRawData(4); // Fog End Z (float)
+            in.skipRawData(4); // Fog Density (float)
+            in.skipRawData(4); // Fog Color (int)
+
+            in.skipRawData(4); // Global Weather ID (int)
+            readString();      // Sound Environment (String)
+            in.skipRawData(1); // Light Environment Tileset (char)
+            in.skipRawData(4); // Water Tinting Color (struct)
+        }
+
+        if (fileFormat >= 31) {
+            in.skipRawData(4); // Script Language (int)
+        }
+
+
+        // 7. 玩家数据解析
+        quint32 maxPlayers;     in >> maxPlayers;
+        quint32 numPlayers;     in >> numPlayers;
+        if (numPlayers > 32) {
+            LOG_ERROR(QString("   │  └─ ❌ [严重错误] 玩家数量异常: %1 (解析偏移导致) - 强制重置为 0").arg(numPlayers));
+            numPlayers = 0;
+        }
+
         newData->numPlayers = (quint8)numPlayers;
 
         LOG_INFO(QString("   │  ├─ 👥 预设玩家: %1 人").arg(numPlayers));
@@ -365,8 +388,8 @@ bool War3Map::load(const QString &mapPath)
         for (quint32 i = 0; i < numPlayers; ++i) {
             W3iPlayer player;
             in >> player.id;
-            in >> player.type; // 1=Human, 2=Computer
-            in >> player.race; // 1=Human, 2=Orc, 3=Undead, 4=NightElf
+            in >> player.type;
+            in >> player.race;
             in >> player.fix;
             player.name = readString();
             in >> player.startX >> player.startY >> player.startZ;
@@ -378,6 +401,12 @@ bool War3Map::load(const QString &mapPath)
 
         // 8. 队伍数据解析 (Force Data)
         quint32 numForces; in >> numForces;
+
+        if (numForces > 32) {
+            LOG_ERROR(QString("   │  └─ ❌ [严重错误] 队伍数量异常: %1 (解析偏移导致) - 强制重置为 0").arg(numForces));
+            numForces = 0;
+        }
+
         LOG_INFO(QString("   │  └─ 🚩 预设队伍: %1 队").arg(numForces));
 
         for (quint32 i = 0; i < numForces; ++i) {
