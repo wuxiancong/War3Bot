@@ -1417,6 +1417,14 @@ void Client::onGameStarted()
     if (m_players.contains(1)) {
         LOG_INFO("👻 [逻辑同步] 游戏开始，执行 DeleteVirtualHost: 移除 PID 1");
         m_players.remove(1);
+        for (int i = 0; i < m_slots.size(); ++i) {
+            if (m_slots[i].pid == 1) {
+                m_slots[i].pid = 0;
+                m_slots[i].slotStatus = Open;
+                break;
+            }
+        }
+        broadcastSlotInfo();
     }
 
     // 3. 发送倒计时结束包
@@ -1428,15 +1436,6 @@ void Client::onGameStarted()
         it.value().isFinishedLoading = false;
         LOG_INFO(QString("⏳ [加载追踪] 正在等待玩家: %1 (PID: %2)").arg(it.value().name).arg(it.key()));
     }
-
-    // 5. 停止接收新玩家
-    if (m_tcpServer->isListening()) {
-        m_tcpServer->close();
-        LOG_INFO("🔒 [网络保护] TCP Server 已关闭，不再接受新连接");
-    }
-
-    // 6. 检查加载状态
-    checkAllPlayersLoaded();
 
     emit gameStarted();
     LOG_INFO("🎮 [游戏状态] 全体玩家进入 Loading 界面");
