@@ -1413,25 +1413,11 @@ void Client::onGameStarted()
         LOG_INFO("🛑 [计时器] 停止大厅 Ping 循环");
     }
 
-    // 2. 移除虚拟主机
-    if (m_players.contains(1)) {
-        LOG_INFO("👻 [逻辑同步] 游戏开始，执行 DeleteVirtualHost: 移除 PID 1");
-        m_players.remove(1);
-        for (int i = 0; i < m_slots.size(); ++i) {
-            if (m_slots[i].pid == 1) {
-                m_slots[i].pid = 0;
-                m_slots[i].slotStatus = Open;
-                break;
-            }
-        }
-        broadcastSlotInfo();
-    }
-
-    // 3. 发送倒计时结束包
+    // 2. 发送倒计时结束包
     broadcastPacket(createW3GSCountdownEndPacket(), 0);
     LOG_INFO("🚀 [游戏启动] 广播 W3GS_COUNTDOWN_END (0x0B)");
 
-    // 4. 重置剩余玩家的加载状态
+    // 3. 重置剩余玩家的加载状态
     for (auto it = m_players.begin(); it != m_players.end(); ++it) {
         it.value().isFinishedLoading = false;
         LOG_INFO(QString("⏳ [加载追踪] 正在等待玩家: %1 (PID: %2)").arg(it.value().name).arg(it.key()));
@@ -2055,8 +2041,6 @@ void Client::createGame(const QString &gameName, const QString &password, Provid
     // 设置裁判
     if (m_enableObservers) {
         m_war3Map.enableObservers();
-    } else {
-        m_war3Map.disableObservers();
     }
 
     QString mapName = QFileInfo(m_lastLoadedMapPath).fileName();

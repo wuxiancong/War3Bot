@@ -97,7 +97,6 @@ public:
     bool                                                        load(const QString &mapFilePath);
 
     // === Setters (游戏设置) ===
-    void                                                        disableObservers()                      { m_mapObservers = MAPOBS_ONDEFEAT; }
     void                                                        enableObservers()                       { m_mapObservers = MAPOBS_REFEREES; }
     void                                                        setMapVisibility(W3MapVisibility vis)   { m_mapVisibility = vis; }
     void                                                        setMapObservers(W3MapObservers obs)     { m_mapObservers = obs; }
