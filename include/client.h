@@ -550,7 +550,7 @@ private:
 
     // 槽位数据
     QVector<GameSlot>               m_slots;
-    bool                            m_enableObservers       = true;
+    bool                            m_enableObservers       = false;
     quint8                          m_layoutStyle           = CustomForces;
 
     // 游戏数据

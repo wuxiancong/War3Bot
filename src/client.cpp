@@ -2694,7 +2694,7 @@ void Client::initSlots(quint8 maxPlayers, bool showBotAtObserver)
     quint8 actualSlotCount = maxPlayers;
     if (maxPlayers < 1) actualSlotCount = 10;
     if (maxPlayers == 12) {
-        actualSlotCount = 13;
+        actualSlotCount = showBotAtObserver ? 12 : 13;
     } else if(maxPlayers == 10) {
         actualSlotCount = 11;
     }
@@ -2756,15 +2756,6 @@ void Client::initSlots(quint8 maxPlayers, bool showBotAtObserver)
             slot.computer       = Human;
             slot.computerType   = Normal;
             slot.handicap       = 100;
-
-            // --- 队伍决策 ---
-            if (showBotAtObserver) {
-                slot.team = (quint8)SlotTeam::Observer;
-                slot.race = (quint8)SlotRace::Observer;
-            } else {
-                slot.team = naturalTeam;
-                slot.race = naturalRace;
-            }
             continue;
         }
 
