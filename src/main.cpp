@@ -520,38 +520,60 @@ int main(int argc, char *argv[]) {
     // === 4. 控制台命令处理 ===
     Command *command = nullptr;
     if (enableConsole) {
-        command = new Command(nullptr, &app); // 使用堆分配，避免 main 函数栈溢出风险
+        command = new Command(nullptr, &app);
         QObject::connect(command, &Command::inputReceived, &app, processCommand);
         command->start();
         LOG_INFO("✅ 控制台命令监听已启动");
     }
 
     // === 5. 启动 IPC 本地服务器 ===
-    QLocalServer ipcServer;
+    QLocalServer *ipcServer = new QLocalServer(&app);
     QLocalServer::removeServer(IPC_SERVER_NAME);
 
-    if (ipcServer.listen(IPC_SERVER_NAME)) {
-        // 设置权限，确保 sudo 运行的用户或者同组用户能访问
-        // Linux 下建议设置为 User/Group 可读写
-#ifndef Q_OS_WIN
-        QFile ipcFile(QDir::tempPath() + "/" + IPC_SERVER_NAME);
-        ipcFile.setPermissions(QFile::ReadOwner | QFile::WriteOwner | QFile::ReadUser | QFile::WriteUser);
-#endif
-        LOG_INFO(QString("✅ IPC 命令服务已启动，监听: %1").arg(ipcServer.fullServerName()));
+    if (ipcServer->listen(IPC_SERVER_NAME)) {
+        LOG_INFO(QString("✅ IPC 命令服务已启动，监听: %1").arg(ipcServer->fullServerName()));
 
-        QObject::connect(&ipcServer, &QLocalServer::newConnection, &app, [&]() {
-            QLocalSocket *clientConnection = ipcServer.nextPendingConnection();
+#ifndef Q_OS_WIN
+        // 在 Linux 上，QLocalServer 默认路径通常是 /tmp/<servername>
+        QString socketPath = QDir::tempPath() + "/" + IPC_SERVER_NAME;
+        QFile ipcFile(socketPath);
+
+        if (ipcFile.exists()) {
+            bool permOk = ipcFile.setPermissions(
+                QFile::ReadOwner | QFile::WriteOwner |
+                QFile::ReadGroup | QFile::WriteGroup |
+                QFile::ReadOther | QFile::WriteOther
+                );
+            if (permOk) {
+                LOG_INFO("   └─ 🔐 权限设置成功: 允许所有用户写入 (0666)");
+            } else {
+                LOG_WARNING("   └─ ⚠️ 权限设置失败，可能导致其他用户无法发送指令");
+            }
+        }
+#endif
+
+        QObject::connect(ipcServer, &QLocalServer::newConnection, &app, [ipcServer, processCommand]() {
+            QLocalSocket *clientConnection = ipcServer->nextPendingConnection();
+            if (!clientConnection) return;
             QObject::connect(clientConnection, &QLocalSocket::readyRead, [clientConnection, processCommand]() {
-                QByteArray data = clientConnection->readAll();
-                QString cmd = QString::fromUtf8(data).trimmed();
-                if (!cmd.isEmpty()) {
-                    processCommand(cmd);
+                while (clientConnection->canReadLine()) {
+                    QByteArray data = clientConnection->readLine();
+                    QString cmd = QString::fromUtf8(data).trimmed();
+                    if (!cmd.isEmpty()) {
+                        processCommand(cmd);
+                    }
+                }
+                if (clientConnection->bytesAvailable() > 0) {
+                    QByteArray data = clientConnection->readAll();
+                    QString cmd = QString::fromUtf8(data).trimmed();
+                    if (!cmd.isEmpty()) processCommand(cmd);
                 }
             });
             QObject::connect(clientConnection, &QLocalSocket::disconnected, clientConnection, &QLocalSocket::deleteLater);
         });
+
     } else {
-        LOG_ERROR(QString("❌ IPC 服务启动失败: %1").arg(ipcServer.errorString()));
+        LOG_ERROR(QString("❌ IPC 服务启动失败: %1").arg(ipcServer->errorString()));
     }
 
     // === 6. 定时状态报告 ===

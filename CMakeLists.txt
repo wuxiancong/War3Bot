@@ -222,10 +222,19 @@ install(TARGETS War3Bot RUNTIME DESTINATION bin)
 # B. Linux 系统级资源安装
 if(UNIX AND NOT APPLE)
 
-    # 1. 安装配置文件 -> /etc/War3Bot
-    install(FILES config/war3bot.ini
+    # 1. 安装配置目录 -> /etc/War3Bot/config
+    install(DIRECTORY config
         DESTINATION "/etc/War3Bot"
-        PERMISSIONS OWNER_READ OWNER_WRITE # 默认给 600 权限 (安全)
+
+        # 目录权限 (755): 必须有执行权限才能进入目录
+        DIRECTORY_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
+
+        # 文件权限 (644): 建议允许读取，否则普通用户运行程序可能读不到配置
+        FILE_PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ
+
+        # 可选：排除不需要的临时文件
+        PATTERN "*~" EXCLUDE
+        PATTERN "*.user" EXCLUDE
     )
 
     # 2. 安装 war3files 文件夹 -> /opt/War3Bot/war3files
