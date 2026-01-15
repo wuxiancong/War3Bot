@@ -480,7 +480,7 @@ private:
     void broadcastSlotInfo(quint8 excludePid = 1);
 
     // --- 槽位管理 ---
-    void initSlots(quint8 maxPlayers = 12);
+    void initSlots(quint8 maxPlayers = 12, bool showBotAtObserver = false);
     QByteArray serializeSlotData();
     GameSlot *findEmptySlot();
 
