@@ -147,11 +147,9 @@ server=139.155.155.166
 port=6112
 
 [bots]
-count=10
-# 不同服务器使用不同值 防止挤掉线
-norepeat=abcd
-
-
+list_number=1
+init_count=10
+auto_generate=false
 ```
 
 ### 3. 配置 Systemd 服务
