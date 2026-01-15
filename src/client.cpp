@@ -884,8 +884,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         LOG_INFO(QString("⏳ [加载进度] 玩家加载完成: %1 (PID: %2)").arg(m_players[currentPid].name).arg(currentPid));
 
         // 3. 构造并广播 0x08 (Player Loaded) 包
-        QByteArray loadedPacket = createW3GSPlayerLoadedPacket(currentPid);
-        broadcastPacket(loadedPacket, 0);
+        broadcastPacket(createW3GSPlayerLoadedPacket(currentPid), 0);
 
         // 4. 检查是否所有人都加载完了
         checkAllPlayersLoaded();
@@ -1411,38 +1410,41 @@ void Client::onPlayerDisconnected() {
 
 void Client::onGameStarted()
 {
-    // 1. 标记状态
+    // 1. 标记游戏开始
     m_gameStarted = true;
 
-    // 2. 发送倒计时结束包 - 告诉客户端进加载画面
-    broadcastPacket(createW3GSCountdownEndPacket(), 0);
-
-    // 3. 停止 Ping 循环 (防止在大厅外的 Ping 包干扰)
     if (m_pingTimer && m_pingTimer->isActive()) {
         m_pingTimer->stop();
+        LOG_INFO("🛑 [计时器] 停止大厅 Ping 循环");
     }
 
-    LOG_INFO("🚀 [游戏启动] 倒计时结束，进入加载界面");
+    // 2. 移除虚拟主机
+    if (m_players.contains(1)) {
+        LOG_INFO("👻 [逻辑同步] 游戏开始，执行 DeleteVirtualHost: 移除 PID 1");
+        m_players.remove(1);
+    }
 
-    // 4. 重置玩家加载状态
+    // 3. 发送倒计时结束包
+    broadcastPacket(createW3GSCountdownEndPacket(), 0);
+    LOG_INFO("🚀 [游戏启动] 广播 W3GS_COUNTDOWN_END (0x0B)");
+
+    // 4. 重置剩余玩家的加载状态
     for (auto it = m_players.begin(); it != m_players.end(); ++it) {
-        if (it.key() == 1) {
-            it.value().isFinishedLoading = true;
-        } else {
-            it.value().isFinishedLoading = false;
-        }
+        it.value().isFinishedLoading = false;
+        LOG_INFO(QString("⏳ [加载追踪] 正在等待玩家: %1 (PID: %2)").arg(it.value().name).arg(it.key()));
     }
 
-    // 5. 广播 Bot 加载完成
-    QByteArray botLoadedPacket = createW3GSPlayerLoadedPacket(1);
-    broadcastPacket(botLoadedPacket, 0);
+    // 5. 停止接收新玩家
+    if (m_tcpServer->isListening()) {
+        m_tcpServer->close();
+        LOG_INFO("🔒 [网络保护] TCP Server 已关闭，不再接受新连接");
+    }
 
-    LOG_INFO("🚀 [游戏启动] Bot 状态已同步 (PID 1 Loaded)");
-
-    // 6. 检查是否所有人都加载完
+    // 6. 检查加载状态
     checkAllPlayersLoaded();
 
     emit gameStarted();
+    LOG_INFO("🎮 [游戏状态] 全体玩家进入 Loading 界面");
 }
 
 void Client::onGameTick()

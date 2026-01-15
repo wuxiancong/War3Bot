@@ -520,7 +520,7 @@ int main(int argc, char *argv[]) {
     // === 4. 控制台命令处理 ===
     Command *command = nullptr;
     if (enableConsole) {
-        command = new Command(nullptr, &app);
+        command = new Command(&app);
         QObject::connect(command, &Command::inputReceived, &app, processCommand);
         command->start();
         LOG_INFO("✅ 控制台命令监听已启动");

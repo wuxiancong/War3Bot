@@ -93,7 +93,7 @@ sudo mkdir -p /etc/War3Bot
 sudo mkdir -p /var/log/War3Bot
 ```
 
-### 3. 设置权限 (修正版)
+### 3. 设置权限
 
 #### --- A. 核心程序目录 (/opt) ---
 ```bash
