@@ -94,7 +94,7 @@ public:
 
     // --- 初始化与文件管理 ---
     void initializeBots(quint32 initialCount, const QString &configPath);
-    bool createBotAccountFilesIfNotExist();
+    bool createBotAccountFilesIfNotExist(bool allowAutoGenerate);
 
     // --- 机器人控制 ---
     void startAll();
@@ -134,7 +134,8 @@ private:
     void addBotInstance(const QString& username, const QString& password);
     QChar randomCase(QChar c);
     QString generateUniqueUsername();
-    QString generateRandomSuffix(int length);
+    QString toLeetSpeak(const QString &input);
+    QString generateRandomPassword(int length);
 
 private:
     // 机器人容器
@@ -145,7 +146,6 @@ private:
     QStringList m_newAccountFilePaths;
     QQueue<QPair<QString, QString>> m_registrationQueue;
     Client *m_tempRegistrationClient = nullptr;
-    QString m_norepeatChars;
 
     int m_currentFileIndex = 0;
     int m_currentAccountIndex = 0;

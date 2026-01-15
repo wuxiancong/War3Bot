@@ -77,7 +77,7 @@ bool War3Bot::startServer(quint16 port, const QString &configFile)
 
             LOG_INFO(QString("正在读取配置: [%1]").arg(m_configPath));
 
-            int botCount = settings.value("bots/count", 10).toInt();
+            int botCount = settings.value("bots/init_count", 10).toInt();
 
             LOG_INFO(QString("🚀 系统启动中: 目标在线机器人数量 [%1]").arg(botCount));
 

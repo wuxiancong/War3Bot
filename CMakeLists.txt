@@ -1,21 +1,36 @@
 cmake_minimum_required(VERSION 3.16)
-project(War3Bot VERSION 1.0.0 LANGUAGES CXX)
+# =========================================================
+# 1. 核心环境配置
+# =========================================================
 
-# =========================================================
-# 1. 平台兼容性设置 (Ninja 路径)
-# =========================================================
-if(WIN32)
-    if(EXISTS "D:/Qt/Tools/Ninja/ninja.exe")
-        set(CMAKE_MAKE_PROGRAM "D:/Qt/Tools/Ninja/ninja.exe" CACHE FILEPATH "Program used to build from makefiles" FORCE)
-    endif()
+# 1.1 强制指定 Windows SDK 版本
+set(CMAKE_SYSTEM_VERSION "10.0.26100.0" CACHE STRING "Windows SDK Version" FORCE)
+
+# 1.2 指定 Qt5 路径
+if(MSVC)
+    set(CMAKE_PREFIX_PATH "D:/Qt/5.15.2/msvc2019" CACHE PATH "Qt5 Path" FORCE)
+elseif(MINGW)
+    set(CMAKE_PREFIX_PATH "D:/Qt/5.15.2/mingw81_64" CACHE PATH "Qt5 Path" FORCE)
 endif()
 
+# 1.3 指定 Ninja
+set(CMAKE_MAKE_PROGRAM "D:/Qt/Tools/Ninja/ninja.exe" CACHE FILEPATH "Program used to build from makefiles" FORCE)
+
+# 1.4 指定编译器工具 (rc 和 mt)
+set(CMAKE_RC_COMPILER "C:/Program Files (x86)/Windows Kits/10/bin/10.0.26100.0/x86/rc.exe" CACHE FILEPATH "Resource Compiler" FORCE)
+set(CMAKE_MT "C:/Program Files (x86)/Windows Kits/10/bin/10.0.26100.0/x86/mt.exe" CACHE FILEPATH "Manifest Tool" FORCE)
+
+# 1.5 设置默认构建类型为 Release
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+    message(STATUS ">> 未检测到构建类型，强制默认为: Release")
+    set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Choose the type of build." FORCE)
+endif()
 # =========================================================
 # 2. 基础配置
 # =========================================================
-
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+project(War3Bot VERSION 1.0.0 LANGUAGES CXX)
 
 find_package(Qt5 REQUIRED COMPONENTS Core Network)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
@@ -210,10 +225,10 @@ if(UNIX AND NOT APPLE)
         PERMISSIONS OWNER_READ OWNER_WRITE # 默认给 600 权限 (安全)
     )
 
-    # 2. 安装 war3files 文件夹 -> /opt/War3Bot/war3files
-    install(DIRECTORY war3files
-        DESTINATION "war3files"
-        FILE_PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ
-        DIRECTORY_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
-    )
+# 2. 安装 war3files 文件夹 -> /opt/War3Bot/war3files
+install(DIRECTORY war3files
+    DESTINATION "war3files"
+    FILE_PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ
+    DIRECTORY_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
+)
 endif()

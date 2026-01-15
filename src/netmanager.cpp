@@ -243,7 +243,7 @@ bool NetManager::sendTcpPacket(QTcpSocket *socket, PacketType type, const void *
     if (sent == totalSize) {
         LOG_INFO(QString("🚀 [TCP] %1 -> %2 (Session: %3 | Client: %4 | Len: %5)")
                      .arg(typeStr, peerInfo).arg(sid)
-                     .arg(clientId.isEmpty() ? "Unknown" : clientId.left(8))
+                     .arg(clientId.isEmpty() ? "" : clientId.left(8))
                      .arg(sent));
         return true;
     } else {
@@ -796,7 +796,7 @@ void NetManager::handleTcpUploadMessage(QTcpSocket *socket)
                     // =======================================================
                     quint32 sid = socket->property("SessionId").toUInt();
                     bool updated = false;
-                    QString clientName = "Unknown";
+                    QString clientName = "";
 
                     {
                         QWriteLocker locker(&m_registerInfosLock);

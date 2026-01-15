@@ -8,6 +8,111 @@
 #include <QRandomGenerator>
 #include <QCoreApplication>
 
+// =========================================================
+// 扩充的拟人化词库 (DotA 深度定制版)
+// =========================================================
+
+static const QStringList s_adjectives = {
+    // 基础形容词
+    "Dark", "Silent", "Holy", "Crazy", "Super", "Pro", "Mad", "Ghost",
+    "Shadow", "Iron", "Ice", "Fire", "Storm", "Fast", "Lazy", "Best",
+    "Top", "Old", "New", "Blue", "Red", "Evil", "Good", "Cyber",
+    "Epic", "Rare", "Legend", "Hyper", "Ultra", "Mega", "Neon", "Void",
+    "Dead", "Live", "Cool", "Hot", "Cold", "Wild", "Brave", "Calm",
+    "Angry", "Happy", "Sad", "Lucky", "Fatal", "Toxic", "Swift", "Grand",
+    "Fallen", "Lost", "Bloody", "Broken", "Frozen", "Burning",
+
+    // DotA 状态/属性形容词
+    "Divine", "Ethereal", "Arcane", "Mystic", "Secret", "Ancient",
+    "Invisible", "Hasted", "Doomed", "Stunned", "Silenced", "Immune",
+    "Greedy", "Salty", "Tilted", "Feeder", "Aggressive", "Passive",
+    "Magic", "Physical", "Pure", "Random", "Solo", "Dual", "Tri"
+};
+
+static const QStringList s_nouns = {
+    // 基础名词
+    "Knight", "Wolf", "Tiger", "Dragon", "Killer", "Boy", "Girl", "Man",
+    "Master", "King", "Lord", "Sniper", "Gamer", "Player", "Walker",
+    "Runner", "Spirit", "Soul", "Moon", "Star", "Hero", "Peon", "Grunt",
+    "Mage", "Rogue", "Priest", "Hunter", "Warrior", "Demon", "Angel", "God",
+    "Titan", "Giant", "Dwarf", "Elf", "Orc", "Human", "Beast", "Bear",
+    "Eagle", "Snake", "Viper", "Cobra", "Lion", "Shark", "Whale", "Panda",
+    "Ninja", "Samurai", "Robot", "Cyborg", "Alien", "Phantom", "Reaper",
+
+    // DotA 物品/单位/建筑名词
+    "Roshan", "Aegis", "Cheese", "Courier", "Chicken", "Ward", "Sentry",
+    "Tangos", "Salve", "Bottle", "Clarity", "Midas", "Blink", "Dagon",
+    "Radiance", "Rapier", "Butterfly", "Buriza", "Basher", "Mekansm",
+    "Pipe", "BKB", "Aghanim", "Scepter", "Orb", "Relic", "Gem",
+    "Throne", "Rax", "Tower", "Fountain", "Shop", "Rune", "Creep"
+};
+
+static const QStringList s_verbs = {
+    // 基础动词
+    "Kill", "Love", "Hate", "Eat", "Drink", "Smash", "Crush", "Kick",
+    "Punch", "Kiss", "Hug", "Shoot", "Slash", "Hunt", "Chasing", "Fighting",
+
+    // DotA 行为动词
+    "Gank", "Carry", "Push", "Defend", "Feed", "Farm", "Support", "Roam",
+    "Jungle", "Mid", "Solo", "Own", "Pwn", "Rekt", "Juke", "Bait",
+    "Deny", "LastHit", "Stun", "Hex", "Silence", "Nuke", "Heal", "Buff",
+    "TP", "Blink", "Dodge", "Miss", "Report", "Commend"
+};
+
+static const QStringList s_wc3names = {
+    // War3 剧情人物
+    "Arthas", "Thrall", "Jaina", "Illidan", "Tyrande", "Cairne", "Rexxar",
+    "KelThuzad", "Sylvanas", "Muradin", "Uther", "Grom", "Voljin",
+    "Archimonde", "Kiljaeden", "Mannoroth", "Tichondrius", "Malganis",
+
+    // DotA 力量英雄 (经典名字)
+    "Pudge", "Tiny", "Kunkka", "Beastmaster", "Clockwerk", "Omniknight",
+    "Huskar", "Alchemist", "Brewmaster", "Treant", "Io", "Centaur",
+    "Timbersaw", "Bristleback", "Tusk", "ElderTitan", "Legion", "EarthSpirit",
+    "Axe", "Sven", "SandKing", "Slardar", "Tidehunter", "SkeletonKing",
+    "Lifestealer", "NightStalker", "Doom", "SpiritBreaker", "Lycan", "ChaosKnight",
+    "Undying", "Magnus", "Abaddon",
+
+    // DotA 敏捷英雄
+    "AntiMage", "Drow", "Juggernaut", "Mirana", "Morphling", "PhantomLancer",
+    "Vengeful", "Riki", "Sniper", "Templar", "Luna", "BountyHunter",
+    "Ursa", "Gyrocopter", "LoneDruid", "Naga", "Troll", "Ember",
+    "Bloodseeker", "ShadowFiend", "Razor", "Venomancer", "FacelessVoid",
+    "Phantom", "Viper", "Clinkz", "Brood", "Weaver", "Spectre",
+    "Meepo", "Nyx", "Slark", "Medusa", "Terrorblade", "ArcWarden",
+
+    // DotA 智力英雄
+    "CrystalMaiden", "Puck", "Storm", "Windrunner", "Zeus", "Lina",
+    "ShadowShaman", "Tinker", "Prophet", "Jakiro", "Chen", "Silencer",
+    "Ogre", "Rubick", "Disruptor", "Keeper", "Skywrath", "Oracle", "Techies",
+    "Bane", "Lich", "Lion", "WitchDoctor", "Enigma", "Necrolyte",
+    "Warlock", "QueenOfPain", "DeathProphet", "Pugna", "Dazzle", "Leshrac",
+    "DarkSeer", "Batrider", "AncientApparition", "Invoker", "Visage",
+
+    // DotA 1 英雄真名 (老玩家一眼懂)
+    "Magina", "Rylai", "Yurnero", "Alleria", "Raigor", "Kardel", "Gondar",
+    "Nortrom", "Rhana", "Strygwyr", "Nevermore", "Mercurial", "Azwraith",
+    "MogulKhan", "Bradwarden", "Lucifer", "Balanar", "Leoric", "Nessaj",
+    "Mortred", "Anubarak", "Lanaya", "Ulfsaar", "Aggron", "Ostarion",
+    "Rotundjere", "Demnok", "Boush", "Rhasta", "Ishkafel", "Krobelus",
+    "Lesale", "Medusa", "Akasha", "Atropos", "Zet", "Kaolin", "Xin"
+};
+
+// 游戏常用后缀
+static const QStringList s_suffixes = {
+    "Pro", "Noob", "God", "King", "GG", "EZ", "Win", "Lose", "Gaming",
+    "TV", "Show", "Zone", "Base", "City", "Team", "Clan", "Club",
+    "CN", "US", "KR", "RU", "EU",
+    "One", "Zero", "X", "Z", "S", "V",
+    "Doto", "MMR", "Player", "Carry", "Supp", "Mid", "Off", "AFK"
+};
+
+// 头衔前缀
+static const QStringList s_prefixes = {
+    "Mr", "Dr", "Sir", "Miss", "Lady", "The", "iAm", "MyNameIs", "Real", "True",
+    "Captain", "Carry", "Support", "Mid", "Jungle", "Best", "Top", "Only"
+};
+
 BotManager::BotManager(QObject *parent) : QObject(parent)
 {
     QTimer *timer = new QTimer(this);
@@ -43,16 +148,17 @@ void BotManager::initializeBots(quint32 initialCount, const QString &configPath)
     QSettings settings(configPath, QSettings::IniFormat);
     m_targetServer = settings.value("bnet/server", "127.0.0.1").toString();
     m_targetPort = settings.value("bnet/port", 6112).toUInt();
-    m_norepeatChars = settings.value("bots/norepeat", "abcd").toString();
+
+    bool autoGenerate = settings.value("bots/auto_generate", false).toBool();
 
     m_initialLoginCount = initialCount;
 
     LOG_INFO(QString("   ├─ ⚙️ 加载配置: %1").arg(QFileInfo(configPath).fileName()));
     LOG_INFO(QString("   │  ├─ 🖥️ 服务器: %1:%2").arg(m_targetServer).arg(m_targetPort));
-    LOG_INFO(QString("   │  └─ 🔐 种子码: %1").arg(m_norepeatChars));
+    LOG_INFO(QString("   │  └─ 🏭 自动生成: %1").arg(autoGenerate ? "✅ 开启" : "⛔ 关闭"));
 
     // 4. 生成或加载文件
-    bool isNewFiles = createBotAccountFilesIfNotExist();
+    bool isNewFiles = createBotAccountFilesIfNotExist(autoGenerate);
 
     // 5. 根据文件状态决定流程
     if (isNewFiles) {
@@ -1053,80 +1159,168 @@ QChar BotManager::randomCase(QChar c)
     return (QRandomGenerator::global()->bounded(2) == 0) ? c.toLower() : c.toUpper();
 }
 
-QString BotManager::generateRandomSuffix(int length)
+QString BotManager::generateRandomPassword(int length)
 {
-    const QString chars("abcdefghijklmnopqrstuvwxyz0123456789");
-    QString randomString;
-    for(int i=0; i<length; ++i) {
-        int index = QRandomGenerator::global()->bounded(chars.length());
-        randomString.append(chars.at(index));
+    if (length < 8) length = 8;
+
+    // 1. 定义字符池
+    const QString lower = "abcdefghijklmnopqrstuvwxyz";
+    const QString upper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    const QString nums  = "0123456789";
+    const QString special = "~!@#$%^&*()_+-=[]{}<>;:,'.";
+
+    QString password;
+
+    // 2. 每种类型至少包含一个
+    password.append(lower.at(QRandomGenerator::global()->bounded(lower.length())));
+    password.append(upper.at(QRandomGenerator::global()->bounded(upper.length())));
+    password.append(nums.at(QRandomGenerator::global()->bounded(nums.length())));
+    password.append(special.at(QRandomGenerator::global()->bounded(special.length())));
+
+    // 3. 剩余长度从所有池子中随机混抽
+    QString allChars = lower + upper + nums + special;
+    int remaining = length - 4;
+
+    for(int i = 0; i < remaining; ++i) {
+        int index = QRandomGenerator::global()->bounded(allChars.length());
+        password.append(allChars.at(index));
     }
-    return randomString;
+
+    // 4. 使用 Fisher-Yates 算法打乱顺序
+    for (int i = password.length() - 1; i > 0; --i) {
+        int j = QRandomGenerator::global()->bounded(i + 1);
+        QChar temp = password[i];
+        password[i] = password[j];
+        password[j] = temp;
+    }
+
+    return password;
+}
+
+QString BotManager::toLeetSpeak(const QString& input)
+{
+    QString output = input;
+    // 30% 的概率不转换
+    if (QRandomGenerator::global()->bounded(100) < 30) return output;
+
+    for (int i = 0; i < output.length(); ++i) {
+        QChar c = output[i].toLower();
+        if (c == 'e') output[i] = '3';
+        else if (c == 'a') output[i] = '4';
+        else if (c == 'o') output[i] = '0';
+        else if (c == 'i' || c == 'l') output[i] = '1';
+        else if (c == 's') output[i] = '5';
+        else if (c == 't') output[i] = '7';
+    }
+    return output;
 }
 
 QString BotManager::generateUniqueUsername()
 {
-    // 1. 获取基础字符集
-    QString raw = m_norepeatChars;
-    int prefixLen = raw.length();
+    // 随机模式权重
+    int mode = QRandomGenerator::global()->bounded(100);
+    QString baseName;
 
-    // 2. 转换为 QList 进行洗牌
-    QList<QChar> charList;
-    for (QChar c : raw) {
-        charList.append(c);
+    // --- 核心命名逻辑 ---
+
+    if (mode < 25) {
+        // [模式1: 经典组合] Adj + Noun (e.g., DarkKiller)
+        QString adj = s_adjectives[QRandomGenerator::global()->bounded(s_adjectives.size())];
+        QString noun = s_nouns[QRandomGenerator::global()->bounded(s_nouns.size())];
+        baseName = adj + noun;
+    }
+    else if (mode < 45) {
+        // [模式2: 动作型] Verb + Noun/Hero (e.g., GankPudge, EatTrees)
+        QString verb = s_verbs[QRandomGenerator::global()->bounded(s_verbs.size())];
+        QString noun = (QRandomGenerator::global()->bounded(2) == 0) ?
+                           s_nouns[QRandomGenerator::global()->bounded(s_nouns.size())] :
+                           s_wc3names[QRandomGenerator::global()->bounded(s_wc3names.size())];
+        baseName = verb + noun;
+    }
+    else if (mode < 60) {
+        // [模式3: 装饰型] xX_Name_Xx (e.g., xX_Arthas_Xx)
+        QString core = s_wc3names[QRandomGenerator::global()->bounded(s_wc3names.size())];
+        // 50% 概率转火星文
+        if (QRandomGenerator::global()->bounded(2) == 0) core = toLeetSpeak(core);
+
+        baseName = "xX_" + core + "_Xx";
+    }
+    else if (mode < 75) {
+        // [模式4: 头衔型] Prefix + Name (e.g., DrThrall, iAmPro)
+        QString prefix = s_prefixes[QRandomGenerator::global()->bounded(s_prefixes.size())];
+        QString core;
+        if (prefix == "The") { // "The" 后面接形容词+名词更自然
+            QString adj = s_adjectives[QRandomGenerator::global()->bounded(s_adjectives.size())];
+            core = adj; // e.g. TheSilent
+        } else {
+            core = s_wc3names[QRandomGenerator::global()->bounded(s_wc3names.size())];
+        }
+        baseName = prefix + core;
+    }
+    else if (mode < 90) {
+        // [模式5: 后缀型] Name + Suffix (e.g., PudgeGG, ViperCN)
+        QString core = s_wc3names[QRandomGenerator::global()->bounded(s_wc3names.size())];
+        QString suffix = s_suffixes[QRandomGenerator::global()->bounded(s_suffixes.size())];
+
+        // 50% 概率加下划线连接
+        if (QRandomGenerator::global()->bounded(2) == 0) {
+            baseName = core + "_" + suffix;
+        } else {
+            baseName = core + suffix;
+        }
+    }
+    else {
+        // [模式6: 纯火星文 ID] (e.g., N1ghtH4wk)
+        QString adj = s_adjectives[QRandomGenerator::global()->bounded(s_adjectives.size())];
+        QString noun = s_nouns[QRandomGenerator::global()->bounded(s_nouns.size())];
+        baseName = toLeetSpeak(adj + noun);
     }
 
-    for (int i = charList.size() - 1; i > 0; --i) {
-        int j = QRandomGenerator::global()->bounded(i + 1);
-        charList.swapItemsAt(i, j);
+    // --- 后期微调 (增加随机性但不使用纯数字后缀) ---
+
+    // 10% 概率全小写 (很多真人玩家懒得按 Shift)
+    if (QRandomGenerator::global()->bounded(100) < 10) {
+        baseName = baseName.toLower();
+    }
+    // 5% 概率全大写 (咆哮体)
+    else if (QRandomGenerator::global()->bounded(100) < 5) {
+        baseName = baseName.toUpper();
     }
 
-    QString prefix;
-    for (QChar c : charList) {
-        prefix.append(randomCase(c));
+    // 长度截断 (War3 ID 限制 15 字符)
+    if (baseName.length() > 15) {
+        baseName = baseName.left(15);
+        // 清理截断后末尾可能残留的尴尬符号
+        while (baseName.endsWith('_') || baseName.endsWith('X') || baseName.endsWith('x')) {
+            baseName.chop(1);
+        }
     }
 
-    // 3. 计算随机目标长度
-    const int MIN_LEN = 5;
-    const int MAX_LEN = 15;
+    // 长度太短补点东西 (少于4字符很难注册)
+    if (baseName.length() < 4) {
+        baseName += "Pro";
+    }
 
-    int safeMin = qMax(MIN_LEN, prefixLen + 1);
-    int safeMax = qMax(MAX_LEN, prefixLen + 1);
-
-    // 随机生成一个总长度
-    int targetTotalLen = QRandomGenerator::global()->bounded(safeMin, safeMax + 1);
-
-    // 计算还需要补多少位
-    int suffixLen = targetTotalLen - prefixLen;
-
-    // 如果计算出来不需要补，至少补1位保证随机性
-    if (suffixLen < 1) suffixLen = 1;
-
-    // 4. 生成后缀
-    QString suffix = generateRandomSuffix(suffixLen);
-
-    return prefix + suffix;
+    return baseName;
 }
 
-bool BotManager::createBotAccountFilesIfNotExist()
+bool BotManager::createBotAccountFilesIfNotExist(bool allowAutoGenerate)
 {
-    LOG_INFO("🔐 [账号管理] 启动账号文件检查流程");
+    LOG_INFO("🔐 [账号管理] 启动账号文件检查流程 (目标: 1000 个拟人化账号)");
 
-    // 1. 确定配置目录 (configDir)
+    // 1. 确定配置目录
     QString configDir;
     QStringList searchPaths;
 
 #ifdef Q_OS_LINUX
     searchPaths << "/etc/War3Bot/config";
 #endif
-    // 只检查当前运行目录相关的路径
     searchPaths << QCoreApplication::applicationDirPath() + "/config";
     searchPaths << QDir::currentPath() + "/config";
 
     bool foundExistingDir = false;
     for (const QString &path : qAsConst(searchPaths)) {
         QDir checkDir(path);
-        // 只要目录存在且不为空，就认为找到了
         if (checkDir.exists() && !checkDir.isEmpty()) {
             configDir = path;
             foundExistingDir = true;
@@ -1134,7 +1328,6 @@ bool BotManager::createBotAccountFilesIfNotExist()
         }
     }
 
-    // 2. 如果没找到，尝试初始化目录 (询问创建 或 从系统复制)
     if (!foundExistingDir) {
         QString defaultDir = QCoreApplication::applicationDirPath() + "/config";
 
@@ -1197,114 +1390,92 @@ bool BotManager::createBotAccountFilesIfNotExist()
 
     LOG_INFO(QString("   ├─ 📂 配置目录: %1").arg(configDir));
 
-    // 3. 检查具体账号文件 (JSON)
-    QString seed = m_norepeatChars.trimmed();
-    if (seed.isEmpty()) seed = "default";
+    // 2. 检查文件是否存在
+    // 定义 10 个文件，每个存放 100 个账号
+    const int TOTAL_BOTS = 1000;
+    const int BOTS_PER_FILE = 100;
+    const int FILE_COUNT = TOTAL_BOTS / BOTS_PER_FILE;
 
-    QStringList files;
-    files << QString("bots_%1_part1.json").arg(seed);
-    files << QString("bots_%1_part2.json").arg(seed);
-
-    bool generatedAny = false;
     m_newAccountFilePaths.clear();
     m_allAccountFilePaths.clear();
+    bool generatedAny = false;
+    QSet<QString> generatedSet;
 
-    for (int i = 0; i < files.size(); ++i) {
-        QString fileName = files[i];
+    for (int i = 1; i <= FILE_COUNT; ++i) {
+        QString fileName = QString("bots_auto_%1.json").arg(i, 2, 10, QChar('0'));
         QString fullPath = configDir + "/" + fileName;
 
-        // 生成对应的 copy 文件名
-        QString copyFileName = fileName;
-        copyFileName.replace(".json", "_copy.json");
-        QString copyPath = configDir + "/" + copyFileName;
-
-        m_allAccountFilePaths.append(fullPath);
-
-        // 树状图 UI
-        bool isLastItem = (i == files.size() - 1);
+        // UI 格式化
+        bool isLastItem = (i == FILE_COUNT);
         QString branch = isLastItem ? "   └─ " : "   ├─ ";
         QString indent = isLastItem ? "      " : "   │  ";
 
         // Case A: 文件已存在
         if (QFile::exists(fullPath)) {
             LOG_INFO(QString("%1✅ [已就绪] %2").arg(branch, fileName));
+            m_allAccountFilePaths.append(fullPath);
             continue;
         }
 
-        // Case B: 需要生成
-        LOG_INFO(QString("%1🆕 [生成中] %2").arg(branch, fileName));
+        // Case B: 文件不存在，检查开关
+        if (!allowAutoGenerate) {
+            LOG_WARNING(QString("%1❌ [缺失] %2 (自动生成已关闭，跳过)").arg(branch, fileName));
+            continue;
+        }
 
-        // 1. 生成数据
+        // Case C: 需要生成
+        LOG_INFO(QString("%1🆕 [生成中] %2 (包含 %3 个账号)").arg(branch, fileName).arg(BOTS_PER_FILE));
+
         QJsonArray array;
-        for (int k = 0; k < 100; ++k) {
+        int count = 0;
+
+        // 生成 100 个不重复的账号
+        while (count < BOTS_PER_FILE) {
+            QString user = generateUniqueUsername();
+
+            // 确保不重复
+            if (generatedSet.contains(user)) {
+                continue;
+            }
+            generatedSet.insert(user);
+
             QJsonObject obj;
-            obj["u"] = generateUniqueUsername();
-            obj["p"] = generateRandomSuffix(8);
+            obj["u"] = user;
+            obj["p"] = generateRandomPassword(QRandomGenerator::global()->bounded(10, 15));
             array.append(obj);
+            count++;
         }
 
         QJsonDocument doc(array);
         QByteArray jsonData = doc.toJson();
 
-        // 2. 写入主文件
+        // 写入运行目录文件
         QFile file(fullPath);
         if (file.open(QIODevice::WriteOnly)) {
             file.write(jsonData);
             file.close();
 
+            m_allAccountFilePaths.append(fullPath);
             m_newAccountFilePaths.append(fullPath);
             generatedAny = true;
+            LOG_INFO(QString("%1├─ 💾 写入成功: %2").arg(indent, fileName));
 
-            LOG_INFO(QString("%1├─ 💾 主文件: 写入成功").arg(indent));
-
-            // 3. 写入备份
-            QFile copyFile(copyPath);
-            if (copyFile.open(QIODevice::WriteOnly)) {
-                copyFile.write(jsonData);
-                copyFile.close();
-                LOG_INFO(QString("%1└─ 📋 备份文件: 写入成功").arg(indent));
-            } else {
-                LOG_INFO(QString("%1└─ ❌ 备份文件: 写入失败").arg(indent));
-            }
-
-            // 将生成的文件回写到源代码目录 (包含 copy 文件)
 #ifdef APP_SOURCE_DIR
-            // APP_SOURCE_DIR 来自 CMake 定义
             QString srcConfigDirStr = QString(APP_SOURCE_DIR) + "/config";
             QDir srcDir(srcConfigDirStr);
-
-            // 只有当源码目录真的存在时才执行 (防止非开发环境误操作)
             if (srcDir.exists()) {
-                LOG_INFO(QString("%1   🚀 [同步源码] 正在回写到: %2").arg(indent, srcConfigDirStr));
+                QString destPath = srcDir.filePath(fileName);
+                if (QFile::exists(destPath)) QFile::remove(destPath);
 
-                // Lambda: 复制并覆盖的辅助函数
-                auto copyToSource = [&](QString srcFilePath, QString fileNameLog) {
-                    QString destPath = srcDir.filePath(QFileInfo(srcFilePath).fileName());
-
-                    // 如果目标存在，先删除，确保由 QFile::copy 进行全新复制
-                    if (QFile::exists(destPath)) {
-                        QFile::remove(destPath);
-                    }
-
-                    if (QFile::copy(srcFilePath, destPath)) {
-                        LOG_INFO(QString("%1      ✅ 同步成功: %2").arg(indent, fileNameLog));
-                    } else {
-                        LOG_WARNING(QString("%1      ⚠️ 同步失败: %2").arg(indent, fileNameLog));
-                    }
-                };
-
-                // A. 回写主文件
-                copyToSource(fullPath, fileName);
-
-                // B. 回写 Copy 文件
-                if (QFile::exists(copyPath)) {
-                    copyToSource(copyPath, copyFileName);
+                if (QFile::copy(fullPath, destPath)) {
+                    LOG_INFO(QString("%1└─ 🔄 [同步源码] 已回写到: %2").arg(indent, fileName));
+                } else {
+                    LOG_WARNING(QString("%1└─ ⚠️ [同步失败] 无法回写到源码目录").arg(indent));
                 }
             }
 #endif
-
         } else {
-            LOG_ERROR(QString("%1└─ ❌ 主文件: 打开失败 (%2)").arg(indent, file.errorString()));
+            LOG_ERROR(QString("%1└─ ❌ 写入失败 (%2)").arg(indent, file.errorString()));
         }
     }
 

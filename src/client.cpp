@@ -710,7 +710,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         quint8  clientUnknown8 = 0;
         quint16 clientListenPort = 0;
         quint32 clientPeerKey = 0;
-        QString clientPlayerName = "Unknown";
+        QString clientPlayerName = "";
         quint32 clientUnknown32 = 0;
         quint16 clientInternalPort = 0;
         quint32 clientInternalIP = 0;
@@ -1032,7 +1032,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
         // 1. 查找玩家
         quint8 currentPid = 0;
-        QString playerName = "Unknown";
+        QString playerName = "";
         for (auto it = m_players.begin(); it != m_players.end(); ++it) {
             if (it.value().socket == socket) {
                 currentPid = it.key();
@@ -1244,7 +1244,7 @@ void Client::onPlayerDisconnected() {
     if (!socket) return;
 
     quint8 pidToRemove = 0;
-    QString nameToRemove = "Unknown";
+    QString nameToRemove = "";
     bool wasVisualHost = false;
 
     // 1. 查找玩家并移除 Map 记录
@@ -2731,7 +2731,7 @@ void Client::initSlots(quint8 maxPlayers)
             m_slots[i].race = (quint8)SlotRace::Observer;
         }
     }
-
+    m_players[1].name = m_botDisplayName;
     LOG_INFO("   └─ ✨ 状态: 初始化完成 (Bot -> Slot 11)");
 }
 
