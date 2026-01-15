@@ -2684,15 +2684,18 @@ void Client::broadcastSlotInfo(quint8 excludePid)
 
 void Client::initSlots(quint8 maxPlayers, bool showBotAtObserver)
 {
-    // 保护性检查
     if (maxPlayers < 1) maxPlayers = 12;
+    quint8 actualSlotCount = maxPlayers;
+    if (maxPlayers == 12) {
+        actualSlotCount = 13;
+    }
 
-    LOG_INFO(QString("🧹 [槽位重置] Max: %1 | Bot强制裁判位: %2")
-                 .arg(maxPlayers).arg(showBotAtObserver));
+    LOG_INFO(QString("🧹 [槽位重置] 请求: %1 | 实际分配: %2 | Bot安排到裁判位: %3")
+                 .arg(maxPlayers).arg(actualSlotCount).arg(showBotAtObserver));
 
     // 1. 清空数据
     m_slots.clear();
-    m_slots.resize(maxPlayers);
+    m_slots.resize(actualSlotCount);
     m_players.clear();
 
     // 2. 清空连接
@@ -2708,14 +2711,17 @@ void Client::initSlots(quint8 maxPlayers, bool showBotAtObserver)
     m_playerBuffers.clear();
 
     // 3. 初始化槽位状态
-    for (quint8 i = 0; i < maxPlayers; ++i) {
+    for (quint8 i = 0; i < actualSlotCount; ++i) {
         GameSlot &slot = m_slots[i];
 
         // 初始化基础对象
         slot = GameSlot();
         slot.downloadStatus = DownloadStart;
 
+        // 颜色设置：i + 1
         slot.color = i + 1;
+
+        // 预判天然队伍归属
         quint8 naturalTeam;
         quint8 naturalRace;
 
@@ -2728,18 +2734,18 @@ void Client::initSlots(quint8 maxPlayers, bool showBotAtObserver)
             naturalTeam = (quint8)SlotTeam::Scourge;
             naturalRace = (quint8)SlotRace::Scourge;
         } else {
-            // 10+: 裁判 (Observer)
+            // 10+: 裁判/观察者 (Observer)
             naturalTeam = (quint8)SlotTeam::Observer;
             naturalRace = (quint8)SlotRace::Observer;
         }
 
         // 分支 A: 机器人槽位
-        if (i == maxPlayers - 1) {
+        if (i == actualSlotCount - 1) {
             slot.pid            = 1;
             slot.downloadStatus = Completed;
             slot.slotStatus     = Occupied;
             slot.computer       = Human;
-            slot.computerType   = Easy;
+            slot.computerType   = Normal;
             slot.handicap       = 100;
 
             // --- 队伍决策 ---
@@ -2774,8 +2780,8 @@ void Client::initSlots(quint8 maxPlayers, bool showBotAtObserver)
     m_players.insert(1, botData);
 
     LOG_INFO(QString("✨ 房间初始化完成：Bot @ Slot %1 (Team %2)")
-                 .arg(maxPlayers - 1)
-                 .arg(m_slots[maxPlayers-1].team));
+                 .arg(actualSlotCount - 1)
+                 .arg(m_slots[actualSlotCount - 1].team));
 }
 
 QByteArray Client::serializeSlotData() {
