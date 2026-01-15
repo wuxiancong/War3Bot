@@ -4,6 +4,8 @@
 #include <QString>
 #include <QByteArray>
 #include <QDataStream>
+#include <memory>
+#include <qmutex.h>
 
 // =========================================================
 // 枚举定义
@@ -41,6 +43,21 @@ enum W3MapFlag {
     MAPFLAG_RANDOMRACES     = 16
 };
 
+struct War3MapSharedData {
+    bool        valid       = false;
+    QString     mapPath;
+    QByteArray  mapRawData;
+    QByteArray  mapSize;
+    QByteArray  mapInfo;      // MapInfo CRC
+    QByteArray  mapCRC;       // Xoro CRC
+    QByteArray  mapSHA1Bytes; // SHA1
+
+    // 地图基础信息
+    QByteArray  mapWidth;
+    QByteArray  mapHeight;
+    quint32     mapOptions  = 0;
+};
+
 // 地图选项 (StatString 解析用)
 #define MAPOPT_HIDEMINIMAP              (1 << 0)
 #define MAPOPT_MELEE                    (1 << 2)
@@ -57,77 +74,68 @@ public:
     ~War3Map();
 
     // 加载并解析地图 (核心入口)
-    bool load(const QString &mapFilePath);
+    bool                                                        load(const QString &mapFilePath);
 
     // === Setters (游戏设置) ===
-    void setMapVisibility(W3MapVisibility vis)  { m_mapVisibility = vis; }
-    void setMapObservers(W3MapObservers obs)    { m_mapObservers = obs; }
-    void setMapSpeed(W3MapSpeed speed)          { m_mapSpeed = speed; }
-    void setMapFlags(quint32 flags)             { m_mapFlags = flags; }
+    void                                                        setMapVisibility(W3MapVisibility vis)   { m_mapVisibility = vis; }
+    void                                                        setMapObservers(W3MapObservers obs)     { m_mapObservers = obs; }
+    void                                                        setMapSpeed(W3MapSpeed speed)           { m_mapSpeed = speed; }
+    void                                                        setMapFlags(quint32 flags)              { m_mapFlags = flags; }
 
     // === Getters (获取信息) ===
-    bool isValid() const                        { return m_valid; }
-    QString getMapPath() const                  { return m_mapPath; }
-    QByteArray getMapWidth() const              { return m_mapWidth; }
-    QByteArray getMapHeight() const             { return m_mapHeight; }
-    QByteArray getMapRawData() const            { return m_mapRawData; }
-    QByteArray getMapSHA1Bytes() const          { return m_mapSHA1Bytes; }
+    bool                                                        isValid()                               const;
+    QString                                                     getMapPath()                            const;
+    QByteArray                                                  getMapWidth()                           const;
+    QByteArray                                                  getMapHeight()                          const;
+    QByteArray                                                  getMapRawData()                         const;
+    QByteArray                                                  getMapSHA1Bytes()                       const;
 
     // === Getters (协议专用) ===
-    quint32 getMapCRC() const;
-    quint32 getMapSHA1() const;
-    quint32 getMapSize() const;
-    quint32 getMapInfo() const;
-    QString getMapName() const;
+    quint32                                                     getMapCRC()                             const;
+    quint32                                                     getMapSHA1()                            const;
+    quint32                                                     getMapSize()                            const;
+    quint32                                                     getMapInfo()                            const;
+    QString                                                     getMapName()                            const;
 
     // 获取构建 StatString 所需的游戏标志位
-    QByteArray getMapGameFlags();
+    QByteArray                                                  getMapGameFlags();
 
     // === 工具函数 (Static) ===
 
+    // 清理未使用的缓存
+    static void                                                 clearUnusedCache();
+
     // 暴雪自定义哈希 (原 computeXoroCRC，纯净版)
-    static quint32 calcBlizzardHash(const QByteArray &data);
+    static quint32                                              calcBlizzardHash(const QByteArray &data);
 
     // StatString 编码/解码
-    static QByteArray encodeStatString(const QByteArray &data);
-    static QByteArray decodeStatString(const QByteArray &encoded);
+    static QByteArray                                           encodeStatString(const QByteArray &data);
+    static QByteArray                                           decodeStatString(const QByteArray &encoded);
 
     // === 业务逻辑 ===
     // 分析 StatString 并打印日志
-    void analyzeStatString(const QString &label, const QByteArray &encodedData);
+    void                                                        analyzeStatString(const QString &label, const QByteArray &encodedData);
 
     // 生成用于局域网广播的 StatString
-    QByteArray getEncodedStatString(const QString &hostName, const QString &netPathOverride = "");
+    QByteArray                                                  getEncodedStatString(const QString &hostName, const QString &netPathOverride = "");
 
     // 设置 CRC 计算时优先查找的脚本目录
-    static void setPriorityCrcDirectory(const QString &dirPath);
+    static void                                                 setPriorityCrcDirectory(const QString &dirPath);
 
 private:
-    bool m_valid;
-    QString m_mapPath;
-
-    // --- 核心校验数据 ---
-    QByteArray m_mapSize;
-    QByteArray m_mapInfo;               // 地图信息 CRC
-    QByteArray m_mapCRC;                // 游戏逻辑 CRC
-    QByteArray m_mapSHA1Bytes;          // 地图文件 SHA1
-
-    // --- 地图信息 (w3i) ---
-    quint32 m_mapOptions;
-    QByteArray m_mapWidth;
-    QByteArray m_mapHeight;
-    QByteArray m_mapRawData;
-    int m_numPlayers;
-    int m_numTeams;
-
     // --- 游戏房间设置 ---
-    W3MapSpeed      m_mapSpeed;
-    W3MapVisibility m_mapVisibility;
-    W3MapObservers  m_mapObservers;
-    quint32         m_mapFlags;
+    W3MapSpeed                                                  m_mapSpeed;
+    W3MapVisibility                                             m_mapVisibility;
+    W3MapObservers                                              m_mapObservers;
+    quint32                                                     m_mapFlags;
+
+    // 指向共享数据的指针
+    std::shared_ptr<War3MapSharedData>                          m_sharedData;
 
     // 静态配置
-    static QString s_priorityCrcDir;
+    static QString                                              s_priorityCrcDir;
+    static QMutex                                               s_cacheMutex;
+    static QMap<QString, std::shared_ptr<War3MapSharedData>>    s_cache;
 };
 
 #endif // WAR3MAP_H

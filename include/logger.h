@@ -78,6 +78,7 @@ private:
     void log(LogLevel level, const QString &message);
     bool rotateLogFileIfNeeded();
     bool performLogRotation();
+    void consoleOutput(LogLevel level, const QString &message);
     void consoleOutput(const QString &message, bool isError = false);
 
 private:

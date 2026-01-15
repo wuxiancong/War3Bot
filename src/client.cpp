@@ -104,7 +104,7 @@ Client::Client(QObject *parent)
                     m_mapData = m_war3Map.getMapRawData();
                     m_mapSize = (quint32)m_mapData.size();
 
-                    LOG_INFO(QString("         └─ ✅ 加载成功: %1 bytes (准备就绪)").arg(m_mapSize));
+                    LOG_INFO(QString("         └─ ✅ 加载成功: %1 bytes").arg(m_mapSize));
                 } else {
                     // 地图坏了
                     m_mapSize = 0;
