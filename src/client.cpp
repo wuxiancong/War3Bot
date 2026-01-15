@@ -2680,59 +2680,76 @@ void Client::broadcastSlotInfo(quint8 excludePid)
 
 void Client::initSlots(quint8 maxPlayers)
 {
-    LOG_INFO(QString("🧹 [槽位重置] 初始化房间槽位 (Max: %1)").arg(maxPlayers));
+    LOG_INFO(QString("🧹 [槽位重置] 初始化房间槽位 (Fixed: %1)").arg(maxPlayers));
 
-    // 1. 清空旧数据
+    // 1. 清理旧数据
     m_slots.clear();
+    m_players.clear();
     m_slots.resize(maxPlayers);
 
-    // 2. 清空连接
     if (!m_playerSockets.isEmpty()) {
-        LOG_INFO(QString("   ├─ 🔌 断开连接: %1 个残留 Socket").arg(m_playerSockets.size()));
         for (auto socket : qAsConst(m_playerSockets)) {
             if (socket->state() == QAbstractSocket::ConnectedState) {
                 socket->disconnectFromHost();
             }
+            socket->deleteLater();
         }
     }
     m_playerSockets.clear();
     m_playerBuffers.clear();
 
-    // 3. 初始化槽位状态
+    // 2. 初始化槽位
     for (quint8 i = 0; i < maxPlayers; ++i) {
         m_slots[i] = GameSlot();
-        m_slots[i].downloadStatus = NotStarted;
-        m_slots[i].computer = Human;
         m_slots[i].color = i + 1;
 
-        // Bot 占据最后一个槽位
-        if (i == 11) {
-            m_slots[i].pid = 1;
-            m_slots[i].downloadStatus = Completed;
-            m_slots[i].slotStatus = Occupied;
-            m_slots[i].computer = Human;
-            m_slots[i].team = (quint8)SlotTeam::Observer;
-            m_slots[i].race = (quint8)SlotRace::Observer;
-            continue;
-        }
-
-        // --- 正常玩家槽位 ---
-        m_slots[i].pid = 0;
-        m_slots[i].slotStatus = Open;
-
-        if (i < 5) { // Sentinel
+        if (i < 5) {
             m_slots[i].team = (quint8)SlotTeam::Sentinel;
             m_slots[i].race = (quint8)SlotRace::NightElf;
-        } else if (i < 10) { // Scourge
+            m_slots[i].computer = Human;
+            m_slots[i].slotStatus = Open;
+            m_slots[i].downloadStatus = NotStarted;
+        }
+        else if (i < 10) {
             m_slots[i].team = (quint8)SlotTeam::Scourge;
             m_slots[i].race = (quint8)SlotRace::Undead;
-        } else { // Slot 10 (Observer)
+            m_slots[i].computer = Human;
+            m_slots[i].slotStatus = Open;
+            m_slots[i].downloadStatus = NotStarted;
+        }
+        else if (i == 10) {
             m_slots[i].team = (quint8)SlotTeam::Observer;
-            m_slots[i].race = (quint8)SlotRace::Observer;
+            m_slots[i].race = (quint8)SlotRace::Random;
+            m_slots[i].computer = Human;
+            m_slots[i].slotStatus = Open;
+            m_slots[i].downloadStatus = NotStarted;
+        }
+        else if (i == 11) {
+            m_slots[i].pid = 1;
+            m_slots[i].team = (quint8)SlotTeam::Observer;
+            m_slots[i].race = (quint8)SlotRace::Random;
+            m_slots[i].computer = Human;
+            m_slots[i].slotStatus = Occupied;
+            m_slots[i].downloadStatus = Completed;
+            m_slots[i].computerType = Normal;
+            m_slots[i].handicap = 100;
         }
     }
-    m_players[1].name = m_botDisplayName;
-    LOG_INFO("   └─ ✨ 状态: 初始化完成 (Bot -> Slot 11)");
+
+    // 4. 在 m_players 中注册 Bot
+    PlayerData botData;
+    botData.pid = 1;
+    botData.name = m_botDisplayName;
+    botData.socket = nullptr;
+    botData.isFinishedLoading = true;
+    botData.isDownloadStart = false;
+    botData.language = "EN";
+    botData.extIp = QHostAddress("127.0.0.1");
+    botData.intIp = QHostAddress("127.0.0.1");
+
+    m_players.insert(1, botData);
+
+    LOG_INFO("   └─ ✨ 状态: 初始化完成 (12 Slots, Bot PID 1 Registered)");
 }
 
 QByteArray Client::serializeSlotData() {

@@ -1437,16 +1437,23 @@ QString NetManager::natTypeToString(NATType type)
 QString NetManager::packetTypeToString(PacketType type)
 {
     switch (type) {
-    case PacketType::C_S_HEARTBEAT:   return "C_S_HEARTBEAT";
-    case PacketType::C_S_REGISTER:    return "C_S_REGISTER";
-    case PacketType::S_C_REGISTER:    return "S_C_REGISTER";
-    case PacketType::C_S_UNREGISTER:  return "C_S_UNREGISTER";
-    case PacketType::C_S_COMMAND:     return "C_S_COMMAND";
-    case PacketType::S_C_COMMAND:     return "S_C_COMMAND";
-    case PacketType::C_S_PING:        return "C_S_PING";
-    case PacketType::S_C_PONG:        return "S_C_PONG";
-    case PacketType::S_C_UPLOADRESULT: return "S_C_UPLOADRESULT";
-    default: return QString("UNKNOWN(%1)").arg(static_cast<int>(type));
+    case PacketType::C_S_HEARTBEAT:     return "C_S_HEARTBEAT";
+    case PacketType::C_S_REGISTER:      return "C_S_REGISTER";
+    case PacketType::S_C_REGISTER:      return "S_C_REGISTER";
+    case PacketType::C_S_UNREGISTER:    return "C_S_UNREGISTER";
+    case PacketType::S_C_UNREGISTER:    return "S_C_UNREGISTER";
+    case PacketType::C_S_GAMEDATA:      return "C_S_GAMEDATA";
+    case PacketType::S_C_GAMEDATA:      return "S_C_GAMEDATA";
+    case PacketType::C_S_COMMAND:       return "C_S_COMMAND";
+    case PacketType::S_C_COMMAND:       return "S_C_COMMAND";
+    case PacketType::C_S_CHECKMAPCRC:   return "C_S_CHECKMAPCRC";
+    case PacketType::S_C_CHECKMAPCRC:   return "S_C_CHECKMAPCRC";
+    case PacketType::C_S_PING:          return "C_S_PING";
+    case PacketType::S_C_PONG:          return "S_C_PONG";
+    case PacketType::S_C_ERROR:         return "S_C_ERROR";
+    case PacketType::S_C_MESSAGE:       return "S_C_MESSAGE";
+    case PacketType::S_C_UPLOADRESULT:  return "S_C_UPLOADRESULT";
+    default: return QString("UNKNOWN(0x%1)").arg(static_cast<int>(type), 2, 16, QChar('0')).toUpper();
     }
 }
 
