@@ -539,30 +539,24 @@ private:
     // 控制命令
     Command                         *m_command;
 
-    // 连接管理
-    NetManager                      *m_netManager            = nullptr;
-    QString                         m_serverAddr;
-    quint16                         m_serverPort            = 0;
-
     // 玩家管理
     QString                         m_botDisplayName        = "CC";
     QList<QTcpSocket*>              m_playerSockets;
     QMap<QTcpSocket*, QByteArray>   m_playerBuffers;
     QMap<quint8, PlayerData>        m_players;
 
-    // 游戏状态
-    QVector<GameSlot>               m_slots;
+    // 频道管理
     QStringList                     m_channelList;
 
+    // 槽位数据
+    QVector<GameSlot>               m_slots;
+    bool                            m_enableObservers       = true;
     quint8                          m_layoutStyle           = CustomForces;
-    quint32                         m_randomSeed            = 0;
-    quint32                         m_hostCounter           = 1;
-    quint32                         m_chatIntervalCounter   = 0;
-    bool                            m_gameStarted           = false;
 
     // 游戏数据
     QList<PlayerAction>             m_actionQueue;
-    quint8                          m_actionLogFrequency    = 5;
+    quint32                         m_hostCounter           = 1;
+    quint32                         m_randomSeed            = 0;
 
     // 地图下载
     War3Map                         m_war3Map;
@@ -586,9 +580,12 @@ private:
     QString                         m_lastLoadedMapPath;
 
     // 连接管理
+    NetManager                      *m_netManager           = nullptr;
+    QString                         m_serverAddr;
+    quint16                         m_serverPort            = 0;
     QUdpSocket                      *m_udpSocket            = nullptr;
-    QTcpSocket                      *m_tcpSocket            = nullptr;      // 战网连接
-    QTcpServer                      *m_tcpServer            = nullptr;      // 玩家监听
+    QTcpSocket                      *m_tcpSocket            = nullptr;
+    QTcpServer                      *m_tcpServer            = nullptr;
 
     // 时间管理
     QTimer                          *m_pingTimer            = nullptr;
@@ -597,11 +594,16 @@ private:
     quint16                         m_gameTickInterval      = 100;
 
     // 设置标志
-    bool m_isBot = false;
+    bool                            m_isBot                 = false;
+    bool                            m_gameStarted           = false;
 
     // 登录选项
     quint32                         m_logonType             = 0;
     LoginProtocol                   m_loginProtocol         = Protocol_SRP_0x53;
+
+    // 频率管理
+    quint8                          m_actionLogFrequency    = 5;
+    quint32                         m_chatIntervalCounter   = 0;
 };
 
 #endif // CLIENT_H

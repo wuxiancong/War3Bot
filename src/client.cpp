@@ -2051,6 +2051,13 @@ void Client::createGame(const QString &gameName, const QString &password, Provid
         LOG_INFO(QString("   ├─ ⚡️ 命中内存缓存，跳过加载: %1").arg(QFileInfo(m_currentMapPath).fileName()));
     }
 
+    // 设置裁判
+    if (m_enableObservers) {
+        m_war3Map.enableObservers();
+    } else {
+        m_war3Map.disableObservers();
+    }
+
     QString mapName = QFileInfo(m_lastLoadedMapPath).fileName();
     QByteArray encodedData = m_war3Map.getEncodedStatString(m_botDisplayName);
     if (encodedData.isEmpty()) {
