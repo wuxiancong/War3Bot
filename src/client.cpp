@@ -2555,7 +2555,7 @@ QByteArray Client::createW3GSIncomingActionPacket(quint16 sendInterval)
     out.writeRawData(actionBlock.constData(), actionBlock.size());
 
     // 4. 计算 CRC
-    quint16 calculatedCRC = calculateGhostCRC(actionBlock);
+    quint16 calculatedCRC = calculateCRC16(actionBlock);
 
     // 回填 CRC
     QDataStream crcStream(&packet, QIODevice::ReadWrite);

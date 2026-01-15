@@ -1,7 +1,5 @@
 #include "calculate.h"
 
-#include "zlib.h"
-
 quint16 calculateCRC16(const QByteArray &data)
 {
     quint16 crc = 0xFFFF;
@@ -23,12 +21,4 @@ quint16 calculateCRC16(const QByteArray &data)
     }
 
     return crc;
-}
-
-quint16 calculateGhostCRC(const QByteArray &actionBlock) {
-    if (actionBlock.isEmpty()) return 0;
-    uLong zCrc = crc32(0L, Z_NULL, 0);
-    zCrc = crc32(zCrc, reinterpret_cast<const Bytef*>(actionBlock.constData()), actionBlock.size());
-    quint32 fullCrc32 = static_cast<quint32>(zCrc);
-    return (quint16)((fullCrc32 >> 16) ^ (fullCrc32 & 0xFFFF));
 }

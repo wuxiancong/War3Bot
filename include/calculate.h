@@ -10,6 +10,5 @@
  * @return 计算出的 16 位校验和
  */
 quint16 calculateCRC16(const QByteArray &data);
-quint16 calculateGhostCRC(const QByteArray &data);
 
 #endif // CALCULATE_H
