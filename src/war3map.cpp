@@ -55,6 +55,14 @@ bool War3Map::isValid() const {
     return m_sharedData && m_sharedData->valid;
 }
 
+QList<W3iForce> War3Map::getForces() const {
+    return m_sharedData ? m_sharedData->w3iForces : QList<W3iForce>();
+}
+
+QList<W3iPlayer> War3Map::getPlayers() const {
+    return m_sharedData ? m_sharedData->w3iPlayers : QList<W3iPlayer>();
+}
+
 QString War3Map::getMapPath() const {
     return m_sharedData ? m_sharedData->mapPath : QString();
 }
@@ -291,23 +299,96 @@ bool War3Map::load(const QString &mapPath)
     if (!w3iData.isEmpty()) {
         QDataStream in(w3iData);
         in.setByteOrder(QDataStream::LittleEndian);
-        quint32 fileFormat; in >> fileFormat;
-        if (fileFormat == 18 || fileFormat == 25) {
-            in.skipRawData(4 + 4);
-            auto skipStr = [&]() { char c; do { in >> (quint8&)c; } while(c != 0 && !in.atEnd()); };
-            skipStr(); skipStr(); skipStr(); skipStr();
-            in.skipRawData(32 + 16);
-            quint32 rawW, rawH, rawFlags;
-            in >> rawW >> rawH >> rawFlags;
-            newData->mapWidth = toBytes16((quint16)rawW);
-            newData->mapHeight = toBytes16((quint16)rawH);
-            newData->mapOptions = rawFlags;
+        in.setFloatingPointPrecision(QDataStream::SinglePrecision); // W3I 使用 float
 
-            LOG_INFO(QString("   │  ├─ 📏 尺寸: %1 x %2").arg(rawW).arg(rawH));
-            LOG_INFO(QString("   │  └─ 🏳️ 标志: 0x%1").arg(QString::number(rawFlags, 16).toUpper()));
-        } else {
-            LOG_INFO("   │  └─ ⚠️ 格式版本未知，使用默认值");
+        // 辅助函数：读取 C 风格字符串 (以 \0 结尾)
+        auto readString = [&]() -> QString {
+            QByteArray buffer;
+            char c;
+            while (!in.atEnd()) {
+                in >> (quint8&)c;
+                if (c == 0) break;
+                buffer.append(c);
+            }
+            return QString::fromUtf8(buffer);
+        };
+
+        // 1. 文件头
+        quint32 fileFormat; in >> fileFormat; // 版本号: 18, 25, 28, 31
+        quint32 saveCount; in >> saveCount;
+        quint32 editorVer; in >> editorVer;
+
+        // 2. 地图信息字符串 (必须读取以移动指针)
+        /* QString mapName =    */ readString();
+        /* QString mapAuthor =  */ readString();
+        /* QString mapDesc =    */ readString();
+        /* QString recPlayers = */ readString();
+
+        // 3. 摄像机边界 (8个float)
+        in.skipRawData(8 * 4);
+        // 摄像机边界补充 (4个int)
+        in.skipRawData(4 * 4);
+
+        // 4. 地图尺寸与标志
+        quint32 rawW, rawH, rawFlags;
+        in >> rawW >> rawH >> rawFlags;
+        quint8 tileset; in >> tileset;
+
+        newData->mapWidth = toBytes16((quint16)rawW);
+        newData->mapHeight = toBytes16((quint16)rawH);
+        newData->mapOptions = rawFlags;
+
+        LOG_INFO(QString("   │  ├─ 📏 尺寸: %1 x %2").arg(rawW).arg(rawH));
+        LOG_INFO(QString("   │  └─ 🏳️ 标志: 0x%1").arg(QString::number(rawFlags, 16).toUpper()));
+
+        // 5. 加载屏幕信息
+        quint32 loadingScreenID; in >> loadingScreenID;
+        /* path =               */ readString();
+        /* text =               */ readString();
+        /* title =              */ readString();
+        /* sub =                */ readString();
+
+        // 6. 游戏数据设置
+        quint32 gameDataSet; in >> gameDataSet;
+        /* prologuePath =       */ readString();
+        /* prologueText =       */ readString();
+        /* prologueTitle =      */ readString();
+        /* prologueSub =        */ readString();
+
+        // 7. 玩家数据解析 (关键部分!)
+        quint32 maxPlayers; in >> maxPlayers;
+        quint32 numPlayers; in >> numPlayers; // 实际定义的玩家数
+        newData->numPlayers = (quint8)numPlayers;
+
+        LOG_INFO(QString("   │  ├─ 👥 预设玩家: %1 人").arg(numPlayers));
+
+        for (quint32 i = 0; i < numPlayers; ++i) {
+            W3iPlayer player;
+            in >> player.id;
+            in >> player.type; // 1=Human, 2=Computer
+            in >> player.race; // 1=Human, 2=Orc, 3=Undead, 4=NightElf
+            in >> player.fix;
+            player.name = readString();
+            in >> player.startX >> player.startY >> player.startZ;
+
+            in.skipRawData(4 + 4);
+            newData->w3iPlayers.append(player);
+            LOG_DEBUG(QString("      - P%1 Type:%2 Race:%3").arg(player.id).arg(player.type).arg(player.race));
         }
+
+        // 8. 队伍数据解析 (Force Data)
+        quint32 numForces; in >> numForces;
+        LOG_INFO(QString("   │  └─ 🚩 预设队伍: %1 队").arg(numForces));
+
+        for (quint32 i = 0; i < numForces; ++i) {
+            W3iForce force;
+            in >> force.flags;
+            in >> force.playerMasks;
+            force.name = readString();
+
+            newData->w3iForces.append(force);
+        }
+
     } else {
         LOG_INFO("   │  └─ ⚠️ w3i 文件缺失，使用默认值");
     }

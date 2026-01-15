@@ -2003,13 +2003,18 @@ void Client::cancelGame() {
 
 void Client::createGame(const QString &gameName, const QString &password, ProviderVersion providerVersion, ComboGameType comboGameType, SubGameType subGameType, LadderType ladderType, CommandSource commandSource)
 {
-    // 1. 打印根节点
+    // 1. 初始化槽位
+    if (m_enableObservers) {
+        initSlots(12);
+    } else {
+        initSlots(10);
+    }
+
     QString sourceStr = (commandSource == From_Server) ? "Server" : "Client";
     LOG_INFO(QString("🚀 [创建房间] 发起请求: [%1]").arg(gameName));
-    LOG_INFO(QString("   ├─ 🎮 来源: %1 | 密码: %2").arg(sourceStr, password.isEmpty() ? "None" : "***"));
-
-    // 初始化槽位
-    initSlots();
+    LOG_INFO(QString("   ├─ 🎮 来源: %1 | 密码: %2 | 槽位: %3 裁判: %4")
+                 .arg(sourceStr, password.isEmpty() ? "None" : "***",
+                      m_enableObservers ? "12" : "10", m_enableObservers ? "有" : "无"));
 
     // 2. UDP 端口汇报检查
     if (m_udpSocket->state() == QAbstractSocket::BoundState) {
@@ -2689,99 +2694,95 @@ void Client::broadcastSlotInfo(quint8 excludePid)
 // 11. 槽位辅助函数
 // =========================================================
 
-void Client::initSlots(quint8 maxPlayers, bool showBotAtObserver)
+void Client::initSlots(quint8 maxPlayers)
 {
-    quint8 actualSlotCount = maxPlayers;
-    if (maxPlayers < 1) actualSlotCount = 10;
-    if (maxPlayers == 12) {
-        actualSlotCount = showBotAtObserver ? 12 : 13;
-    } else if(maxPlayers == 10) {
-        actualSlotCount = 11;
-    }
+    LOG_INFO(QString("🧹 [槽位重置] 地图槽位数: %1").arg(maxPlayers));
 
-    LOG_INFO(QString("🧹 [槽位重置] 请求: %1 | 实际分配: %2 | Bot安排到裁判位: %3")
-                 .arg(maxPlayers).arg(actualSlotCount).arg(showBotAtObserver));
-
-    // 1. 清空数据
     m_slots.clear();
-    m_slots.resize(actualSlotCount);
+    m_slots.resize(maxPlayers);
     m_players.clear();
 
-    // 2. 清空连接
-    if (!m_playerSockets.isEmpty()) {
-        for (auto socket : qAsConst(m_playerSockets)) {
-            if (socket->state() == QAbstractSocket::ConnectedState) {
-                socket->disconnectFromHost();
-            }
-            socket->deleteLater();
+    // 清空玩家 socket（真实玩家）
+    for (auto socket : qAsConst(m_playerSockets)) {
+        if (socket->state() == QAbstractSocket::ConnectedState) {
+            socket->disconnectFromHost();
         }
+        socket->deleteLater();
     }
     m_playerSockets.clear();
     m_playerBuffers.clear();
 
-    // 3. 初始化槽位状态
-    for (quint8 i = 0; i < actualSlotCount; ++i) {
+    // 初始化地图槽
+    for (quint8 i = 0; i < maxPlayers; ++i) {
         GameSlot &slot = m_slots[i];
-
-        // 初始化基础对象
         slot = GameSlot();
-        slot.downloadStatus = DownloadStart;
 
-        // 颜色设置：i + 1
-        slot.color = i + 1;
-
-        // 预判天然队伍归属
-        quint8 naturalTeam;
-        quint8 naturalRace;
-
-        if (i < 5) {
-            // 0-4: 近卫 (Sentinel)
-            naturalTeam = (quint8)SlotTeam::Sentinel;
-            naturalRace = (quint8)SlotRace::Sentinel;
-        } else if (i < 10) {
-            // 5-9: 天灾 (Scourge)
-            naturalTeam = (quint8)SlotTeam::Scourge;
-            naturalRace = (quint8)SlotRace::Scourge;
-        } else {
-            // 10+: 裁判/观察者 (Observer)
-            naturalTeam = (quint8)SlotTeam::Observer;
-            naturalRace = (quint8)SlotRace::Observer;
-        }
-
-        // 分支 A: 机器人槽位
-        if (i == actualSlotCount - 1) {
-            slot.pid            = 1;
-            slot.downloadStatus = Completed;
-            slot.slotStatus     = Occupied;
-            slot.computer       = Human;
-            slot.computerType   = Normal;
-            slot.handicap       = 100;
-            continue;
-        }
-
-        // 分支 B: 正常玩家槽位
         slot.pid            = 0;
         slot.slotStatus     = Open;
         slot.computer       = Human;
-        slot.team           = naturalTeam;
-        slot.race           = naturalRace;
+        slot.downloadStatus = DownloadStart;
+        slot.color          = i + 1;
+        slot.handicap       = 100;
+
+        // 阵营分配
+        if (i < maxPlayers / 2) {
+            slot.team = (quint8)SlotTeam::Sentinel;
+            slot.race = (quint8)SlotRace::Sentinel;
+        } else {
+            slot.team = (quint8)SlotTeam::Scourge;
+            slot.race = (quint8)SlotRace::Scourge;
+        }
     }
 
-    // 4. 注册 Bot 到 m_players
-    PlayerData botData;
-    botData.pid = 1;
-    botData.name = m_botDisplayName;
-    botData.socket = nullptr;
-    botData.isFinishedLoading = true;
-    botData.isDownloadStart = false;
-    botData.language = "EN";
-    botData.extIp = QHostAddress("0.0.0.0");
-    botData.intIp = QHostAddress("0.0.0.0");
-    m_players.insert(1, botData);
+    initBotPlayerData();
 
-    LOG_INFO(QString("✨ 房间初始化完成：Bot @ Slot %1 (Team %2)")
-                 .arg(actualSlotCount - 1)
-                 .arg(m_slots[actualSlotCount - 1].team));
+    LOG_INFO("✨ 地图槽位初始化完成（不包含 Bot）");
+}
+
+void Client::initSlotsFromMap()
+{
+    if (!m_war3Map.isValid()) return;
+
+    auto players = m_war3Map.getPlayers();
+    auto forces = m_war3Map.getForces();
+
+    int slotCount = players.size();
+
+    initSlots(slotCount);
+
+    for (int i = 0; i < players.size(); ++i) {
+        const W3iPlayer &wp = players[i];
+
+        int teamId = 0;
+        for (int f = 0; f < forces.size(); ++f) {
+            if (forces[f].playerMasks & (1 << wp.id)) {
+                teamId = f;
+                break;
+            }
+        }
+
+        GameSlot &slot = m_slots[i];
+
+        if (wp.type == 1) {
+            slot.slotStatus                 = Open;
+            slot.computer                   = Human;
+        } else if (wp.type == 2) {
+            slot.slotStatus                 = Open;
+            slot.computer                   = Computer;
+            slot.computerType               = Normal;
+        } else {
+            slot.slotStatus                 = Close;
+        }
+
+        if (wp.race == 1) slot.race         = (quint8)SlotRace::Human;
+        else if (wp.race == 2) slot.race    = (quint8)SlotRace::Orc;
+        else if (wp.race == 3) slot.race    = (quint8)SlotRace::Undead;
+        else if (wp.race == 4) slot.race    = (quint8)SlotRace::NightElf;
+        else slot.race                      = (quint8)SlotRace::Random;
+
+        slot.team = teamId;
+        slot.color = wp.id + 1;
+    }
 }
 
 QByteArray Client::serializeSlotData() {
@@ -2920,6 +2921,23 @@ bool Client::isHostJoined()
         }
     }
     return false;
+}
+
+void Client::initBotPlayerData()
+{
+    PlayerData bot;
+    bot.pid                 = 1;
+    bot.name                = m_botDisplayName;
+    bot.socket              = nullptr;
+    bot.isFinishedLoading   = true;
+    bot.isDownloadStart     = false;
+    bot.language            = "EN";
+    bot.extIp               = QHostAddress("0.0.0.0");
+    bot.intIp               = QHostAddress("0.0.0.0");
+
+    m_players.insert(bot.pid, bot);
+
+    LOG_INFO("🤖 Host Bot 注册完成（不占地图槽位）");
 }
 
 void Client::checkAllPlayersLoaded()

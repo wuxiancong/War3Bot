@@ -43,19 +43,39 @@ enum W3MapFlag {
     MAPFLAG_RANDOMRACES     = 16
 };
 
+struct W3iPlayer {
+    quint32             id;
+    quint32             type;
+    quint32             race;
+    quint32             fix;
+    QString             name;
+    float               startX;
+    float               startY;
+    float               startZ;
+};
+
+struct W3iForce {
+    quint32             flags;
+    quint32             playerMasks;
+    QString             name;
+};
+
 struct War3MapSharedData {
-    bool        valid       = false;
-    QString     mapPath;
-    QByteArray  mapRawData;
-    QByteArray  mapSize;
-    QByteArray  mapInfo;      // MapInfo CRC
-    QByteArray  mapCRC;       // Xoro CRC
-    QByteArray  mapSHA1Bytes; // SHA1
+    bool                valid       = false;
+    QString             mapPath;
+    QByteArray          mapRawData;
+    QByteArray          mapSize;
+    QByteArray          mapInfo;            // MapInfo CRC
+    QByteArray          mapCRC;             // Xoro CRC
+    QByteArray          mapSHA1Bytes;       // SHA1
 
     // 地图基础信息
-    QByteArray  mapWidth;
-    QByteArray  mapHeight;
-    quint32     mapOptions  = 0;
+    QByteArray          mapWidth;
+    QByteArray          mapHeight;
+    quint32             mapOptions      = 0;
+    QList<W3iPlayer>    w3iPlayers;
+    QList<W3iForce>     w3iForces;
+    quint8              numPlayers      = 0;
 };
 
 // 地图选项 (StatString 解析用)
@@ -86,6 +106,8 @@ public:
 
     // === Getters (获取信息) ===
     bool                                                        isValid()                               const;
+    QList<W3iForce>                                             getForces()                             const;
+    QList<W3iPlayer>                                            getPlayers()                            const;
     QString                                                     getMapPath()                            const;
     QByteArray                                                  getMapWidth()                           const;
     QByteArray                                                  getMapHeight()                          const;

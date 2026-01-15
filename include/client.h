@@ -324,14 +324,14 @@ struct PlayerData {
 
     // 网络连接
     QTcpSocket*  socket                  = nullptr;
-    QHostAddress extIp;                  // 公网IP
+    QHostAddress extIp;
     quint16      extPort                 = 0;
-    QHostAddress intIp;                  // 内网IP (0x1E提供)
+    QHostAddress intIp;
     quint16      intPort                 = 0;
 
     // 语言与编码
     QString      language                = "EN";
-    QTextCodec*  codec                   = nullptr;
+    QTextCodec   *codec                   = nullptr;
 
     // 下载状态
     bool         isDownloadStart         = false;
@@ -414,6 +414,7 @@ public:
     void joinChannel(const QString &channelName);       // 加入频道
 
     // --- 游戏主机管理 ---
+    void initBotPlayerData();
     bool isHostJoined();
     void swapSlots(int slot1, int slot2);
     void setGameTickInterval(quint16 interval);
@@ -480,7 +481,8 @@ private:
     void broadcastSlotInfo(quint8 excludePid = 1);
 
     // --- 槽位管理 ---
-    void initSlots(quint8 maxPlayers = 10, bool showBotAtObserver = false);
+    void initSlots(quint8 maxPlayers = 10);
+    void initSlotsFromMap();
     QByteArray serializeSlotData();
     GameSlot *findEmptySlot();
 
