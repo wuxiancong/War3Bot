@@ -479,6 +479,7 @@ private slots:
     void onUdpReadyRead();
     void onNewConnection();                             // 新玩家连接TCP Server
     void onPlayerReadyRead();                           // 玩家数据可读
+    void onStartLagFinished();
     void onPlayerDisconnected();                        // 玩家断开连接
 
 private:
@@ -600,6 +601,8 @@ private:
     QTimer                          *m_pingTimer            = nullptr;
     QTimer                          *m_startTimer           = nullptr;
     QTimer                          *m_gameTickTimer        = nullptr;
+    QTimer                          *m_startLagTimer        = nullptr;
+    int                             m_configStartLag        = 4000;
     quint16                         m_gameTickInterval      = 100;
 
     // 设置标志

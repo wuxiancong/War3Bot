@@ -42,6 +42,9 @@ Client::Client(QObject *parent)
     m_startTimer = new QTimer(this);
     m_startTimer->setSingleShot(true);
 
+    m_startLagTimer = new QTimer(this);
+    m_startLagTimer->setSingleShot(true);
+
     m_gameTickTimer = new QTimer(this);
     m_gameTickTimer->setInterval(m_gameTickInterval);
 
@@ -49,6 +52,7 @@ Client::Client(QObject *parent)
     connect(m_pingTimer, &QTimer::timeout, this, &Client::sendPingLoop);
     connect(m_startTimer, &QTimer::timeout, this, &Client::onGameStarted);
     connect(m_gameTickTimer, &QTimer::timeout, this, &Client::onGameTick);
+    connect(m_startLagTimer, &QTimer::timeout, this, &Client::onStartLagFinished);
 
     connect(m_tcpSocket, &QTcpSocket::connected, this, &Client::onConnected);
     connect(m_tcpSocket, &QTcpSocket::readyRead, this, &Client::onTcpReadyRead);
@@ -1466,6 +1470,30 @@ void Client::onGameTick()
     broadcastPacket(tickPacket, 0);
 }
 
+void Client::onStartLagFinished()
+{
+    // 树状日志接续
+    LOG_INFO("🎬 [缓冲结束] StartLag 计时器触发");
+
+    // 二次安全检查
+    if (!m_gameStarted) {
+        LOG_INFO("   └─ 🛑 状态: 游戏已取消，停止启动流程");
+        return;
+    }
+
+    if (m_players.size() <= 1) {
+        LOG_INFO("   └─ 🛑 状态: 房间已空 (无真实玩家)，停止启动");
+        cancelGame();
+        return;
+    }
+
+    // 正式启动
+    LOG_INFO(QString("   ├─ ✅ 状态: 客户端应已进入画面"));
+    LOG_INFO(QString("   └─ 🚀 动作: 正式开启 GameTick 循环 (Interval: %1 ms)").arg(m_gameTickInterval));
+
+    m_gameTickTimer->start();
+}
+
 // =========================================================
 // 4. UDP 核心处理
 // =========================================================
@@ -1944,52 +1972,78 @@ void Client::stopAdv() {
 
 void Client::cancelGame() {
     // 1. 打印根节点
-    LOG_INFO("✅ [重置游戏] 执行网络层清理...");
+    LOG_INFO("🔄 [重置游戏] 开始执行资源清理流程...");
 
-    // 2. 停止广播
+    // 2. 网络层操作 (合并日志以减少刷屏)
     stopAdv();
-
-    // 3. 进入大厅
     enterChat();
-
-    // 4. 进入频道
     joinRandomChannel();
+    LOG_INFO("   ├─ 📡 网络动作: 停止广播 -> 请求进入大厅 -> 请求加入随机频道");
 
-    // 5. 断开所有玩家连接
+    // 3. 断开所有玩家连接
     int playerCount = m_playerSockets.size();
     if (playerCount > 0) {
-        LOG_INFO(QString("   ├─ 🔌 断开连接: 清理 %1 名玩家 Socket").arg(playerCount));
+        LOG_INFO(QString("   ├─ 🔌 连接清理: 正在断开 %1 名玩家 Socket").arg(playerCount));
         for (auto socket : qAsConst(m_playerSockets)) {
-            socket->disconnectFromHost();
+            if (socket->state() == QAbstractSocket::ConnectedState) {
+                socket->disconnectFromHost();
+            }
             socket->deleteLater();
         }
     } else {
-        LOG_INFO("   ├─ ℹ️ 连接状态: 无活跃玩家");
+        LOG_INFO("   ├─ 🔌 连接清理: 当前无活跃 TCP 连接");
     }
 
-    // 清理容器
+    // 4. 清理容器
     m_playerSockets.clear();
     m_playerBuffers.clear();
     m_players.clear();
 
-    // 6. 重置槽位
+    // 5. 重置槽位
     initSlots();
-    LOG_INFO("   ├─ 🧹 内存清理: 槽位重置 & 容器清空");
+    LOG_INFO("   ├─ 🧹 内存清理: 玩家映射表清空 & 地图槽位重置");
 
-    // 7. 重置标志位
+    // 6. 停止各类计时器
+    bool anyTimerActive = false;
+
+    // A. 启动缓冲 (Start Lag)
+    if (m_startLagTimer->isActive()) {
+        m_startLagTimer->stop();
+        LOG_INFO("   ├─ 🛑 [计时器] 强制中止: 启动缓冲 (StartLag)");
+        anyTimerActive = true;
+    }
+
+    // B. 游戏心跳 (Game Tick)
+    if (m_gameTickTimer->isActive()) {
+        m_gameTickTimer->stop();
+        LOG_INFO("   ├─ 🛑 [计时器] 强制停止: 游戏心跳 (GameTick)");
+        anyTimerActive = true;
+    }
+
+    // C. 倒计时 (Countdown)
     if (m_startTimer->isActive()) {
         m_startTimer->stop();
+        LOG_INFO("   ├─ 🛑 [计时器] 强制中止: 游戏开始倒计时 (Countdown)");
+        anyTimerActive = true;
     }
+
+    if (!anyTimerActive) {
+        LOG_INFO("   ├─ ℹ️ [计时器] 无活跃的游戏逻辑计时器");
+    }
+
+    // 7. 重置标志位
     m_gameStarted = false;
     m_hostCounter++;
+    LOG_INFO(QString("   ├─ ⚙️ 标志重置: GameStarted=False | HostCounter++ (%1)").arg(m_hostCounter));
 
-    // 8. 停止 Ping 循环
+    // 8. 停止 Ping 循环 (最后一步)
     if (m_pingTimer->isActive()) {
         m_pingTimer->stop();
-        LOG_INFO("   └─ 🛑 计时器: Ping 循环已停止");
+        LOG_INFO("   └─ 🛑 [计时器] 停止大厅 Ping 循环 -> 状态: IDLE");
     } else {
-        LOG_INFO("   └─ ✅ 状态: 就绪 (Idle)");
+        LOG_INFO("   └─ ✅ [状态] 机器人已就绪 (Ping 循环未运行)");
     }
+
     emit gameCanceled();
 }
 
@@ -2938,41 +2992,68 @@ void Client::initBotPlayerData()
 
 void Client::checkAllPlayersLoaded()
 {
-    // 如果游戏逻辑时钟已经在跑，不要再检查
-    if (m_gameTickTimer->isActive()) return;
+    // 0. 前置检查：防止重复启动或无效调用
+    if (m_gameTickTimer->isActive()) return; // 时钟已在运行，无需检查
+    if (m_startLagTimer->isActive()) return; // 缓冲计时器已在运行，无需检查
+    if (!m_gameStarted) return;              // 游戏还没正式开始（还在倒计时或大厅），无需检查
 
-    // 如果游戏还没正式开始，也不检查
-    if (!m_gameStarted) return;
+    // 1. 打印根节点
+    LOG_INFO("🔍 [加载检查] 遍历玩家加载状态...");
 
     bool allLoaded = true;
     int loadedCount = 0;
     int totalCount = 0;
 
-    // 遍历所有玩家
+    // 2. 遍历玩家列表
     for (auto it = m_players.begin(); it != m_players.end(); ++it) {
         quint8 pid = it.key();
+        const PlayerData &p = it.value();
 
-        // 跳过机器人 PID 1
+        // 跳过机器人 PID 1 (它总是 Ready 的，且不参与真实加载逻辑)
         if (pid == 1) continue;
 
         totalCount++;
 
+        QString statusStr;
+        QString timeStr = "";
+
         // 检查真实玩家状态
-        if (!it.value().isFinishedLoading) {
-            allLoaded = false;
-        } else {
+        if (p.isFinishedLoading) {
             loadedCount++;
+            statusStr = "✅ 已就绪";
+        } else {
+            allLoaded = false;
+            statusStr = "⏳ 加载中...";
         }
+
+        // 打印叶子节点：显示每个玩家的状态
+        LOG_INFO(QString("   ├─ 👤 [PID: %1] %2 -> %3 %4")
+                     .arg(pid, -3)              // 对齐 PID
+                     .arg(p.name, -15)          // 对齐名字
+                     .arg(statusStr, timeStr));
     }
 
-    if (totalCount > 0) {
-        LOG_INFO(QString("📊 [加载统计] 进度: %1/%2").arg(loadedCount).arg(totalCount));
-    }
+    // 3. 打印统计信息
+    LOG_INFO(QString("   ├─ 📊 统计: 完成 %1 / 总计 %2").arg(loadedCount).arg(totalCount));
 
-    if (allLoaded) {
-        LOG_INFO("✅ [游戏就绪] 所有玩家加载完毕！");
-        LOG_INFO(QString("⏰ [游戏循环] 启动时钟同步 (Tick: %1 ms)").arg(m_gameTickInterval));
-        m_gameTickTimer->start();
+    // 4. 最终判定
+    if (totalCount > 0 && allLoaded) {
+        LOG_INFO("   └─ 🎉 结果: 全员加载完毕 -> 触发启动流程");
+
+        // 动作 A: 广播机器人(PID 1)状态
+        // 这是为了双重保险，确保那些早就加载完的玩家能收到 Host 的确认信号
+        broadcastPacket(createW3GSPlayerLoadedPacket(1), 0);
+        LOG_INFO("      ├─ 📢 动作: 广播 HostBot (PID 1) Loaded 信号");
+
+        // 动作 B: 启动缓冲定时器 (Start Lag)
+        LOG_INFO(QString("      └─ ⏳ 动作: 启动 StartLag 缓冲计时器 (%1 ms)...").arg(m_configStartLag));
+
+        m_startLagTimer->start(m_configStartLag);
+
+    } else {
+        // 还有人没加载完
+        int remaining = totalCount - loadedCount;
+        LOG_INFO(QString("   └─ 💤 结果: 等待剩余 %1 名玩家...").arg(remaining));
     }
 }
 
