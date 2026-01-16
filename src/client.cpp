@@ -876,6 +876,8 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         }
         if (currentPid == 0) return;
 
+        m_players[currentPid].lastResponseTime = QDateTime::currentMSecsSinceEpoch();
+
         // 2. 标记自己加载完成
         m_players[currentPid].isFinishedLoading = true;
         LOG_INFO(QString("⏳ [加载进度] 玩家加载完成: %1 (PID: %2)").arg(m_players[currentPid].name).arg(currentPid));
@@ -1417,10 +1419,10 @@ void Client::onGameStarted()
     // 1. 标记游戏开始
     m_gameStarted = true;
 
-    // if (m_pingTimer && m_pingTimer->isActive()) {
-    //     m_pingTimer->stop();
-    //     LOG_INFO("🛑 [计时器] 停止大厅 Ping 循环");
-    // }
+    if (m_pingTimer && m_pingTimer->isActive()) {
+        m_pingTimer->stop();
+        LOG_INFO("🛑 [计时器] 停止大厅 Ping 循环");
+    }
 
     // 2. 发送倒计时结束包
     broadcastPacket(createW3GSCountdownEndPacket(), 0);
@@ -3076,13 +3078,21 @@ void Client::sendPingLoop()
 
 void Client::checkPlayerTimeout()
 {
+    if (m_startTimer->isActive() || m_gameStarted) {
+        // 方案 A: 直接不检测（最安全，由 TCP 底层保活）
+        return;
+
+        // 方案 B: 或者给予极长的宽限期 (比如 120秒)
+        // const qint64 TIMEOUT_LOADING = 120000;
+    }
+
     qint64 now = QDateTime::currentMSecsSinceEpoch();
 
     // 场景 A: 下载中 (给予宽容，防止大文件传输卡顿)
     const qint64 TIMEOUT_DOWNLOADING = 60000;  // 60秒
 
     // 场景 B: 房间闲置 (严格，快速踢出死链接)
-    const qint64 TIMEOUT_LOBBY_IDLE = 5000;    // 5秒无响应即踢出
+    const qint64 TIMEOUT_LOBBY_IDLE = 10000;    // 30秒无响应即踢出
 
     auto it = m_players.begin();
     while (it != m_players.end()) {
