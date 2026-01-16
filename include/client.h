@@ -102,6 +102,13 @@ enum W3GSPacketID {
     W3GS_TEST                   = 0x88  // [UDP] 测试/私有包
 };
 
+enum LeaveReason {
+    LEAVE_DISCONNECT            = 0x01, // 掉线
+    LEAVE_NORMAL                = 0x08, // 主动离开
+    LEAVE_KICKED                = 0x0C, // 被踢出
+    LEAVE_SERVER_CLOSED         = 0x0D  // 服务端关闭
+};
+
 // 拒绝加入原因
 enum RejectReason {
     BAD_GAME                    = 0x05, // 指定的游戏不存在
@@ -496,7 +503,7 @@ private:
     QByteArray createW3GSStartDownloadPacket(quint8 fromPid);
     QByteArray createW3GSRejectJoinPacket(RejectReason reason);
     QByteArray createW3GSIncomingActionPacket (quint16 sendInterval);
-    QByteArray createW3GSPlayerLeftPacket(quint8 pid, quint32 reason);
+    QByteArray createW3GSPlayerLeftPacket(quint8 pid, LeaveReason reason);
     QByteArray createW3GSSlotInfoJoinPacket(quint8 playerID, const QHostAddress& externalIp, quint16 localPort);
     QByteArray createW3GSMapPartPacket(quint8 toPid, quint8 fromPid, quint32 offset, const QByteArray& chunkData);
     QByteArray createW3GSChatFromHostPacket(const QByteArray &rawBytes, quint8 senderPid = 1, quint8 toPid = 255, ChatFlag flag = Message, quint32 extraData = 0);

@@ -1422,6 +1422,8 @@ void Client::onGameStarted()
         LOG_INFO("🛑 [计时器] 停止大厅 Ping 循环");
     }
 
+    broadcastPacket(createW3GSPlayerLeftPacket(1, LEAVE_NORMAL), 1);
+
     // 2. 发送倒计时结束包
     broadcastPacket(createW3GSCountdownEndPacket(), 0);
     LOG_INFO("🚀 [游戏启动] 广播 W3GS_COUNTDOWN_END (0x0B)");
@@ -2402,7 +2404,7 @@ QByteArray Client::createPlayerInfoPacket(quint8 pid, const QString& name,
     return packet;
 }
 
-QByteArray Client::createW3GSPlayerLeftPacket(quint8 pid, quint32 reason)
+QByteArray Client::createW3GSPlayerLeftPacket(quint8 pid, LeaveReason reason)
 {
     QByteArray packet;
     QDataStream out(&packet, QIODevice::WriteOnly);
@@ -2969,7 +2971,6 @@ void Client::checkAllPlayersLoaded()
     if (allLoaded) {
         LOG_INFO("✅ [游戏就绪] 所有玩家加载完毕！");
         LOG_INFO(QString("⏰ [游戏循环] 启动时钟同步 (Tick: %1 ms)").arg(m_gameTickInterval));
-        broadcastPacket(createW3GSPlayerLoadedPacket(1), 0);
         m_gameTickTimer->start();
     }
 }
