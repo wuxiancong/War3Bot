@@ -542,7 +542,7 @@ private:
     Command                         *m_command;
 
     // 玩家管理
-    QString                         m_botDisplayName        = "CC";
+    QString                         m_botDisplayName        = "CC.Dota.US1";
     QList<QTcpSocket*>              m_playerSockets;
     QMap<QTcpSocket*, QByteArray>   m_playerBuffers;
     QMap<quint8, PlayerData>        m_players;
