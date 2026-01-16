@@ -1,4 +1,4 @@
-# War3 自定义游戏界面事件分发逻辑 (Custom Game Event Dispatch)
+# War3 自定义游戏列表界面事件分发逻辑 (Custom Game List Event Dispatch)
 
 - **模块**: `Game.dll`
 - **功能**: 处理自定义游戏列表界面（Custom Game / Standard Game List）的用户交互事件。
@@ -6,7 +6,7 @@
 
 ## 1. 核心分发逻辑
 
-代码首先读取事件 ID，判断是否超出范围（最大为 17），然后通过跳转表进行分发。
+代码首先读取事件 ID，判断是否超出范围（最大为 0x17），然后通过跳转表进行分发。
 
 - **偏移**: 5BABF0
 - **基址**: 6F000000

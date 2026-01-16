@@ -1,6 +1,8 @@
 #include "calculate.h"
 
-quint16 calculateCRC16(const QByteArray &data)
+#include <zlib.h>
+
+quint16 calculateStandardCRC16(const QByteArray &data)
 {
     quint16 crc = 0xFFFF;
 
@@ -21,4 +23,20 @@ quint16 calculateCRC16(const QByteArray &data)
     }
 
     return crc;
+}
+
+quint16 calculateCRC32Lower16(const QByteArray &data)
+{
+    // 1. 初始化 CRC 值
+    uLong crc = crc32(0L, Z_NULL, 0);
+
+    // 2. 获取数据指针和长度
+    const Bytef *buf = reinterpret_cast<const Bytef*>(data.constData());
+    uInt len = static_cast<uInt>(data.size());
+
+    // 3. 计算标准的 CRC32
+    uLong result = crc32(crc, buf, len);
+
+    // 4. 截断取低 16 位
+    return static_cast<quint16>(result & 0xFFFF);
 }
