@@ -1422,8 +1422,6 @@ void Client::onGameStarted()
         LOG_INFO("🛑 [计时器] 停止大厅 Ping 循环");
     }
 
-    broadcastPacket(createW3GSPlayerLeftPacket(1, LEAVE_NORMAL), 1);
-
     // 2. 发送倒计时结束包
     broadcastPacket(createW3GSCountdownEndPacket(), 0);
     LOG_INFO("🚀 [游戏启动] 广播 W3GS_COUNTDOWN_END (0x0B)");
