@@ -2969,6 +2969,7 @@ void Client::checkAllPlayersLoaded()
     if (allLoaded) {
         LOG_INFO("✅ [游戏就绪] 所有玩家加载完毕！");
         LOG_INFO(QString("⏰ [游戏循环] 启动时钟同步 (Tick: %1 ms)").arg(m_gameTickInterval));
+        broadcastPacket(createW3GSPlayerLoadedPacket(1), 0);
         m_gameTickTimer->start();
     }
 }
