@@ -1394,7 +1394,7 @@ void Client::onPlayerDisconnected() {
         // 4. 广播离开
         if (!m_gameStarted) {
             if (!m_playerSockets.isEmpty()) {
-                QByteArray leftPacket = createW3GSPlayerLeftPacket(pidToRemove, 0x0D);
+                QByteArray leftPacket = createW3GSPlayerLeftPacket(pidToRemove, LEAVE_SERVER_CLOSED);
                 broadcastPacket(leftPacket, pidToRemove);
 
                 MultiLangMsg leaveMsg;
