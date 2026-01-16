@@ -2969,7 +2969,13 @@ void Client::checkAllPlayersLoaded()
     if (allLoaded) {
         LOG_INFO("✅ [游戏就绪] 所有玩家加载完毕！");
         LOG_INFO(QString("⏰ [游戏循环] 启动时钟同步 (Tick: %1 ms)").arg(m_gameTickInterval));
-        m_gameTickTimer->start();
+        LOG_INFO("⏳ [缓冲] 等待客户端稳定 (3秒)...");
+        QTimer::singleShot(3000, this, [this](){
+            if (m_gameStarted) {
+                LOG_INFO("🎬 [ACTION] 缓冲结束，开始发送游戏心跳 (Tick)");
+                m_gameTickTimer->start();
+            }
+        });
     }
 }
 
