@@ -195,7 +195,7 @@ qint64 NetManager::sendUdpPacket(const QHostAddress &target, quint64 port, Packe
     }
 
     // 4. 计算 CRC
-    header->checksum = calculateCRC16(buffer);
+    header->checksum = calculateStandardCRC16(buffer);
 
     // 5. 发送
     qint64 sent = m_udpSocket->writeDatagram(buffer, target, port);
@@ -317,7 +317,7 @@ void NetManager::handleIncomingDatagram(const QNetworkDatagram &datagram)
     // 2. CRC 校验
     quint64 recvChecksum = header->checksum;
     header->checksum = 0;
-    if (calculateCRC16(data) != recvChecksum) {
+    if (calculateStandardCRC16(data) != recvChecksum) {
         LOG_WARNING("CRC 校验失败");
         return;
     }
