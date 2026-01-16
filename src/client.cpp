@@ -792,24 +792,23 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         }
 
         // 分配 PID
-        quint8 pid = 0;
-        if (nameMatch) {
-            pid = 2;
-        } else {
-            pid = findFreePid();
-        }
-
-        if (pid == 0) {
+        quint8 hostId = findFreePid();
+        if (hostId == 0) {
             socket->write(createW3GSRejectJoinPacket(FULL));
             socket->disconnectFromHost();
             return;
         }
 
+        m_slots[slotIndex].pid = hostId;
+        m_slots[slotIndex].slotStatus = Occupied;
+        m_slots[slotIndex].downloadStatus = NotStarted;
+        m_slots[slotIndex].computer = Human;
+
         qint64 now = QDateTime::currentMSecsSinceEpoch();
 
         // 注册玩家
         PlayerData playerData;
-        playerData.pid = pid;
+        playerData.pid = hostId;
         playerData.name = clientPlayerName;
         playerData.socket = socket;
         playerData.extIp = socket->peerAddress();
@@ -821,97 +820,23 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         playerData.lastResponseTime = now;
         playerData.lastDownloadTime = now;
         playerData.isVisualHost = nameMatch;
-        playerData.isFinishedLoading = false;
 
-        // --- 核心交换逻辑 (仅针对房主) ---
-        if (nameMatch && m_players.contains(1)) {
-            LOG_INFO("   ├─ 🔄 [影子主机] 执行身份互换 (PID 1 <-> PID 2)");
+        m_players.insert(hostId, playerData);
 
-            // 获取机器人数据的引用
-            PlayerData &botData = m_players[1];
+        LOG_INFO(QString("   ├─ 💾 玩家注册: PID %1 (Slot %2)").arg(hostId).arg(slotIndex));
 
-            /** A. 备份机器人的视觉信息
-                */
-            QString botName = botData.name;
-            QHostAddress botExtIp = botData.extIp;
-            quint16 botExtPort = botData.extPort;
-            QHostAddress botIntIp = botData.intIp;
-            quint16 botIntPort = botData.intPort;
-
-            /** B. 把房主的信息 赋值给 PID 1 (机器人)
-                * 这样外面的人看到 PID 1，就是看到房主的名字和IP
-                */
-            botData.name = playerData.name;
-            botData.extIp = playerData.extIp;
-            botData.extPort = playerData.extPort;
-            botData.intIp = playerData.intIp;
-            botData.intPort = playerData.intPort;
-            // 注意：Socket 不交换！botData.socket 依然是 nullptr
-
-            /** C. 把机器人的信息 赋值给 PID 2 (新玩家)
-                * 这样 PID 2 暂时变成了 "CC" (机器人名)，后续会被清理
-                * 注意：Socket 不交换！playerData.socket 依然是真实连接
-                */
-            playerData.name = botName;
-            playerData.extIp = botExtIp;
-            playerData.extPort = botExtPort;
-            playerData.intIp = botIntIp;
-            playerData.intPort = botIntPort;
-        }
-
-        m_players.insert(pid, playerData);
-
-        if (nameMatch) {
-            /** D. 如果是房主，强制把 Slot 0 分配给 PID 1
-                * 因为 PID 1 现在顶着房主的名字，所以看起来房主在 1 楼 (蓝色)
-                */
-            if (!m_slots.isEmpty()) {
-                m_slots[0].pid = 1;
-            }
-
-            /** E. PID 2 (持有真实Socket) 分配给找到的空位 (slotIndex)
-                * 注意：如果上面循环找到的刚好是 Slot 0，我们要把它挪到 Slot 1
-                */
-            if (slotIndex == 0) {
-                for (int i = 1; i < m_slots.size(); ++i) {
-                    if (m_slots[i].slotStatus == Open) {
-                        slotIndex = i;
-                        break;
-                    }
-                }
-            }
-            LOG_INFO(QString("   ├─ 🛋️ 槽位伪装: Slot 0 -> PID 1 (Show: %1)").arg(m_players[1].name));
-            LOG_INFO(QString("   ├─ 🛋️ 真实连接: Slot %1 -> PID %2 (Show: %3)").arg(slotIndex).arg(pid).arg(playerData.name));
-        }
-        else {
-            // 普通玩家正常入座
-            LOG_INFO(QString("   ├─ 💾 玩家注册: PID %1 (Slot %2)").arg(pid).arg(slotIndex));
-        }
-
-        m_slots[slotIndex].pid = pid;
-        m_slots[slotIndex].slotStatus = Occupied;
-        m_slots[slotIndex].downloadStatus = NotStarted;
-        m_slots[slotIndex].computer = Human;
-        m_slots[slotIndex].handicap = 100;
-
-        // 3. 构建握手响应 (发给刚加入的新玩家)
+        // 3. 构建握手响应
         QByteArray finalPacket;
         QHostAddress hostIp = socket->peerAddress();
         quint16 hostPort = m_udpSocket->localPort();
 
-        // [0x04] 告诉客户端我的 PID
-        finalPacket.append(createW3GSSlotInfoJoinPacket(pid, hostIp, hostPort));
+        finalPacket.append(createW3GSSlotInfoJoinPacket(hostId, hostIp, hostPort)); // 0x04
+        finalPacket.append(createPlayerInfoPacket(1, m_botDisplayName, QHostAddress("0.0.0.0"), 0, QHostAddress("0.0.0.0"), 0)); // 0x06 (Bot)
 
-        int syncPlayerCount = 0;
         for (auto it = m_players.begin(); it != m_players.end(); ++it) {
             const PlayerData &p = it.value();
-            // 1. 永远不发送 PID2
-            if (p.pid == 2) continue;
-            // 2. 不发送刚进的玩家
-            if (p.pid == pid) continue;
-
-            finalPacket.append(createPlayerInfoPacket(p.pid, p.name, p.extIp, p.extPort, p.intIp, p.intPort)); // 0x06
-            syncPlayerCount++;
+            if (p.pid == hostId || p.pid == 1) continue;
+            finalPacket.append(createPlayerInfoPacket(p.pid, p.name, p.extIp, p.extPort, p.intIp, p.intPort));
         }
 
         finalPacket.append(createW3GSMapCheckPacket()); // 0x3D
@@ -920,29 +845,15 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         socket->write(finalPacket);
         socket->flush();
 
-        LOG_INFO("   ├─ 📤 [握手反馈] 协议序列发送完毕");
-        LOG_INFO("   │  ├─ 🆔 0x04: 专属连接信息 (PID分配)");
-        LOG_INFO(QString("   │  ├─ 📋 0x06: 同步现有玩家 (%1 人, 已隐藏隐形单位)").arg(syncPlayerCount));
-        LOG_INFO("   │  ├─ 🗺️ 0x3D: 地图校验数据");
-        LOG_INFO("   │  └─ 🎰 0x09: 初始槽位布局");
+        LOG_INFO("   ├─ 📤 发送握手: 0x04 -> 0x06 -> 0x3D -> 0x09");
 
-        // 4. 广播 (发给房间里的其他人)
-
-        // 如果是房主(影子模式)，不要广播 PID 2 的加入消息！
-        if (!nameMatch) {
-            QByteArray newPlayerInfoPacket = createPlayerInfoPacket(
-                playerData.pid, playerData.name, playerData.extIp, playerData.extPort, playerData.intIp, playerData.intPort);
-            broadcastPacket(newPlayerInfoPacket, pid);
-
-            LOG_INFO(QString("   ├─ 📢 [全员广播] 0x06 新人入场: %1 (PID: %2)").arg(playerData.name).arg(pid));
-        } else {
-            LOG_INFO("   ├─ 😶 [广播拦截] 影子模式生效: 隐藏 PID 2 入场消息");
-        }
-
-        // 广播槽位更新 (0x09)
+        // 4. 广播
+        QByteArray newPlayerInfoPacket = createPlayerInfoPacket(
+            playerData.pid, playerData.name, playerData.extIp, playerData.extPort, playerData.intIp, playerData.intPort);
+        broadcastPacket(newPlayerInfoPacket, hostId);
         broadcastSlotInfo();
 
-        LOG_INFO("   └─ 📢 [全员广播] 0x09 槽位表刷新");
+        LOG_INFO("   └─ 📢 广播状态: 同步新玩家信息 & 刷新槽位");
     }
     break;
 
@@ -2794,15 +2705,15 @@ void Client::initSlots(quint8 maxPlayers)
     m_playerSockets.clear();
     m_playerBuffers.clear();
 
-    // 1. 先把所有槽位初始化为空
+    // 初始化地图槽
     for (quint8 i = 0; i < maxPlayers; ++i) {
         GameSlot &slot = m_slots[i];
         slot = GameSlot();
 
-        slot.pid            = 0;                // 默认无 PID
-        slot.slotStatus     = Open;             // 默认开放
+        slot.pid            = 0;
+        slot.slotStatus     = Open;
         slot.computer       = Human;
-        slot.downloadStatus = DownloadStart;    // 默认未下载
+        slot.downloadStatus = DownloadStart;
         slot.color          = i + 1;
         slot.handicap       = 100;
 
@@ -2816,19 +2727,9 @@ void Client::initSlots(quint8 maxPlayers)
         }
     }
 
-    // 让 Bot (PID 1) 强行占领第一个槽位 (Slot 0)
-    if (!m_slots.isEmpty()) {
-        GameSlot &botSlot = m_slots[0];
-
-        botSlot.pid            = 1;
-        botSlot.slotStatus     = Occupied;
-        botSlot.downloadStatus = 100;
-        botSlot.computer       = Human;
-    }
-
     initBotPlayerData();
 
-    LOG_INFO("✨ 地图槽位初始化完成（Bot 已占领 Slot 0 / Blue）");
+    LOG_INFO("✨ 地图槽位初始化完成（不包含 Bot）");
 }
 
 void Client::initSlotsFromMap()
