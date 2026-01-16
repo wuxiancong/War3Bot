@@ -1419,11 +1419,6 @@ void Client::onGameStarted()
     // 1. 标记游戏开始
     m_gameStarted = true;
 
-    if (m_pingTimer && m_pingTimer->isActive()) {
-        m_pingTimer->stop();
-        LOG_INFO("🛑 [计时器] 停止大厅 Ping 循环");
-    }
-
     // 2. 发送倒计时结束包
     broadcastPacket(createW3GSCountdownEndPacket(), 0);
     LOG_INFO("🚀 [游戏启动] 广播 W3GS_COUNTDOWN_END (0x0B)");
@@ -2112,6 +2107,12 @@ void Client::startGame()
     if (m_pingTimer && m_pingTimer->isActive()) {
         m_pingTimer->stop();
     }
+
+    qint64 now = QDateTime::currentMSecsSinceEpoch();
+    for (auto it = m_players.begin(); it != m_players.end(); ++it) {
+        it.value().lastResponseTime = now;
+    }
+    LOG_INFO("🛡️ [状态保护] 已刷新全员活跃时间，防止倒计时期间超时");
 
     // 2. 发送最后一条大厅消息
     MultiLangMsg msg;
@@ -3079,20 +3080,17 @@ void Client::sendPingLoop()
 void Client::checkPlayerTimeout()
 {
     if (m_startTimer->isActive() || m_gameStarted) {
-        // 方案 A: 直接不检测（最安全，由 TCP 底层保活）
+        LOG_DEBUG("🛡️ [超时监控] 游戏启动/进行中 -> 跳过检测 (安全)");
         return;
-
-        // 方案 B: 或者给予极长的宽限期 (比如 120秒)
-        // const qint64 TIMEOUT_LOADING = 120000;
     }
 
     qint64 now = QDateTime::currentMSecsSinceEpoch();
 
-    // 场景 A: 下载中 (给予宽容，防止大文件传输卡顿)
-    const qint64 TIMEOUT_DOWNLOADING = 60000;  // 60秒
+    // 场景 A: 下载中 (60秒)
+    const qint64 TIMEOUT_DOWNLOADING = 60000;
 
-    // 场景 B: 房间闲置 (严格，快速踢出死链接)
-    const qint64 TIMEOUT_LOBBY_IDLE = 10000;    // 30秒无响应即踢出
+    // 场景 B: 房间闲置 (10秒)
+    const qint64 TIMEOUT_LOBBY_IDLE = 10000;
 
     auto it = m_players.begin();
     while (it != m_players.end()) {
@@ -3106,42 +3104,56 @@ void Client::checkPlayerTimeout()
         }
 
         bool kick = false;
+        QString debugState = "";
         QString reasonCategory = "";
 
-        // 计算沉默时长
+        // 计算时间差
         qint64 timeSinceLastResponse = now - playerData.lastResponseTime;
+        qint64 timeSinceLastDownload = now - playerData.lastDownloadTime;
 
         // 2. 根据状态判断超时
         if (playerData.isDownloadStart) {
             // --- 正在下载 ---
-            qint64 timeSinceLastDownload = now - playerData.lastDownloadTime;
+            debugState = QString("📥 下载中 (Last: -%1ms)").arg(timeSinceLastDownload);
 
             if (timeSinceLastDownload > TIMEOUT_DOWNLOADING) {
                 kick = true;
-                reasonCategory = QString("下载卡死 (%1s)").arg(timeSinceLastDownload / 1000);
+                reasonCategory = QString("下载卡死 (沉默: %1ms > 阈值: %2ms)")
+                                     .arg(timeSinceLastDownload)
+                                     .arg(TIMEOUT_DOWNLOADING);
             }
         }
         else {
             // --- 在房间闲置 (未下载) ---
+            debugState = QString("💤 闲置中 (Last: -%1ms)").arg(timeSinceLastResponse);
+
             if (timeSinceLastResponse > TIMEOUT_LOBBY_IDLE) {
                 kick = true;
-                reasonCategory = QString("房间内无响应 (%1s > %2s)")
-                                     .arg(timeSinceLastResponse / 1000)
-                                     .arg(TIMEOUT_LOBBY_IDLE / 1000);
+                reasonCategory = QString("房间无响应 (沉默: %1ms > 阈值: %2ms)")
+                                     .arg(timeSinceLastResponse)
+                                     .arg(TIMEOUT_LOBBY_IDLE);
             }
         }
 
-        // 3. 执行踢人
+        // 👢 踢人执行
         if (kick) {
-            LOG_INFO(QString("👢 [超时踢人] 移除玩家: %1 (PID: %2)").arg(playerData.name).arg(pid));
-            LOG_INFO(QString("   └─ 原因: %1").arg(reasonCategory));
+            LOG_INFO("👢 [超时裁判] 决定移除玩家");
+            LOG_INFO(QString("   ├─ 👤 目标: %1 (PID: %2)").arg(playerData.name).arg(pid));
+            LOG_INFO(QString("   ├─ 🕒 当前时间戳: %1").arg(now));
+            LOG_INFO(QString("   ├─ ⏱️ 最后响应时间: %1").arg(playerData.lastResponseTime));
+            LOG_INFO(QString("   ├─ 📊 状态分析: %1").arg(debugState));
+            LOG_INFO(QString("   └─ ⚖️ 判决原因: %1").arg(reasonCategory));
 
             if (playerData.socket) {
-                // 强制断开，触发 onPlayerDisconnected 清理槽位
+                LOG_INFO("   └─ 🔌 动作: 执行 socket->disconnectFromHost()");
                 playerData.socket->disconnectFromHost();
+            } else {
+                LOG_INFO("   └─ ⚠️ 异常: Socket 已为空，仅移除逻辑数据");
             }
-            // 不要在这里 ++it，因为 disconnect 会触发槽函数修改 map
-            // 但为了安全起见，通常 erase 是在 slot 里做的
+        }
+        else if (timeSinceLastResponse > (TIMEOUT_LOBBY_IDLE * 0.8)) {
+            LOG_INFO(QString("⚠️ [超时预警] 玩家 %1 沉默 %2ms (即将超时)")
+                         .arg(playerData.name).arg(timeSinceLastResponse));
         }
 
         ++it;
