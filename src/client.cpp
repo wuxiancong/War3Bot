@@ -2931,7 +2931,7 @@ void Client::broadcastChatMessage(const MultiLangMsg& msg, quint8 excludePid)
         // 3. 造包并发送
         QByteArray chatPacket = createW3GSChatFromHostPacket(
             finalBytes,
-            1,    // From Host
+            2,    // From Host
             pid,  // To Target Player
             ChatFlag::Message
             );
@@ -3450,7 +3450,7 @@ void Client::sendPingLoop()
             QString text = waitMsg.get(playerData.language);
             QByteArray finalBytes = playerData.codec->fromUnicode(text);
 
-            QByteArray chatPacket = createW3GSChatFromHostPacket(finalBytes, 1, pid, ChatFlag::Message);
+            QByteArray chatPacket = createW3GSChatFromHostPacket(finalBytes, 2, pid, ChatFlag::Message);
             socket->write(chatPacket);
         }
 
