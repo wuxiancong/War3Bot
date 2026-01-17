@@ -3,40 +3,46 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>W3X 文档索引</title>
+    <title>W3X Docs</title>
     <style>
-        body { font-family: "SF Pro Text", "Roboto", "Helvetica Neue", sans-serif; background: #fff; color: #37352f; max-width: 800px; margin: 0 auto; padding: 40px 20px; }
-        h1 { font-size: 24px; border-bottom: 1px solid #e0e0e0; padding-bottom: 10px; margin-bottom: 30px; }
-        
+        body { background-color: #0d1117; color: #c9d1d9; font-family: "Consolas", "Monaco", monospace; max-width: 760px; margin: 0 auto; padding: 40px 20px; }
+        h1 { border-bottom: 1px solid #30363d; padding-bottom: 15px; color: #58a6ff; }
+
         /* 卡片样式 */
-        .card-link { text-decoration: none; color: inherit; display: block; margin-bottom: 20px; }
+        .card-link { text-decoration: none; display: block; margin-top: 30px; }
         .card {
-            border: 1px solid #e0e0e0;
-            border-radius: 4px;
-            padding: 20px;
-            border-left: 5px solid #2eaadc; /* 蓝色左边框 */
-            transition: background 0.2s;
+            background-color: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            padding: 24px;
+            transition: all 0.3s;
         }
-        .card:hover { background: #f7f9fa; }
-        
-        .title { font-size: 18px; font-weight: 600; margin-bottom: 8px; color: #111; }
-        .meta { font-size: 12px; color: #999; margin-bottom: 12px; font-family: monospace; }
-        .desc { font-size: 14px; line-height: 1.6; color: #555; }
-        .update { color: #d9534f; font-weight: 500; font-size: 12px; display: block; margin-top: 10px;}
+        .card:hover { border-color: #58a6ff; box-shadow: 0 0 10px rgba(88, 166, 255, 0.1); }
+
+        .title { font-size: 1.2rem; color: #fff; font-weight: bold; margin-bottom: 10px; }
+        .tags { display: inline-block; background: #238636; color: white; padding: 2px 8px; border-radius: 10px; font-size: 0.7rem; margin-bottom: 10px; }
+        .meta { font-size: 0.8rem; color: #8b949e; margin-bottom: 15px; }
+        .excerpt { font-size: 0.9rem; line-height: 1.6; color: #8b949e; }
+        .highlight { color: #d2a8ff; } /* 紫色高亮 */
     </style>
 </head>
 <body>
-    <h1>📚 技术文档归档</h1>
+    <h1>> ./Document_Index</h1>
 
     <a href="W3X_Files_Format.html" class="card-link">
-        <div class="card">
-            <div class="title">W3X 文件格式详解 (W3X Files Format)</div>
-            <div class="meta">字数 17559 · 2019-05-09</div>
-            <div class="desc">
-                本文档包含了魔兽争霸 III 地图文件（*.w3m 和 *.w3x）的绝大部分规范。本文档制作过程未得到暴雪娱乐的任何帮助，也不涉及对魔兽争霸 III 引擎的“逆向工程”。
-                <span class="update">最后更新：2020-03-02</span>
+        <article class="card">
+            <span class="tags">核心规范</span>
+            <div class="title">W3X 文件格式全解</div>
+            <div class="meta">
+                <span>📅 2019-05-09</span> | 
+                <span>📝 17k 字</span> | 
+                <span style="color: #ff7b72;">Update: 2020-03-02</span>
             </div>
-        </div>
+            <p class="excerpt">
+                Introduction: 本文档涵盖了 Warcraft III 地图文件 <span class="highlight">(*.w3m / *.w3x)</span> 的规范。
+                内容基于 Reforged 版本整理，不涉及逆向工程。请确保你正在修改的文件版本与本文描述一致。
+            </p>
+        </article>
     </a>
 </body>
 </html>
