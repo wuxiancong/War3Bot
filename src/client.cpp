@@ -833,7 +833,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
         m_slots[slotIndex].pid = newPid;
         m_slots[slotIndex].slotStatus = Occupied;
-        m_slots[slotIndex].downloadStatus = NotStarted;
+        m_slots[slotIndex].downloadStatus = DownloadStart;
         m_slots[slotIndex].computer = Human;
 
         qint64 now = QDateTime::currentMSecsSinceEpoch();
@@ -3046,7 +3046,7 @@ void Client::initSlots(quint8 maxPlayers)
         slot.pid            = 0;
         slot.slotStatus     = Open;
         slot.computer       = Human;
-        slot.downloadStatus = DownloadStart;
+        slot.downloadStatus = NotStarted;
 
         if (i < sizeof(DOTA_COLORS)) {
             slot.color = DOTA_COLORS[i];

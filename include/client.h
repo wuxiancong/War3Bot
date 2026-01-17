@@ -562,7 +562,7 @@ private:
     // --- 消息广播 ---
     void broadcastPacket(const QByteArray &packet, quint8 excludePid, bool includeOnly = false);
     void broadcastChatMessage(const MultiLangMsg &msg, quint8 excludePid = 0);
-    void broadcastSlotInfo(quint8 excludePid = 1);
+    void broadcastSlotInfo(quint8 excludePid = m_botPid);
 
     // --- 槽位管理 ---
     void initSlotsFromMap(quint8 maxPlayers = 10);
@@ -583,7 +583,7 @@ private:
     QByteArray createW3GSPlayerLeftPacket(quint8 pid, LeaveReason reason);
     QByteArray createW3GSSlotInfoJoinPacket(quint8 playerID, const QHostAddress& externalIp, quint16 localPort);
     QByteArray createW3GSMapPartPacket(quint8 toPid, quint8 fromPid, quint32 offset, const QByteArray& chunkData);
-    QByteArray createW3GSChatFromHostPacket(const QByteArray &rawBytes, quint8 senderPid = 1, quint8 toPid = 255, ChatFlag flag = Message, quint32 extraData = 0);
+    QByteArray createW3GSChatFromHostPacket(const QByteArray &rawBytes, quint8 senderPid = m_botPid, quint8 toPid = 255, ChatFlag flag = Message, quint32 extraData = 0);
     QByteArray createPlayerInfoPacket(quint8 pid, const QString& name, const QHostAddress& externalIp, quint16 externalPort, const QHostAddress& internalIp, quint16 internalPort);
 
     // --- 内部网络处理 ---
