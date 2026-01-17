@@ -2968,7 +2968,7 @@ void Client::initSlots(quint8 maxPlayers)
     static const quint8 DOTA_COLORS[] = {
         1, 2, 3, 4, 5,
         7, 8, 9, 10, 11,
-        0, 6
+        12, 12
     };
 
     // 初始化地图槽
