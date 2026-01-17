@@ -2842,51 +2842,53 @@ QByteArray Client::createW3GSIncomingActionPacket(quint16 sendInterval)
 {
     QByteArray packet;
     QDataStream out(&packet, QIODevice::WriteOnly);
-
-    // 1. 必须小端序 (Little Endian)
     out.setByteOrder(QDataStream::LittleEndian);
 
-    // Header
+    bool useNoCrcFormat = true;
+
+    // 1. Header (4 bytes)
     out << (quint8)0xF7 << (quint8)0x0C << (quint16)0;
 
-    // Interval
+    // 2. Interval (2 bytes)
     out << (quint16)sendInterval;
 
-    // 2. 预留 CRC 位置 (2字节)
-    int crcOffset = packet.size();
-    out << (quint16)0;
-
-    // 3. 写入 Action Block
+    // 3. 写入动作数据 (Action Data)
     QByteArray actionBlock;
-    QDataStream actOut(&actionBlock, QIODevice::WriteOnly);
-    actOut.setByteOrder(QDataStream::LittleEndian);
-
     if (!m_actionQueue.isEmpty()) {
+        QDataStream actOut(&actionBlock, QIODevice::WriteOnly);
+        actOut.setByteOrder(QDataStream::LittleEndian);
         for (const auto &act : qAsConst(m_actionQueue)) {
             actOut << (quint8)act.pid;
             actOut << (quint16)act.data.size();
             actOut.writeRawData(act.data.constData(), act.data.size());
         }
         m_actionQueue.clear();
+
+        // 写入 Payload
+        out.writeRawData(actionBlock.constData(), actionBlock.size());
     }
 
-    // 将 Block 写入主包
-    out.writeRawData(actionBlock.constData(), actionBlock.size());
+    // 4. CRC 占位与计算
+    if (!useNoCrcFormat) {
+        quint32 crcVal = 0;
+        if (actionBlock.size() > 0) {
+            crcVal = crc32(0L, Z_NULL, 0);
+            crcVal = crc32(crcVal, (const Bytef*)actionBlock.constData(), actionBlock.size());
+        }
+        out << (quint16)(crcVal & 0xFFFF);
+    }
 
-    // 4. 计算 CRC
-    quint16 calculatedCRC = calculateCRC32Lower16(actionBlock);
+    // 5. 回填长度
+    quint16 totalSize = (quint16)packet.size();
+    out.device()->seek(2);
+    out << totalSize;
 
-    // 回填 CRC
-    QDataStream crcStream(&packet, QIODevice::ReadWrite);
-    crcStream.setByteOrder(QDataStream::LittleEndian);
-    crcStream.device()->seek(crcOffset);
-    crcStream << calculatedCRC;
-
-    // 5. 回填总长度
-    QDataStream lenStream(&packet, QIODevice::ReadWrite);
-    lenStream.setByteOrder(QDataStream::LittleEndian);
-    lenStream.device()->seek(2);
-    lenStream << (quint16)packet.size();
+    // 打印一下包结构，确认长度
+    static int logOnce = 0;
+    if (logOnce++ == 0) {
+        QString type = useNoCrcFormat ? "No-CRC (iCCup Mode)" : "Standard (CRC Mode)";
+        LOG_INFO(QString("🔧 [协议调整] 0x0C 包格式: %1 | 长度: %2").arg(type).arg(totalSize));
+    }
 
     return packet;
 }
