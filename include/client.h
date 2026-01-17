@@ -560,6 +560,7 @@ private:
 
     // 槽位数据
     QVector<GameSlot>               m_slots;
+    quint8                          m_botPid                = 2;
     bool                            m_enableObservers       = false;
     quint8                          m_layoutStyle           = CustomForces;
 
