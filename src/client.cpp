@@ -917,14 +917,14 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         QByteArray selfLoadedPacket = createW3GSPlayerLoadedPacket(currentPid);
 
         for (auto it = m_players.begin(); it != m_players.end(); ++it) {
-            quint8 pid = it.key();
-            PlayerData &p = it.value();
-            if (pid == currentPid) continue;
-            if (p.socket && p.socket->state() == QAbstractSocket::ConnectedState) {
-                p.socket->write(selfLoadedPacket);
+            quint8 targetPid = it.key();
+            const PlayerData &targetPlayer = it.value();
+            if (targetPid == currentPid || targetPid == 2) continue;
+            if (targetPlayer.socket && targetPlayer.socket->state() == QAbstractSocket::ConnectedState) {
+                targetPlayer.socket->write(selfLoadedPacket);
             }
-            if (p.isFinishedLoading) {
-                socket->write(createW3GSPlayerLoadedPacket(pid));
+            if (targetPlayer.isFinishedLoading) {
+                socket->write(createW3GSPlayerLoadedPacket(targetPid));
             }
         }
 
@@ -1618,8 +1618,8 @@ void Client::onGameStarted()
     LOG_INFO("   ├─ ⚙️ 状态更新: m_gameStarted = true");
 
     // 3. 处理机器人隐身
-    broadcastPacket(createW3GSPlayerLeftPacket(2, LEAVE_LOBBY), 2, true);
-    LOG_INFO("   ├─ 👻 [幽灵模式] 发送机器人(PID:2)离开包 (模拟隐身)");
+    broadcastPacket(createW3GSPlayerLeftPacket(2, LEAVE_LOBBY), 0, false);
+    LOG_INFO("   ├─ 👻 [幽灵模式] 已向全员广播机器人(PID:2)离开");
 
     // 4. 发送倒计时结束包
     broadcastPacket(createW3GSCountdownEndPacket(), 0);
