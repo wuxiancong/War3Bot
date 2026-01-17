@@ -880,10 +880,9 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         }
         if (currentPid == 0) return;
 
-        m_players[currentPid].lastResponseTime = QDateTime::currentMSecsSinceEpoch();
-
         // 2. 标记自己加载完成
         m_players[currentPid].isFinishedLoading = true;
+        m_players[currentPid].lastResponseTime = QDateTime::currentMSecsSinceEpoch();
         LOG_INFO(QString("⏳ [加载进度] 玩家加载完成: %1 (PID: %2)").arg(m_players[currentPid].name).arg(currentPid));
 
         // 3. 加载状态同步逻辑
@@ -908,81 +907,244 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
     case W3GS_OUTGOING_ACTION: // [0x26] 客户端发送的游戏内操作
     {
-        if (payload.size() > 4) {
-            quint8 currentPid = 0;
-            for (auto it = m_players.begin(); it != m_players.end(); ++it) {
-                if (it.value().socket == socket) {
-                    currentPid = it.key();
-                    break;
-                }
-            }
+        if (payload.size() < 4) {
+            LOG_ERROR(QString("❌ [W3GS] 动作包长度不足: %1").arg(payload.size()));
+            return;
+        }
 
-            if (currentPid != 0) {
-                QByteArray actionData = payload.mid(4);
-                if (!actionData.isEmpty()) {
-                    m_actionQueue.append({currentPid, actionData});
-                    static int logCount = 0;
-                    if (logCount == 0 || logCount % m_actionLogFrequency < 2) {
-                        LOG_INFO(QString("🎮 收到玩家 %1 动作: %2").arg(currentPid).arg(QString(actionData.toHex().toUpper())));
-                        logCount++;
-                    }
-                }
+        // 1. 查找发送者
+        quint8 currentPid = 0;
+        QString playerName = "";
+
+        for (auto it = m_players.begin(); it != m_players.end(); ++it) {
+            if (it.value().socket == socket) {
+                currentPid = it.key();
+                playerName = it.value().name;
+                break;
             }
+        }
+
+        if (currentPid == 0) return;
+
+        // 2. 提取数据
+        QByteArray crcData = payload.left(4);
+        QDataStream crcStream(crcData);
+        quint32 crcValue;
+
+        crcStream.setByteOrder(QDataStream::LittleEndian);
+        crcStream >> crcValue;
+
+        QByteArray actionData = payload.mid(4);
+
+        // 3. 逻辑处理
+        if (!actionData.isEmpty()) {
+            m_actionQueue.append({currentPid, actionData});
+            m_players[currentPid].lastResponseTime = QDateTime::currentMSecsSinceEpoch();
+
+            // 4. 日志记录
+            static int logCount = 0;
+            bool shouldLog = (logCount % m_actionLogFrequency < m_actionLogShowLines);
+
+            if (shouldLog) {
+                QString hexData = actionData.toHex().toUpper();
+                if (hexData.length() > 50) hexData = hexData.left(47) + "...";
+                LOG_INFO(QString("🎮 [游戏动作] 收到玩家指令 (0x26)"));
+                LOG_INFO(QString("   ├─ 👤 来源: %1 (PID: %2)").arg(playerName).arg(currentPid));
+                LOG_INFO(QString("   ├─ 🛡️ CRC32: 0x%1").arg(QString::number(crcValue, 16).toUpper().rightJustified(8, '0')));
+                LOG_INFO(QString("   ├─ 📦 数据: %1 (%2 bytes)").arg(hexData).arg(actionData.size()));
+                LOG_INFO(QString("   └─ 📥 状态: 已加入广播队列 (当前队列深度: %1)").arg(m_actionQueue.size()));
+                logCount++;
+            }
+        } else {
+            m_players[currentPid].lastResponseTime = QDateTime::currentMSecsSinceEpoch();
+            LOG_DEBUG(QString("💓 [游戏心跳] 玩家 %1 发送了空动作包 (KeepAlive)").arg(currentPid));
         }
     }
     break;
 
     case W3GS_OUTGOING_KEEPALIVE: // [0x27] 客户端发送的保持连接包
     {
-        quint8 currentPid = 0;
-        for (auto it = m_players.begin(); it != m_players.end(); ++it) {
-            if (it.value().socket == socket) { currentPid = it.key(); break; }
+        // 1. 长度校验
+        if (payload.size() < 5) {
+            LOG_INFO(QString("   └─ ⚠️ [警告] KeepAlive 包长度异常: %1 (期望 >= 5)").arg(payload.size()));
+            return;
         }
-        if (currentPid != 0) {
-            m_players[currentPid].lastResponseTime = QDateTime::currentMSecsSinceEpoch();
-        }
-    }
-    break;
 
-    case W3GS_CHAT_TO_HOST: // [0x28] 客户端发送聊天消息
-    {
-        if (payload.size() < 7) return;
+        // 2. 解析数据
         QDataStream in(payload);
         in.setByteOrder(QDataStream::LittleEndian);
-        quint8 numReceivers; in >> numReceivers;
-        if (numReceivers > 0) in.skipRawData(numReceivers);
-        quint8 fromPid, flag; quint32 extra; in >> fromPid >> flag >> extra;
-        int headerSize = 1 + numReceivers + 1 + 1 + 4;
 
-        // 查找发送者
-        quint8 senderPid = 0;
+        quint8 unknownByte;
+        quint32 checkSum;
+        in >> unknownByte >> checkSum;
+
+        // 3. 查找发送者
+        quint8 currentPid = 0;
         QString senderName = "";
+
         for (auto it = m_players.begin(); it != m_players.end(); ++it) {
             if (it.value().socket == socket) {
-                senderPid = it.key();
+                currentPid = it.key();
                 senderName = it.value().name;
                 break;
             }
         }
 
-        if (senderPid == 0) {
-            LOG_INFO("   └─ ⚠️ [警告] 无法识别发送者 Socket");
+        if (currentPid != 0) {
+            // 4. 逻辑处理
+            qint64 now = QDateTime::currentMSecsSinceEpoch();
+            m_players[currentPid].lastResponseTime = now;
+
+            // 5. 日志记录
+            LOG_INFO(QString("💓 [保持连接] 收到心跳包 (0x27)"));
+            LOG_INFO(QString("   ├─ 👤 来源: %1 (PID: %2)").arg(senderName).arg(currentPid));
+            LOG_INFO(QString("   ├─ ❓ 标志: 0x%1").arg(QString::number(unknownByte, 16).toUpper().rightJustified(2, '0')));
+            LOG_INFO(QString("   ├─ 🛡️ 校验: 0x%1 (CheckSum)").arg(QString::number(checkSum, 16).toUpper().rightJustified(8, '0')));
+            LOG_INFO(QString("   └─ ⏱️ 动作: 刷新活跃时间戳 -> %1").arg(now));
+        }
+        else {
+            LOG_INFO("   └─ ⚠️ [异常] 收到来自未知 Socket 的 KeepAlive");
+        }
+    }
+    break;
+
+    case W3GS_CHAT_TO_HOST: // [0x28] 客户端发送聊天/大厅指令
+    {
+        // 1. 基础长度校验 (Count(1) + From(1) + Flag(1) = 3)
+        if (payload.size() < 3) return;
+
+        QDataStream in(payload);
+        in.setByteOrder(QDataStream::LittleEndian);
+
+        // 2. 解析接收者列表
+        quint8 numReceivers;
+        in >> numReceivers;
+
+        // 再次校验长度：确保 payload 包含所有接收者PID + FromPID + Flag
+        if (payload.size() < 1 + numReceivers + 2) {
+            LOG_ERROR(QString("   └─ ❌ [错误] 包长度不足 (Receivers: %1)").arg(numReceivers));
             return;
         }
 
-        if (payload.size() > headerSize) {
-            QByteArray msgBytes = payload.mid(headerSize);
-            if (msgBytes.endsWith('\0')) msgBytes.chop(1);
-            QString msg = m_players[senderPid].codec->toUnicode(msgBytes);
+        // 跳过接收者 PIDs
+        in.skipRawData(numReceivers);
 
-            LOG_INFO(QString("   ├─ 👤 发送者: %1 (PID:%2)").arg(senderName).arg(senderPid));
-            LOG_INFO(QString("   └─ 💬 内容: %1").arg(msg));
+        // 3. 解析来源与标志
+        quint8 fromPid, flag;
+        in >> fromPid >> flag;
 
-            // 转发聊天
-            MultiLangMsg chatMsg;
-            chatMsg.add("CN", QString("%1: %2").arg(senderName, msg));
-            chatMsg.add("EN", QString("%1: %2").arg(senderName, msg));
-            broadcastChatMessage(chatMsg, senderPid);
+        // 4. 查找发送者 (Socket -> PID/Name/Codec)
+        quint8 senderPid = 0;
+        QString senderName = "";
+        QTextCodec* codec = QTextCodec::codecForName("Windows-1252"); // 默认
+
+        for (auto it = m_players.begin(); it != m_players.end(); ++it) {
+            if (it.value().socket == socket) {
+                senderPid = it.key();
+                senderName = it.value().name;
+                codec = it.value().codec;
+                break;
+            }
+        }
+
+        if (senderPid == 0) {
+            LOG_INFO("   └─ ⚠️ [警告] 无法识别发送者 Socket，忽略请求");
+            return;
+        }
+
+        // 打印通用头部日志
+        QString typeStr;
+        switch(flag) {
+        case 0x10: typeStr = "消息 (Message)"; break;
+        case 0x11: typeStr = "变更队伍 (Team)"; break;
+        case 0x12: typeStr = "变更颜色 (Color)"; break;
+        case 0x13: typeStr = "变更种族 (Race)"; break;
+        case 0x14: typeStr = "变更让分 (Handicap)"; break;
+        case 0x20: typeStr = "扩展消息 (Extra)"; break;
+        default:   typeStr = QString("未知 (0x%1)").arg(QString::number(flag, 16)); break;
+        }
+
+        LOG_INFO(QString("   ├─ 👤 发送者: %1 (PID: %2)").arg(senderName).arg(senderPid));
+        LOG_INFO(QString("   ├─ 🚩 类型: %1").arg(typeStr));
+
+        // 5. 根据 Flag 分流处理
+        int currentOffset = 1 + numReceivers + 2; // 当前解析到的字节位置
+
+        if (flag == 0x10) // [16] 聊天消息
+        {
+            if (currentOffset < payload.size()) {
+                QByteArray rawMsg = payload.mid(currentOffset);
+                // 移除末尾的 \0
+                if (rawMsg.endsWith('\0')) rawMsg.chop(1);
+
+                QString msg = codec->toUnicode(rawMsg);
+                LOG_INFO(QString("   └─ 💬 内容: %1").arg(msg));
+
+                // A. 指令处理
+                if (msg.startsWith("/")) {
+                    LOG_INFO(QString("      └─ ⚡ [指令] 检测到命令，转交处理器..."));
+                    // handleChatCommand(senderPid, msg);
+                }
+                // B. 普通聊天转发
+                else {
+                    MultiLangMsg chatMsg;
+                    chatMsg.add("CN", QString("%1: %2").arg(senderName, msg));
+                    chatMsg.add("EN", QString("%1: %2").arg(senderName, msg));
+                    broadcastChatMessage(chatMsg, senderPid);
+                }
+            }
+        }
+        else if (flag >= 0x11 && flag <= 0x14) // [17-20] 状态变更请求
+        {
+            if (currentOffset < payload.size()) {
+                quint8 byteVal;
+                in >> byteVal;
+
+                QString actionLog;
+
+                switch(flag) {
+                case 0x11: // Team
+                    actionLog = QString("请求换至队伍: %1").arg(byteVal);
+                    break;
+                case 0x12: // Color
+                    actionLog = QString("请求更换颜色: %1").arg(byteVal);
+                    break;
+                case 0x13: // Race
+                {
+                    QString raceStr;
+                    if(byteVal == 1) raceStr = "Human";
+                    else if(byteVal == 2) raceStr = "Orc";
+                    else if(byteVal == 3) raceStr = "Undead";
+                    else if(byteVal == 4) raceStr = "NightElf";
+                    else raceStr = "Random";
+                    actionLog = QString("请求更换种族: %1 (%2)").arg(raceStr).arg(byteVal);
+                }
+                break;
+                case 0x14: // Handicap
+                    actionLog = QString("请求变更生命值: %1%").arg(byteVal);
+                    break;
+                }
+
+                LOG_INFO(QString("   └─ ⚙️ 动作: %1").arg(actionLog));
+            }
+        }
+        else if (flag == 0x20) // [32] 带额外标志的消息 (通常是类似 Ping 或特殊指令)
+        {
+            if (payload.size() >= currentOffset + 4) {
+                quint32 extraFlags;
+                in >> extraFlags;
+
+                // 读取剩余的字符串
+                QByteArray rawMsg = payload.mid(currentOffset + 4);
+                if (rawMsg.endsWith('\0')) rawMsg.chop(1);
+                QString msg = codec->toUnicode(rawMsg);
+
+                LOG_INFO(QString("   ├─ 🔧 额外标志: %1").arg(extraFlags));
+                LOG_INFO(QString("   └─ 💬 内容: %1").arg(msg));
+            }
+        }
+        else {
+            LOG_INFO("   └─ ⚠️ [未知] 无法解析的 Payload 数据");
         }
     }
     break;
@@ -1443,30 +1605,74 @@ void Client::onGameStarted()
 
 void Client::onGameTick()
 {
+    // 1. 状态检查
     if (!m_gameStarted) {
+        LOG_INFO("🛑 [GameTick] 游戏标志位为 False，停止定时器");
         m_gameTickTimer->stop();
         return;
     }
 
-    // 1. 构建时间片包
-    QByteArray tickPacket = createW3GSIncomingActionPacket (m_gameTickInterval);
-    bool hasAction = tickPacket.size() > 8;
+    // 2. 构建数据包
+    QByteArray tickPacket = createW3GSIncomingActionPacket(m_gameTickInterval);
+
+    // 3. 树状日志逻辑
     static int logCount = 0;
+    logCount++;
 
-    if (hasAction) {
-        if (logCount == 0 || logCount % m_actionLogFrequency < 2) {
-            LOG_INFO(QString("🎮 游戏动作数据包: %1").arg(QString(tickPacket.toHex().toUpper())));
-            logCount++;
-        }
-    } else {
-        if (logCount == 0 || logCount % m_actionLogFrequency * 10 < 2) {
-            LOG_INFO(QString("💓 游戏空心数据包: %1").arg(QString(tickPacket.toHex().toUpper())));
-            logCount++;
+    bool hasAction = (tickPacket.size() > 8);
+    bool shouldLog = (hasAction || (logCount % m_actionLogFrequency < m_actionLogShowLines));
+
+    if (shouldLog) {
+        LOG_INFO(QString("⏰ [GameTick] 周期 #%1 执行中...").arg(logCount));
+
+        // [A] 包内容分析
+        QString hexData = tickPacket.toHex().toUpper();
+        LOG_INFO(QString("   ├─ 📦 数据包: %1 bytes").arg(tickPacket.size()));
+        LOG_INFO(QString("   ├─ 🔢 HEX: %1").arg(hexData));
+
+        if (hasAction) LOG_INFO("   ├─ ⚡ 类型: 包含玩家动作指令");
+        else           LOG_INFO("   ├─ 💓 类型: 空心跳 (KeepAlive)");
+
+        // [B] 发送通道检查
+        LOG_INFO(QString("   └─ 📡 广播目标检查 (当前玩家数: %1):").arg(m_players.size()));
+
+        int validTargets = 0;
+        bool canSend = false;
+
+        for (auto it = m_players.begin(); it != m_players.end(); ++it) {
+            quint8 pid = it.key();
+            const PlayerData &p = it.value();
+
+            if (pid == 1) continue;
+
+            QString statusStr;
+
+            if (!p.socket) {
+                statusStr = "❌ [错误] Socket 指针为空";
+            }
+            else if (p.socket->state() != QAbstractSocket::ConnectedState) {
+                statusStr = QString("⚠️ [异常] Socket 状态不对 (%1)").arg(p.socket->state());
+            }
+            else if (!p.socket->isValid()) {
+                statusStr = "❌ [错误] Socket 句柄无效";
+            }
+            else {
+                statusStr = QString("✅ [正常] 缓冲: %1 bytes").arg(p.socket->bytesToWrite());
+                canSend = true;
+                validTargets++;
+            }
+
+            LOG_INFO(QString("      ├─ 🎯 玩家 [%1] %2 -> %3")
+                         .arg(pid)
+                         .arg(p.name, statusStr));
         }
 
+        if (validTargets == 0 || !canSend) {
+            LOG_ERROR("      └─ ❌ [严重故障] 没有有效的发送目标！客户端当然收不到！");
+        }
     }
 
-    // 2. 广播给所有玩家
+    // 4. 执行发送
     broadcastPacket(tickPacket, 0);
 }
 
@@ -2179,7 +2385,7 @@ void Client::startGame()
     broadcastPacket(createW3GSCountdownStartPacket(), 0);
 
     // 4. 最后启动定时器
-    m_startTimer->start(5000);
+    m_startTimer->start(5200);
 
     LOG_INFO("⏳ [游戏启动] 开始倒计时...");
 }
@@ -2993,9 +3199,9 @@ void Client::initBotPlayerData()
 void Client::checkAllPlayersLoaded()
 {
     // 0. 前置检查：防止重复启动或无效调用
-    if (m_gameTickTimer->isActive()) return; // 时钟已在运行，无需检查
-    if (m_startLagTimer->isActive()) return; // 缓冲计时器已在运行，无需检查
-    if (!m_gameStarted) return;              // 游戏还没正式开始（还在倒计时或大厅），无需检查
+    if (m_gameTickTimer->isActive()) return;
+    if (m_startLagTimer->isActive()) return;
+    if (!m_gameStarted) return;
 
     // 1. 打印根节点
     LOG_INFO("🔍 [加载检查] 遍历玩家加载状态...");
@@ -3009,7 +3215,7 @@ void Client::checkAllPlayersLoaded()
         quint8 pid = it.key();
         const PlayerData &p = it.value();
 
-        // 跳过机器人 PID 1 (它总是 Ready 的，且不参与真实加载逻辑)
+        // 跳过机器人
         if (pid == 1) continue;
 
         totalCount++;
@@ -3028,8 +3234,8 @@ void Client::checkAllPlayersLoaded()
 
         // 打印叶子节点：显示每个玩家的状态
         LOG_INFO(QString("   ├─ 👤 [PID: %1] %2 -> %3 %4")
-                     .arg(pid, -3)              // 对齐 PID
-                     .arg(p.name, -15)          // 对齐名字
+                     .arg(pid, -3)
+                     .arg(p.name, -15)
                      .arg(statusStr, timeStr));
     }
 
@@ -3045,10 +3251,10 @@ void Client::checkAllPlayersLoaded()
         broadcastPacket(createW3GSPlayerLoadedPacket(1), 0);
         LOG_INFO("      ├─ 📢 动作: 广播 HostBot (PID 1) Loaded 信号");
 
-        // 动作 B: 启动缓冲定时器 (Start Lag)
-        LOG_INFO(QString("      └─ ⏳ 动作: 启动 StartLag 缓冲计时器 (%1 ms)...").arg(m_configStartLag));
+        // 动作 B: 启动缓冲定时器
+        LOG_INFO(QString("      └─ ⏳ 动作: 启动 StartLag 缓冲计时器 (%1 ms)...").arg(m_gameStartLag));
 
-        m_startLagTimer->start(m_configStartLag);
+        m_startLagTimer->start(m_gameStartLag);
 
     } else {
         // 还有人没加载完

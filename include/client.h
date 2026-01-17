@@ -602,7 +602,7 @@ private:
     QTimer                          *m_startTimer           = nullptr;
     QTimer                          *m_gameTickTimer        = nullptr;
     QTimer                          *m_startLagTimer        = nullptr;
-    int                             m_configStartLag        = 4000;
+    quint16                         m_gameStartLag          = 1000;
     quint16                         m_gameTickInterval      = 100;
 
     // 设置标志
@@ -614,7 +614,8 @@ private:
     LoginProtocol                   m_loginProtocol         = Protocol_SRP_0x53;
 
     // 频率管理
-    quint8                          m_actionLogFrequency    = 5;
+    quint8                          m_actionLogShowLines    = 3;
+    quint8                          m_actionLogFrequency    = 9;
     quint32                         m_chatIntervalCounter   = 0;
 };
 
