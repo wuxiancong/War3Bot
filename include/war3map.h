@@ -51,7 +51,6 @@ struct W3iPlayer {
     QString             name;
     float               startX;
     float               startY;
-    float               startZ;
     quint32             allyLow;
     quint32             allyHigh;
 };

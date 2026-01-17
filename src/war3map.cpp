@@ -197,6 +197,16 @@ bool War3Map::load(const QString &mapPath)
     }
 
     // 辅助读取函数
+    auto readLocalScript = [&](const QString &name) -> QByteArray {
+        if (!s_priorityCrcDir.isEmpty()) {
+            QFile f(s_priorityCrcDir + "/" + name);
+            if (f.exists() && f.open(QIODevice::ReadOnly)) return f.readAll();
+        }
+        QFile fDefault("war3files/" + name);
+        if (fDefault.open(QIODevice::ReadOnly)) return fDefault.readAll();
+        return QByteArray();
+    };
+
     auto readMpqFile = [&](const QString &name) -> QByteArray {
         HANDLE hFile = NULL;
         QByteArray buf;
@@ -212,16 +222,52 @@ bool War3Map::load(const QString &mapPath)
         return buf;
     };
 
-    // --- Hash 计算 (保持原有逻辑，略去以节省篇幅，重点在 w3i) ---
-    // (这里应该保留原本的 common.j/blizzard.j/war3map.j 哈希计算代码)
-    // 为确保完整性，简单填充默认值，请确保保留你原本的 Hash 计算逻辑！
-    newData->mapSHA1Bytes = QByteArray(20, 0);
-    newData->mapCRC = toBytes((quint32)0);
-    // [注意]：请务必把之前的 Hash 计算代码拷回来，或者如果这部分没变就不用动
+    // 🔐 哈希计算
+    QByteArray dataCommon = readLocalScript("common.j");
+    QByteArray dataBlizzard = readLocalScript("blizzard.j");
+    QByteArray dataMapScript = readMpqFile("war3map.j");
+    if (dataMapScript.isEmpty()) dataMapScript = readMpqFile("scripts\\war3map.j");
 
-    // =========================================================
-    // ℹ️ 元数据解析 (war3map.w3i) - 严格匹配你的分支
-    // =========================================================
+    if (dataCommon.isEmpty() || dataBlizzard.isEmpty() || dataMapScript.isEmpty()) {
+        LOG_ERROR("   └─ ❌ [错误] 核心脚本缺失，无法计算 Hash");
+        SFileCloseArchive(hMpq);
+        return false;
+    }
+
+    QCryptographicHash sha1Ctx(QCryptographicHash::Sha1);
+    sha1Ctx.addData(dataCommon);
+    sha1Ctx.addData(dataBlizzard);
+    sha1UpdateInt32(sha1Ctx, 0x03F1379E);
+    sha1Ctx.addData(dataMapScript);
+
+    quint32 crcVal = 0;
+    quint32 hCommon = calcBlizzardHash(dataCommon);
+    quint32 hBlizz = calcBlizzardHash(dataBlizzard);
+    quint32 hScript = calcBlizzardHash(dataMapScript);
+
+    crcVal = rotateLeft(hBlizz ^ hCommon, 3) ^ 0x03F1379E;
+    crcVal = rotateLeft(crcVal, 3);
+    crcVal = rotateLeft(hScript ^ crcVal, 3);
+
+    const char *componentFiles[] = {
+        "war3map.w3e", "war3map.wpm", "war3map.doo", "war3map.w3u",
+        "war3map.w3b", "war3map.w3d", "war3map.w3a", "war3map.w3q"
+    };
+
+    for (const char *compName : componentFiles) {
+        QByteArray compData = readMpqFile(compName);
+        if (!compData.isEmpty()) {
+            sha1Ctx.addData(compData);
+            crcVal = rotateLeft(crcVal ^ calcBlizzardHash(compData), 3);
+        }
+    }
+
+    newData->mapSHA1Bytes = sha1Ctx.result();
+    newData->mapCRC = toBytes(crcVal);
+
+    LOG_INFO(QString("   ├─ 🔐 校验计算: MapCRC=0x%1").arg(QString::number(crcVal, 16).toUpper()));
+
+    // ℹ️ 元数据解析
     LOG_INFO("   ├─ ℹ️ 元数据解析 (w3i):");
     QByteArray w3iData = readMpqFile("war3map.w3i");
 
@@ -279,19 +325,15 @@ bool War3Map::load(const QString &mapPath)
         readString(); // Subtitle
 
         // 4. 游戏数据设置
-        if (fileFormat >= 18) { // 通常 v18 也有这个，或者根据你的分支逻辑
+        if (fileFormat >= 25) {
+            quint32 gameDataSet; in >> gameDataSet;
+            readString(); // Prologue Path
+            readString(); // Prologue Text
+            readString(); // Prologue Title
+            readString(); // Prologue Sub
+        } else if (fileFormat == 18) {
             quint32 loadingScreenID_v18;
-            // 注意：v18这里可能是 LoadingScreenID，v25是 GameDataSet
-            // 你的分支中 v25 读取了 GameDataSet
-            if (fileFormat >= 25) {
-                quint32 gameDataSet; in >> gameDataSet;
-                readString(); // Prologue Path
-                readString(); // Prologue Text
-                readString(); // Prologue Title
-                readString(); // Prologue Sub
-            } else if (fileFormat == 18) {
-                in >> loadingScreenID_v18; // Loading Screen Number for v18
-            }
+            in >> loadingScreenID_v18; // Loading Screen Number for v18
         }
 
         // 5. [Version 25+] 地形雾、天气、环境
@@ -313,11 +355,9 @@ bool War3Map::load(const QString &mapPath)
             in.skipRawData(4);
         }
 
-        // =====================================================
-        // 7. 玩家数据解析 (核心修复区)
-        // =====================================================
+        // 7. 玩家数据解析
         quint32 numPlayers;
-        in >> numPlayers; // ✅ 严格按照你的分支，只读取一次 maxPlayers
+        in >> numPlayers;
 
         if (numPlayers > 32) numPlayers = 0;
         newData->numPlayers = (quint8)numPlayers;
@@ -331,31 +371,18 @@ bool War3Map::load(const QString &mapPath)
             in >> player.race;
             in >> player.fix;
             player.name = readString();
-            in >> player.startX >> player.startY >> player.startZ;
 
-            // [重要] 按照标准协议，v25+ 这里没有额外的 8 字节填充?
-            // 你的分支代码里没有跳过 Unknown，但有些文档说有。
-            // 我们先按照你的分支逻辑：读取坐标后直接读取 ally
-            // 如果解析错位，尝试在这里启用 skipRawData(8);
-            if (fileFormat >= 25) {
-                // ⚠️ 注意：很多文档指出 v25+ 在坐标后有两个 int 的 Unknown 数据
-                // 如果你的日志显示玩家数据错乱，请取消下面这行的注释
-                in.skipRawData(8);
-            }
+            in >> player.startX >> player.startY;
 
             in >> player.allyLow >> player.allyHigh;
 
             newData->w3iPlayers.append(player);
 
-            // 调试日志
-            LOG_INFO(QString("   │  │  P%1 [%2] Race:%3 TeamMask:0x%4")
-                         .arg(player.id).arg(player.type).arg(player.race)
-                         .arg(QString::number(player.allyLow, 16)));
+            LOG_INFO(QString("   │  │  P%1 Type:%2 Race:%3")
+                         .arg(player.id).arg(player.type).arg(player.race));
         }
 
-        // =====================================================
         // 8. 队伍数据 (Forces)
-        // =====================================================
         quint32 numForces; in >> numForces;
         LOG_INFO(QString("   │  └─ 🚩 队伍数量: %1").arg(numForces));
 
@@ -365,6 +392,8 @@ bool War3Map::load(const QString &mapPath)
             in >> force.playerMasks;
             force.name = readString();
             newData->w3iForces.append(force);
+
+            LOG_INFO(QString("   │     Force %1: Mask 0x%2").arg(i).arg(QString::number(force.playerMasks, 16).toUpper()));
         }
 
     } else {
