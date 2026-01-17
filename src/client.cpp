@@ -2979,15 +2979,22 @@ void Client::initSlots(quint8 maxPlayers)
     m_slots.resize(maxPlayers);
     m_players.clear();
 
+    // 清空 socket 逻辑保持不变
     for (auto socket : qAsConst(m_playerSockets)) {
-        if (socket->state() == QAbstractSocket::ConnectedState) {
-            socket->disconnectFromHost();
-        }
+        if (socket->state() == QAbstractSocket::ConnectedState) socket->disconnectFromHost();
         socket->deleteLater();
     }
     m_playerSockets.clear();
     m_playerBuffers.clear();
 
+    // 🎨  DotA 标准颜色表 (跳过 Green-6)
+    static const quint8 DOTA_COLORS[] = {
+        1, 2, 3, 4, 5,
+        7, 8, 9, 10, 11,
+        0, 6
+    };
+
+    // 初始化地图槽
     for (quint8 i = 0; i < maxPlayers; ++i) {
         GameSlot &slot = m_slots[i];
         slot = GameSlot();
@@ -2996,31 +3003,69 @@ void Client::initSlots(quint8 maxPlayers)
         slot.slotStatus     = Open;
         slot.computer       = Human;
         slot.downloadStatus = DownloadStart;
-        slot.color          = i + 1;
+
+        if (i < sizeof(DOTA_COLORS)) {
+            slot.color = DOTA_COLORS[i];
+        } else {
+            slot.color = 0; // Fallback Red
+        }
+
         slot.handicap       = 100;
 
-        // 阵营分配 (DotA: 0-4 近卫, 5-9 天灾)
+        // 阵营分配
         if (i < 5) {
             slot.team = (quint8)SlotTeam::Sentinel;
             slot.race = (quint8)SlotRace::NightElf;
-        } else {
+        } else if (i < 10) {
             slot.team = (quint8)SlotTeam::Scourge;
             slot.race = (quint8)SlotRace::Undead;
+        } else {
+            slot.team = (quint8)SlotTeam::Observer;
+            slot.race = (quint8)SlotRace::Observer;
         }
     }
 
+    // 🎭 占位符逻辑 (配合颜色表)
     if (m_slots.size() > 0) {
+        m_slots[0].color = 0;
+
         GameSlot &fakeHost = m_slots[0];
         fakeHost.pid = 2;
         fakeHost.downloadStatus = 100;
         fakeHost.slotStatus = Occupied;
         fakeHost.computer = Human;
-        fakeHost.computerType = Normal;
 
-        LOG_INFO("🎭 [策略] Slot 0 已被 PID 2 预占 (将在开始时移除)");
+        LOG_INFO("🎭 [策略] Slot 0 (Red) 已被 PID 2 预占");
+    }
+
+    if (m_slots.size() > 1) m_slots[1].color = 1;
+    if (m_slots.size() > 2) m_slots[2].color = 2;
+    if (m_slots.size() > 3) m_slots[3].color = 3;
+    if (m_slots.size() > 4) m_slots[4].color = 4;
+    if (m_slots.size() > 5) m_slots[5].color = 5;
+
+    if (m_slots.size() > 6) m_slots[6].color = 7;
+    if (m_slots.size() > 7) m_slots[7].color = 8;
+    if (m_slots.size() > 8) m_slots[8].color = 9;
+    if (m_slots.size() > 9) m_slots[9].color = 10;
+    if (m_slots.size() > 10) m_slots[10].color = 11;
+
+    // ⚔️ 天灾电脑
+    if (m_slots.size() > 6) {
+        GameSlot &enemy = m_slots[6];
+        enemy.pid = 0;
+        enemy.downloadStatus = 100;
+        enemy.slotStatus = Occupied;
+        enemy.computer = Computer;
+        enemy.computerType = Normal;
+        enemy.team = 1;
+        enemy.race = 8;
+
+        LOG_INFO("⚔️ [策略] Slot 6 (Pink) 已强制设为天灾电脑");
     }
 
     initBotPlayerData();
+    LOG_INFO("✨ 地图槽位初始化完成");
 }
 
 void Client::initSlotsFromMap(quint8 maxPlayers)
