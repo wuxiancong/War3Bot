@@ -800,14 +800,38 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         }
 
         // 分配 PID
-        quint8 hostId = findFreePid();
-        if (hostId == 0) {
+        QString existingPids;
+        quint8 botPidFound = 0;
+        for(auto it = m_players.begin(); it != m_players.end(); ++it) {
+            existingPids += QString::number(it.key()) + " ";
+            if (it.key() == m_botPid) botPidFound = m_botPid;
+        }
+
+        // 执行分配
+        quint8 newPid = findFreePid();
+
+        LOG_INFO(QString("🔍 [PID 分配诊断] 玩家: %1").arg(clientPlayerName));
+        LOG_INFO(QString("   ├─ 📊 当前已存 PID: [ %1]").arg(existingPids));
+        LOG_INFO(QString("   ├─ 🤖 机器人 PID: %1").arg(botPidFound != 0 ? QString::number(botPidFound) : "未找到(危险!)"));
+
+        if (newPid == 0) {
+            LOG_ERROR("   └─ ❌ 分配失败: 无PID可分配(FULL)");
             socket->write(createW3GSRejectJoinPacket(FULL));
             socket->disconnectFromHost();
             return;
         }
 
-        m_slots[slotIndex].pid = hostId;
+        if (newPid == botPidFound) {
+            LOG_CRITICAL(QString("   └─ 💥 [严重冲突] 新玩家分配了 PID %1，但这与机器人重叠！").arg(newPid));
+            while (m_players.contains(newPid) || newPid == m_botPid) {
+                newPid++;
+            }
+            LOG_INFO(QString("      └─ 🔧 自动修正为: PID %1").arg(newPid));
+        } else {
+            LOG_INFO(QString("   └─ ✅ 分配成功: PID %1 (无冲突)").arg(newPid));
+        }
+
+        m_slots[slotIndex].pid = newPid;
         m_slots[slotIndex].slotStatus = Occupied;
         m_slots[slotIndex].downloadStatus = NotStarted;
         m_slots[slotIndex].computer = Human;
@@ -816,7 +840,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
         // 注册玩家
         PlayerData playerData;
-        playerData.pid = hostId;
+        playerData.pid = newPid;
         playerData.name = clientPlayerName;
         playerData.socket = socket;
         playerData.extIp = socket->peerAddress();
@@ -829,21 +853,21 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         playerData.lastDownloadTime = now;
         playerData.isVisualHost = nameMatch;
 
-        m_players.insert(hostId, playerData);
+        m_players.insert(newPid, playerData);
 
-        LOG_INFO(QString("   ├─ 💾 玩家注册: PID %1 (Slot %2)").arg(hostId).arg(slotIndex));
+        LOG_INFO(QString("   ├─ 💾 玩家注册: PID %1 (Slot %2)").arg(newPid).arg(slotIndex));
 
         // 3. 构建握手响应
         QByteArray finalPacket;
         QHostAddress hostIp = socket->peerAddress();
         quint16 hostPort = m_udpSocket->localPort();
 
-        finalPacket.append(createW3GSSlotInfoJoinPacket(hostId, hostIp, hostPort)); // 0x04
+        finalPacket.append(createW3GSSlotInfoJoinPacket(newPid, hostIp, hostPort)); // 0x04
         finalPacket.append(createPlayerInfoPacket(m_botPid, m_botDisplayName, QHostAddress("0.0.0.0"), 0, QHostAddress("0.0.0.0"), 0)); // 0x06 (Bot)
 
         for (auto it = m_players.begin(); it != m_players.end(); ++it) {
             const PlayerData &p = it.value();
-            if (p.pid == hostId || p.pid == m_botPid) continue;
+            if (p.pid == newPid || p.pid == m_botPid) continue;
             finalPacket.append(createPlayerInfoPacket(p.pid, p.name, p.extIp, p.extPort, p.intIp, p.intPort));
         }
 
@@ -858,7 +882,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         // 4. 广播
         QByteArray newPlayerInfoPacket = createPlayerInfoPacket(
             playerData.pid, playerData.name, playerData.extIp, playerData.extPort, playerData.intIp, playerData.intPort);
-        broadcastPacket(newPlayerInfoPacket, hostId);
+        broadcastPacket(newPlayerInfoPacket, newPid);
         broadcastSlotInfo();
 
         LOG_INFO("   └─ 📢 广播状态: 同步新玩家信息 & 刷新槽位");
@@ -3250,26 +3274,26 @@ void Client::swapSlots(int slot1, int slot2)
 
 quint8 Client::findFreePid() const
 {
-    auto isPidTaken = [&](quint8 id) -> bool {
-        // 1. 检查网络连接列表
-        if (m_players.contains(id)) return true;
-
-        // 2. 检查地图槽位列表
-        for (const auto &slot : m_slots) {
-            if (slot.pid == id) return true;
-        }
-        return false;
-    };
-
-    // 1. 优先尝试 PID 1
-    if (!isPidTaken(1)) return 1;
-
-    // 2. 尝试 PID 3 ~ 255
-    for (quint8 pid = 3; pid < 255; ++pid) {
-        if (!isPidTaken(pid)) return pid;
+    bool pid1_taken = m_players.contains(1);
+    if (!pid1_taken) {
+        for(const auto& s : m_slots) if(s.pid == 1) pid1_taken = true;
     }
+    if (!pid1_taken) return 1;
 
-    // 3. 实在满了
+    for (quint8 pid = 3; pid < 255; ++pid) {
+        if (m_players.contains(pid)) continue;
+
+        bool usedInSlot = false;
+        for (const auto &slot : m_slots) {
+            if (slot.pid == pid) {
+                usedInSlot = true;
+                break;
+            }
+        }
+        if (usedInSlot) continue;
+
+        return pid;
+    }
     return 0;
 }
 
