@@ -2257,9 +2257,9 @@ void Client::createGame(const QString &gameName, const QString &password, Provid
 {
     // 1. 初始化槽位
     if (m_enableObservers) {
-        initSlots(12);
+        initSlotsFromMap(12);
     } else {
-        initSlots(10);
+        initSlotsFromMap(10);
     }
 
     QString sourceStr = (commandSource == From_Server) ? "Server" : "Client";
@@ -3085,12 +3085,12 @@ void Client::initSlotsFromMap(quint8 maxPlayers)
 
             // 裁判的标准设置
             slot.pid            = 0;
-            slot.downloadStatus = 255;
+            slot.downloadStatus = DownloadStart;
             slot.slotStatus     = Open;
             slot.computer       = Human;
-            slot.team           = 12;
+            slot.team           = (quint8)SlotTeam::Observer;
+            slot.race           = (quint8)SlotRace::Observer;
             slot.color          = 12;
-            slot.race           = 32;
             slot.handicap       = 100;
 
             LOG_INFO(QString("   │  ├─ 🎰 Slot %1: [Observer] Team 12 (Ref)").arg(i + 1, 2));
