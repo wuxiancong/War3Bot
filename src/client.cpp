@@ -1585,18 +1585,39 @@ void Client::onGameStarted()
     // 1. 标记游戏开始
     m_gameStarted = true;
 
+    // 🎭 移除 PID 2 占位符
+    bool slotModified = false;
+    for (int i = 0; i < m_slots.size(); ++i) {
+        if (m_slots[i].pid == 2) {
+            LOG_INFO(QString("🎭 [策略] 游戏启动 -> 清理占位符 (Slot %1)").arg(i+1));
+
+            // 方案 A: 变成关闭的空位
+            m_slots[i].pid = 0;
+            m_slots[i].slotStatus = Close;
+            m_slots[i].computer = Human;
+
+            slotModified = true;
+        }
+    }
+
+    if (slotModified) {
+        broadcastSlotInfo();
+    }
+    // =========================================================
+
     // 2. 发送倒计时结束包
     broadcastPacket(createW3GSCountdownEndPacket(), 0);
     LOG_INFO("🚀 [游戏启动] 广播 W3GS_COUNTDOWN_END (0x0B)");
 
     // 3. 重置剩余玩家的加载状态
     for (auto it = m_players.begin(); it != m_players.end(); ++it) {
-        if (it.key() != 1) {
-            it.value().isFinishedLoading = false;
-        } else {
+        // 跳过 Bot(1)
+        if (it.key() == 1) {
             it.value().isFinishedLoading = true;
+        } else {
+            it.value().isFinishedLoading = false;
+            LOG_INFO(QString("⏳ [加载追踪] 正在等待玩家: %1 (PID: %2)").arg(it.value().name).arg(it.key()));
         }
-        LOG_INFO(QString("⏳ [加载追踪] 正在等待玩家: %1 (PID: %2)").arg(it.value().name).arg(it.key()));
     }
 
     emit gameStarted();
@@ -2958,7 +2979,6 @@ void Client::initSlots(quint8 maxPlayers)
     m_slots.resize(maxPlayers);
     m_players.clear();
 
-    // 清空玩家 socket（真实玩家）
     for (auto socket : qAsConst(m_playerSockets)) {
         if (socket->state() == QAbstractSocket::ConnectedState) {
             socket->disconnectFromHost();
@@ -2968,7 +2988,6 @@ void Client::initSlots(quint8 maxPlayers)
     m_playerSockets.clear();
     m_playerBuffers.clear();
 
-    // 初始化地图槽
     for (quint8 i = 0; i < maxPlayers; ++i) {
         GameSlot &slot = m_slots[i];
         slot = GameSlot();
@@ -2980,19 +2999,28 @@ void Client::initSlots(quint8 maxPlayers)
         slot.color          = i + 1;
         slot.handicap       = 100;
 
-        // 阵营分配
+        // 阵营分配 (DotA: 0-4 近卫, 5-9 天灾)
         if (i < 5) {
             slot.team = (quint8)SlotTeam::Sentinel;
-            slot.race = (quint8)SlotRace::Sentinel;
+            slot.race = (quint8)SlotRace::NightElf;
         } else {
             slot.team = (quint8)SlotTeam::Scourge;
-            slot.race = (quint8)SlotRace::Scourge;
+            slot.race = (quint8)SlotRace::Undead;
         }
     }
 
-    initBotPlayerData();
+    if (m_slots.size() > 0) {
+        GameSlot &fakeHost = m_slots[0];
+        fakeHost.pid = 2;
+        fakeHost.downloadStatus = 100;
+        fakeHost.slotStatus = Occupied;
+        fakeHost.computer = Human;
+        fakeHost.computerType = Normal;
 
-    LOG_INFO("✨ 地图槽位初始化完成（不包含 Bot）");
+        LOG_INFO("🎭 [策略] Slot 0 已被 PID 2 预占 (将在开始时移除)");
+    }
+
+    initBotPlayerData();
 }
 
 void Client::initSlotsFromMap(quint8 maxPlayers)
@@ -3196,11 +3224,9 @@ void Client::swapSlots(int slot1, int slot2)
 
 quint8 Client::findFreePid() const
 {
-    for (quint8 pid = 2; pid < 255; ++pid) {
-        // 1. 检查 m_players 中是否已存在
+    for (quint8 pid = 3; pid < 255; ++pid) {
         if (m_players.contains(pid)) continue;
 
-        // 2. 双重检查 m_slots 中是否引用了该 PID
         bool usedInSlot = false;
         for (const auto &slot : m_slots) {
             if (slot.pid == pid) {
@@ -3213,7 +3239,7 @@ quint8 Client::findFreePid() const
         return pid;
     }
     return 0;
-};
+}
 
 QString Client::getSlotInfoString() const
 {
