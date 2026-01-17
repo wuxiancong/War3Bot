@@ -943,7 +943,8 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
             // 4. 日志记录
             static int logCount = 0;
-            bool shouldLog = (logCount % m_actionLogFrequency < m_actionLogShowLines);
+            bool shouldLog = (logCount == 0 || logCount % m_actionLogFrequency < m_actionLogShowLines);
+            logCount++;
 
             if (shouldLog) {
                 QString hexData = actionData.toHex().toUpper();
@@ -953,7 +954,6 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
                 LOG_INFO(QString("   ├─ 🛡️ CRC32: 0x%1").arg(QString::number(crcValue, 16).toUpper().rightJustified(8, '0')));
                 LOG_INFO(QString("   ├─ 📦 数据: %1 (%2 bytes)").arg(hexData).arg(actionData.size()));
                 LOG_INFO(QString("   └─ 📥 状态: 已加入广播队列 (当前队列深度: %1)").arg(m_actionQueue.size()));
-                logCount++;
             }
         } else {
             m_players[currentPid].lastResponseTime = QDateTime::currentMSecsSinceEpoch();
@@ -1620,7 +1620,7 @@ void Client::onGameTick()
     logCount++;
 
     bool hasAction = (tickPacket.size() > 8);
-    bool shouldLog = (hasAction || (logCount % m_actionLogFrequency < m_actionLogShowLines));
+    bool shouldLog = (logCount == 0 || hasAction || (logCount % m_actionLogFrequency < m_actionLogShowLines));
 
     if (shouldLog) {
         LOG_INFO(QString("⏰ [GameTick] 周期 #%1 执行中...").arg(logCount));
