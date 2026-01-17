@@ -52,6 +52,8 @@ struct W3iPlayer {
     float               startX;
     float               startY;
     float               startZ;
+    quint32             allyLow;
+    quint32             allyHigh;
 };
 
 struct W3iForce {
