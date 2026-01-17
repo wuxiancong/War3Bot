@@ -372,31 +372,34 @@ bool War3Map::load(const QString &mapPath)
             in.skipRawData(4); // Script Language (int)
         }
 
-
-        // 7. 玩家数据解析
-        quint32 maxPlayers;     in >> maxPlayers;
+        // 7. 玩家数据解析 (Player Data)
         quint32 numPlayers;     in >> numPlayers;
+
         if (numPlayers > 32) {
             LOG_ERROR(QString("   │  └─ ❌ [严重错误] 玩家数量异常: %1 (解析偏移导致) - 强制重置为 0").arg(numPlayers));
             numPlayers = 0;
         }
 
         newData->numPlayers = (quint8)numPlayers;
-
         LOG_INFO(QString("   │  ├─ 👥 预设玩家: %1 人").arg(numPlayers));
 
         for (quint32 i = 0; i < numPlayers; ++i) {
             W3iPlayer player;
-            in >> player.id;
-            in >> player.type;
-            in >> player.race;
-            in >> player.fix;
-            player.name = readString();
-            in >> player.startX >> player.startY >> player.startZ;
+            in >> player.id;        // 4 bytes
+            in >> player.type;      // 4 bytes (1=Human, 2=Comp)
+            in >> player.race;      // 4 bytes (1=Hum, 2=Orc, 3=UD, 4=NE)
+            in >> player.fix;       // 4 bytes (Fixed Start Position)
+            player.name = readString(); // Player Name
+            in >> player.startX >> player.startY >> player.startZ; // 3 * 4 bytes (float)
 
+            // Skip: Unknown(4) + Unknown(4)
             in.skipRawData(4 + 4);
+
             newData->w3iPlayers.append(player);
-            LOG_DEBUG(QString("      - P%1 Type:%2 Race:%3").arg(player.id).arg(player.type).arg(player.race));
+
+            QString typeStr = (player.type == 1) ? "Human" : (player.type == 2 ? "Comp" : "Other");
+            LOG_DEBUG(QString("      - P%1 [%2] Race:%3 Name:%4")
+                          .arg(player.id).arg(typeStr).arg(player.race).arg(player.name));
         }
 
         // 8. 队伍数据解析 (Force Data)
@@ -416,6 +419,8 @@ bool War3Map::load(const QString &mapPath)
             force.name = readString();
 
             newData->w3iForces.append(force);
+
+            LOG_DEBUG(QString("      - Force %1: Mask 0x%2").arg(i).arg(QString::number(force.playerMasks, 16)));
         }
 
     } else {
