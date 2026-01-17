@@ -3069,7 +3069,6 @@ void Client::initSlotsFromMap(quint8 maxPlayers)
         else { slot.race = 32; raceLog = "Random"; }
 
         slot.team = teamId;
-        slot.color = wp.id + 1;
 
         // 打印日志
         LOG_INFO(QString("   ├─ 🎰 Slot %1: [%2] Team %3 | Race: %4")
