@@ -835,11 +835,11 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         quint16 hostPort = m_udpSocket->localPort();
 
         finalPacket.append(createW3GSSlotInfoJoinPacket(hostId, hostIp, hostPort)); // 0x04
-        finalPacket.append(createPlayerInfoPacket(1, m_botDisplayName, QHostAddress("0.0.0.0"), 0, QHostAddress("0.0.0.0"), 0)); // 0x06 (Bot)
+        finalPacket.append(createPlayerInfoPacket(2, m_botDisplayName, QHostAddress("0.0.0.0"), 0, QHostAddress("0.0.0.0"), 0)); // 0x06 (Bot)
 
         for (auto it = m_players.begin(); it != m_players.end(); ++it) {
             const PlayerData &p = it.value();
-            if (p.pid == hostId || p.pid == 1) continue;
+            if (p.pid == hostId || p.pid == 2) continue;
             finalPacket.append(createPlayerInfoPacket(p.pid, p.name, p.extIp, p.extPort, p.intIp, p.intPort));
         }
 
@@ -1459,7 +1459,7 @@ void Client::onPlayerDisconnected() {
 
         bool humanRemains = false;
         for (const auto &p : qAsConst(m_players)) {
-            if (p.pid != 1) {
+            if (p.pid != 2) {
                 humanRemains = true;
                 break;
             }
@@ -1487,12 +1487,12 @@ void Client::onPlayerDisconnected() {
             if(!m_gameStarted) {
                 LOG_INFO("   ├─ 👑 [房主交接] 检测到房主离开...");
 
-                // A. 寻找继承人 (排除 PID 1 的机器人)
+                // A. 寻找继承人 (排除 PID 2 的机器人)
                 quint8 heirPid = 0;
                 QString heirName = "";
 
                 for (auto pIt = m_players.begin(); pIt != m_players.end(); ++pIt) {
-                    if (pIt.key() != 1) {
+                    if (pIt.key() != 2) {
                         heirPid = pIt.key();
                         heirName = pIt.value().name;
                         break;
@@ -1562,7 +1562,7 @@ void Client::onPlayerDisconnected() {
         // 4. 广播离开
         if (!m_gameStarted) {
             if (!m_playerSockets.isEmpty()) {
-                QByteArray leftPacket = createW3GSPlayerLeftPacket(pidToRemove, LEAVE_SERVER_CLOSED);
+                QByteArray leftPacket = createW3GSPlayerLeftPacket(pidToRemove, LEAVE_LOBBY);
                 broadcastPacket(leftPacket, pidToRemove);
 
                 MultiLangMsg leaveMsg;
@@ -1582,25 +1582,44 @@ void Client::onPlayerDisconnected() {
 
 void Client::onGameStarted()
 {
-    // 1. 标记游戏开始
+    // 1. 打印根节点
+    LOG_INFO("🚀 [游戏启动] 倒计时结束，切换至 Loading 阶段");
+
+    // 2. 标记游戏开始
     m_gameStarted = true;
+    LOG_INFO("   ├─ ⚙️ 状态更新: m_gameStarted = true");
 
-    // 2. 发送倒计时结束包
+    // 3. 处理机器人隐身
+    broadcastPacket(createW3GSPlayerLeftPacket(2, LEAVE_LOBBY), 2, true);
+    LOG_INFO("   ├─ 👻 [幽灵模式] 发送机器人(PID:2)离开包 (模拟隐身)");
+
+    // 4. 发送倒计时结束包
     broadcastPacket(createW3GSCountdownEndPacket(), 0);
-    LOG_INFO("🚀 [游戏启动] 广播 W3GS_COUNTDOWN_END (0x0B)");
+    LOG_INFO("   ├─ 📡 广播指令: W3GS_COUNTDOWN_END (0x0B)");
 
-    // 3. 重置剩余玩家的加载状态
+    // 5. 重置剩余玩家的加载状态
+    LOG_INFO("   └─ 🔄 初始化玩家加载状态:");
+
+    int waitCount = 0;
     for (auto it = m_players.begin(); it != m_players.end(); ++it) {
-        if (it.key() == 1) {
+        quint8 pid = it.key();
+        QString pName = it.value().name;
+
+        if (pid == 2) {
             it.value().isFinishedLoading = true;
+            LOG_INFO(QString("      ├─ 🤖 [Bot] %1 (PID:%2) -> ✅ Auto Ready (无需等待)")
+                         .arg(pName).arg(pid));
         } else {
             it.value().isFinishedLoading = false;
-            LOG_INFO(QString("⏳ [加载追踪] 正在等待玩家: %1 (PID: %2)").arg(it.value().name).arg(it.key()));
+            waitCount++;
+            LOG_INFO(QString("      ├─ 👤 [Player] %1 (PID:%2) -> ⏳ 等待加载...")
+                         .arg(pName).arg(pid));
         }
     }
 
+    LOG_INFO(QString("      └─ 📊 统计: 共需等待 %1 名真实玩家").arg(waitCount));
+
     emit gameStarted();
-    LOG_INFO("🎮 [游戏状态] 全体玩家进入 Loading 界面");
 }
 
 void Client::onGameTick()
@@ -1643,7 +1662,7 @@ void Client::onGameTick()
             quint8 pid = it.key();
             const PlayerData &p = it.value();
 
-            if (pid == 1) continue;
+            if (pid == 2) continue;
 
             QString statusStr;
 
@@ -2893,8 +2912,8 @@ void Client::broadcastChatMessage(const MultiLangMsg& msg, quint8 excludePid)
     for (auto it = m_players.begin(); it != m_players.end(); ++it) {
         quint8 pid = it.key();
 
-        // 排除 PID 1 (Host) 和 指定排除的 PID
-        if (pid == excludePid || pid == 1) continue;
+        // 排除 PID 2 (Host) 和 指定排除的 PID
+        if (pid == excludePid || pid == 2) continue;
 
         PlayerData &playerData = it.value();
         QTcpSocket* socket = playerData.socket;
@@ -2922,14 +2941,34 @@ void Client::broadcastChatMessage(const MultiLangMsg& msg, quint8 excludePid)
     }
 }
 
-void Client::broadcastPacket(const QByteArray &packet, quint8 excludePid)
+void Client::broadcastPacket(const QByteArray &packet, quint8 pid, bool includeOnly)
 {
+    // 遍历所有玩家
     for (auto it = m_players.begin(); it != m_players.end(); ++it) {
         const PlayerData &playerData = it.value();
-        // 如果 PID 匹配排除项，或者 Socket 无效，则跳过
-        if (excludePid != 0 && playerData.pid == excludePid) continue;
-        if (!playerData.socket || playerData.socket->state() != QAbstractSocket::ConnectedState) continue;
 
+        bool shouldSend = false;
+
+        if (includeOnly) {
+            // 模式 A: 私人模式
+            if (playerData.pid == pid) {
+                shouldSend = true;
+            }
+        } else {
+            // 模式 B: 广播模式
+            if (pid == 0 || playerData.pid != pid) {
+                shouldSend = true;
+            }
+        }
+
+        if (!shouldSend) continue;
+
+        // 🛡️ Socket 安全检查
+        if (!playerData.socket || playerData.socket->state() != QAbstractSocket::ConnectedState) {
+            continue;
+        }
+
+        // 执行发送
         playerData.socket->write(packet);
         playerData.socket->flush();
     }
@@ -2968,7 +3007,7 @@ void Client::initSlots(quint8 maxPlayers)
     static const quint8 DOTA_COLORS[] = {
         1, 2, 3, 4, 5,
         7, 8, 9, 10, 11,
-        12, 12
+        0, 6
     };
 
     // 初始化地图槽
@@ -2986,6 +3025,7 @@ void Client::initSlots(quint8 maxPlayers)
         } else {
             slot.color = 0;
         }
+
         slot.handicap       = 100;
 
 
@@ -3002,7 +3042,8 @@ void Client::initSlots(quint8 maxPlayers)
     }
 
     initBotPlayerData();
-    LOG_INFO("✨ 地图槽位初始化完成");
+
+    LOG_INFO("✨ 地图槽位初始化完成 (虚拟主机模式)");
 }
 
 void Client::initSlotsFromMap(quint8 maxPlayers)
@@ -3169,8 +3210,8 @@ void Client::swapSlots(int slot1, int slot2)
         return;
     }
 
-    // 4. 保护检查 (防止交换 HostBot，PID 1)
-    if (m_slots[idx1].pid == 1 || m_slots[idx2].pid == 1) {
+    // 4. 保护检查 (防止交换 HostBot，PID 2)
+    if (m_slots[idx1].pid == 2 || m_slots[idx2].pid == 2) {
         return;
     }
 
@@ -3205,19 +3246,11 @@ void Client::swapSlots(int slot1, int slot2)
 
 quint8 Client::findFreePid() const
 {
-    for (quint8 pid = 2; pid < 255; ++pid) {
-        if (m_players.contains(pid)) continue;
+    // 优先分配 1, 然后 3, 4, 5... (跳过 2)
+    if (!m_players.contains(1)) return 1;
 
-        bool usedInSlot = false;
-        for (const auto &slot : m_slots) {
-            if (slot.pid == pid) {
-                usedInSlot = true;
-                break;
-            }
-        }
-        if (usedInSlot) continue;
-
-        return pid;
+    for (quint8 pid = 3; pid < 255; ++pid) {
+        if (!m_players.contains(pid)) return pid;
     }
     return 0;
 }
@@ -3250,7 +3283,7 @@ bool Client::isHostJoined()
 void Client::initBotPlayerData()
 {
     PlayerData bot;
-    bot.pid                 = 1;
+    bot.pid                 = 2;
     bot.name                = m_botDisplayName;
     bot.socket              = nullptr;
     bot.isFinishedLoading   = true;
@@ -3261,7 +3294,7 @@ void Client::initBotPlayerData()
 
     m_players.insert(bot.pid, bot);
 
-    LOG_INFO("🤖 Host Bot 注册完成（不占地图槽位）");
+    LOG_INFO("🤖 Host Bot 注册完成 (PID: 2)");
 }
 
 void Client::checkAllPlayersLoaded()
@@ -3284,7 +3317,7 @@ void Client::checkAllPlayersLoaded()
         const PlayerData &p = it.value();
 
         // 跳过机器人
-        if (pid == 1) continue;
+        if (pid == 2) continue;
 
         totalCount++;
 
@@ -3390,7 +3423,7 @@ void Client::sendPingLoop()
     if (m_chatIntervalCounter >= 3) {
         int realPlayerCount = 0;
         for(auto it = m_players.begin(); it != m_players.end(); ++it) {
-            if (it.key() != 1) realPlayerCount++;
+            if (it.key() != 2) realPlayerCount++;
         }
 
         // 填充多语言内容
@@ -3446,7 +3479,7 @@ void Client::checkPlayerTimeout()
         quint8 pid = it.key();
         PlayerData &playerData = it.value();
 
-        if (pid == 1) continue; // 跳过机器人
+        if (pid == 2) continue; // 跳过机器人
 
         bool kick = false;
         QString reasonCategory = "";

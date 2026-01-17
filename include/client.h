@@ -106,7 +106,7 @@ enum LeaveReason {
     LEAVE_DISCONNECT            = 0x01, // 掉线
     LEAVE_NORMAL                = 0x08, // 主动离开
     LEAVE_KICKED                = 0x0C, // 被踢出
-    LEAVE_SERVER_CLOSED         = 0x0D  // 服务端关闭
+    LEAVE_LOBBY                 = 0x0D  // 离开大厅
 };
 
 // 拒绝加入原因
@@ -484,8 +484,8 @@ private slots:
 
 private:
     // --- 消息广播 ---
+    void broadcastPacket(const QByteArray &packet, quint8 excludePid, bool includeOnly = false);
     void broadcastChatMessage(const MultiLangMsg &msg, quint8 excludePid = 0);
-    void broadcastPacket(const QByteArray &packet, quint8 excludePid);
     void broadcastSlotInfo(quint8 excludePid = 1);
 
     // --- 槽位管理 ---
