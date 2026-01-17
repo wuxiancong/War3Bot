@@ -142,35 +142,27 @@ QByteArray War3Map::getMapGameFlags()
 // 核心加载函数
 bool War3Map::load(const QString &mapPath)
 {
-    // 1. 规范化路径 (作为 Cache Key)
+    // 1. 规范化路径
     QString cleanPath = QFileInfo(mapPath).absoluteFilePath();
     QString fileName = QFileInfo(mapPath).fileName();
 
-    // --- [日志根节点] ---
     LOG_INFO(QString("🗺️ [地图加载] 请求: %1").arg(fileName));
 
     // 2. 检查缓存
     {
         QMutexLocker locker(&s_cacheMutex);
         if (s_cache.contains(cleanPath)) {
-            // 命中缓存！
             m_sharedData = s_cache[cleanPath];
-
-            // 简单校验一下缓存是否有效
             if (m_sharedData && m_sharedData->valid) {
-                LOG_INFO(QString("   └─ ⚡ [缓存命中] 内存复用成功 (Ref: %1)")
-                             .arg(m_sharedData.use_count()));
+                LOG_INFO(QString("   └─ ⚡ [缓存命中] 内存复用成功 (Ref: %1)").arg(m_sharedData.use_count()));
                 return true;
             }
-            // 如果缓存无效，移除并重新加载
             s_cache.remove(cleanPath);
         }
     }
 
-    // 3. 缓存未命中，开始从磁盘加载
     LOG_INFO("   ├─ 💾 [缓存未命中] 启动磁盘加载流程...");
 
-    // 创建新的共享数据对象
     auto newData = std::make_shared<War3MapSharedData>();
     newData->mapPath = cleanPath;
     newData->valid = false;
@@ -182,18 +174,16 @@ bool War3Map::load(const QString &mapPath)
         return false;
     }
 
-    newData->mapRawData = file.readAll(); // [大内存分配]
+    newData->mapRawData = file.readAll();
     file.close();
 
     // --- 计算基础信息 ---
     newData->mapSize = toBytes((quint32)newData->mapRawData.size());
-
     uLong crc = crc32(0L, Z_NULL, 0);
     crc = crc32(crc, (const Bytef*)newData->mapRawData.constData(), newData->mapRawData.size());
     newData->mapInfo = toBytes((quint32)crc);
 
-    LOG_INFO(QString("   ├─ 📂 文件读取: %1 bytes").arg(newData->mapRawData.size()));
-    LOG_INFO(QString("   │  └─ 🏷️ MapInfo CRC32: 0x%1").arg(QString::number(crc, 16).toUpper()));
+    LOG_INFO(QString("   ├─ 📂 文件读取: %1 bytes (CRC32: %2)").arg(newData->mapRawData.size()).arg(QString::number(crc, 16).toUpper()));
 
     // --- MPQ 操作 ---
     HANDLE hMpq = NULL;
@@ -209,7 +199,6 @@ bool War3Map::load(const QString &mapPath)
         return false;
     }
 
-    // 定义读取 Lambda (保持不变)
     auto readLocalScript = [&](const QString &fileName) -> QByteArray {
         if (!s_priorityCrcDir.isEmpty()) {
             QFile f(s_priorityCrcDir + "/" + fileName);
@@ -238,24 +227,16 @@ bool War3Map::load(const QString &mapPath)
     // --- 核心脚本校验 ---
     QByteArray dataCommon = readLocalScript("common.j");
     QByteArray dataBlizzard = readLocalScript("blizzard.j");
-
     QByteArray dataMapScript = readMpqFile("war3map.j");
-    QString scriptName = "war3map.j";
-    if (dataMapScript.isEmpty()) { dataMapScript = readMpqFile("scripts\\war3map.j"); scriptName = "scripts\\war3map.j"; }
-    if (dataMapScript.isEmpty()) { dataMapScript = readMpqFile("war3map.lua"); scriptName = "war3map.lua"; }
+    if (dataMapScript.isEmpty()) dataMapScript = readMpqFile("scripts\\war3map.j");
 
     if (dataCommon.isEmpty() || dataBlizzard.isEmpty() || dataMapScript.isEmpty()) {
-        LOG_ERROR("   └─ ❌ [错误] 核心脚本缺失 (common/blizzard/war3map.j)");
+        LOG_ERROR("   └─ ❌ [错误] 核心脚本缺失");
         SFileCloseArchive(hMpq);
         return false;
     }
 
-    LOG_INFO("   ├─ 📜 核心脚本校验:");
-    LOG_INFO(QString("   │  ├─ common.j:   %1 bytes").arg(dataCommon.size()));
-    LOG_INFO(QString("   │  ├─ blizzard.j: %1 bytes").arg(dataBlizzard.size()));
-    LOG_INFO(QString("   │  └─ map_script: %1 bytes (%2)").arg(dataMapScript.size()).arg(scriptName));
-
-    // --- Hash 计算初始化 ---
+    // --- Hash 计算 ---
     QCryptographicHash sha1Ctx(QCryptographicHash::Sha1);
     sha1Ctx.addData(dataCommon);
     sha1Ctx.addData(dataBlizzard);
@@ -275,33 +256,28 @@ bool War3Map::load(const QString &mapPath)
         "war3map.w3b", "war3map.w3d", "war3map.w3a", "war3map.w3q"
     };
 
-    QStringList foundComponents;
-
     for (const char *compName : componentFiles) {
         QByteArray compData = readMpqFile(compName);
         if (!compData.isEmpty()) {
             sha1Ctx.addData(compData);
             crcVal = rotateLeft(crcVal ^ calcBlizzardHash(compData), 3);
-            foundComponents << compName;
         }
-    }
-
-    if (!foundComponents.isEmpty()) {
-        LOG_INFO(QString("   ├─ 🧩 包含组件: %1").arg(foundComponents.join(", ")));
     }
 
     newData->mapSHA1Bytes = sha1Ctx.result();
     newData->mapCRC = toBytes(crcVal);
 
-    // --- 元数据 w3i 解析 ---
+    LOG_INFO(QString("   ├─ 🔐 校验计算: MapCRC=0x%1").arg(QString::number(crcVal, 16).toUpper()));
+
+    // ℹ️ 元数据解析 (war3map.w3i)
     LOG_INFO("   ├─ ℹ️ 元数据解析 (w3i):");
     QByteArray w3iData = readMpqFile("war3map.w3i");
+
     if (!w3iData.isEmpty()) {
         QDataStream in(w3iData);
         in.setByteOrder(QDataStream::LittleEndian);
-        in.setFloatingPointPrecision(QDataStream::SinglePrecision); // W3I 使用 float
+        in.setFloatingPointPrecision(QDataStream::SinglePrecision);
 
-        // 辅助函数：读取 C 风格字符串 (以 \0 结尾)
         auto readString = [&]() -> QString {
             QByteArray buffer;
             char c;
@@ -313,114 +289,129 @@ bool War3Map::load(const QString &mapPath)
             return QString::fromUtf8(buffer);
         };
 
-        // 1. 文件头
-        quint32 fileFormat; in >> fileFormat; // 版本号: 18, 25, 28, 31
+        // 1. 文件格式版本
+        quint32 fileFormat; in >> fileFormat;
         quint32 saveCount; in >> saveCount;
         quint32 editorVer; in >> editorVer;
 
-        // 2. 地图信息字符串 (必须读取以移动指针)
-        /* QString mapName =    */ readString();
-        /* QString mapAuthor =  */ readString();
-        /* QString mapDesc =    */ readString();
-        /* QString recPlayers = */ readString();
+        LOG_INFO(QString("   │  ├─ 📄 格式版本: %1 (Editor: %2)").arg(fileFormat).arg(editorVer));
 
-        // 3. 摄像机边界 (8个float)
-        in.skipRawData(8 * 4);
-        // 摄像机边界补充 (4个int)
-        in.skipRawData(4 * 4);
+        // 2. 基础信息
+        QString mName = readString();
+        QString mAuth = readString();
+        readString();                   // Desc
+        readString();                   // PlayersRecommended
 
-        // 4. 地图尺寸与标志
+        LOG_INFO(QString("   │  ├─ 📝 地图信息: %1 by %2").arg(mName).arg(mAuth));
+
+        // 3. 摄像机边界
+        in.skipRawData(8 * 4);          // Camera Bounds (floats)
+        in.skipRawData(4 * 4);          // Camera Bounds Complements (ints)
+
+        // 4. 尺寸与标志
         quint32 rawW, rawH, rawFlags;
         in >> rawW >> rawH >> rawFlags;
         quint8 tileset; in >> tileset;
 
-        newData->mapWidth       = toBytes16((quint16)rawW);
-        newData->mapHeight      = toBytes16((quint16)rawH);
-        newData->mapOptions     = rawFlags;
+        newData->mapWidth = toBytes16((quint16)rawW);
+        newData->mapHeight = toBytes16((quint16)rawH);
+        newData->mapOptions = rawFlags;
 
-        LOG_INFO(QString("   │  ├─ 📏 尺寸: %1 x %2").arg(rawW).arg(rawH));
-        LOG_INFO(QString("   │  └─ 🏳️ 标志: 0x%1").arg(QString::number(rawFlags, 16).toUpper()));
+        LOG_INFO(QString("   │  ├─ 📏 逻辑尺寸: %1 x %2 (Flags: 0x%3)").arg(rawW).arg(rawH).arg(QString::number(rawFlags, 16).toUpper()));
 
-        // 5. 加载屏幕信息
-        quint32 loadingScreenID;in >> loadingScreenID;
-        /* path =               */ readString();
-        /* text =               */ readString();
-        /* title =              */ readString();
-        /* sub =                */ readString();
+        // 5. Loading Screen
+        quint32 loadingScreenID; in >> loadingScreenID;
+        readString(); readString(); readString(); readString();
 
-        // 6. 游戏数据设置
-        quint32 gameDataSet;    in >> gameDataSet;
-        /* prologuePath =       */ readString();
-        /* prologueText =       */ readString();
-        /* prologueTitle =      */ readString();
-        /* prologueSub =        */ readString();
+        // 6. Game Data Set
+        quint32 gameDataSet; in >> gameDataSet;
+        readString(); readString(); readString(); readString();
 
+        // 版本差异处理
         if (fileFormat >= 25) {
-            in.skipRawData(4); // Fog Type (int)
-            in.skipRawData(4); // Fog Start Z (float)
-            in.skipRawData(4); // Fog End Z (float)
-            in.skipRawData(4); // Fog Density (float)
-            in.skipRawData(4); // Fog Color (int)
-
-            in.skipRawData(4); // Global Weather ID (int)
-            readString();      // Sound Environment (String)
-            in.skipRawData(1); // Light Environment Tileset (char)
-            in.skipRawData(4); // Water Tinting Color (struct)
+            in.skipRawData(4);          // Fog Type
+            in.skipRawData(4);          // Fog Start Z
+            in.skipRawData(4);          // Fog End Z
+            in.skipRawData(4);          // Fog Density
+            in.skipRawData(4);          // Fog Color
+            in.skipRawData(4);          // Weather ID
+            readString();               // Sound Environment
+            in.skipRawData(1);          // Light Environment
+            in.skipRawData(4);          // Water Tinting
         }
 
         if (fileFormat >= 31) {
-            in.skipRawData(4); // Script Language (int)
+            in.skipRawData(4);          // Script Language
         }
 
-        // 7. 玩家数据解析 (Player Data)
-        quint32 numPlayers;     in >> numPlayers;
+        // 7. 玩家数据解析
+        quint32 numPlayers;
+        in >> numPlayers; // ✅ 仅读取一次
 
         if (numPlayers > 32) {
-            LOG_ERROR(QString("   │  └─ ❌ [严重错误] 玩家数量异常: %1 (解析偏移导致) - 强制重置为 0").arg(numPlayers));
+            LOG_ERROR(QString("   │  └─ ❌ [解析错误] 玩家数量异常: %1 (重置为0)").arg(numPlayers));
             numPlayers = 0;
         }
 
         newData->numPlayers = (quint8)numPlayers;
-        LOG_INFO(QString("   │  ├─ 👥 预设玩家: %1 人").arg(numPlayers));
+        LOG_INFO(QString("   │  ├─ 👥 玩家定义: %1 人").arg(numPlayers));
 
         for (quint32 i = 0; i < numPlayers; ++i) {
             W3iPlayer player;
-            in >> player.id;        // 4 bytes
-            in >> player.type;      // 4 bytes (1=Human, 2=Comp)
-            in >> player.race;      // 4 bytes (1=Hum, 2=Orc, 3=UD, 4=NE)
-            in >> player.fix;       // 4 bytes (Fixed Start Position)
-            player.name = readString(); // Player Name
-            in >> player.startX >> player.startY >> player.startZ; // 3 * 4 bytes (float)
+            in >> player.id;            // 4 bytes
+            in >> player.type;          // 4 bytes (1=Human, 2=Comp, 3=Neutral)
+            in >> player.race;          // 4 bytes (1=Hum, 2=Orc, 3=UD, 4=NE)
+            in >> player.fix;           // 4 bytes
+            player.name = readString();
+            in >> player.startX >> player.startY >> player.startZ;
 
-            // Skip: Unknown(4) + Unknown(4)
-            in.skipRawData(4 + 4);
+            // 版本差异处理
+            if (fileFormat >= 25) {
+                in.skipRawData(4 + 4);
+            }
 
             newData->w3iPlayers.append(player);
 
-            QString typeStr = (player.type == 1) ? "Human" : (player.type == 2 ? "Comp" : "Other");
-            LOG_DEBUG(QString("      - P%1 [%2] Race:%3 Name:%4")
-                          .arg(player.id).arg(typeStr).arg(player.race).arg(player.name));
+            // --- 详细树状日志 ---
+            QString typeStr = "Unknown";
+            if (player.type == 1) typeStr = "Human (1)";
+            else if (player.type == 2) typeStr = "Computer (2)";
+            else if (player.type == 3) typeStr = "Neutral (3)";
+
+            QString raceStr = "Unknown";
+            if (player.race == 1) raceStr = "Human (1)";
+            else if (player.race == 2) raceStr = "Orc (2)";
+            else if (player.race == 3) raceStr = "Undead (3)";
+            else if (player.race == 4) raceStr = "NightElf (4)";
+
+            LOG_INFO(QString("   │  │  ├─ P%1 [%2] Race:%3 Name:%4")
+                         .arg(player.id, -2)
+                         .arg(typeStr, -12)
+                         .arg(raceStr, -12)
+                         .arg(player.name));
         }
 
-        // 8. 队伍数据解析 (Force Data)
+        // 8. 队伍数据 (Force)
         quint32 numForces; in >> numForces;
 
         if (numForces > 32) {
-            LOG_ERROR(QString("   │  └─ ❌ [严重错误] 队伍数量异常: %1 (解析偏移导致) - 强制重置为 0").arg(numForces));
+            LOG_ERROR(QString("   │  └─ ❌ [解析错误] 队伍数量异常: %1 (可能偏移)").arg(numForces));
             numForces = 0;
+        } else {
+            LOG_INFO(QString("   │  └─ 🚩 队伍定义: %1 组").arg(numForces));
         }
-
-        LOG_INFO(QString("   │  └─ 🚩 预设队伍: %1 队").arg(numForces));
 
         for (quint32 i = 0; i < numForces; ++i) {
             W3iForce force;
             in >> force.flags;
             in >> force.playerMasks;
             force.name = readString();
-
             newData->w3iForces.append(force);
 
-            LOG_DEBUG(QString("      - Force %1: Mask 0x%2").arg(i).arg(QString::number(force.playerMasks, 16)));
+            LOG_INFO(QString("   │     ├─ Force %1: Mask 0x%2 (%3)")
+                         .arg(i)
+                         .arg(QString::number(force.playerMasks, 16).toUpper())
+                         .arg(force.name));
         }
 
     } else {
@@ -428,23 +419,15 @@ bool War3Map::load(const QString &mapPath)
     }
 
     SFileCloseArchive(hMpq);
-
-    // 标记为有效
     newData->valid = true;
 
-    // --- 最终结果输出 ---
-    LOG_INFO("   ├─ 🔐 最终校验值:");
-    LOG_INFO(QString("   │  ├─ XORO CRC: 0x%1").arg(QString(newData->mapCRC.toHex().toUpper())));
-    LOG_INFO(QString("   │  └─ SHA1:     %1").arg(QString(newData->mapSHA1Bytes.toHex().toUpper())));
-
-    // 4. 存入缓存并赋值给当前实例
     {
         QMutexLocker locker(&s_cacheMutex);
         s_cache.insert(cleanPath, newData);
         m_sharedData = newData;
     }
 
-    LOG_INFO("   └─ ✅ [完成] 数据已存入全局缓存");
+    LOG_INFO("   └─ ✅ [完成] 地图加载完毕");
     return true;
 }
 
