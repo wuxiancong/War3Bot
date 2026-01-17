@@ -2981,24 +2981,12 @@ void Client::initSlots(quint8 maxPlayers)
         slot.handicap       = 100;
 
         // 阵营分配
-        if (i < maxPlayers / 2) {
+        if (i < 5) {
             slot.team = (quint8)SlotTeam::Sentinel;
             slot.race = (quint8)SlotRace::Sentinel;
         } else {
             slot.team = (quint8)SlotTeam::Scourge;
             slot.race = (quint8)SlotRace::Scourge;
-        }
-
-        if (m_slots.size() > 6) {
-            GameSlot &enemy = m_slots[6]; // Slot 7 (天灾一号位)
-            enemy.pid = 0;                // PID 0 = 电脑
-            enemy.downloadStatus = 100;
-            enemy.slotStatus = Occupied;  // 必须 Occupied
-            enemy.computer = Computer;    // 必须 Computer
-            enemy.computerType = Normal;
-            enemy.team = 1;               // 天灾队伍
-
-            LOG_INFO("⚔️ [调试] 已强制在 Slot 7 添加电脑敌人");
         }
     }
 
@@ -3007,20 +2995,34 @@ void Client::initSlots(quint8 maxPlayers)
     LOG_INFO("✨ 地图槽位初始化完成（不包含 Bot）");
 }
 
-void Client::initSlotsFromMap()
+void Client::initSlotsFromMap(quint8 maxPlayers)
 {
-    if (!m_war3Map.isValid()) return;
+    // 1. 基础校验
+    if (!m_war3Map.isValid()) {
+        LOG_ERROR("🗺️ [地图槽位] 初始化失败: 地图对象无效");
+        return;
+    }
 
     auto players = m_war3Map.getPlayers();
     auto forces = m_war3Map.getForces();
+    int mapSlotCount = players.size();
 
-    int slotCount = players.size();
+    // 2. 决定最终槽位数量
+    int finalSlotCount = (maxPlayers > mapSlotCount) ? maxPlayers : mapSlotCount;
 
-    initSlots(slotCount);
+    // 3. 打印根节点信息
+    LOG_INFO("🗺️ [地图槽位] 开始从 w3i 数据加载配置");
+    LOG_INFO(QString("   ├─ 📂 地图定义: %1 人 | 🎯 目标配置: %2 人")
+                 .arg(mapSlotCount).arg(finalSlotCount));
 
-    for (int i = 0; i < players.size(); ++i) {
+    // 4. 重置容器
+    initSlots(finalSlotCount);
+
+    // 5. 第一阶段：遍历解析地图定义的槽位
+    for (int i = 0; i < mapSlotCount; ++i) {
         const W3iPlayer &wp = players[i];
 
+        // --- A. 计算队伍归属 ---
         int teamId = 0;
         for (int f = 0; f < forces.size(); ++f) {
             if (forces[f].playerMasks & (1 << wp.id)) {
@@ -3030,27 +3032,74 @@ void Client::initSlotsFromMap()
         }
 
         GameSlot &slot = m_slots[i];
+        QString typeLog;
+        QString raceLog;
 
+        // --- B. 设置类型 (Type) ---
         if (wp.type == 1) {
-            slot.slotStatus                 = Open;
-            slot.computer                   = Human;
+            slot.slotStatus     = Open;
+            slot.computer       = Human;
+            typeLog             = "Human";
         } else if (wp.type == 2) {
-            slot.slotStatus                 = Open;
-            slot.computer                   = Computer;
-            slot.computerType               = Normal;
+            slot.slotStatus     = Open;
+            slot.computer       = Computer;
+            slot.computerType   = Normal;
+            typeLog             = "Computer";
         } else {
-            slot.slotStatus                 = Close;
+            slot.slotStatus     = Close;
+            slot.computer       = Human;
+            typeLog             = "Closed";
         }
 
-        if (wp.race == 1) slot.race         = (quint8)SlotRace::Human;
-        else if (wp.race == 2) slot.race    = (quint8)SlotRace::Orc;
-        else if (wp.race == 3) slot.race    = (quint8)SlotRace::Undead;
-        else if (wp.race == 4) slot.race    = (quint8)SlotRace::NightElf;
-        else slot.race                      = (quint8)SlotRace::Random;
+        // --- C. 设置种族 (Race) ---
+        if (wp.race == 1) { slot.race = 1; raceLog = "Human"; }
+        else if (wp.race == 2) { slot.race = 2; raceLog = "Orc"; }
+        else if (wp.race == 3) { slot.race = 8; raceLog = "Undead"; }
+        else if (wp.race == 4) { slot.race = 4; raceLog = "NightElf"; }
+        else { slot.race = 32; raceLog = "Random"; }
 
         slot.team = teamId;
         slot.color = wp.id + 1;
+
+        // 打印日志
+        LOG_INFO(QString("   ├─ 🎰 Slot %1: [%2] Team %3 | Race: %4")
+                     .arg(i + 1, 2).arg(typeLog, -8).arg(teamId).arg(raceLog));
     }
+
+    // 6. 第二阶段：处理额外的裁判槽位
+    if (finalSlotCount > mapSlotCount) {
+        LOG_INFO(QString("   ├─ 👓 扩展裁判位: Slot %1 - %2").arg(mapSlotCount + 1).arg(finalSlotCount));
+
+        for (int i = mapSlotCount; i < finalSlotCount; ++i) {
+            GameSlot &slot = m_slots[i];
+
+            // 裁判的标准设置
+            slot.pid            = 0;
+            slot.downloadStatus = 255;
+            slot.slotStatus     = Open;
+            slot.computer       = Human;
+            slot.team           = 12;
+            slot.color          = 12;
+            slot.race           = 32;
+            slot.handicap       = 100;
+
+            LOG_INFO(QString("   │  ├─ 🎰 Slot %1: [Observer] Team 12 (Ref)").arg(i + 1, 2));
+        }
+    }
+
+    // 7. 结尾统计
+    int humanCount = 0;
+    int compCount = 0;
+    int obsCount = 0;
+    for(const auto &s : qAsConst(m_slots)) {
+        if (s.slotStatus == Open) {
+            if (s.team == 12) obsCount++;
+            else if (s.computer == Human) humanCount++;
+            else if (s.computer == Computer) compCount++;
+        }
+    }
+
+    LOG_INFO(QString("   └─ ✅ 配置完成: 玩家 %1 | 电脑 %2 | 裁判 %3").arg(humanCount).arg(compCount).arg(obsCount));
 }
 
 QByteArray Client::serializeSlotData() {
