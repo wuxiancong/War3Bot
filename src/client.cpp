@@ -3206,7 +3206,7 @@ void Client::swapSlots(int slot1, int slot2)
 
 quint8 Client::findFreePid() const
 {
-    for (quint8 pid = 3; pid < 255; ++pid) {
+    for (quint8 pid = 2; pid < 255; ++pid) {
         if (m_players.contains(pid)) continue;
 
         bool usedInSlot = false;
