@@ -919,7 +919,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         for (auto it = m_players.begin(); it != m_players.end(); ++it) {
             quint8 targetPid = it.key();
             const PlayerData &targetPlayer = it.value();
-            if (targetPid == currentPid || targetPid == 2) continue;
+            if (targetPid == currentPid || targetPid == m_botPid) continue;
             if (targetPlayer.socket && targetPlayer.socket->state() == QAbstractSocket::ConnectedState) {
                 targetPlayer.socket->write(selfLoadedPacket);
             }
