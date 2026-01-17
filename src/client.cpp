@@ -2257,9 +2257,9 @@ void Client::createGame(const QString &gameName, const QString &password, Provid
 {
     // 1. 初始化槽位
     if (m_enableObservers) {
-        initSlots(12);
+        initSlotsFromMap(12);
     } else {
-        initSlots(10);
+        initSlotsFromMap(10);
     }
 
     QString sourceStr = (commandSource == From_Server) ? "Server" : "Client";
