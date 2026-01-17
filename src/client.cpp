@@ -3306,13 +3306,6 @@ void Client::checkAllPlayersLoaded()
     // 4. 最终判定
     if (totalCount > 0 && allLoaded) {
         LOG_INFO("   └─ 🎉 结果: 全员加载完毕 -> 触发启动流程");
-
-        // 动作 A: 广播机器人(PID 1)状态
-        // 这是为了双重保险，确保那些早就加载完的玩家能收到 Host 的确认信号
-        broadcastPacket(createW3GSPlayerLoadedPacket(1), 0);
-        LOG_INFO("      ├─ 📢 动作: 广播 HostBot (PID 1) Loaded 信号");
-
-        // 动作 B: 启动缓冲定时器
         LOG_INFO(QString("      └─ ⏳ 动作: 启动 StartLag 缓冲计时器 (%1 ms)...").arg(m_gameStartLag));
 
         m_startLagTimer->start(m_gameStartLag);
@@ -3440,71 +3433,48 @@ void Client::checkPlayerTimeout()
     // 场景 B: 房间闲置 (10秒)
     const qint64 TIMEOUT_LOBBY_IDLE = 10000;
 
-    auto it = m_players.begin();
-    while (it != m_players.end()) {
+    QList<quint8> pidsToKick;
+
+    for (auto it = m_players.begin(); it != m_players.end(); ++it) {
         quint8 pid = it.key();
         PlayerData &playerData = it.value();
 
-        // 1. 保护主机 (PID 1) 不被踢
-        if (pid == 1) {
-            ++it;
-            continue;
-        }
+        if (pid == 1) continue; // 跳过机器人
 
         bool kick = false;
-        QString debugState = "";
         QString reasonCategory = "";
 
-        // 计算时间差
         qint64 timeSinceLastResponse = now - playerData.lastResponseTime;
         qint64 timeSinceLastDownload = now - playerData.lastDownloadTime;
 
-        // 2. 根据状态判断超时
         if (playerData.isDownloadStart) {
-            // --- 正在下载 ---
-            debugState = QString("📥 下载中 (Last: -%1ms)").arg(timeSinceLastDownload);
-
             if (timeSinceLastDownload > TIMEOUT_DOWNLOADING) {
                 kick = true;
-                reasonCategory = QString("下载卡死 (沉默: %1ms > 阈值: %2ms)")
-                                     .arg(timeSinceLastDownload)
-                                     .arg(TIMEOUT_DOWNLOADING);
+                reasonCategory = QString("下载卡死 (%1ms)").arg(timeSinceLastDownload);
             }
-        }
-        else {
-            // --- 在房间闲置 (未下载) ---
-            debugState = QString("💤 闲置中 (Last: -%1ms)").arg(timeSinceLastResponse);
-
+        } else {
             if (timeSinceLastResponse > TIMEOUT_LOBBY_IDLE) {
                 kick = true;
-                reasonCategory = QString("房间无响应 (沉默: %1ms > 阈值: %2ms)")
-                                     .arg(timeSinceLastResponse)
-                                     .arg(TIMEOUT_LOBBY_IDLE);
+                reasonCategory = QString("房间无响应 (%1ms)").arg(timeSinceLastResponse);
             }
         }
 
-        // 👢 踢人执行
         if (kick) {
-            LOG_INFO("👢 [超时裁判] 决定移除玩家");
-            LOG_INFO(QString("   ├─ 👤 目标: %1 (PID: %2)").arg(playerData.name).arg(pid));
-            LOG_INFO(QString("   ├─ 🕒 当前时间戳: %1").arg(now));
-            LOG_INFO(QString("   ├─ ⏱️ 最后响应时间: %1").arg(playerData.lastResponseTime));
-            LOG_INFO(QString("   ├─ 📊 状态分析: %1").arg(debugState));
-            LOG_INFO(QString("   └─ ⚖️ 判决原因: %1").arg(reasonCategory));
+            LOG_INFO(QString("👢 [超时裁判] 标记移除: %1 (PID: %2) - 原因: %3")
+                         .arg(playerData.name).arg(pid).arg(reasonCategory));
 
-            if (playerData.socket) {
-                LOG_INFO("   └─ 🔌 动作: 执行 socket->disconnectFromHost()");
-                playerData.socket->disconnectFromHost();
-            } else {
-                LOG_INFO("   └─ ⚠️ 异常: Socket 已为空，仅移除逻辑数据");
+            pidsToKick.append(pid);
+        }
+    }
+
+    for (quint8 pid : pidsToKick) {
+        if (m_players.contains(pid)) {
+            PlayerData &p = m_players[pid];
+            if (p.socket) {
+                LOG_INFO(QString("🔌 [执行踢出] 断开 PID %1 的连接").arg(pid));
+                p.socket->disconnectFromHost();
             }
         }
-        else if (timeSinceLastResponse > (TIMEOUT_LOBBY_IDLE * 0.8)) {
-            LOG_INFO(QString("⚠️ [超时预警] 玩家 %1 沉默 %2ms (即将超时)")
-                         .arg(playerData.name).arg(timeSinceLastResponse));
-        }
-
-        ++it;
     }
 }
 
