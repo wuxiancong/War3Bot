@@ -1585,33 +1585,12 @@ void Client::onGameStarted()
     // 1. 标记游戏开始
     m_gameStarted = true;
 
-    // 🎭 移除 PID 2 占位符
-    bool slotModified = false;
-    for (int i = 0; i < m_slots.size(); ++i) {
-        if (m_slots[i].pid == 2) {
-            LOG_INFO(QString("🎭 [策略] 游戏启动 -> 清理占位符 (Slot %1)").arg(i+1));
-
-            // 方案 A: 变成关闭的空位
-            m_slots[i].pid = 0;
-            m_slots[i].slotStatus = Close;
-            m_slots[i].computer = Human;
-
-            slotModified = true;
-        }
-    }
-
-    if (slotModified) {
-        broadcastSlotInfo();
-    }
-    // =========================================================
-
     // 2. 发送倒计时结束包
     broadcastPacket(createW3GSCountdownEndPacket(), 0);
     LOG_INFO("🚀 [游戏启动] 广播 W3GS_COUNTDOWN_END (0x0B)");
 
     // 3. 重置剩余玩家的加载状态
     for (auto it = m_players.begin(); it != m_players.end(); ++it) {
-        // 跳过 Bot(1)
         if (it.key() == 1) {
             it.value().isFinishedLoading = true;
         } else {
