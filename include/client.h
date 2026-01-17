@@ -483,67 +483,6 @@ private slots:
     void onPlayerDisconnected();                        // 玩家断开连接
 
 private:
-    // --- 消息广播 ---
-    void broadcastPacket(const QByteArray &packet, quint8 excludePid, bool includeOnly = false);
-    void broadcastChatMessage(const MultiLangMsg &msg, quint8 excludePid = 0);
-    void broadcastSlotInfo(quint8 excludePid = 1);
-
-    // --- 槽位管理 ---
-    void initSlotsFromMap(quint8 maxPlayers = 10);
-    void initSlots(quint8 maxPlayers = 10);
-    QByteArray serializeSlotData();
-    GameSlot *findEmptySlot();
-
-    // --- W3GS 协议包构建 ---
-    QByteArray createW3GSSlotInfoPacket();
-    QByteArray createW3GSMapCheckPacket();
-    QByteArray createW3GSPingFromHostPacket();
-    QByteArray createW3GSCountdownEndPacket();
-    QByteArray createW3GSCountdownStartPacket();
-    QByteArray createW3GSPlayerLoadedPacket(quint8 pid);
-    QByteArray createW3GSStartDownloadPacket(quint8 fromPid);
-    QByteArray createW3GSRejectJoinPacket(RejectReason reason);
-    QByteArray createW3GSIncomingActionPacket (quint16 sendInterval);
-    QByteArray createW3GSPlayerLeftPacket(quint8 pid, LeaveReason reason);
-    QByteArray createW3GSSlotInfoJoinPacket(quint8 playerID, const QHostAddress& externalIp, quint16 localPort);
-    QByteArray createW3GSMapPartPacket(quint8 toPid, quint8 fromPid, quint32 offset, const QByteArray& chunkData);
-    QByteArray createW3GSChatFromHostPacket(const QByteArray &rawBytes, quint8 senderPid = 1, quint8 toPid = 255, ChatFlag flag = Message, quint32 extraData = 0);
-    QByteArray createPlayerInfoPacket(quint8 pid, const QString& name, const QHostAddress& externalIp, quint16 externalPort, const QHostAddress& internalIp, quint16 internalPort);
-
-    // --- 内部网络处理 ---
-    void sendNextMapPart(quint8 toPid, quint8 fromPid = 1);
-    void sendPacket(BNETPacketID id, const QByteArray &payload);
-    void handleBNETTcpPacket(BNETPacketID id, const QByteArray &data);
-    void handleW3GSUdpPacket(const QByteArray &data, const QHostAddress &sender, quint16 senderPort);
-    void handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &payload);
-
-    // 设置 NetManager 指针
-    void setNetManager(NetManager* server) { m_netManager = server; }
-
-    // --- 频道管理 ---
-    void joinRandomChannel();
-
-    // --- 状态管理 ---
-    void checkAllPlayersLoaded();
-
-    // --- 地图管理 ---
-    void initiateMapDownload(quint8 pid);
-    void setMapData(const QByteArray &data);
-    void setCurrentMap(const QString &filePath);
-
-    // --- 认证流程 ---
-    void sendAuthInfo();
-    void handleAuthCheck(const QByteArray &data);
-    void sendLoginRequest(LoginProtocol protocol);
-
-    // --- SRP(0x53) ---
-    void handleSRPLoginResponse(const QByteArray &data);
-
-    // --- 游戏算法 ---
-    static QByteArray calculateBrokenSHA1(const QByteArray &data);
-    QByteArray calculateOldLogonProof(const QString &password, quint32 clientToken, quint32 serverToken);
-
-private:
     // --- 成员变量 ---
 
     // 控制命令
@@ -560,7 +499,7 @@ private:
 
     // 槽位数据
     QVector<GameSlot>               m_slots;
-    quint8                          m_botPid                = 2;
+    const static quint8             m_botPid                = 2;
     bool                            m_enableObservers       = false;
     quint8                          m_layoutStyle           = CustomForces;
 
@@ -618,6 +557,67 @@ private:
     quint8                          m_actionLogShowLines    = 3;
     quint8                          m_actionLogFrequency    = 9;
     quint32                         m_chatIntervalCounter   = 0;
+
+private:
+    // --- 消息广播 ---
+    void broadcastPacket(const QByteArray &packet, quint8 excludePid, bool includeOnly = false);
+    void broadcastChatMessage(const MultiLangMsg &msg, quint8 excludePid = 0);
+    void broadcastSlotInfo(quint8 excludePid = 1);
+
+    // --- 槽位管理 ---
+    void initSlotsFromMap(quint8 maxPlayers = 10);
+    void initSlots(quint8 maxPlayers = 10);
+    QByteArray serializeSlotData();
+    GameSlot *findEmptySlot();
+
+    // --- W3GS 协议包构建 ---
+    QByteArray createW3GSSlotInfoPacket();
+    QByteArray createW3GSMapCheckPacket();
+    QByteArray createW3GSPingFromHostPacket();
+    QByteArray createW3GSCountdownEndPacket();
+    QByteArray createW3GSCountdownStartPacket();
+    QByteArray createW3GSPlayerLoadedPacket(quint8 pid);
+    QByteArray createW3GSStartDownloadPacket(quint8 fromPid);
+    QByteArray createW3GSRejectJoinPacket(RejectReason reason);
+    QByteArray createW3GSIncomingActionPacket (quint16 sendInterval);
+    QByteArray createW3GSPlayerLeftPacket(quint8 pid, LeaveReason reason);
+    QByteArray createW3GSSlotInfoJoinPacket(quint8 playerID, const QHostAddress& externalIp, quint16 localPort);
+    QByteArray createW3GSMapPartPacket(quint8 toPid, quint8 fromPid, quint32 offset, const QByteArray& chunkData);
+    QByteArray createW3GSChatFromHostPacket(const QByteArray &rawBytes, quint8 senderPid = 1, quint8 toPid = 255, ChatFlag flag = Message, quint32 extraData = 0);
+    QByteArray createPlayerInfoPacket(quint8 pid, const QString& name, const QHostAddress& externalIp, quint16 externalPort, const QHostAddress& internalIp, quint16 internalPort);
+
+    // --- 内部网络处理 ---
+    void sendPacket(BNETPacketID id, const QByteArray &payload);
+    void sendNextMapPart(quint8 toPid, quint8 fromPid = m_botPid);
+    void handleBNETTcpPacket(BNETPacketID id, const QByteArray &data);
+    void handleW3GSUdpPacket(const QByteArray &data, const QHostAddress &sender, quint16 senderPort);
+    void handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &payload);
+
+    // 设置 NetManager 指针
+    void setNetManager(NetManager* server) { m_netManager = server; }
+
+    // --- 频道管理 ---
+    void joinRandomChannel();
+
+    // --- 状态管理 ---
+    void checkAllPlayersLoaded();
+
+    // --- 地图管理 ---
+    void initiateMapDownload(quint8 pid);
+    void setMapData(const QByteArray &data);
+    void setCurrentMap(const QString &filePath);
+
+    // --- 认证流程 ---
+    void sendAuthInfo();
+    void handleAuthCheck(const QByteArray &data);
+    void sendLoginRequest(LoginProtocol protocol);
+
+    // --- SRP(0x53) ---
+    void handleSRPLoginResponse(const QByteArray &data);
+
+    // --- 游戏算法 ---
+    static QByteArray calculateBrokenSHA1(const QByteArray &data);
+    QByteArray calculateOldLogonProof(const QString &password, quint32 clientToken, quint32 serverToken);
 };
 
 #endif // CLIENT_H

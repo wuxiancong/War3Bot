@@ -300,7 +300,7 @@ void Client::initiateMapDownload(quint8 pid)
 
     // --- 步骤 A: 发送开始信号 (0x3F) ---
     // 告诉客户端：你是下载者，去那个位置准备接收
-    socket->write(createW3GSStartDownloadPacket(1));
+    socket->write(createW3GSStartDownloadPacket(m_botPid));
 
     // --- 步骤 B: 更新大厅槽位状态 (0x09) ---
     // 立即发一个 SlotInfo 更新状态
@@ -3468,7 +3468,7 @@ void Client::sendPingLoop()
             QString text = waitMsg.get(playerData.language);
             QByteArray finalBytes = playerData.codec->fromUnicode(text);
 
-            QByteArray chatPacket = createW3GSChatFromHostPacket(finalBytes, 2, pid, ChatFlag::Message);
+            QByteArray chatPacket = createW3GSChatFromHostPacket(finalBytes, m_botPid, pid, ChatFlag::Message);
             socket->write(chatPacket);
         }
 
