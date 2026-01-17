@@ -2988,6 +2988,18 @@ void Client::initSlots(quint8 maxPlayers)
             slot.team = (quint8)SlotTeam::Scourge;
             slot.race = (quint8)SlotRace::Scourge;
         }
+
+        if (m_slots.size() > 6) {
+            GameSlot &enemy = m_slots[6]; // Slot 7 (天灾一号位)
+            enemy.pid = 0;                // PID 0 = 电脑
+            enemy.downloadStatus = 100;
+            enemy.slotStatus = Occupied;  // 必须 Occupied
+            enemy.computer = Computer;    // 必须 Computer
+            enemy.computerType = Normal;
+            enemy.team = 1;               // 天灾队伍
+
+            LOG_INFO("⚔️ [调试] 已强制在 Slot 7 添加电脑敌人");
+        }
     }
 
     initBotPlayerData();
