@@ -177,8 +177,8 @@ bool War3Map::getMapSize(const QByteArray &w3eData, quint16 &outW, quint16 &outH
     quint32 width, height;
     in >> width >> height;
 
-    outW = (quint16)width;
-    outH = (quint16)height;
+    outW = (quint16)width - 1;
+    outH = (quint16)height - 1;
 
     // 魔兽地图通常是 32 的倍数
     if (width % 32 != 0 || height % 32 != 0) {
