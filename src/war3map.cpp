@@ -494,7 +494,6 @@ QByteArray War3Map::getEncodedStatString(const QString &hostName, const QString 
         return QByteArray();
     }
 
-    // --- [Step 1] 准备原始数据 ---
     QByteArray rawData;
     QDataStream out(&rawData, QIODevice::WriteOnly);
     out.setByteOrder(QDataStream::LittleEndian);
@@ -560,21 +559,8 @@ QByteArray War3Map::getEncodedStatString(const QString &hostName, const QString 
 
     LOG_INFO(QString("   └─ 🔑 SHA1: %1").arg(QString(sha1.toHex().toUpper())));
 
-    // --- [Step 2] 打印编码前的 Hex ---
-    LOG_INFO("========================================");
-    LOG_INFO(QString("📦 [StatString] Raw Data (Before Encode):"));
-    LOG_INFO(QString("   Hex: %1").arg(QString(rawData.toHex().toUpper())));
-    LOG_INFO(QString("   Header Check: %1 ...").arg(QString(rawData.left(5).toHex().toUpper())));
-    LOG_INFO("========================================");
-
-    // --- [Step 3] 执行编码 ---
     QByteArray encoded = encodeStatString(rawData);
 
-    // --- [Step 4] 打印编码后的 Hex ---
-    LOG_INFO(QString("🔒 [StatString] Encoded Data (Len: %1):").arg(encoded.size()));
-    LOG_INFO(QString("   Hex: %1").arg(QString(encoded.toHex().toUpper())));
-
-    // 再次调用解码分析，确保自洽
     analyzeStatString("自检验证", encoded);
 
     return encoded;
