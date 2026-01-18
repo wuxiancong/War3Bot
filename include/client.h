@@ -543,7 +543,7 @@ private:
     QTimer                          *m_gameTickTimer        = nullptr;
     QTimer                          *m_startLagTimer        = nullptr;
     quint16                         m_gameStartLag          = 1000;
-    quint16                         m_gameTickInterval      = 10;
+    quint16                         m_gameTickInterval      = 100;
 
     // 设置标志
     bool                            m_isBot                 = false;
