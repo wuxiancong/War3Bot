@@ -109,44 +109,41 @@ QString War3Map::getMapName() const {
 }
 
 // 仅获取游戏参数标志位 (用于 StatString)
-// 仅获取游戏参数标志位 (用于 StatString)
 QByteArray War3Map::getMapGameFlags()
 {
     quint32 GameFlags = 0;
 
-    // 1. Speed (Mask 0x03)
+    // 1. Speed
     if (m_mapSpeed == MAPSPEED_SLOW)        GameFlags = 0x00000000;
     else if (m_mapSpeed == MAPSPEED_NORMAL) GameFlags = 0x00000001;
     else                                    GameFlags = 0x00000002;
 
-    // 2. Visibility (Mask 0x0F00)
+    // 2. Visibility
     if (m_mapVisibility == MAPVIS_HIDETERRAIN)       GameFlags |= 0x00000100;
     else if (m_mapVisibility == MAPVIS_EXPLORED)     GameFlags |= 0x00000200;
     else if (m_mapVisibility == MAPVIS_ALWAYSVISIBLE)GameFlags |= 0x00000400;
     else                                             GameFlags |= 0x00000800;
 
-    // 3. Observers (Mask 0x40003000)
+    // 3. Observers
     if (m_mapObservers == MAPOBS_ONDEFEAT)      GameFlags |= 0x00002000;
     else if (m_mapObservers == MAPOBS_ALLOWED)  GameFlags |= 0x00003000;
     else if (m_mapObservers == MAPOBS_REFEREES) GameFlags |= 0x40000000;
 
-    // 4. Teams/Units/Hero/Race (Mask 0x07064000)
-    bool w3iFixedTeams = false;
+    // 4. Teams & Fixed Settings
+    if (m_mapFlags & MAPFLAG_TEAMSTOGETHER) GameFlags |= 0x00004000;
 
+    // 强制检查 w3i 配置
+    bool w3iFixed = false;
     if (isValid()) {
-        // 0x0010 = Fixed Player Settings (固定玩家设置)
-        // 0x0080 = Custom Forces (自定义队伍 -> 通常意味着固定队伍)
         if ((m_sharedData->mapOptions & 0x10) || (m_sharedData->mapOptions & 0x80)) {
-            w3iFixedTeams = true;
+            w3iFixed = true;
         }
     }
 
-    // 如果 w3i 要求固定，或者 Bot 设置要求固定，则开启固定队伍标志 (0x00060000)
-    if (w3iFixedTeams || (m_mapFlags & MAPFLAG_FIXEDTEAMS)) {
-        GameFlags |= 0x00060000; // Fixed Teams
+    if (w3iFixed || (m_mapFlags & MAPFLAG_FIXEDTEAMS)) {
+        GameFlags |= 0x00020000;
     }
 
-    if (m_mapFlags & MAPFLAG_TEAMSTOGETHER) GameFlags |= 0x00004000;
     if (m_mapFlags & MAPFLAG_UNITSHARE)     GameFlags |= 0x01000000;
     if (m_mapFlags & MAPFLAG_RANDOMHERO)    GameFlags |= 0x02000000;
     if (m_mapFlags & MAPFLAG_RANDOMRACES)   GameFlags |= 0x04000000;
