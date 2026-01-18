@@ -235,19 +235,36 @@ bool War3Map::load(const QString &mapPath)
     }
 
     QCryptographicHash sha1Ctx(QCryptographicHash::Sha1);
-    sha1Ctx.addData(dataCommon);
-    sha1Ctx.addData(dataBlizzard);
-    sha1UpdateInt32(sha1Ctx, 0x03F1379E);
-    sha1Ctx.addData(dataMapScript);
 
-    quint32 crcVal = 0;
+    // 基于 war3 1.26a 反汇编计算 (game.dll + 3B1A20)
+    // Step 1: 计算基础 Hash
     quint32 hCommon = calcBlizzardHash(dataCommon);
     quint32 hBlizz = calcBlizzardHash(dataBlizzard);
     quint32 hScript = calcBlizzardHash(dataMapScript);
 
-    crcVal = rotateLeft(hBlizz ^ hCommon, 3) ^ 0x03F1379E;
+    // Step 2: 汇编 game.dll + 3B1AEB: xor ebx, ebp (Blizz ^ Common)
+    quint32 crcVal = hBlizz ^ hCommon;
+
+    // Step 3: 汇编 game.dll + 3B1AED: rol ebx, 3
     crcVal = rotateLeft(crcVal, 3);
-    crcVal = rotateLeft(hScript ^ crcVal, 3);
+
+    // Step 4: 汇编 game.dll + 3B1AF0: xor ebx, 3F1379E (Magic)
+    crcVal = crcVal ^ 0x03F1379E;
+
+    // Step 5: 汇编 game.dll + 3B1AF6: rol ebx, 3
+    crcVal = rotateLeft(crcVal, 3);
+
+    // Step 6: 汇编 game.dll + 3B1B27: xor edx, ebx (Script ^ Intermediate)
+    crcVal = hScript ^ crcVal;
+
+    // Step 7: 汇编 game.dll + 3B1B2B: rol edx, 3
+    crcVal = rotateLeft(crcVal, 3);
+
+    // SHA1 填充
+    sha1Ctx.addData(dataCommon);
+    sha1Ctx.addData(dataBlizzard);
+    sha1UpdateInt32(sha1Ctx, 0x03F1379E);
+    sha1Ctx.addData(dataMapScript);
 
     const char *componentFiles[] = {
         "war3map.w3e", "war3map.wpm", "war3map.doo", "war3map.w3u",
