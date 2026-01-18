@@ -12,7 +12,7 @@
 ## 1. 现象描述 (Symptom)
 在游戏加载完成后直接到积分面板，无法进入游戏！
 
-## 2. 寻找来源（Error Source）
+## 2. 寻找来源 (Error Source)
 
 搜寻字符串 "Score"，在像 "ScoreScreenPageTab" 这样的字样下断点，会找到下面的反汇编。
 
@@ -421,7 +421,7 @@
 
 **简单来说：游戏引擎认为"玩家不在游戏里"，所以送玩家去了记分板。**
 
-## 3. 错误根源（Error Root Source）
+## 3. 错误根源 (Error Root Source)
 
 ```assembly
 6F3B0750  | 6A FF                   | push FFFFFFFF                                   |
