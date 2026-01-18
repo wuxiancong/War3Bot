@@ -10,10 +10,14 @@
 #include <zlib.h>
 #include "StormLib.h"
 
+
 QMutex War3Map::s_cacheMutex;
 QString War3Map::s_priorityCrcDir = "";
 QMap<QString, std::shared_ptr<War3MapSharedData>> War3Map::s_cache;
 
+// =========================================================
+// 辅助函数
+// =========================================================
 static QByteArray toBytes(quint32 val) {
     QByteArray b; b.resize(4); qToLittleEndian(val, (uchar*)b.data()); return b;
 }
@@ -21,7 +25,7 @@ static QByteArray toBytes16(quint16 val) {
     QByteArray b; b.resize(2); qToLittleEndian(val, (uchar*)b.data()); return b;
 }
 
-// 32位循环左移 (ROL)
+// 循环左移 (ROL)
 static inline quint32 rotateLeft(quint32 value, int shift) {
     return (value << shift) | (value >> (32 - shift));
 }
@@ -31,6 +35,10 @@ void sha1UpdateInt32(QCryptographicHash &sha1, quint32 value) {
     quint32 le = qToLittleEndian(value);
     sha1.addData((const char*)&le, 4);
 }
+
+// =========================================================
+// War3Map 类实现
+// =========================================================
 
 War3Map::War3Map() :
     m_mapSpeed(MAPSPEED_FAST),
@@ -131,47 +139,6 @@ QByteArray War3Map::getMapGameFlags()
     return toBytes(GameFlags);
 }
 
-// 核心算法：暴雪自定义哈希 (Map Logic Hash)
-// 基于: XOR -> Rotate Left 3
-quint32 War3Map::calcBlizzardHash(const QByteArray &data) {
-    quint32 hash = 0;
-    const char *ptr = data.constData();
-    int length = data.size();
-
-    // 1. 处理 4 字节块 (DWORD)
-    // 模拟 game.dll + 39E5D0 的行为：直接读取 DWORD (Little Endian)
-    while (length >= 4) {
-        // 使用 qFromLittleEndian 确保在任何 CPU 上都按 LE 读取，防止对齐崩溃
-        quint32 chunk = qFromLittleEndian<quint32>((const uchar*)ptr);
-
-        // 汇编: xor edi, eax (hash ^ chunk)
-        hash = hash ^ chunk;
-
-        // 汇编: rol edi, 3
-        hash = rotateLeft(hash, 3);
-
-        ptr += 4;
-        length -= 4;
-    }
-
-    // 2. 处理剩余字节
-    // 汇编: game.dll + 39E5E8 (逐字节处理)
-    while (length > 0) {
-        quint8 byteVal = (quint8)*ptr;
-
-        // 汇编: xor esi, eax
-        hash = hash ^ byteVal;
-
-        // 汇编: rol esi, 3
-        hash = rotateLeft(hash, 3);
-
-        ptr++;
-        length--;
-    }
-
-    return hash;
-}
-
 // 核心加载函数
 bool War3Map::load(const QString &mapPath)
 {
@@ -207,7 +174,7 @@ bool War3Map::load(const QString &mapPath)
     newData->mapRawData = file.readAll();
     file.close();
 
-    // 4. 计算基础校验信息 (Size, CRC32) - 用于进房间检查
+    // 4. 计算基础校验信息 (Size, CRC32)
     newData->mapSize = toBytes((quint32)newData->mapRawData.size());
     uLong zCrc = crc32(0L, Z_NULL, 0);
     zCrc = crc32(zCrc, (const Bytef*)newData->mapRawData.constData(), newData->mapRawData.size());
@@ -235,7 +202,6 @@ bool War3Map::load(const QString &mapPath)
             QFile f(s_priorityCrcDir + "/" + name);
             if (f.exists() && f.open(QIODevice::ReadOnly)) return f.readAll();
         }
-        // [重要] 请确保 war3files 下的文件与玩家客户端版本(如1.26a)完全一致
         QFile fDefault("war3files/" + name);
         if (fDefault.open(QIODevice::ReadOnly)) return fDefault.readAll();
         return QByteArray();
@@ -268,10 +234,8 @@ bool War3Map::load(const QString &mapPath)
         return false;
     }
 
-    // 🛠️ GameCRC 计算 (注意顺序)
-
     QCryptographicHash sha1Ctx(QCryptographicHash::Sha1);
-    quint32 crcVal = 0; // 必须从 0 开始
+    quint32 crcVal = 0;
 
     // 1. common.j
     sha1Ctx.addData(dataCommon);
@@ -282,7 +246,6 @@ bool War3Map::load(const QString &mapPath)
     crcVal = rotateLeft(crcVal ^ calcBlizzardHash(dataBlizzard), 3);
 
     // 3. Magic Number (0x03F1379E)
-    // 注意：1.24/1.26 版本中，Magic Number 通常夹在 blizzard.j 和 war3map.j 之间
     sha1UpdateInt32(sha1Ctx, 0x03F1379E);
     crcVal = rotateLeft(crcVal ^ 0x03F1379E, 3);
 
@@ -290,7 +253,7 @@ bool War3Map::load(const QString &mapPath)
     sha1Ctx.addData(dataMapScript);
     crcVal = rotateLeft(crcVal ^ calcBlizzardHash(dataMapScript), 3);
 
-    // 5. 地图组件文件 (顺序敏感)
+    // 5. 地图组件文件
     const char *componentFiles[] = {
         "war3map.w3e", "war3map.wpm", "war3map.doo", "war3map.w3u",
         "war3map.w3b", "war3map.w3d", "war3map.w3a", "war3map.w3q"
@@ -305,7 +268,7 @@ bool War3Map::load(const QString &mapPath)
     }
 
     newData->mapSHA1Bytes = sha1Ctx.result();
-    newData->mapCRC = toBytes(crcVal); // 保存最终计算的 GameCRC
+    newData->mapCRC = toBytes(crcVal);
 
     LOG_INFO(QString("   ├─ 🔐 校验计算: MapCRC=0x%1").arg(QString::number(crcVal, 16).toUpper()));
 
@@ -357,6 +320,7 @@ bool War3Map::load(const QString &mapPath)
         // 3. 加载屏幕设置
         quint32 bgNum; in >> bgNum;
 
+        // [Version 25+] 自定义加载屏幕模型
         if (fileFormat >= 25) {
             readString(); // Custom Model Path
         }
@@ -368,14 +332,27 @@ bool War3Map::load(const QString &mapPath)
         // 4. 游戏数据设置
         if (fileFormat >= 25) {
             quint32 gameDataSet; in >> gameDataSet;
-            readString(); readString(); readString(); readString();
+            readString(); // Prologue Path
+            readString(); // Prologue Text
+            readString(); // Prologue Title
+            readString(); // Prologue Sub
         } else if (fileFormat == 18) {
-            quint32 loadingScreenID_v18; in >> loadingScreenID_v18;
+            quint32 loadingScreenID_v18;
+            in >> loadingScreenID_v18; // Loading Screen Number for v18
         }
 
         // 5. [Version 25+] 地形雾、天气、环境
         if (fileFormat >= 25) {
-            in.skipRawData(29); // Fog, Weather, Sound, Light, Water
+            in.skipRawData(4); // Fog Type
+            in.skipRawData(4); // Fog Start Z
+            in.skipRawData(4); // Fog End Z
+            in.skipRawData(4); // Fog Density
+            in.skipRawData(4); // Fog Color (RBGA)
+
+            in.skipRawData(4); // Global Weather ID
+            readString();      // Sound Env
+            in.skipRawData(1); // Light Env Tileset
+            in.skipRawData(4); // Water Tinting (RGBA)
         }
 
         // 6. [Version 31+] 脚本语言
@@ -401,9 +378,13 @@ bool War3Map::load(const QString &mapPath)
             player.name = readString();
 
             in >> player.startX >> player.startY;
+
             in >> player.allyLow >> player.allyHigh;
 
             newData->w3iPlayers.append(player);
+
+            LOG_INFO(QString("   │  │  P%1 Type:%2 Race:%3")
+                         .arg(player.id).arg(player.type).arg(player.race));
         }
 
         // 8. 队伍数据 (Forces)
@@ -416,6 +397,8 @@ bool War3Map::load(const QString &mapPath)
             in >> force.playerMasks;
             force.name = readString();
             newData->w3iForces.append(force);
+
+            LOG_INFO(QString("   │     Force %1: Mask 0x%2").arg(i).arg(QString::number(force.playerMasks, 16).toUpper()));
         }
 
     } else {
@@ -519,6 +502,7 @@ QByteArray War3Map::getEncodedStatString(const QString &hostName, const QString 
     out << (quint8)0; // Host Name Terminator
 
     // 4. Map Unknown
+    // 根据协议：(UINT8) Map unknown (possibly a STRING with just the null terminator)
     out << (quint8)0;
 
     // 5. Map SHA1
@@ -579,4 +563,52 @@ void War3Map::setPriorityCrcDirectory(const QString &dirPath)
 {
     s_priorityCrcDir = dirPath;
     LOG_INFO(QString("[War3Map] 设置计算CRC的文件搜索路径: %1").arg(dirPath));
+}
+
+// =========================================================
+// 核心算法：暴雪自定义哈希 (Blizzard Hash)
+// 汇编入口: Game.dll + 39E5C0
+// =========================================================
+quint32 War3Map::calcBlizzardHash(const QByteArray &data) {
+    quint32 hash = 0;
+    const char *ptr = data.constData();
+    int length = data.size();
+
+    // 1. 处理 4 字节块 (DWORD)
+    // 汇编: game.dll + 39E5C3 | shr esi,2 (Count of DWORDs)
+    while (length >= 4) {
+        // 读取 4 字节 (强制转换为 quint32, 依赖 CPU 小端序)
+        // 汇编: game.dll + 39E5D0 | mov edi,dword ptr ds:[ecx]
+        quint32 chunk = *reinterpret_cast<const quint32*>(ptr);
+
+        // XOR
+        // 汇编: game.dll + 39E5D2 | xor edi,eax
+        hash = hash ^ chunk;
+
+        // ROL 3
+        // 汇编: game.dll + 39E5D7 | rol edi,3
+        hash = rotateLeft(hash, 3);
+
+        ptr += 4;
+        length -= 4;
+    }
+
+    // 2. 处理剩余字节
+    // 汇编: game.dll + 39E5E8 (循环处理剩余字节)
+    while (length > 0) {
+        quint8 byteVal = (quint8)*ptr;
+
+        // XOR
+        // 汇编: game.dll + 39E5EB | xor esi,eax
+        hash = hash ^ byteVal;
+
+        // ROL 3
+        // 汇编: game.dll + 39E5F0 | rol esi,3
+        hash = rotateLeft(hash, 3);
+
+        ptr++;
+        length--;
+    }
+
+    return hash;
 }
