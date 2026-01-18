@@ -480,12 +480,20 @@ QByteArray War3Map::encodeStatString(const QByteArray &data) {
     QByteArray result;
     unsigned char mask = 1;
     QByteArray chunk;
+
     for (int i = 0; i < data.size(); ++i) {
         unsigned char c = (unsigned char)data[i];
-        if (c % 2 == 0) chunk.append((char)(c + 1));
-        else { chunk.append((char)c); mask |= 1 << ((i % 7) + 1); }
+        if (c % 2 == 0) {
+            chunk.append((char)(c + 1));
+        } else {
+            chunk.append((char)c);
+            mask |= (1 << ((i % 7) + 1));
+        }
         if ((i % 7) == 6 || i == data.size() - 1) {
-            result.append((char)mask); result.append(chunk); chunk.clear(); mask = 1;
+            result.append((char)mask);
+            result.append(chunk);
+            chunk.clear();
+            mask = 1;
         }
     }
     return result;
@@ -493,11 +501,17 @@ QByteArray War3Map::encodeStatString(const QByteArray &data) {
 
 QByteArray War3Map::getEncodedStatString(const QString &hostName, const QString &netPathOverride)
 {
-    if (!m_sharedData->valid) return QByteArray();
+    if (!isValid()) {
+        LOG_ERROR("❌ [StatString] 生成失败: 地图数据无效");
+        return QByteArray();
+    }
 
+    // --- [Step 1] 准备原始数据 ---
     QByteArray rawData;
     QDataStream out(&rawData, QIODevice::WriteOnly);
     out.setByteOrder(QDataStream::LittleEndian);
+
+    LOG_INFO("🌳 [StatString] 开始构建原始数据包...");
 
     // 1. Map Flags
     QByteArray gameFlagsBytes = getMapGameFlags();
@@ -506,35 +520,75 @@ QByteArray War3Map::getEncodedStatString(const QString &hostName, const QString 
     ds.setByteOrder(QDataStream::LittleEndian);
     ds >> gameFlagsInt;
 
-    quint32 finalFlags = 0;
-    finalFlags |= gameFlagsInt;
+    // 打印 Flags 详情
+    LOG_INFO(QString("   ├─ 🚩 GameFlags (Int): 0x%1").arg(QString::number(gameFlagsInt, 16).toUpper().rightJustified(8, '0')));
 
-    out << finalFlags << (quint8)0;
+    // 写入 Flags (4字节) + 0x00 分隔符
+    out << gameFlagsInt << (quint8)0;
+
+    // 2. Map Size & CRC
+    quint16 width = 0, height = 0;
+    quint32 crc = 0;
+    if (m_sharedData->mapWidth.size() >= 2) width = qFromLittleEndian<quint16>(m_sharedData->mapWidth.constData());
+    if (m_sharedData->mapHeight.size() >= 2) height = qFromLittleEndian<quint16>(m_sharedData->mapHeight.constData());
+    if (m_sharedData->mapCRC.size() >= 4) crc = qFromLittleEndian<quint32>(m_sharedData->mapCRC.constData());
+
     out.writeRawData(m_sharedData->mapWidth.constData(), 2);
     out.writeRawData(m_sharedData->mapHeight.constData(), 2);
     out.writeRawData(m_sharedData->mapCRC.constData(), 4);
 
-    // 2. Map Path
+    LOG_INFO(QString("   ├─ 📏 Size: %1 x %2").arg(width).arg(height));
+    LOG_INFO(QString("   ├─ 🔐 CRC: 0x%1").arg(QString::number(crc, 16).toUpper().rightJustified(8, '0')));
+
+    // 3. Map Path
     QString finalPath = netPathOverride.isEmpty() ?
                             "Maps\\Download\\" + QFileInfo(m_sharedData->mapPath).fileName() : netPathOverride;
     finalPath = finalPath.replace("/", "\\");
 
-    out.writeRawData(finalPath.toLocal8Bit().constData(), finalPath.toLocal8Bit().size());
-    out << (quint8)0; // Map Path Terminator
+    // 确保路径转为 Local8Bit (War3 不支持 UTF-8 路径)
+    QByteArray pathBytes = finalPath.toLocal8Bit();
+    out.writeRawData(pathBytes.constData(), pathBytes.size());
+    out << (quint8)0; // Path Terminator
 
-    // 3. Host Name
-    out.writeRawData(hostName.toUtf8().constData(), hostName.toUtf8().size());
+    LOG_INFO(QString("   ├─ 📂 Path: %1 (Hex: %2)").arg(finalPath, QString(pathBytes.toHex())));
+
+    // 4. Host Name
+    QByteArray hostBytes = hostName.toUtf8();
+    out.writeRawData(hostBytes.constData(), hostBytes.size());
     out << (quint8)0; // Host Name Terminator
 
-    // 4. Map Unknown
-    // 根据协议：(UINT8) Map unknown (possibly a STRING with just the null terminator)
+    LOG_INFO(QString("   ├─ 👤 Host: %1").arg(hostName));
+
+    // 5. Separator (Map Unknown)
     out << (quint8)0;
 
-    // 5. Map SHA1
-    out.writeRawData(m_sharedData->mapSHA1Bytes.constData(), 20);
+    // 6. Map SHA1
+    QByteArray sha1 = m_sharedData->mapSHA1Bytes;
+    if (sha1.size() != 20) {
+        LOG_WARNING("⚠️ SHA1 长度异常，进行补零");
+        sha1.resize(20);
+    }
+    out.writeRawData(sha1.constData(), 20);
 
+    LOG_INFO(QString("   └─ 🔑 SHA1: %1").arg(QString(sha1.toHex().toUpper())));
+
+    // --- [Step 2] 打印编码前的 Hex ---
+    LOG_INFO("========================================");
+    LOG_INFO(QString("📦 [StatString] Raw Data (Before Encode):"));
+    LOG_INFO(QString("   Hex: %1").arg(QString(rawData.toHex().toUpper())));
+    LOG_INFO(QString("   Header Check: %1 ...").arg(QString(rawData.left(5).toHex().toUpper())));
+    LOG_INFO("========================================");
+
+    // --- [Step 3] 执行编码 ---
     QByteArray encoded = encodeStatString(rawData);
-    analyzeStatString("War3Map生成结果", encoded);
+
+    // --- [Step 4] 打印编码后的 Hex ---
+    LOG_INFO(QString("🔒 [StatString] Encoded Data (Len: %1):").arg(encoded.size()));
+    LOG_INFO(QString("   Hex: %1").arg(QString(encoded.toHex().toUpper())));
+
+    // 再次调用解码分析，确保自洽
+    analyzeStatString("自检验证", encoded);
+
     return encoded;
 }
 

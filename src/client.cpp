@@ -3555,7 +3555,7 @@ void Client::checkPlayerTimeout()
     for (quint8 pid : pidsToKick) {
         if (m_players.contains(pid)) {
             PlayerData &p = m_players[pid];
-            if (p.socket) {
+            if (p.socket && p.pid != m_botPid) {
                 LOG_INFO(QString("🔌 [执行踢出] 断开 PID %1 的连接").arg(pid));
                 p.socket->disconnectFromHost();
             }
