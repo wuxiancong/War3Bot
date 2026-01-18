@@ -2881,12 +2881,11 @@ QByteArray Client::createW3GSIncomingActionPacket(quint16 sendInterval)
     out.writeRawData(actionBlock.constData(), actionBlock.size());
 
     // 5. 计算 CRC (仅针对 ActionBlock)
-    quint32 crcVal = crc32(0L, Z_NULL, 0);
-    crcVal = crc32(crcVal, (const Bytef*)actionBlock.constData(), actionBlock.size());
+    quint16 crcVal = calculateCRC32Lower16(actionBlock.constData());
 
     // 回填 CRC (低16位)
     out.device()->seek(crcOffset);
-    out << (quint16)(crcVal & 0xFFFF);
+    out << crcVal;
 
     // 6. 回填总长度
     out.device()->seek(2);
