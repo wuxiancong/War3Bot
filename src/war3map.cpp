@@ -222,7 +222,7 @@ bool War3Map::load(const QString &mapPath)
         return buf;
     };
 
-    // 🔐 哈希计算准备
+    // 🔐 哈希计算
     QByteArray dataCommon = readLocalScript("common.j");
     QByteArray dataBlizzard = readLocalScript("blizzard.j");
     QByteArray dataMapScript = readMpqFile("war3map.j");
@@ -235,25 +235,20 @@ bool War3Map::load(const QString &mapPath)
     }
 
     QCryptographicHash sha1Ctx(QCryptographicHash::Sha1);
-    quint32 crcVal = 0;
-
-    // 1. common.j
     sha1Ctx.addData(dataCommon);
-    crcVal = rotateLeft(crcVal ^ calcBlizzardHash(dataCommon), 3);
-
-    // 2. blizzard.j
     sha1Ctx.addData(dataBlizzard);
-    crcVal = rotateLeft(crcVal ^ calcBlizzardHash(dataBlizzard), 3);
-
-    // 3. Magic Number (0x03F1379E)
     sha1UpdateInt32(sha1Ctx, 0x03F1379E);
-    crcVal = rotateLeft(crcVal ^ 0x03F1379E, 3);
-
-    // 4. war3map.j
     sha1Ctx.addData(dataMapScript);
-    crcVal = rotateLeft(crcVal ^ calcBlizzardHash(dataMapScript), 3);
 
-    // 5. 地图组件文件
+    quint32 crcVal = 0;
+    quint32 hCommon = calcBlizzardHash(dataCommon);
+    quint32 hBlizz = calcBlizzardHash(dataBlizzard);
+    quint32 hScript = calcBlizzardHash(dataMapScript);
+
+    crcVal = rotateLeft(hBlizz ^ hCommon, 3) ^ 0x03F1379E;
+    crcVal = rotateLeft(crcVal, 3);
+    crcVal = rotateLeft(hScript ^ crcVal, 3);
+
     const char *componentFiles[] = {
         "war3map.w3e", "war3map.wpm", "war3map.doo", "war3map.w3u",
         "war3map.w3b", "war3map.w3d", "war3map.w3a", "war3map.w3q"
