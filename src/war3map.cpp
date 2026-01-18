@@ -126,25 +126,33 @@ QByteArray War3Map::getMapGameFlags()
 
     // 3. Observers
     if (m_mapObservers == MAPOBS_ONDEFEAT)      GameFlags |= 0x00002000;
-    else if (m_mapObservers == MAPOBS_ALLOWED)  GameFlags |= 0x00003000;
+    else if (m_mapObservers == MAPOBS_ALLOWED)  GameFlags |= 0x00004000;
     else if (m_mapObservers == MAPOBS_REFEREES) GameFlags |= 0x40000000;
 
-    // 4. Teams & Fixed Settings
+    // 4. Teams & Units
+
+    // 4.1 Teams Together (通常默认开启)
     if (m_mapFlags & MAPFLAG_TEAMSTOGETHER) GameFlags |= 0x00004000;
 
-    // 强制检查 w3i 配置
-    bool w3iFixed = false;
+    // 4.2 Fixed Teams (固定队伍) - 自动检测 w3i
+    bool forceFixed = false;
     if (isValid()) {
-        if ((m_sharedData->mapOptions & 0x10) || (m_sharedData->mapOptions & 0x80)) {
-            w3iFixed = true;
+        // 0x20 = Fixed Player Settings, 0x40 = Custom Forces
+        if ((m_sharedData->mapOptions & 0x20) || (m_sharedData->mapOptions & 0x40)) {
+            forceFixed = true;
         }
     }
 
-    if (w3iFixed || (m_mapFlags & MAPFLAG_FIXEDTEAMS)) {
+    if (forceFixed || (m_mapFlags & MAPFLAG_FIXEDTEAMS)) {
         GameFlags |= 0x00020000;
     }
 
-    if (m_mapFlags & MAPFLAG_UNITSHARE)     GameFlags |= 0x01000000;
+    // 4.3 Unit Share (单位共享)
+    if (m_mapFlags & MAPFLAG_UNITSHARE) {
+        GameFlags |= 0x01000000;
+    }
+
+    // 4.4 Random
     if (m_mapFlags & MAPFLAG_RANDOMHERO)    GameFlags |= 0x02000000;
     if (m_mapFlags & MAPFLAG_RANDOMRACES)   GameFlags |= 0x04000000;
 
