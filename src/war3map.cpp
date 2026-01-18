@@ -103,6 +103,14 @@ QByteArray War3Map::getMapHeight() const {
     return m_sharedData ? m_sharedData->mapHeight : QByteArray();
 }
 
+QByteArray War3Map::getMapPlayableWidth() const {
+    return m_sharedData ? m_sharedData->mapPlayableWidth : QByteArray();
+}
+
+QByteArray War3Map::getMapPlayableHeight() const {
+    return m_sharedData ? m_sharedData->mapPlayableHeight : QByteArray();
+}
+
 QString War3Map::getMapName() const {
     if (!isValid()) return QString();
     return QFileInfo(m_sharedData->mapPath).fileName();
@@ -137,6 +145,47 @@ QByteArray War3Map::getMapGameFlags()
     if (m_mapFlags & MAPFLAG_RANDOMRACES)   GameFlags |= 0x04000000;
 
     return toBytes(GameFlags);
+}
+
+// 解析 war3map.w3e 获取真实宽高
+bool War3Map::getMapSize(const QByteArray &w3eData, quint16 &outW, quint16 &outH)
+{
+    if (w3eData.size() < 32) return false;
+
+    QDataStream in(w3eData);
+    in.setByteOrder(QDataStream::LittleEndian);
+
+    char header[4];
+    in.readRawData(header, 4);
+
+    // 校验头 "W3E!"
+    if (strncmp(header, "W3E!", 4) != 0) return false;
+
+    quint32 version; in >> version;
+    quint8 mainTile; in >> mainTile;
+    quint32 customTileFlag; in >> customTileFlag;
+
+    // 跳过地面纹理列表
+    quint32 numGround; in >> numGround;
+    in.skipRawData(numGround * 4);
+
+    // 跳过悬崖纹理列表
+    quint32 numCliff; in >> numCliff;
+    in.skipRawData(numCliff * 4);
+
+    // 获取物理宽度和高度
+    quint32 width, height;
+    in >> width >> height;
+
+    outW = (quint16)width;
+    outH = (quint16)height;
+
+    // 魔兽地图通常是 32 的倍数
+    if (width % 32 != 0 || height % 32 != 0) {
+        qDebug() << "⚠️ 地图宽高不是 32 的倍数:" << width << "x" << height;
+    }
+
+    return (width > 0 && height > 0);
 }
 
 // 核心加载函数
@@ -324,11 +373,11 @@ bool War3Map::load(const QString &mapPath)
         in >> rawW >> rawH >> rawFlags;
         quint8 tileset; in >> tileset;
 
-        newData->mapWidth = toBytes16((quint16)rawW);
-        newData->mapHeight = toBytes16((quint16)rawH);
+        newData->mapPlayableWidth = toBytes16((quint16)rawW);
+        newData->mapPlayableHeight = toBytes16((quint16)rawH);
         newData->mapOptions = rawFlags;
 
-        LOG_INFO(QString("   │  ├─ 📏 尺寸: %1x%2 (Flags: 0x%3)").arg(rawW).arg(rawH).arg(QString::number(rawFlags, 16).toUpper()));
+        LOG_INFO(QString("   │  ├─ 📏 可玩尺寸: %1x%2 (Flags: 0x%3)").arg(rawW).arg(rawH).arg(QString::number(rawFlags, 16).toUpper()));
 
         // 3. 加载屏幕设置
         quint32 bgNum; in >> bgNum;
@@ -416,6 +465,19 @@ bool War3Map::load(const QString &mapPath)
 
     } else {
         LOG_INFO("   │  └─ ⚠️ w3i 缺失");
+    }
+
+    QByteArray w3eData = readMpqFile("war3map.w3e");
+    if (!w3eData.isEmpty()) {
+        quint16 trueW = 0, trueH = 0;
+
+        if (getMapSize(w3eData, trueW, trueH)) {
+            newData->mapWidth = toBytes16(trueW);
+            newData->mapHeight = toBytes16(trueH);
+            LOG_INFO(QString("   ├─ 📏 实际尺寸: %1x%2").arg(trueW).arg(trueH));
+        }
+    } else {
+        LOG_INFO("   │  └─ ⚠️ w3e 缺失");
     }
 
     SFileCloseArchive(hMpq);

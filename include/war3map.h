@@ -61,7 +61,7 @@ struct W3iForce {
 };
 
 struct War3MapSharedData {
-    bool                valid       = false;
+    bool                valid               = false;
     QString             mapPath;
     QByteArray          mapRawData;
     QByteArray          mapSize;
@@ -72,17 +72,19 @@ struct War3MapSharedData {
     // 地图基础信息
     QByteArray          mapWidth;
     QByteArray          mapHeight;
-    quint32             mapOptions      = 0;
+    QByteArray          mapPlayableWidth;
+    QByteArray          mapPlayableHeight;
+    quint32             mapOptions          = 0;
     QList<W3iPlayer>    w3iPlayers;
     QList<W3iForce>     w3iForces;
-    quint8              numPlayers      = 0;
+    quint8              numPlayers          = 0;
 };
 
 // 地图选项 (StatString 解析用)
-#define MAPOPT_HIDEMINIMAP              (1 << 0)
-#define MAPOPT_MELEE                    (1 << 2)
-#define MAPOPT_FIXEDPLAYERSETTINGS      (1 << 5)
-#define MAPOPT_CUSTOMFORCES             (1 << 6)
+#define MAPOPT_HIDEMINIMAP                  (1 << 0)
+#define MAPOPT_MELEE                        (1 << 2)
+#define MAPOPT_FIXEDPLAYERSETTINGS          (1 << 5)
+#define MAPOPT_CUSTOMFORCES                 (1 << 6)
 
 // =========================================================
 // War3Map 类定义
@@ -110,6 +112,8 @@ public:
     QString                                                     getMapPath()                            const;
     QByteArray                                                  getMapWidth()                           const;
     QByteArray                                                  getMapHeight()                          const;
+    QByteArray                                                  getMapPlayableWidth()                   const;
+    QByteArray                                                  getMapPlayableHeight()                  const;
     QByteArray                                                  getMapRawData()                         const;
     QByteArray                                                  getMapSHA1Bytes()                       const;
 
@@ -122,6 +126,7 @@ public:
 
     // 获取构建 StatString 所需的游戏标志位
     QByteArray                                                  getMapGameFlags();
+    bool                                                        getMapSize(const QByteArray &w3eData, quint16 &outW, quint16 &outH);
 
     // === 工具函数 (Static) ===
 
