@@ -898,7 +898,17 @@ War3 的所有对象（单位、玩家、技能）都存储在一个巨大的哈
     *   **2** = **Downloading (下载中/未验证)**。
     *   **3** = **Critical Error (CRC 不匹配)**。
 
-2.  **发生了什么？**
+```assembly
+6F3B0959  | 6A 03                   | push 3               ; <--- 关键证据
+6F3B095B  | E8 E0270C00             | call game.6F473140   ; 设置错误状态
+```
+
+2. **在 War3 的 `Game.dll` 内部逻辑中，这个参数 `3` 有明确定义**：
+*   `0x01` = **DISCONNECT_QUIT** (主动退出)
+*   `0x03` = **DISCONNECT_MAPERROR** (地图严重错误/校验不匹配)
+*   `0x04` = **DISCONNECT_KICK** (被踢出)
+
+3.  **发生了什么？**
     *   `6F473170` 获取了这个状态值。
     *   之前的逻辑检查发现这个值 **不是 1**。
     *   于是游戏引擎判定：**该玩家地图数据异常，终止游戏**。
@@ -979,3 +989,119 @@ QByteArray Client::createW3GSMapCheckPacket()
 3.  **校验挂了** 是因为 Bot 算的 CRC 和客户端算的不一样。
 4.  **解决办法**：不要让 Bot 算了，**直接把能过校验的正确 CRC 填进去发给客户端**。客户端收到这个“正确答案”，一比对本地文件，“哎哟，匹配了！”，状态设为 1，游戏就进去了。
 
+
+### 1. 为什么“加入房间”能通过？
+
+War3 有两套完全不同的校验机制，分别在不同阶段起作用：
+
+1.  **进房间阶段 (Join Lobby)**：
+    *   **校验对象**：`Map Size` (文件大小) 和 `Map CRC32` (基于文件内容的标准 zlib CRC)。
+    *   **你的代码**：在 **第4步** (`uLong zCrc = crc32(...)`) 计算是正确的。
+    *   **结果**：客户端对比发现文件大小和 CRC32 一致，认为“我有这张图”，于是允许加入房间，并没有红色的下载进度条。
+
+2.  **开始游戏阶段 (Start Game / Loading)**：
+    *   **校验对象**：`Game Logic CRC` (也就是你后面算的那一堆 `rotateLeft`)。
+    *   **用途**：校验**游戏逻辑**的一致性。这个 CRC 包含了 `common.j` (游戏核心库)、`blizzard.j` (暴雪库) 和 `war3map.j` (地图脚本) 以及地图核心数据 (`w3u`, `w3b` 等)。
+    *   **结果**：客户端加载地图时，会用它本地的 `common.j` (v1.26) 和地图里的文件算一遍。如果和你发给它的不一样，它会判定为**“地图版本严重错误” (Error 3)**，为了防止不同步（Desync），直接终止游戏并跳到记分板。
+
+---
+
+### 2. 算法错在哪里？
+
+代码试图把 `common.j` 和 `blizzard.j` 放在一起异或，这是不对的。War3 的哈希算法是**顺序敏感**的。
+
+**错误写法：**
+```cpp
+// ❌ 错误：试图并行计算，丢失了顺序依赖
+crcVal = rotateLeft(hBlizz ^ hCommon, 3) ^ 0x03F1379E;
+```
+
+**正确的 War3 逻辑顺序：**
+1. 初始值 0。
+2. 异或 `common.j` 哈希 -> 左旋 3。
+3. 异或 `blizzard.j` 哈希 -> 左旋 3。
+4. 异或 `Magic Number (0x03F1379E)` -> 左旋 3。
+5. 异或 `war3map.j` 哈希 -> 左旋 3。
+6. 遍历其他文件...
+
+---
+
+### 3. 修正后的代码
+
+请直接替换原来的计算逻辑：
+
+```cpp
+
+quint32 crcVal = 0; // 初始必须为 0
+
+// 1. Common.j
+crcVal = rotateLeft(crcVal ^ calcBlizzardHash(dataCommon), 3);
+
+// 2. Blizzard.j
+crcVal = rotateLeft(crcVal ^ calcBlizzardHash(dataBlizzard), 3);
+
+// 3. Magic Number (0x03F1379E)
+// 注意：有些旧文档说是在 war3map.j 之后，但 1.24/1.26 实际上通常是在中间
+crcVal = rotateLeft(crcVal ^ 0x03F1379E, 3);
+
+// 4. War3map.j
+crcVal = rotateLeft(crcVal ^ calcBlizzardHash(dataMapScript), 3);
+
+// 5. 核心数据文件 (顺序非常重要！)
+// 必须严格按照这个顺序：w3e, wpm, doo, w3u, w3b, w3d, w3a, w3q
+const char *componentFiles[] = {
+    "war3map.w3e", // 地形
+    "war3map.wpm", // 路径
+    "war3map.doo", // 装饰物
+    "war3map.w3u", // 单位
+    "war3map.w3b", // 析构物
+    "war3map.w3d", // 装饰物定义
+    "war3map.w3a", // 技能
+    "war3map.w3q"  // 科技
+};
+
+for (const char *compName : componentFiles) {
+    QByteArray compData = readMpqFile(compName);
+    if (!compData.isEmpty()) {
+        sha1Ctx.addData(compData); // SHA1 也要加进去
+        // 逻辑 CRC 计算
+        crcVal = rotateLeft(crcVal ^ calcBlizzardHash(compData), 3);
+    }
+}
+
+newData->mapSHA1Bytes = sha1Ctx.result();
+newData->mapCRC = toBytes(crcVal); // 这里存入的就是 GameCRC
+
+LOG_INFO(QString("   ├─ 🔐 校验计算: MapCRC=0x%1 (Fixed)").arg(QString::number(crcVal, 16).toUpper()));
+```
+
+---
+
+### 4. 还有一个致命隐患：`common.j` 的版本
+
+注意这段代码：
+```cpp
+QFile fDefault("war3files/" + name);
+```
+
+**这是最大的坑！**
+
+*   这个 `MapCRC` 的计算结果，依赖于 `common.j` 和 `blizzard.j` 的内容。
+*   **如果你的 Bot 运行在服务器上，读取的是本地的 `war3files/common.j`。**
+*   **如果玩家用的是 1.26a 客户端，他会用他本地的 `common.j` 计算。**
+
+**场景推演：**
+1.  Bot 目录下的 `common.j` 是 **1.27a** 版本的（或者 1.24e）。
+2.  进来的玩家是 **1.26a** 版本。
+3.  因为 `common.j` 内容不同，导致 `calcBlizzardHash(dataCommon)` 结果不同。
+4.  最终 `crcVal` 不同。
+5.  **玩家加载失败，直接跳记分板。**
+
+**解决方案：**
+确保 `war3files/` 目录下的 `common.j` 和 `blizzard.j` **绝对是 1.26.0.6401 版本** 的文件（这是目前私服/对战平台最通用的版本）。不要随便从网上下一个 War3 就把文件考进去，一定要校验版本。
+
+### 总结
+1.  **进房成功**是因为文件大小和 CRC32 (zlib) 没问题。
+2.  **跳记分板**是因为 `MapCRC` (XOR Rotation) 算法顺序错了。
+3.  **修正算法**：改为串行计算 (`Val = Rot(Val ^ Hash, 3)`)。
+4.  **检查环境**：确保 Bot 读取的 `common.j` 与玩家客户端版本完全一致。
