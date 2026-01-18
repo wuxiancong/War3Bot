@@ -2303,7 +2303,11 @@ void Client::cancelGame() {
 void Client::createGame(const QString &gameName, const QString &password, ProviderVersion providerVersion, ComboGameType comboGameType, SubGameType subGameType, LadderType ladderType, CommandSource commandSource)
 {
     // 1. 初始化槽位
-     initSlotsFromMap(12);
+    if (m_enableObservers) {
+        initSlotsFromMap(12);
+    } else {
+        initSlotsFromMap(10);
+    }
 
     QString sourceStr = (commandSource == From_Server) ? "Server" : "Client";
     LOG_INFO(QString("🚀 [创建房间] 发起请求: [%1]").arg(gameName));
@@ -3086,16 +3090,12 @@ void Client::initSlotsFromMap(quint8 maxPlayers)
     int mapSlotCount = players.size();
 
     // 2. 决定最终槽位数量
-    int finalSlotCount = mapSlotCount;
+    int finalSlotCount = (maxPlayers > mapSlotCount) ? maxPlayers : mapSlotCount;
 
-    // 3. 检测是否需要扩展槽位
-    if (mapSlotCount == 10 && maxPlayers >= 12) {
-        finalSlotCount = 12;
-        LOG_INFO("🔧 [槽位策略] 检测到 10 人配置，强制扩展至 12 槽 (预留给 DotA 电脑)");
-    } else {
-        // 普通逻辑
-        if (maxPlayers > mapSlotCount) finalSlotCount = maxPlayers;
-    }
+    // 3. 打印根节点信息
+    LOG_INFO("🗺️ [地图槽位] 开始从 w3i 数据加载配置");
+    LOG_INFO(QString("   ├─ 📂 地图定义: %1 人 | 🎯 目标配置: %2 人")
+                 .arg(mapSlotCount).arg(finalSlotCount));
 
     // 4. 重置容器
     initSlots(finalSlotCount);
@@ -3145,34 +3145,6 @@ void Client::initSlotsFromMap(quint8 maxPlayers)
         // 打印日志
         LOG_INFO(QString("   ├─ 🎰 Slot %1: [%2] Team %3 | Race: %4")
                      .arg(i + 1, 2).arg(typeLog, -8).arg(teamId).arg(raceLog));
-    }
-
-    if (mapSlotCount == 10 && finalSlotCount >= 12) {
-        // Slot 11 (Index 10): Sentinel Computer (通常是 Team 0, Race NightElf)
-        GameSlot &s1 = m_slots[10];
-        s1.pid = 0;
-        s1.downloadStatus = 100;
-        s1.slotStatus = Occupied;
-        s1.computer = Computer;
-        s1.computerType = Normal;
-        s1.team = 0;                // Sentinel
-        s1.race = 4;                // NightElf
-        s1.color = 0;               // Light
-
-        GameSlot &s2 = m_slots[11];
-        s2.pid = 0;
-        s2.downloadStatus = 100;
-        s2.slotStatus = Occupied;
-        s2.computer = Computer;
-        s2.computerType = Normal;
-        s2.team = 1;                // Scourge
-        s2.race = 8;                // Undead
-        s2.color = 6;               // Dark Green?
-
-        LOG_INFO("   ├─ 🔧 [自动补全] Slot 11: Sentinel Computer");
-        LOG_INFO("   ├─ 🔧 [自动补全] Slot 12: Scourge Computer");
-
-        mapSlotCount = 12;
     }
 
     // 6. 第二阶段：处理额外的裁判槽位
