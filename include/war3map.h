@@ -10,37 +10,36 @@
 // =========================================================
 // 枚举定义
 // =========================================================
-
 // 游戏速度
 enum W3MapSpeed {
-    MAPSPEED_SLOW           = 1,
-    MAPSPEED_NORMAL         = 2,
-    MAPSPEED_FAST           = 3
+    MAPSPEED_SLOW               = 1,
+    MAPSPEED_NORMAL             = 2,
+    MAPSPEED_FAST               = 3
 };
 
 // 战争迷雾/可见度
 enum W3MapVisibility {
-    MAPVIS_HIDETERRAIN      = 1,
-    MAPVIS_EXPLORED         = 2,
-    MAPVIS_ALWAYSVISIBLE    = 3,
-    MAPVIS_DEFAULT          = 4
+    MAPVIS_HIDETERRAIN          = 1,
+    MAPVIS_EXPLORED             = 2,
+    MAPVIS_ALWAYSVISIBLE        = 3,
+    MAPVIS_DEFAULT              = 4
 };
 
 // 观察者设置
 enum W3MapObservers {
-    MAPOBS_NONE             = 1,
-    MAPOBS_ONDEFEAT         = 2,
-    MAPOBS_ALLOWED          = 3,
-    MAPOBS_REFEREES         = 4
+    MAPOBS_NONE                 = 1,
+    MAPOBS_ONDEFEAT             = 2,
+    MAPOBS_ALLOWED              = 3,
+    MAPOBS_REFEREES             = 4
 };
 
 // 游戏标志位
 enum W3MapFlag {
-    MAPFLAG_TEAMSTOGETHER   = 1,
-    MAPFLAG_FIXEDTEAMS      = 2,
-    MAPFLAG_UNITSHARE       = 4,
-    MAPFLAG_RANDOMHERO      = 8,
-    MAPFLAG_RANDOMRACES     = 16
+    MAPFLAG_TEAMSTOGETHER       = 1,
+    MAPFLAG_FIXEDTEAMS          = 2,
+    MAPFLAG_UNITSHARE           = 4,
+    MAPFLAG_RANDOMHERO          = 8,
+    MAPFLAG_RANDOMRACES         = 16
 };
 
 struct W3iPlayer {

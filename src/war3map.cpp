@@ -113,46 +113,26 @@ QByteArray War3Map::getMapGameFlags()
 {
     quint32 GameFlags = 0;
 
-    // 1. Speed
+    // 1. Speed (Mask 0x03)
     if (m_mapSpeed == MAPSPEED_SLOW)        GameFlags = 0x00000000;
     else if (m_mapSpeed == MAPSPEED_NORMAL) GameFlags = 0x00000001;
     else                                    GameFlags = 0x00000002;
 
-    // 2. Visibility
+    // 2. Visibility (Mask 0x0F00)
     if (m_mapVisibility == MAPVIS_HIDETERRAIN)       GameFlags |= 0x00000100;
     else if (m_mapVisibility == MAPVIS_EXPLORED)     GameFlags |= 0x00000200;
     else if (m_mapVisibility == MAPVIS_ALWAYSVISIBLE)GameFlags |= 0x00000400;
     else                                             GameFlags |= 0x00000800;
 
-    // 3. Observers
+    // 3. Observers (Mask 0x40003000)
     if (m_mapObservers == MAPOBS_ONDEFEAT)      GameFlags |= 0x00002000;
-    else if (m_mapObservers == MAPOBS_ALLOWED)  GameFlags |= 0x00004000;
+    else if (m_mapObservers == MAPOBS_ALLOWED)  GameFlags |= 0x00003000;
     else if (m_mapObservers == MAPOBS_REFEREES) GameFlags |= 0x40000000;
 
-    // 4. Teams & Units
-
-    // 4.1 Teams Together (通常默认开启)
+    // 4. Teams/Units/Hero/Race (Mask 0x07064000)
     if (m_mapFlags & MAPFLAG_TEAMSTOGETHER) GameFlags |= 0x00004000;
-
-    // 4.2 Fixed Teams (固定队伍) - 自动检测 w3i
-    bool forceFixed = false;
-    if (isValid()) {
-        // 0x20 = Fixed Player Settings, 0x40 = Custom Forces
-        if ((m_sharedData->mapOptions & 0x20) || (m_sharedData->mapOptions & 0x40)) {
-            forceFixed = true;
-        }
-    }
-
-    if (forceFixed || (m_mapFlags & MAPFLAG_FIXEDTEAMS)) {
-        GameFlags |= 0x00020000;
-    }
-
-    // 4.3 Unit Share (单位共享)
-    if (m_mapFlags & MAPFLAG_UNITSHARE) {
-        GameFlags |= 0x01000000;
-    }
-
-    // 4.4 Random
+    if (m_mapFlags & MAPFLAG_FIXEDTEAMS)    GameFlags |= 0x00060000;
+    if (m_mapFlags & MAPFLAG_UNITSHARE)     GameFlags |= 0x01000000;
     if (m_mapFlags & MAPFLAG_RANDOMHERO)    GameFlags |= 0x02000000;
     if (m_mapFlags & MAPFLAG_RANDOMRACES)   GameFlags |= 0x04000000;
 
