@@ -972,7 +972,6 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
             // 4. 日志记录
             static int logCount = 0;
             bool shouldLog = (logCount == 0 || logCount % m_actionLogFrequency < m_actionLogShowLines);
-            logCount++;
 
             if (shouldLog) {
                 QString hexData = actionData.toHex().toUpper();
@@ -983,6 +982,9 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
                 LOG_INFO(QString("   ├─ 📦 数据: %1 (%2 bytes)").arg(hexData).arg(actionData.size()));
                 LOG_INFO(QString("   └─ 📥 状态: 已加入广播队列 (当前队列深度: %1)").arg(m_actionQueue.size()));
             }
+
+            logCount++;
+
         } else {
             m_players[currentPid].lastResponseTime = QDateTime::currentMSecsSinceEpoch();
             LOG_DEBUG(QString("💓 [游戏心跳] 玩家 %1 发送了空动作包 (KeepAlive)").arg(currentPid));
@@ -1664,7 +1666,6 @@ void Client::onGameTick()
 
     // 3. 树状日志逻辑
     static int logCount = 0;
-    logCount++;
 
     bool hasAction = (tickPacket.size() > 8);
     bool shouldLog = (logCount == 0 || hasAction || (logCount % m_actionLogFrequency < m_actionLogShowLines));
@@ -1681,7 +1682,7 @@ void Client::onGameTick()
         else           LOG_INFO("   ├─ 💓 类型: 空心跳 (KeepAlive)");
 
         // [B] 发送通道检查
-        LOG_INFO(QString("   └─ 📡 广播目标检查 (当前玩家数: %1):").arg(m_players.size()));
+        LOG_INFO(QString("   └─ 📡 广播目标检查 (当前玩家数: %1):").arg(m_players.size() - 1));
 
         int validTargets = 0;
         bool canSend = false;
@@ -1718,6 +1719,8 @@ void Client::onGameTick()
             LOG_ERROR("      └─ ❌ [严重故障] 没有有效的发送目标！客户端当然收不到！");
         }
     }
+
+    logCount++;
 
     // 4. 执行发送
     broadcastPacket(tickPacket, 0);
@@ -2522,91 +2525,6 @@ QByteArray Client::createW3GSPingFromHostPacket()
     return packet;
 }
 
-QByteArray Client::createW3GSCountdownStartPacket()
-{
-    QByteArray packet;
-    QDataStream out(&packet, QIODevice::WriteOnly);
-    out.setByteOrder(QDataStream::LittleEndian);
-    // Header: F7 0A 04 00 (长度固定为4)
-    out << (quint8)0xF7 << (quint8)0x0A << (quint16)4;
-    return packet;
-}
-
-QByteArray Client::createW3GSCountdownEndPacket()
-{
-    QByteArray packet;
-    QDataStream out(&packet, QIODevice::WriteOnly);
-    out.setByteOrder(QDataStream::LittleEndian);
-    // Header: F7 0B 04 00
-    out << (quint8)0xF7 << (quint8)0x0B << (quint16)4;
-    return packet;
-}
-
-QByteArray Client::createW3GSPlayerLoadedPacket(quint8 pid)
-{
-    QByteArray packet;
-    QDataStream out(&packet, QIODevice::WriteOnly);
-    out.setByteOrder(QDataStream::LittleEndian);
-    // Header: F7 08 05 00
-    out << (quint8)0xF7 << (quint8)0x08 << (quint16)5;
-    // Payload: PID (1 byte)
-    out << (quint8)pid;
-    return packet;
-}
-
-QByteArray Client::createW3GSChatFromHostPacket(const QByteArray &rawBytes, quint8 senderPid, quint8 toPid, ChatFlag flag, quint32 extraData)
-{
-    QByteArray packet;
-    QDataStream out(&packet, QIODevice::WriteOnly);
-    out.setByteOrder(QDataStream::LittleEndian);
-
-    // 1. Header
-    out << (quint8)0xF7 << (quint8)0x0F << (quint16)0;
-
-    // 2. Body
-    out << (quint8)1; // Num Receivers
-    out << (quint8)toPid;
-    out << (quint8)senderPid;
-    out << (quint8)flag;
-
-    switch (flag) {
-    case TeamChange:
-    case ColorChange:
-    case RaceChange:
-    case HandicapChange:
-        out << (quint8)(extraData & 0xFF);
-        break;
-    case Scope:
-        out << (quint32)extraData;
-        break;
-    default: break; // Message has no extra
-    }
-
-    out.writeRawData(rawBytes.data(), rawBytes.length());
-    out << (quint8)0;
-
-    // 3. Length
-    quint16 totalSize = (quint16)packet.size();
-    QDataStream lenStream(&packet, QIODevice::ReadWrite);
-    lenStream.setByteOrder(QDataStream::LittleEndian);
-    lenStream.skipRawData(2);
-    lenStream << totalSize;
-
-    // 格式化 Hex 用于日志
-    QString hexPreview = QString(rawBytes.toHex().toUpper());
-    if (hexPreview.length() > 30) hexPreview = hexPreview.left(27) + "...";
-
-    // 只有在 flag 不是普通消息时，才打印构建日志，防止刷屏
-    if (flag != ChatFlag::Message) {
-        LOG_INFO(QString("📦 [构建包] 聊天/控制 (0x0F)"));
-        LOG_INFO(QString("   ├─ 🎯 目标: %1 -> %2").arg(senderPid).arg(toPid));
-        LOG_INFO(QString("   ├─ 🚩 类型: 0x%1 (Extra: %2)").arg(QString::number((int)flag, 16)).arg(extraData));
-        LOG_INFO(QString("   └─ 📝 数据: %1").arg(hexPreview));
-    }
-
-    return packet;
-}
-
 QByteArray Client::createW3GSSlotInfoJoinPacket(quint8 playerID, const QHostAddress& externalIp, quint16 localPort)
 {
     // 这个包很重要，保留详细日志
@@ -2775,6 +2693,147 @@ QByteArray Client::createW3GSSlotInfoPacket()
     return packet;
 }
 
+QByteArray Client::createW3GSPlayerLoadedPacket(quint8 pid)
+{
+    QByteArray packet;
+    QDataStream out(&packet, QIODevice::WriteOnly);
+    out.setByteOrder(QDataStream::LittleEndian);
+    // Header: F7 08 05 00
+    out << (quint8)0xF7 << (quint8)0x08 << (quint16)5;
+    // Payload: PID (1 byte)
+    out << (quint8)pid;
+    return packet;
+}
+
+QByteArray Client::createW3GSCountdownStartPacket()
+{
+    QByteArray packet;
+    QDataStream out(&packet, QIODevice::WriteOnly);
+    out.setByteOrder(QDataStream::LittleEndian);
+    // Header: F7 0A 04 00 (长度固定为4)
+    out << (quint8)0xF7 << (quint8)0x0A << (quint16)4;
+    return packet;
+}
+
+QByteArray Client::createW3GSCountdownEndPacket()
+{
+    QByteArray packet;
+    QDataStream out(&packet, QIODevice::WriteOnly);
+    out.setByteOrder(QDataStream::LittleEndian);
+    // Header: F7 0B 04 00
+    out << (quint8)0xF7 << (quint8)0x0B << (quint16)4;
+    return packet;
+}
+
+QByteArray Client::createW3GSIncomingActionPacket(quint16 sendInterval)
+{
+    QByteArray packet;
+    QDataStream out(&packet, QIODevice::WriteOnly);
+    out.setByteOrder(QDataStream::LittleEndian);
+
+    // 1. Header (4 bytes)
+    out << (quint8)0xF7 << (quint8)0x0C << (quint16)0; // Length 占位
+
+    // 2. Interval (2 bytes)
+    out << (quint16)sendInterval;
+
+    // 如果没有动作，直接返回 6 字节包 (无 CRC)
+    if (m_actionQueue.isEmpty()) {
+        // 回填长度为 6
+        out.device()->seek(2);
+        out << (quint16)6;
+
+        return packet; // F7 0C 06 00 [Time] [Time]
+    }
+
+    // --- 下面是有动作时的逻辑 (8 + N 字节) ---
+
+    // 3. 预留 CRC 位置 (2 bytes)
+    int crcOffset = packet.size();
+    out << (quint16)0;
+
+    // 4. 写入动作数据
+    QByteArray actionBlock;
+    QDataStream actOut(&actionBlock, QIODevice::WriteOnly);
+    actOut.setByteOrder(QDataStream::LittleEndian);
+
+    for (const auto &act : qAsConst(m_actionQueue)) {
+        actOut << (quint8)act.pid;
+        actOut << (quint16)act.data.size();
+        actOut.writeRawData(act.data.constData(), act.data.size());
+    }
+    m_actionQueue.clear();
+
+    // 写入主包
+    out.writeRawData(actionBlock.constData(), actionBlock.size());
+
+    // 5. 计算 CRC (仅针对 ActionBlock)
+    quint16 crcVal = calculateCRC32Lower16(actionBlock.constData());
+
+    // 回填 CRC (低16位)
+    out.device()->seek(crcOffset);
+    out << crcVal;
+
+    // 6. 回填总长度
+    out.device()->seek(2);
+    out << (quint16)packet.size();
+
+    return packet;
+}
+
+QByteArray Client::createW3GSChatFromHostPacket(const QByteArray &rawBytes, quint8 senderPid, quint8 toPid, ChatFlag flag, quint32 extraData)
+{
+    QByteArray packet;
+    QDataStream out(&packet, QIODevice::WriteOnly);
+    out.setByteOrder(QDataStream::LittleEndian);
+
+    // 1. Header
+    out << (quint8)0xF7 << (quint8)0x0F << (quint16)0;
+
+    // 2. Body
+    out << (quint8)1; // Num Receivers
+    out << (quint8)toPid;
+    out << (quint8)senderPid;
+    out << (quint8)flag;
+
+    switch (flag) {
+    case TeamChange:
+    case ColorChange:
+    case RaceChange:
+    case HandicapChange:
+        out << (quint8)(extraData & 0xFF);
+        break;
+    case Scope:
+        out << (quint32)extraData;
+        break;
+    default: break; // Message has no extra
+    }
+
+    out.writeRawData(rawBytes.data(), rawBytes.length());
+    out << (quint8)0;
+
+    // 3. Length
+    quint16 totalSize = (quint16)packet.size();
+    QDataStream lenStream(&packet, QIODevice::ReadWrite);
+    lenStream.setByteOrder(QDataStream::LittleEndian);
+    lenStream.skipRawData(2);
+    lenStream << totalSize;
+
+    // 格式化 Hex 用于日志
+    QString hexPreview = QString(rawBytes.toHex().toUpper());
+    if (hexPreview.length() > 30) hexPreview = hexPreview.left(27) + "...";
+
+    // 只有在 flag 不是普通消息时，才打印构建日志，防止刷屏
+    if (flag != ChatFlag::Message) {
+        LOG_INFO(QString("📦 [构建包] 聊天/控制 (0x0F)"));
+        LOG_INFO(QString("   ├─ 🎯 目标: %1 -> %2").arg(senderPid).arg(toPid));
+        LOG_INFO(QString("   ├─ 🚩 类型: 0x%1 (Extra: %2)").arg(QString::number((int)flag, 16)).arg(extraData));
+        LOG_INFO(QString("   └─ 📝 数据: %1").arg(hexPreview));
+    }
+
+    return packet;
+}
+
 QByteArray Client::createW3GSMapCheckPacket()
 {
     LOG_INFO("📦 [构建包] W3GS_MAPCHECK (0x3D)");
@@ -2834,62 +2893,6 @@ QByteArray Client::createW3GSStartDownloadPacket(quint8 fromPid)
     lenStream.setByteOrder(QDataStream::LittleEndian);
     lenStream.skipRawData(2);
     lenStream << (quint16)packet.size();
-
-    return packet;
-}
-
-QByteArray Client::createW3GSIncomingActionPacket(quint16 sendInterval)
-{
-    QByteArray packet;
-    QDataStream out(&packet, QIODevice::WriteOnly);
-    out.setByteOrder(QDataStream::LittleEndian);
-
-    // 1. Header (4 bytes)
-    out << (quint8)0xF7 << (quint8)0x0C << (quint16)0; // Length 占位
-
-    // 2. Interval (2 bytes)
-    out << (quint16)sendInterval;
-
-    // 如果没有动作，直接返回 6 字节包 (无 CRC)
-    if (m_actionQueue.isEmpty()) {
-        // 回填长度为 6
-        out.device()->seek(2);
-        out << (quint16)6;
-
-        return packet; // F7 0C 06 00 [Time] [Time]
-    }
-
-    // --- 下面是有动作时的逻辑 (8 + N 字节) ---
-
-    // 3. 预留 CRC 位置 (2 bytes)
-    int crcOffset = packet.size();
-    out << (quint16)0;
-
-    // 4. 写入动作数据
-    QByteArray actionBlock;
-    QDataStream actOut(&actionBlock, QIODevice::WriteOnly);
-    actOut.setByteOrder(QDataStream::LittleEndian);
-
-    for (const auto &act : qAsConst(m_actionQueue)) {
-        actOut << (quint8)act.pid;
-        actOut << (quint16)act.data.size();
-        actOut.writeRawData(act.data.constData(), act.data.size());
-    }
-    m_actionQueue.clear();
-
-    // 写入主包
-    out.writeRawData(actionBlock.constData(), actionBlock.size());
-
-    // 5. 计算 CRC (仅针对 ActionBlock)
-    quint16 crcVal = calculateCRC32Lower16(actionBlock.constData());
-
-    // 回填 CRC (低16位)
-    out.device()->seek(crcOffset);
-    out << crcVal;
-
-    // 6. 回填总长度
-    out.device()->seek(2);
-    out << (quint16)packet.size();
 
     return packet;
 }
