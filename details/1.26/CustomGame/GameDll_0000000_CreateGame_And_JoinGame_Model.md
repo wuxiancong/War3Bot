@@ -748,3 +748,104 @@ Guest 模式下初始化，使用不同的虚表 (`6F844E31`)，并且包含端�
 6F683ADD  | 83C4 10                 | add esp,10                                      |
 6F683AE0  | C2 2400                 | ret 24                                          |
 ```
+
+### c. 销毁 NetClient (`6F67E280`)
+
+Guest 模式 和 Host 模式销毁 NetClient 的逻辑。
+- **入口偏移**: `67E280`
+- **内存地址**: `game.dll+67E280` (基址 6F000000)
+
+```assembly
+6F67E280  | 53                      | push ebx                                        | 销毁 NetClient
+6F67E281  | 55                      | push ebp                                        |
+6F67E282  | 56                      | push esi                                        |
+6F67E283  | 57                      | push edi                                        |
+6F67E284  | 8BF9                    | mov edi,ecx                                     |
+6F67E286  | 8B87 48010000           | mov eax,dword ptr ds:[edi+148]                  |
+6F67E28C  | 8B48 3C                 | mov ecx,dword ptr ds:[eax+3C]                   |
+6F67E28F  | 33F6                    | xor esi,esi                                     |
+6F67E291  | 3BCE                    | cmp ecx,esi                                     |
+6F67E293  | 8BDA                    | mov ebx,edx                                     |
+6F67E295  | BD 01000000             | mov ebp,1                                       |
+6F67E29A  | 0F84 F4000000           | je game.6F67E394                                |
+6F67E2A0  | 3BDE                    | cmp ebx,esi                                     |
+6F67E2A2  | 0F84 C0000000           | je game.6F67E368                                |
+6F67E2A8  | 397424 14               | cmp dword ptr ss:[esp+14],esi                   |
+6F67E2AC  | 0F84 B6000000           | je game.6F67E368                                |
+6F67E2B2  | F780 80000000 00001000  | test dword ptr ds:[eax+80],100000               |
+6F67E2BC  | 0F84 A6000000           | je game.6F67E368                                |
+6F67E2C2  | 6A 08                   | push 8                                          |
+6F67E2C4  | 68 A4060000             | push 6A4                                        |
+6F67E2C9  | 68 3C17976F             | push game.6F97173C                              |
+6F67E2CE  | 68 E0000000             | push E0                                         |
+6F67E2D3  | E8 DAD20600             | call <JMP.&Ordinal#401>                         |
+6F67E2D8  | 3BC6                    | cmp eax,esi                                     |
+6F67E2DA  | 74 09                   | je game.6F67E2E5                                |
+6F67E2DC  | 8BC8                    | mov ecx,eax                                     |
+6F67E2DE  | E8 0D12FFFF             | call game.6F66F4F0                              |
+6F67E2E3  | 8BF0                    | mov esi,eax                                     |
+6F67E2E5  | 8D6E 10                 | lea ebp,dword ptr ds:[esi+10]                   |
+6F67E2E8  | 8BCD                    | mov ecx,ebp                                     |
+6F67E2EA  | E8 715D0400             | call game.6F6C4060                              |
+6F67E2EF  | E8 0C6B0400             | call <JMP.&GetTickCount>                        |
+6F67E2F4  | 818E 80000000 00001000  | or dword ptr ds:[esi+80],100000                 |
+6F67E2FE  | 8946 50                 | mov dword ptr ds:[esi+50],eax                   |
+6F67E301  | 8B47 0C                 | mov eax,dword ptr ds:[edi+C]                    |
+6F67E304  | 56                      | push esi                                        |
+6F67E305  | B9 ACFFAC6F             | mov ecx,game.6FACFFAC                           |
+6F67E30A  | 8946 40                 | mov dword ptr ds:[esi+40],eax                   |
+6F67E30D  | E8 0EBBFFFF             | call game.6F679E20                              |
+6F67E312  | 89B7 4C010000           | mov dword ptr ds:[edi+14C],esi                  |
+6F67E318  | 8B0B                    | mov ecx,dword ptr ds:[ebx]                      |
+6F67E31A  | 51                      | push ecx                                        |
+6F67E31B  | B9 A8FFAC6F             | mov ecx,game.6FACFFA8                           |
+6F67E320  | E8 6BBAFFFF             | call game.6F679D90                              |
+6F67E325  | 8BCD                    | mov ecx,ebp                                     |
+6F67E327  | 8933                    | mov dword ptr ds:[ebx],esi                      |
+6F67E329  | E8 325D0400             | call game.6F6C4060                              |
+6F67E32E  | 8B97 48010000           | mov edx,dword ptr ds:[edi+148]                  |
+6F67E334  | 8B4A 3C                 | mov ecx,dword ptr ds:[edx+3C]                   |
+6F67E337  | 8B03                    | mov eax,dword ptr ds:[ebx]                      |
+6F67E339  | 8948 3C                 | mov dword ptr ds:[eax+3C],ecx                   |
+6F67E33C  | 8B03                    | mov eax,dword ptr ds:[ebx]                      |
+6F67E33E  | 8B50 0C                 | mov edx,dword ptr ds:[eax+C]                    |
+6F67E341  | 8B48 3C                 | mov ecx,dword ptr ds:[eax+3C]                   |
+6F67E344  | E8 47CA0500             | call game.6F6DAD90                              |
+6F67E349  | 8B03                    | mov eax,dword ptr ds:[ebx]                      |
+6F67E34B  | 8B48 3C                 | mov ecx,dword ptr ds:[eax+3C]                   |
+6F67E34E  | BA 80D3676F             | mov edx,game.6F67D380                           |
+6F67E353  | E8 18CA0500             | call game.6F6DAD70                              |
+6F67E358  | 8B4C24 14               | mov ecx,dword ptr ss:[esp+14]                   |
+6F67E35C  | 33ED                    | xor ebp,ebp                                     |
+6F67E35E  | C701 30C4676F           | mov dword ptr ds:[ecx],game.6F67C430            |
+6F67E364  | 33F6                    | xor esi,esi                                     |
+6F67E366  | EB 13                   | jmp game.6F67E37B                               |
+6F67E368  | E8 C3C90500             | call game.6F6DAD30                              |
+6F67E36D  | 8B97 48010000           | mov edx,dword ptr ds:[edi+148]                  |
+6F67E373  | 8B4A 3C                 | mov ecx,dword ptr ds:[edx+3C]                   |
+6F67E376  | E8 75C90500             | call game.6F6DACF0                              |
+6F67E37B  | 8B87 48010000           | mov eax,dword ptr ds:[edi+148]                  |
+6F67E381  | 8970 3C                 | mov dword ptr ds:[eax+3C],esi                   |
+6F67E384  | 8B87 48010000           | mov eax,dword ptr ds:[edi+148]                  |
+6F67E38A  | 81A0 80000000 FFFFEFFF  | and dword ptr ds:[eax+80],FFEFFFFF              |
+6F67E394  | 8BCF                    | mov ecx,edi                                     |
+6F67E396  | E8 7553FFFF             | call game.6F673710                              |
+6F67E39B  | 8B9F 74020000           | mov ebx,dword ptr ds:[edi+274]                  |
+6F67E3A1  | 3BDE                    | cmp ebx,esi                                     |
+6F67E3A3  | 89B7 68010000           | mov dword ptr ds:[edi+168],esi                  |
+6F67E3A9  | 74 1B                   | je game.6F67E3C6                                |
+6F67E3AB  | 8BCB                    | mov ecx,ebx                                     |
+6F67E3AD  | E8 6EC6FFFF             | call game.6F67AA20                              |
+6F67E3B2  | 56                      | push esi                                        |
+6F67E3B3  | 6A FF                   | push FFFFFFFF                                   |
+6F67E3B5  | 68 044F876F             | push game.6F874F04                              |
+6F67E3BA  | 53                      | push ebx                                        |
+6F67E3BB  | E8 98D10600             | call <JMP.&Ordinal#403>                         |
+6F67E3C0  | 89B7 74020000           | mov dword ptr ds:[edi+274],esi                  |
+6F67E3C6  | 5F                      | pop edi                                         |
+6F67E3C7  | 5E                      | pop esi                                         |
+6F67E3C8  | 8BC5                    | mov eax,ebp                                     |
+6F67E3CA  | 5D                      | pop ebp                                         |
+6F67E3CB  | 5B                      | pop ebx                                         |
+6F67E3CC  | C2 0400                 | ret 4                                           |
+```
