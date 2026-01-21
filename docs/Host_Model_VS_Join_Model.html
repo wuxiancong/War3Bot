@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>魔兽争霸3 网络模块核心反汇编分析报告</title>
+    <title>魔兽争霸3 Host模式 VS Join模式 反汇编分析报告</title>
     <style>
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -91,15 +91,15 @@
             color: white;
         }
         .badge-host { background-color: #e74c3c; }
-        .badge-guest { background-color: #27ae60; }
+        .badge-Join{ background-color: #27ae60; }
     </style>
 </head>
 <body>
 
 <div class="container">
     <h1>魔兽争霸3 网络模块核心反汇编分析</h1>
-    <p>本文档对比分析了游戏在 <strong>创建主机 (Host Mode)</strong> 与 <strong>加入游戏 (Guest Mode)</strong> 时的核心反汇编逻辑差异。</p>
-
+    <p>本文档对比分析了游戏在 <strong>创建主机 (Host Mode)</strong> 与 <strong>加入游戏 (JoinMode)</strong> 时的核心反汇编逻辑差异。</p>
+	<p>基地址: 6F000000</p>
     <!-- 核心对比摘要表 -->
     <h2>0. 核心差异摘要</h2>
     <table>
@@ -129,7 +129,7 @@
             <tr>
                 <td><strong>NetClient</strong></td>
                 <td><code>6F6835C0</code><br>使用 Host 专用虚表，作为服务器端客户端</td>
-                <td><code>6F683800</code><br>使用 Guest 专用虚表，包含连接握手逻辑</td>
+                <td><code>6F683800</code><br>使用 Join专用虚表，包含连接握手逻辑</td>
             </tr>
             <tr>
                 <td><strong>关键行为</strong></td>
@@ -186,7 +186,7 @@
     <hr>
 
     <!-- 加入游戏部分 -->
-    <h2>2. 加入游戏流程 (Guest Mode)</h2>
+    <h2>2. 加入游戏流程 (JoinMode)</h2>
 
     <h3>a. 预检查入口 (6F650000)</h3>
     <p>获取全局 <code>NetProviderBNET</code> 对象，准备连接。</p>
@@ -208,10 +208,10 @@
     </pre>
 
     <h3>c. NetClient 初始化 (Guest) (6F683800)</h3>
-    <p>以 Guest 模式初始化，包含端口扫描逻辑（尝试 6112, 6113 等）。</p>
+    <p>以 Join模式初始化，包含端口扫描逻辑（尝试 6112, 6113 等）。</p>
     <pre>
 <span class="addr">6F683800</span>  push FFFFFFFF
-<span class="addr">6F683802</span>  push game.6F844E31      <span class="comment">; [特征] Guest 模式专用虚表/标识</span>
+<span class="addr">6F683802</span>  push game.6F844E31      <span class="comment">; [特征] Join模式专用虚表/标识</span>
 ...
 <span class="addr">6F68386F</span>  push ecx                <span class="comment">; 端口号 6113 (备用)</span>
 <span class="addr">6F683870</span>  push eax                <span class="comment">; 端口号 6112 (首选)</span>
@@ -222,7 +222,7 @@
     <p>通过反汇编分析可以明确：</p>
     <ul>
         <li><strong>Host 模式</strong> 的核心在于调用 <code>6F672A60</code> 来创建和注册 <strong>NetRouter</strong>，从而使当前游戏实例具备“主机/服务器”的功能，能够监听端口并接受其他玩家的连接。</li>
-        <li><strong>Guest 模式</strong> 完全跳过了 Router 的创建，转而调用连接逻辑，并通过 <code>6F683800</code> 初始化一个仅具备“客户端”功能的网络对象，且包含主动连接端口的逻辑。</li>
+        <li><strong>Join模式</strong> 完全跳过了 Router 的创建，转而调用连接逻辑，并通过 <code>6F683800</code> 初始化一个仅具备“客户端”功能的网络对象，且包含主动连接端口的逻辑。</li>
     </ul>
 
 </div>
