@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>魔兽争霸3 网络模块核心反汇编分析报告</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f4f4f4;
+        }
+        .container {
+            background-color: #fff;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #2c3e50;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 10px;
+            text-align: center;
+        }
+        h2 {
+            color: #2980b9;
+            margin-top: 30px;
+            border-left: 5px solid #2980b9;
+            padding-left: 10px;
+        }
+        h3 {
+            color: #16a085;
+            margin-top: 20px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            background-color: #fff;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 12px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+            color: #333;
+            font-weight: bold;
+        }
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        code {
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            background-color: #f0f0f0;
+            padding: 2px 4px;
+            border-radius: 4px;
+            color: #c7254e;
+        }
+        pre {
+            background-color: #2d2d2d;
+            color: #f8f8f2;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 13px;
+        }
+        .highlight {
+            color: #e6db74; /* Yellowish for key instructions */
+            font-weight: bold;
+        }
+        .comment {
+            color: #75715e;
+            font-style: italic;
+        }
+        .addr {
+            color: #ae81ff;
+        }
+        .badge {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: bold;
+            color: white;
+        }
+        .badge-host { background-color: #e74c3c; }
+        .badge-guest { background-color: #27ae60; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>魔兽争霸3 网络模块核心反汇编分析</h1>
+    <p>本文档对比分析了游戏在 <strong>创建主机 (Host Mode)</strong> 与 <strong>加入游戏 (Guest Mode)</strong> 时的核心反汇编逻辑差异。</p>
+
+    <!-- 核心对比摘要表 -->
+    <h2>0. 核心差异摘要</h2>
+    <table>
+        <thead>
+            <tr>
+                <th width="15%">特性</th>
+                <th width="42%"><span class="badge badge-host">创建者 (Host)</span></th>
+                <th width="42%"><span class="badge badge-guest">加入者 (Guest)</span></th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><strong>入口函数</strong></td>
+                <td><code>6F650DF0</code> (CreateGame_Entry)</td>
+                <td><code>6F650000</code> (JoinGame_Entry)</td>
+            </tr>
+            <tr>
+                <td><strong>主逻辑函数</strong></td>
+                <td><code>6F6570A0</code> (CreateGame_Internal)</td>
+                <td><code>6F65EC70</code> (JoinGame_Internal)</td>
+            </tr>
+            <tr>
+                <td><strong>NetRouter</strong></td>
+                <td><span style="color:red; font-weight:bold;">创建并注册</span> (<code>6F672A60</code>)<br>负责监听端口(6112)等待连接</td>
+                <td><span style="color:green;">无</span><br>不需要 Router，直接连接主机</td>
+            </tr>
+            <tr>
+                <td><strong>NetClient</strong></td>
+                <td><code>6F6835C0</code><br>使用 Host 专用虚表，作为服务器端客户端</td>
+                <td><code>6F683800</code><br>使用 Guest 专用虚表，包含连接握手逻辑</td>
+            </tr>
+            <tr>
+                <td><strong>关键行为</strong></td>
+                <td>申请内存 -> <strong>注册路由(Router)</strong> -> 初始化客户端</td>
+                <td>获取NetProvider -> <strong>连接BNET/LAN</strong> -> 初始化客户端</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <!-- 创建游戏部分 -->
+    <h2>1. 创建游戏流程 (Host Mode)</h2>
+    
+    <h3>a. 预检查入口 (6F650DF0)</h3>
+    <p>检查参数（如游戏名），通过跳板函数进入主逻辑。</p>
+    <pre>
+<span class="addr">6F650DF0</span>  push esi                <span class="comment">; 游戏名 "123"</span>
+<span class="addr">6F650DF3</span>  cmp byte ptr ds:[esi],0 <span class="comment">; 检查游戏名是否为空</span>
+...
+<span class="addr">6F650E2F</span>  call eax                <span class="comment">; 调用跳转中继 (Trampoline 6F65DFD0 -> 6F6570A0)</span>
+    </pre>
+
+    <h3>b. 创建主逻辑 (6F6570A0) - <span style="color:#e74c3c">核心</span></h3>
+    <p>负责申请 <code>NetProvider</code> 对象，并调用最为关键的 <code>NetRouter</code> 注册函数。</p>
+    <pre>
+<span class="addr">6F6570A0</span>  sub esp,20              <span class="comment">; 建立栈帧</span>
+...
+<span class="addr">6F6570C9</span>  call edx                <span class="comment">; 检查 NetProvider 对象状态</span>
+...
+<span class="addr">6F6570F0</span>  push eax                <span class="comment">; 压入端口号 (6112)</span>
+<span class="addr">6F657103</span>  <span class="highlight">call game.6F672A60</span>      <span class="comment">; [关键] 注册 NetRouter 对象 (Host独有)</span>
+...
+<span class="addr">6F657189</span>  <span class="highlight">call eax</span>                <span class="comment">; [关键] 创建 NetClient (Host模式, EAX=6F6835C0)</span>
+    </pre>
+
+    <h3>c. NetRouter 注册 (6F672A60)</h3>
+    <p>仅在创建模式下调用。负责初始化网络路由、绑定端口（6112）、进入临界区保护全局状态。</p>
+    <pre>
+<span class="addr">6F672A60</span>  push esi                <span class="comment">; 函数入口</span>
+<span class="addr">6F672A6B</span>  call game.6F6D83A0      <span class="comment">; EnterCriticalSection (进入临界区)</span>
+<span class="addr">6F672A70</span>  mov eax,[6FACFE88]      <span class="comment">; 检查全局引用计数</span>
+<span class="addr">6F672AA1</span>  push game.6F672720      <span class="comment">; [核心] 压入 NetRouter 实际工作函数地址</span>
+<span class="addr">6F672AAD</span>  call eax                <span class="comment">; 执行注册/端口绑定逻辑</span>
+    </pre>
+
+    <h3>d. NetClient 初始化 (Host) (6F6835C0)</h3>
+    <p>以 Host 模式初始化客户端，使用特定的虚表。</p>
+    <pre>
+<span class="addr">6F6835C0</span>  push FFFFFFFF
+<span class="addr">6F6835C2</span>  push game.6F844E01      <span class="comment">; [特征] Host 模式专用虚表/标识</span>
+...
+<span class="addr">6F683608</span>  call game.6F65B7C0      <span class="comment">; 内部初始化逻辑</span>
+    </pre>
+
+    <hr>
+
+    <!-- 加入游戏部分 -->
+    <h2>2. 加入游戏流程 (Guest Mode)</h2>
+
+    <h3>a. 预检查入口 (6F650000)</h3>
+    <p>获取全局 <code>NetProviderBNET</code> 对象，准备连接。</p>
+    <pre>
+<span class="addr">6F650016</span>  call game.6F4C34D0      <span class="comment">; 获取 NetProviderBNET 单例</span>
+<span class="addr">6F65002C</span>  mov eax,[eax+6C]        <span class="comment">; 获取 JoinGame 主逻辑函数地址</span>
+<span class="addr">6F650032</span>  call eax                <span class="comment">; 调用 6F65EC70</span>
+    </pre>
+
+    <h3>b. 加入主逻辑 (6F65EC70) - <span style="color:#27ae60">核心</span></h3>
+    <p>侧重于连接逻辑（Connect）和端口检测，<strong>没有</strong>创建 NetRouter。</p>
+    <pre>
+<span class="addr">6F65EC70</span>  sub esp,D4              <span class="comment">; 较大的栈帧，用于存放连接数据</span>
+<span class="addr">6F65ECA5</span>  call edx                <span class="comment">; "Connection to Battle.net..."</span>
+...
+<span class="addr">6F65ECDF</span>  call game.6F65CD80      <span class="comment">; 执行连接/握手逻辑</span>
+...
+<span class="addr">6F65ED2A</span>  <span class="highlight">call edx</span>                <span class="comment">; [关键] 创建 NetClient (Guest模式, EDX=6F683800)</span>
+    </pre>
+
+    <h3>c. NetClient 初始化 (Guest) (6F683800)</h3>
+    <p>以 Guest 模式初始化，包含端口扫描逻辑（尝试 6112, 6113 等）。</p>
+    <pre>
+<span class="addr">6F683800</span>  push FFFFFFFF
+<span class="addr">6F683802</span>  push game.6F844E31      <span class="comment">; [特征] Guest 模式专用虚表/标识</span>
+...
+<span class="addr">6F68386F</span>  push ecx                <span class="comment">; 端口号 6113 (备用)</span>
+<span class="addr">6F683870</span>  push eax                <span class="comment">; 端口号 6112 (首选)</span>
+<span class="addr">6F683873</span>  call edx                <span class="comment">; 端口尝试与连接</span>
+    </pre>
+
+    <h2>3. 结论</h2>
+    <p>通过反汇编分析可以明确：</p>
+    <ul>
+        <li><strong>Host 模式</strong> 的核心在于调用 <code>6F672A60</code> 来创建和注册 <strong>NetRouter</strong>，从而使当前游戏实例具备“主机/服务器”的功能，能够监听端口并接受其他玩家的连接。</li>
+        <li><strong>Guest 模式</strong> 完全跳过了 Router 的创建，转而调用连接逻辑，并通过 <code>6F683800</code> 初始化一个仅具备“客户端”功能的网络对象，且包含主动连接端口的逻辑。</li>
+    </ul>
+
+</div>
+
+</body>
+</html>
