@@ -700,7 +700,13 @@ void BotManager::onCommandReceived(const QString &userName, const QString &clien
         QString inputGameName = parts.mid(1).join(" ");
 
         // 4.1 检查地图模式
-        QVector<QString> allowModels = {"ar83", "sd83", "rd83", "ap83", "xl83", "ar83tb", "sd83tb", "rd83tb", "ap83tb", "xl83tb"};
+        QVector<QString> allowModels = {
+            "ap", "cm", "rd", "sd", "ar", "xl",
+            "aptb", "cmtb", "rdtb", "sdtb", "artb", "xltb",
+            "ap83", "cm83", "rd83", "sd83", "ar83", "xl83",
+            "ap83tb", "cm83tb", "rd83tb", "sd83tb", "ar83tb", "xl83tb"
+        };
+
         if (!allowModels.contains(mapModel)) {
             // 不支持的地图模式
             m_netManager->sendMessageToClient(clientId, S_C_ERROR, ERR_MAP_NOT_SUPPORTED);
