@@ -505,7 +505,7 @@ private:
 
     // 游戏数据
     QList<PlayerAction>             m_actionQueue;
-    quint32                         m_hostCounter           = 1;
+    quint32                         m_hostCounter           = 0;
     quint32                         m_randomSeed            = 0;
 
     // 地图下载
