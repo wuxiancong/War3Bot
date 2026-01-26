@@ -2289,8 +2289,7 @@ void Client::cancelGame() {
 
     // 7. 重置标志位
     m_gameStarted = false;
-    m_hostCounter++;
-    LOG_INFO(QString("   ├─ ⚙️ 标志重置: GameStarted=False | HostCounter++ (%1)").arg(m_hostCounter));
+    LOG_INFO(QString("   ├─ ⚙️ 标志重置: GameStarted=False | HostCounter (%1)").arg(m_hostCounter));
 
     // 8. 停止 Ping 循环 (最后一步)
     if (m_pingTimer->isActive()) {
