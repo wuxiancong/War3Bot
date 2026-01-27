@@ -2733,43 +2733,44 @@ QByteArray Client::createW3GSIncomingActionPacket(quint16 sendInterval)
     // 1. Header (4 bytes)
     out << (quint8)0xF7 << (quint8)0x0C << (quint16)0; // Length 占位
 
-    // 2. Interval (2 bytes)
+    // 2. Interval (2 bytes) - 这里的顺序必须是先 Time 后 CRC
     out << (quint16)sendInterval;
-
-    // 如果没有动作，直接返回 6 字节包 (无 CRC)
-    if (m_actionQueue.isEmpty()) {
-        // 回填长度为 6
-        out.device()->seek(2);
-        out << (quint16)6;
-
-        return packet; // F7 0C 06 00 [Time] [Time]
-    }
-
-    // --- 下面是有动作时的逻辑 (8 + N 字节) ---
 
     // 3. 预留 CRC 位置 (2 bytes)
     int crcOffset = packet.size();
     out << (quint16)0;
 
-    // 4. 写入动作数据
-    QByteArray actionBlock;
-    QDataStream actOut(&actionBlock, QIODevice::WriteOnly);
-    actOut.setByteOrder(QDataStream::LittleEndian);
+    // 构造参与 CRC 计算的数据
+    QByteArray dataForChecksum;
+    QDataStream dsChecksum(&dataForChecksum, QIODevice::WriteOnly);
+    dsChecksum.setByteOrder(QDataStream::LittleEndian);
 
-    for (const auto &act : qAsConst(m_actionQueue)) {
-        actOut << (quint8)act.pid;
-        actOut << (quint16)act.data.size();
-        actOut.writeRawData(act.data.constData(), act.data.size());
+    // 即使没有动作，这 2 个字节也不能少！
+    dsChecksum << (quint16)sendInterval;
+
+    // 如果有玩家动作，追加到后面
+    if (!m_actionQueue.isEmpty()) {
+        QByteArray actionBlock;
+        QDataStream actOut(&actionBlock, QIODevice::WriteOnly);
+        actOut.setByteOrder(QDataStream::LittleEndian);
+        for (const auto &act : qAsConst(m_actionQueue)) {
+            actOut << (quint8)act.pid << (quint16)act.data.size();
+            actOut.writeRawData(act.data.constData(), act.data.size());
+        }
+        m_actionQueue.clear();
+
+        // 写入主包
+        out.writeRawData(actionBlock.constData(), actionBlock.size());
+        // 追加到校验数据中
+        dataForChecksum.append(actionBlock);
     }
-    m_actionQueue.clear();
 
-    // 写入主包
-    out.writeRawData(actionBlock.constData(), actionBlock.size());
+    // 4. 计算 CRC
+    quint16 crcVal = calculateCRC32Lower16(dataForChecksum);
 
-    // 5. 计算 CRC (仅针对 ActionBlock)
-    quint16 crcVal = calculateCRC32Lower16(actionBlock.constData());
+    LOG_INFO(QString("Time: %1, DataLen: %2, CRC: %3").arg(sendInterval).arg(dataForChecksum.size()).arg(crcVal, 4, 16, QChar('0')));
 
-    // 回填 CRC (低16位)
+    // 5. 回填 CRC
     out.device()->seek(crcOffset);
     out << crcVal;
 
