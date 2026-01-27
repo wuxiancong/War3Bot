@@ -2733,7 +2733,7 @@ QByteArray Client::createW3GSIncomingActionPacket(quint16 sendInterval)
     // 1. Header (4 bytes)
     out << (quint8)0xF7 << (quint8)0x0C << (quint16)0; // Length 占位
 
-    // 2. Interval (2 bytes) - 这里的顺序必须是先 Time 后 CRC
+    // 2. Interval (2 bytes)
     out << (quint16)sendInterval;
 
     // 3. 预留 CRC 位置 (2 bytes)
