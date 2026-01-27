@@ -919,21 +919,12 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         for (auto it = m_players.begin(); it != m_players.end(); ++it) {
             quint8 targetPid = it.key();
             const PlayerData &targetPlayer = it.value();
-
-            // 如果是自己，直接跳过
-            if (targetPid == currentPid) continue;
-
-            if (targetPid != m_botPid) {
-                if (targetPlayer.socket && targetPlayer.socket->state() == QAbstractSocket::ConnectedState) {
-                    targetPlayer.socket->write(selfLoadedPacket);
-                }
+            if (targetPid == currentPid || targetPid == m_botPid) continue;
+            if (targetPlayer.socket && targetPlayer.socket->state() == QAbstractSocket::ConnectedState) {
+                targetPlayer.socket->write(selfLoadedPacket);
             }
-
             if (targetPlayer.isFinishedLoading) {
                 socket->write(createW3GSPlayerLoadedPacket(targetPid));
-                if (targetPid == m_botPid) {
-                    LOG_INFO(QString("   └─ 告知 %1: 主机(Bot) 已加载完成").arg(m_players[currentPid].name));
-                }
             }
         }
 
