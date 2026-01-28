@@ -2732,47 +2732,45 @@ QByteArray Client::createW3GSCountdownEndPacket()
 
 QByteArray Client::createW3GSIncomingActionPacket(quint16 sendInterval)
 {
-    // 1. 处理空包 (必须是 6 字节)
+    // 1. 处理空包 (严格 6 字节)
     if (m_actionQueue.isEmpty()) {
         QByteArray packet;
         QDataStream out(&packet, QIODevice::WriteOnly);
         out.setByteOrder(QDataStream::LittleEndian);
-        // Header(2) + Len(2) + Interval(2) = 6 bytes
         out << (quint8)0xF7 << (quint8)0x0C << (quint16)6 << (quint16)sendInterval;
         return packet;
     }
 
-    // 2. 备份并清空队列
+    // 2. 准备 Payload (动作块集合)
+    // 所有的 PID, Length, Data 必须连续写入，且不能发生指针覆盖
+    QByteArray payload;
+    QDataStream ds(&payload, QIODevice::WriteOnly);
+    ds.setByteOrder(QDataStream::LittleEndian);
+
+    // 备份并清空队列
     auto currentActions = m_actionQueue;
     m_actionQueue.clear();
 
-    // 3. 构建动作载荷 (这部分是 CRC 校验的核心范围)
-    QByteArray actionDataPart;
-    QDataStream actOut(&actionDataPart, QIODevice::WriteOnly);
-    actOut.setByteOrder(QDataStream::LittleEndian);
-
     for (const auto &act : currentActions) {
-        // 写入 1字节 PID + 2字节 长度
-        actOut << (quint8)act.pid;
-        actOut << (quint16)act.data.size();
-        // 写入原始动作数据
-        actionDataPart.append(act.data);
+        ds << (quint8)act.pid;
+        ds << (quint16)act.data.size();
+        // 关键：必须使用流写入数据，确保 ds 的指针向后移动
+        ds.writeRawData(act.data.constData(), act.data.size());
     }
 
-    // 4. 计算 CRC (只针对上面构建的 actionDataPart)
-    // 范围: [PID][Len][Data]...
-    quint16 crcVal = calculateCRC32Lower16(actionDataPart);
+    // 3. 计算 CRC (范围：仅针对上面生成的全部 Payload)
+    quint16 crcVal = calculateCRC32Lower16(payload);
 
-    // 5. 组装最终的 W3GS 包
+    // 4. 组装最终发出的 TCP 包
     QByteArray packet;
     QDataStream out(&packet, QIODevice::WriteOnly);
     out.setByteOrder(QDataStream::LittleEndian);
 
-    out << (quint8)0xF7 << (quint8)0x0C;                                    // Header
-    out << (quint16)(8 + actionDataPart.size());                            // Total Length
-    out << (quint16)sendInterval;                                           // Interval
-    out << (quint16)crcVal;                                                 // CRC
-    out.writeRawData(actionDataPart.constData(), actionDataPart.size());    // Actions
+    out << (quint8)0xF7 << (quint8)0x0C;                    // 2 bytes
+    out << (quint16)(8 + payload.size());                   // 2 bytes (Total Length)
+    out << (quint16)sendInterval;                           // 2 bytes
+    out << (quint16)crcVal;                                 // 2 bytes
+    out.writeRawData(payload.constData(), payload.size());  // N bytes (Actions)
 
     return packet;
 }
