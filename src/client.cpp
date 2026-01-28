@@ -896,7 +896,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
     }
     break;
 
-    case W3GS_GAMELOADED_SELF: // [0x23] 客户端发送加载完成
+    case W3GS_GAMELOADED_SELF: // [0x23] 客户端发送加载完成信号
     {
         // 1. 查找发送者 PID
         quint8 currentPid = 0;
@@ -906,29 +906,37 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
                 break;
             }
         }
+
         if (currentPid == 0) return;
 
-        // 2. 标记自己加载完成
+        // 2. 标记该玩家加载完成 (状态: 5 -> 6)
         m_players[currentPid].isFinishedLoading = true;
         m_players[currentPid].lastResponseTime = QDateTime::currentMSecsSinceEpoch();
-        LOG_INFO(QString("⏳ [加载进度] 玩家加载完成: %1 (PID: %2)").arg(m_players[currentPid].name).arg(currentPid));
+        LOG_INFO(QString("⏳ [加载进度] 玩家 %1 (PID: %2) 加载完成").arg(m_players[currentPid].name).arg(currentPid));
 
-        // 3. 加载状态同步逻辑
+        // 3. 构造该玩家的加载完成包 (0x08)
         QByteArray selfLoadedPacket = createW3GSPlayerLoadedPacket(currentPid);
 
+        // 4. 同步状态
         for (auto it = m_players.begin(); it != m_players.end(); ++it) {
             quint8 targetPid = it.key();
-            const PlayerData &targetPlayer = it.value();
-            if (targetPid == currentPid || targetPid == m_botPid) continue;
+            PlayerData &targetPlayer = it.value();
+
+            // --- 机器人跳过 ---
+            if (targetPid == m_botPid) continue;
+
+            // A. 向所有人广播当前玩家已经加载好的消息
             if (targetPlayer.socket && targetPlayer.socket->state() == QAbstractSocket::ConnectedState) {
                 targetPlayer.socket->write(selfLoadedPacket);
             }
-            if (targetPlayer.isFinishedLoading) {
+
+            // B. 向当前玩家同步其他玩家信息
+            if (targetPid != currentPid && targetPlayer.isFinishedLoading) {
                 socket->write(createW3GSPlayerLoadedPacket(targetPid));
             }
         }
 
-        // 4. 检查是否所有人都加载完了
+        // 5. 检查是否全员就绪，准备触发 0x0B (COUNTDOWN_END)
         checkAllPlayersLoaded();
     }
     break;
@@ -3372,10 +3380,9 @@ void Client::initBotPlayerData()
 
 void Client::checkAllPlayersLoaded()
 {
-    // 0. 前置检查：防止重复启动或无效调用
+    // 0. 前置检查：防止重复启动
     if (m_gameTickTimer->isActive()) return;
     if (m_startLagTimer->isActive()) return;
-    if (!m_gameStarted) return;
 
     // 1. 打印根节点
     LOG_INFO("🔍 [加载检查] 遍历玩家加载状态...");
@@ -3389,44 +3396,52 @@ void Client::checkAllPlayersLoaded()
         quint8 pid = it.key();
         const PlayerData &p = it.value();
 
-        // 跳过机器人
+        // 机器人不参与同步逻辑
         if (pid == m_botPid) continue;
 
         totalCount++;
 
         QString statusStr;
-        QString timeStr = "";
-
-        // 检查真实玩家状态
         if (p.isFinishedLoading) {
             loadedCount++;
-            statusStr = "✅ 已就绪";
+            statusStr = "✅ 已就绪 (状态: 6)";
         } else {
             allLoaded = false;
-            statusStr = "⏳ 加载中...";
+            statusStr = "⏳ 加载中... (状态: 5)";
         }
 
-        // 打印叶子节点：显示每个玩家的状态
-        LOG_INFO(QString("   ├─ 👤 [PID: %1] %2 -> %3 %4")
+        LOG_INFO(QString("   ├─ 👤 [PID: %1] %2 -> %3")
                      .arg(pid, -3)
                      .arg(p.name, -15)
-                     .arg(statusStr, timeStr));
+                     .arg(statusStr));
     }
 
-    // 3. 打印统计信息
+    // 3. 统计输出
     LOG_INFO(QString("   ├─ 📊 统计: 完成 %1 / 总计 %2").arg(loadedCount).arg(totalCount));
 
-    // 4. 最终判定
+    // 4. 最终判定逻辑
     if (totalCount > 0 && allLoaded) {
-        LOG_INFO("   └─ 🎉 结果: 全员加载完毕 -> 触发启动流程");
+        LOG_INFO("   └─ 🎉 结果: 全员已到达状态 6 -> 准备切换状态 7");
+
+        // --- 发送 0x0B (COUNTDOWN_END) 包 ---
+        QByteArray countdownEnd;
+        QDataStream out(&countdownEnd, QIODevice::WriteOnly);
+        out.setByteOrder(QDataStream::LittleEndian);
+        out << (quint8)0xF7 << (quint8)0x0B << (quint16)4; // 包内容：F7 0B 04 00
+
+        broadcastPacket(countdownEnd, 0);
+        LOG_INFO("      ├─ 🔔 [开赛信号] 已广播 W3GS_COUNTDOWN_END (0x0B)");
+
+        // 发送 0x0B 后，客户端需要极短的时间（几毫秒）处理状态切换。
+        // 我们利用现有的 m_startLagTimer 产生一段缓冲，确保 Action 包到达时状态已是 7。
         LOG_INFO(QString("      └─ ⏳ 动作: 启动 StartLag 缓冲计时器 (%1 ms)...").arg(m_gameStartLag));
 
+        m_gameStarted = true; // 确保游戏逻辑标志位开启
         m_startLagTimer->start(m_gameStartLag);
 
     } else {
-        // 还有人没加载完
         int remaining = totalCount - loadedCount;
-        LOG_INFO(QString("   └─ 💤 结果: 等待剩余 %1 名玩家...").arg(remaining));
+        LOG_INFO(QString("   └─ 💤 结果: 还在等待 %1 名玩家...").arg(remaining));
     }
 }
 
