@@ -1628,8 +1628,8 @@ void Client::onGameStarted()
     LOG_INFO("   ├─ ⚙️ 状态更新: m_gameStarted = true");
 
     // 3. 处理机器人隐身
-    broadcastPacket(createW3GSPlayerLeftPacket(2, LEAVE_LOBBY), 0, false);
-    LOG_INFO("   ├─ 👻 [幽灵模式] 已向全员广播机器人(PID:2)离开");
+    // broadcastPacket(createW3GSPlayerLeftPacket(2, LEAVE_LOBBY), 0, false);
+    // LOG_INFO("   ├─ 👻 [幽灵模式] 已向全员广播机器人(PID:2)离开");
 
     // 4. 发送倒计时结束包
     broadcastPacket(createW3GSCountdownEndPacket(), 0);
@@ -2753,37 +2753,36 @@ QByteArray Client::createW3GSIncomingActionPacket(quint16 sendInterval)
     QDataStream out(&packet, QIODevice::WriteOnly);
     out.setByteOrder(QDataStream::LittleEndian);
 
-    // 1. 写入 Header (4字节)
+    // 1. 写入 Header
     out << (quint8)0xF7 << (quint8)0x0C << (quint16)0; // 长度占位
-
-    // --- CRC 计算范围从这里开始 ---
-    int crcStartOffset = packet.size();
 
     // 2. 写入 Interval (2字节)
     out << (quint16)sendInterval;
 
-    // 3. 写入 CRC 占位符 (2字节，必须先填 0)
-    int crcFieldOffset = packet.size();
-    out << (quint16)0;
+    // 3. 准备 Action 数据用于 CRC 计算
+    QByteArray actionBlocks;
+    QDataStream actionOut(&actionBlocks, QIODevice::WriteOnly);
+    actionOut.setByteOrder(QDataStream::LittleEndian);
 
-    // 4. 写入所有动作块
     for (const auto &act : qAsConst(m_actionQueue)) {
-        out << (quint8)act.pid;
-        out << (quint16)act.data.size();
-        out.writeRawData(act.data.constData(), act.data.size());
+        actionOut << (quint8)act.pid;
+        actionOut << (quint16)act.data.size();
+        actionBlocks.append(act.data);
     }
     m_actionQueue.clear();
-    // --- CRC 计算范围到这里结束 ---
 
-    // 5. 计算 CRC
-    // 计算范围：从 Interval 开始到包末尾的所有数据
-    QByteArray dataToHash = packet.mid(crcStartOffset);
-    quint16 crcVal = calculateCRC32Lower16(dataToHash);
-
-    // 6. 回填 CRC (回填到刚才填 0 的位置)
-    if (out.device()->seek(crcFieldOffset)) {
-        out << crcVal;
+    // 4. 计算 CRC：仅针对 Action Blocks
+    // 如果没有动作，CRC 通常为 0
+    quint16 crcVal = 0;
+    if (!actionBlocks.isEmpty()) {
+        crcVal = calculateCRC32Lower16(actionBlocks);
     }
+
+    // 5. 写入计算好的 CRC (2字节)
+    out << crcVal;
+
+    // 6. 写入 Action Blocks
+    out.writeRawData(actionBlocks.constData(), actionBlocks.size());
 
     // 7. 回填总长度
     quint16 totalSize = (quint16)packet.size();
