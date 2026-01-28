@@ -2737,51 +2737,38 @@ QByteArray Client::createW3GSIncomingActionPacket(quint16 sendInterval)
     out.setByteOrder(QDataStream::LittleEndian);
 
     if (m_actionQueue.isEmpty()) {
-        // --- 情况 A: 标准空心跳 (必须 6 字节) ---
-        out << (quint8)0xF7 << (quint8)0x0C << (quint16)6;
-        out << (quint16)sendInterval;
+        // --- 严格 6 字节空包，绝对不能有 CRC 字段 ---
+        out << (quint8)0xF7 << (quint8)0x0C << (quint16)6 << (quint16)sendInterval;
         return packet;
     }
 
-    // --- 情况 B: 带动作包 (8 + N 字节) ---
+    // --- 带动作包：Header(4) + Interval(2) + CRC(2) + Actions ---
     out << (quint8)0xF7 << (quint8)0x0C << (quint16)0; // 长度占位
     out << (quint16)sendInterval;
 
-    // 1. 准备计算 CRC 的数据
-    // 根据反汇编，CRC 校验范围是从 Interval 开始到结束的所有数据
-    // 包含: Interval(2) + CRC(2) + Actions
-    QByteArray crcData;
-    QDataStream crcOut(&crcData, QIODevice::WriteOnly);
-    crcOut.setByteOrder(QDataStream::LittleEndian);
-
-    crcOut << (quint16)sendInterval;
-    crcOut << (quint16)0; // CRC 占位符，计算时必须为 0
-
-    // 2. 写入动作数据
+    QByteArray actionBlocks;
+    QDataStream actionOut(&actionBlocks, QIODevice::WriteOnly);
+    actionOut.setByteOrder(QDataStream::LittleEndian);
     for (const auto &act : qAsConst(m_actionQueue)) {
-        crcOut << (quint8)act.pid;
-        crcOut << (quint16)act.data.size();
-        crcData.append(act.data);
+        actionOut << (quint8)act.pid << (quint16)act.data.size();
+        actionBlocks.append(act.data);
     }
     m_actionQueue.clear();
 
-    // 3. 计算 CRC (针对 Interval + 0000 + Actions)
-    quint16 crcVal = calculateCRC32Lower16(crcData);
+    // 根据汇编，CRC 计算范围应包含 Interval(2) + 占位(2) + Actions
+    QByteArray crcCalcData;
+    QDataStream crcOut(&crcCalcData, QIODevice::WriteOnly);
+    crcOut.setByteOrder(QDataStream::LittleEndian);
+    crcOut << (quint16)sendInterval << (quint16)0; // 占位
+    crcCalcData.append(actionBlocks);
 
-    // 4. 将计算好的 CRC 填回 crcData 里的占位符
-    QDataStream backfill(&crcData, QIODevice::ReadWrite);
-    backfill.setByteOrder(QDataStream::LittleEndian);
-    backfill.skipRawData(2); // 跳过 Interval
-    backfill << crcVal;
+    quint16 crcVal = calculateCRC32Lower16(crcCalcData);
 
-    // 5. 把 crcData 拼接到 header 后面
-    packet.append(crcData);
+    out << crcVal; // 只有带动作才写入这 2 字节 CRC
+    out.writeRawData(actionBlocks.constData(), actionBlocks.size());
 
-    // 6. 回填总长度
-    quint16 totalSize = (quint16)packet.size();
     out.device()->seek(2);
-    out << totalSize;
-
+    out << (quint16)packet.size(); // 应该是 8 + actionBlocks.size()
     return packet;
 }
 
@@ -3393,24 +3380,9 @@ void Client::checkAllPlayersLoaded()
     // 4. 最终判定逻辑
     if (totalCount > 0 && allLoaded) {
         LOG_INFO("   └─ 🎉 结果: 全员已到达状态 6 -> 准备切换状态 7");
+        m_gameStarted = true; // 确保游戏逻辑标志位开启
+        m_startLagTimer->start(m_gameStartLag);
 
-        QTimer::singleShot(500, this, [this](){
-            // --- 发送 0x0B (COUNTDOWN_END) 包 ---
-            QByteArray countdownEnd;
-            QDataStream out(&countdownEnd, QIODevice::WriteOnly);
-            out.setByteOrder(QDataStream::LittleEndian);
-            out << (quint8)0xF7 << (quint8)0x0B << (quint16)4; // 包内容：F7 0B 04 00
-
-            broadcastPacket(countdownEnd, 0);
-            LOG_INFO("      ├─ 🔔 [开赛信号] 已广播 W3GS_COUNTDOWN_END (0x0B)");
-
-            // 发送 0x0B 后，客户端需要极短的时间（几毫秒）处理状态切换。
-            // 我们利用现有的 m_startLagTimer 产生一段缓冲，确保 Action 包到达时状态已是 7。
-            LOG_INFO(QString("      └─ ⏳ 动作: 启动 StartLag 缓冲计时器 (%1 ms)...").arg(m_gameStartLag));
-
-            m_gameStarted = true; // 确保游戏逻辑标志位开启
-            m_startLagTimer->start(m_gameStartLag);
-        });
     } else {
         int remaining = totalCount - loadedCount;
         LOG_INFO(QString("   └─ 💤 结果: 还在等待 %1 名玩家...").arg(remaining));
