@@ -1628,8 +1628,8 @@ void Client::onGameStarted()
     LOG_INFO("   ├─ ⚙️ 状态更新: m_gameStarted = true");
 
     // 3. 处理机器人隐身
-    // broadcastPacket(createW3GSPlayerLeftPacket(2, LEAVE_LOBBY), 0, false);
-    // LOG_INFO("   ├─ 👻 [幽灵模式] 已向全员广播机器人(PID:2)离开");
+    broadcastPacket(createW3GSPlayerLeftPacket(2, LEAVE_LOBBY), 0, false);
+    LOG_INFO("   ├─ 👻 [幽灵模式] 已向全员广播机器人(PID:2)离开");
 
     // 4. 发送倒计时结束包
     broadcastPacket(createW3GSCountdownEndPacket(), 0);
@@ -1682,7 +1682,7 @@ void Client::onGameTick()
     }
 
     // 4. 粘合数据包：[主包] + [6字节额外心跳]
-    QByteArray finalPacket = mainPacket + extraHeartbeat;
+    QByteArray finalPacket = mainPacket/* + extraHeartbeat*/;
 
     // 5. 树状日志逻辑
     static int logCount = 0;
