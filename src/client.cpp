@@ -1662,48 +1662,31 @@ void Client::onGameStarted()
 
 void Client::onGameTick()
 {
-    // 1. 状态检查
     if (!m_gameStarted) {
         LOG_INFO("🛑 [GameTick] 游戏标志位为 False，停止定时器");
         m_gameTickTimer->stop();
         return;
     }
 
-    // 2. 构建主数据包
-    QByteArray mainPacket = createW3GSIncomingActionPacket(m_gameTickInterval);
+    QByteArray packet = createW3GSIncomingActionPacket(m_gameTickInterval);
 
-    // 3. 构建额外的 6 字节空心跳包
-    QByteArray extraHeartbeat;
-    {
-        QDataStream out(&extraHeartbeat, QIODevice::WriteOnly);
-        out.setByteOrder(QDataStream::LittleEndian);
-        // 标准 W3GS_INCOMING_ACTION (0x0C) 空包结构：F7 0C 06 00 + Interval
-        out << (quint8)0xF7 << (quint8)0x0C << (quint16)6 << (quint16)m_gameTickInterval;
-    }
-
-    // 4. 粘合数据包：[主包] + [6字节额外心跳]
-    QByteArray finalPacket = mainPacket/* + extraHeartbeat*/;
-
-    // 5. 树状日志逻辑
     static int logCount = 0;
 
-    bool hasAction = (mainPacket.size() > 8);
+    bool hasAction = (packet.size() > 8);
     bool shouldLog = (logCount == 0 || hasAction || (logCount % m_actionLogFrequency < m_actionLogShowLines));
 
     if (shouldLog) {
         LOG_INFO(QString("⏰ [GameTick] 周期 #%1 执行中... (粘合模式)").arg(logCount));
 
         // [A] 包内容分析
-        QString hexData = finalPacket.toHex().toUpper();
-        LOG_INFO(QString("   ├─ 📦 总发送数据: %1 bytes (主包:%2 + 额外心跳:6)")
-                     .arg(finalPacket.size())
-                     .arg(mainPacket.size()));
+        QString hexData = packet.toHex().toUpper();
+        LOG_INFO(QString("   ├─ 📦 总发送数据: %1 bytes").arg(packet.size()));
         LOG_INFO(QString("   ├─ 🔢 HEX: %1").arg(hexData));
 
         if (hasAction)
-            LOG_INFO("   ├─ ⚡ 类型: [动作包] + [同步心跳]");
+            LOG_INFO("   ├─ ⚡ 类型: [动作包]");
         else
-            LOG_INFO("   ├─ 💓 类型: [空心跳] + [同步心跳]");
+            LOG_INFO("   ├─ 💓 类型: [空心跳]");
 
         // [B] 发送通道检查
         LOG_INFO(QString("   └─ 📡 广播目标检查 (当前玩家数: %1):").arg(m_players.size() - 1));
@@ -1745,8 +1728,8 @@ void Client::onGameTick()
 
     logCount++;
 
-    // 6. 执行发送 (发送粘合后的总包)
-    broadcastPacket(finalPacket, 0);
+    // 6. 执行发送
+    broadcastPacket(packet, 0);
 }
 
 void Client::onStartLagFinished()
