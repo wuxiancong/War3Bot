@@ -898,7 +898,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
     case W3GS_GAMELOADED_SELF: // [0x23] 客户端发送加载完成
     {
-        // 1. 查找发送者 PID
+        // 1. 查找发送者
         quint8 currentPid = 0;
         for (auto it = m_players.begin(); it != m_players.end(); ++it) {
             if (it.value().socket == socket) {
@@ -908,27 +908,41 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         }
         if (currentPid == 0) return;
 
-        // 2. 标记自己加载完成
+        // 2. 标记状态
         m_players[currentPid].isFinishedLoading = true;
         m_players[currentPid].lastResponseTime = QDateTime::currentMSecsSinceEpoch();
         LOG_INFO(QString("⏳ [加载进度] 玩家加载完成: %1 (PID: %2)").arg(m_players[currentPid].name).arg(currentPid));
 
-        // 3. 加载状态同步逻辑
+        // 3. 构建包
         QByteArray selfLoadedPacket = createW3GSPlayerLoadedPacket(currentPid);
+
+        // 4. 双重循环逻辑（拆开写更安全）
 
         for (auto it = m_players.begin(); it != m_players.end(); ++it) {
             quint8 targetPid = it.key();
-            const PlayerData &targetPlayer = it.value();
-            if (targetPid == currentPid || targetPid == m_botPid) continue;
-            if (targetPlayer.socket && targetPlayer.socket->state() == QAbstractSocket::ConnectedState) {
-                targetPlayer.socket->write(selfLoadedPacket);
+            PlayerData &targetPlayer = it.value();
+
+            // === 逻辑 A: 告诉别人“我”好了 ===
+            // 目标不是我自己，且目标不是机器人(因为机器人没Socket)
+            if (targetPid != currentPid && targetPid != m_botPid) {
+                if (targetPlayer.socket && targetPlayer.socket->state() == QAbstractSocket::ConnectedState) {
+                    targetPlayer.socket->write(selfLoadedPacket);
+                }
             }
-            if (targetPlayer.isFinishedLoading) {
-                socket->write(createW3GSPlayerLoadedPacket(targetPid));
+
+            // === 逻辑 B: 告诉我“别人”好了 ===
+            // 目标不是我自己 (我自己知道自己好了，不用发)
+            if (targetPid != currentPid) {
+                // 只要目标(target)加载完了，就要告诉我(socket)！
+                // 即使目标是机器人(m_botPid)，也要发！因为机器人默认是 loaded 的。
+                if (targetPlayer.isFinishedLoading) {
+                    socket->write(createW3GSPlayerLoadedPacket(targetPid));
+                    if (targetPid == m_botPid) qDebug() << "已告知客户端主机Bot加载完成";
+                }
             }
         }
 
-        // 4. 检查是否所有人都加载完了
+        // 5. 检查全员状态
         checkAllPlayersLoaded();
     }
     break;
@@ -2730,35 +2744,33 @@ QByteArray Client::createW3GSIncomingActionPacket(quint16 sendInterval)
     QDataStream out(&packet, QIODevice::WriteOnly);
     out.setByteOrder(QDataStream::LittleEndian);
 
-    // =================================================================
-    // 场景 A: 空心跳 (KeepAlive) - 走快速通道
-    // =================================================================
+    // 场景 A: 空心跳 (ICCup 模式) - 必须是 6 字节
     if (m_actionQueue.isEmpty()) {
-        // Header: F7 0C 06 00 (总长 6)
+        // 直接硬编码写死，不要 seek 回填，防止出错
+        // F7 0C 06 00 (Header: ID=0C, Len=6)
         out << (quint8)0xF7 << (quint8)0x0C << (quint16)6;
 
-        // Body: 仅包含时间增量
+        // Time Increment (2 bytes)
         out << (quint16)sendInterval;
 
-        // 没有 CRC！没有 Padding！直接结束！
+        // 此时 packet.size() 刚好是 6
+        // [F7 0C 06 00] [64 00]
         return packet;
     }
 
-    // =================================================================
-    // 场景 B: 有动作 (Action) - 走慢速通道 (带 CRC)
-    // =================================================================
+    // 场景 B: 有动作 (动作数据 + CRC)
 
-    // 1. Header 占位 (F7 0C 00 00)
+    // 1. Header 占位
     out << (quint8)0xF7 << (quint8)0x0C << (quint16)0;
 
-    // 2. Interval (2 bytes) - 不参与 CRC
+    // 2. Interval
     out << (quint16)sendInterval;
 
-    // 3. 预留 CRC 位置 (2 bytes)
+    // 3. CRC 占位
     int crcOffset = packet.size();
     out << (quint16)0;
 
-    // 4. 构建动作数据块 & 计算 CRC
+    // 4. 写入动作数据
     QByteArray actionBlock;
     QDataStream actOut(&actionBlock, QIODevice::WriteOnly);
     actOut.setByteOrder(QDataStream::LittleEndian);
@@ -2769,19 +2781,26 @@ QByteArray Client::createW3GSIncomingActionPacket(quint16 sendInterval)
     }
     m_actionQueue.clear();
 
-    // 写入动作数据到主包
     out.writeRawData(actionBlock.constData(), actionBlock.size());
 
-    // CRC 仅计算动作数据 (Action Block)，不包含 Header 或 Time
+    // 5. 计算 CRC (仅计算动作部分)
     quint16 crcVal = calculateCRC32Lower16(actionBlock);
 
-    // 5. 回填 CRC
-    out.device()->seek(crcOffset);
-    out << crcVal;
+    // 6. 回填 CRC
+    // 确保这里的 seek 是成功的
+    if (out.device()->seek(crcOffset)) {
+        out << crcVal;
+    } else {
+        LOG_ERROR("CRC Seek Failed!");
+    }
 
-    // 6. 回填总长度
-    out.device()->seek(2);
-    out << (quint16)packet.size();
+    // 7. 回填总长度
+    quint16 totalSize = (quint16)packet.size();
+    if (out.device()->seek(2)) {
+        out << totalSize;
+    } else {
+        LOG_ERROR("Length Seek Failed!");
+    }
 
     return packet;
 }
