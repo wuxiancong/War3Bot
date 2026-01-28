@@ -2736,40 +2736,38 @@ QByteArray Client::createW3GSIncomingActionPacket(quint16 sendInterval)
     QDataStream out(&packet, QIODevice::WriteOnly);
     out.setByteOrder(QDataStream::LittleEndian);
 
-    // 1. 处理空包 (6 字节)
+    // 1. 处理空包 (空包没有 CRC)
     if (m_actionQueue.isEmpty()) {
         out << (quint8)0xF7 << (quint8)0x0C << (quint16)6 << (quint16)sendInterval;
         return packet;
     }
 
-    // 2. 构造带动作的包 (8 + N 字节)
-    // 先准备好所有的动作块
-    QByteArray actionBlocks;
-    QDataStream actionOut(&actionBlocks, QIODevice::WriteOnly);
-    actionOut.setByteOrder(QDataStream::LittleEndian);
+    // 2. 准备 Payload 数据 (这是 CRC 真正要算的部分)
+    QByteArray crcPayload;
+    QDataStream payloadOut(&crcPayload, QIODevice::WriteOnly);
+    payloadOut.setByteOrder(QDataStream::LittleEndian);
+
     for (const auto &act : qAsConst(m_actionQueue)) {
-        actionOut << (quint8)act.pid << (quint16)act.data.size();
-        actionBlocks.append(act.data); // 写入原始动作数据
+        payloadOut << (quint8)act.pid;             // 1 byte
+        payloadOut << (quint16)act.data.size();    // 2 bytes
+        crcPayload.append(act.data);               // N bytes
     }
     m_actionQueue.clear();
 
-    // --- 核心修改：计算 CRC ---
-    // 计算范围仅仅是：Interval(2字节) + ActionBlocks(N字节)
-    // 绝对不要包含那 2 字节的 CRC 占位符！
-    QByteArray crcCalcData;
-    QDataStream crcOut(&crcCalcData, QIODevice::WriteOnly);
-    crcOut.setByteOrder(QDataStream::LittleEndian);
-    crcOut << sendInterval; // 写入 2 字节间隔
-    crcCalcData.append(actionBlocks); // 紧接着写入所有动作
+    // 3. 计算 CRC (仅针对所有 Action Blocks)
+    quint16 crcVal = calculateCRC32Lower16(crcPayload);
 
-    quint16 crcVal = calculateCRC32Lower16(crcCalcData);
-
-    // 3. 按顺序组装最终发送的包
-    out << (quint8)0xF7 << (quint8)0x0C;      // Header
-    out << (quint16)(8 + actionBlocks.size()); // Total Length
-    out << sendInterval;                       // Interval
-    out << crcVal;                             // 计算出的 CRC
-    out.writeRawData(actionBlocks.constData(), actionBlocks.size()); // 动作块
+    // 4. 组装最终发送的完整 TCP 包
+    // [Header] F7 0C (2 bytes)
+    out << (quint8)0xF7 << (quint8)0x0C;
+    // [Total Size] (2 bytes) = 4(Header) + 2(Interval) + 2(CRC) + PayloadSize
+    out << (quint16)(8 + crcPayload.size());
+    // [Time Increment] (2 bytes)
+    out << (quint16)sendInterval;
+    // [CRC] (2 bytes)
+    out << (quint16)crcVal;
+    // [Action Blocks]
+    out.writeRawData(crcPayload.constData(), crcPayload.size());
 
     return packet;
 }
