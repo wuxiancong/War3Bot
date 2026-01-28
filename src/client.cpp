@@ -2730,40 +2730,50 @@ QByteArray Client::createW3GSIncomingActionPacket(quint16 sendInterval)
     QDataStream out(&packet, QIODevice::WriteOnly);
     out.setByteOrder(QDataStream::LittleEndian);
 
-    // 1. Header (4 bytes)
+    // =================================================================
+    // 场景 A: 空心跳 (KeepAlive) - 走快速通道
+    // =================================================================
+    if (m_actionQueue.isEmpty()) {
+        // Header: F7 0C 06 00 (总长 6)
+        out << (quint8)0xF7 << (quint8)0x0C << (quint16)6;
+
+        // Body: 仅包含时间增量
+        out << (quint16)sendInterval;
+
+        // 没有 CRC！没有 Padding！直接结束！
+        return packet;
+    }
+
+    // =================================================================
+    // 场景 B: 有动作 (Action) - 走慢速通道 (带 CRC)
+    // =================================================================
+
+    // 1. Header 占位 (F7 0C 00 00)
     out << (quint8)0xF7 << (quint8)0x0C << (quint16)0;
 
-    // 2. Interval (2 bytes)
+    // 2. Interval (2 bytes) - 不参与 CRC
     out << (quint16)sendInterval;
 
     // 3. 预留 CRC 位置 (2 bytes)
     int crcOffset = packet.size();
     out << (quint16)0;
 
-    // 4. 准备 CRC 计算数据
-    quint16 crcVal = 0;
+    // 4. 构建动作数据块 & 计算 CRC
+    QByteArray actionBlock;
+    QDataStream actOut(&actionBlock, QIODevice::WriteOnly);
+    actOut.setByteOrder(QDataStream::LittleEndian);
 
-    if (!m_actionQueue.isEmpty()) {
-        QByteArray actionBlock;
-        QDataStream actOut(&actionBlock, QIODevice::WriteOnly);
-        actOut.setByteOrder(QDataStream::LittleEndian);
-
-        for (const auto &act : qAsConst(m_actionQueue)) {
-            actOut << (quint8)act.pid << (quint16)act.data.size();
-            actOut.writeRawData(act.data.constData(), act.data.size());
-        }
-        m_actionQueue.clear();
-
-        // 写入主包
-        out.writeRawData(actionBlock.constData(), actionBlock.size());
-
-        // 只计算 actionBlock 的 CRC
-        crcVal = calculateCRC32Lower16(actionBlock);
+    for (const auto &act : qAsConst(m_actionQueue)) {
+        actOut << (quint8)act.pid << (quint16)act.data.size();
+        actOut.writeRawData(act.data.constData(), act.data.size());
     }
-    else {
-        // 如果没有动作，CRC 就是 0
-        crcVal = 0;
-    }
+    m_actionQueue.clear();
+
+    // 写入动作数据到主包
+    out.writeRawData(actionBlock.constData(), actionBlock.size());
+
+    // CRC 仅计算动作数据 (Action Block)，不包含 Header 或 Time
+    quint16 crcVal = calculateCRC32Lower16(actionBlock);
 
     // 5. 回填 CRC
     out.device()->seek(crcOffset);
