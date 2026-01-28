@@ -181,7 +181,7 @@
 6F682440  | C2 1400                 | ret 14                              |
 
 ; ===========================================================================
-; ESI = 0x0B | Packet ID: 待定
+; ESI = 0x0B | Packet ID: 0x0C
 ; ===========================================================================
 6F682443  | 8B4424 14               | mov eax,dword ptr ss:[esp+14]       | esi=0B
 6F682447  | 50                      | push eax                            |
@@ -190,21 +190,21 @@
 6F68244D  | 8B4424 10               | mov eax,dword ptr ss:[esp+10]       |
 6F682451  | 8B00                    | mov eax,dword ptr ds:[eax]          |
 6F682453  | 50                      | push eax                            |
-6F682454  | E8 57C4FFFF             | call game.6F67E8B0                  | 待定
+6F682454  | E8 57C4FFFF             | call game.6F67E8B0                  | 0x0C -> W3GS_INCOMING_ACTION
 6F682459  | 5E                      | pop esi                             |
 6F68245A  | C2 1400                 | ret 14                              |
 
 ; ===========================================================================
-; ESI = 0x0C | Packet ID: 待定
+; ESI = 0x0B | Packet ID: 0x0C
 ; ===========================================================================
-6F68245D  | 8B4424 14               | mov eax,dword ptr ss:[esp+14]       | esi=0C
+6F68245D  | 8B4424 14               | mov eax,dword ptr ss:[esp+14]       | esi=0B
 6F682461  | 50                      | push eax                            |
 6F682462  | 8B4424 14               | mov eax,dword ptr ss:[esp+14]       |
 6F682466  | 50                      | push eax                            |
 6F682467  | 8B4424 10               | mov eax,dword ptr ss:[esp+10]       |
 6F68246B  | 8B00                    | mov eax,dword ptr ds:[eax]          |
 6F68246D  | 50                      | push eax                            |
-6F68246E  | E8 5DC4FFFF             | call game.6F67E8D0                  | 待定
+6F68246E  | E8 5DC4FFFF             | call game.6F67E8D0                  | 0x0C -> W3GS_INCOMING_ACTION
 6F682473  | 5E                      | pop esi                             |
 6F682474  | C2 1400                 | ret 14                              |
 
@@ -643,7 +643,7 @@
 | **09** 	| **待定** 	| `待定`				| `6F67AE70` 				| 							|
 | **0A** 	| **待定** 	| `待定` 				| `6F680620` 				| 待定 						|
 | **0B** 	| **待定** 	| `待定` 				| `6F67E8B0` 				| 待定 						|
-| **0C** 	| **待定** 	| `待定` 				| `6F67E8D0` 				| 待定 						|
+| **0C** 	| **0x0C** 	| `W3GS_INCOMING_ACTION`| `6F67E8D0` 				| 游戏数据 					|
 | **0D** 	| **待定** 	| `待定` 				| `6F67AF30` 				| 待定 						|
 | **0E** 	| **0x0F** 	| `W3GS_CHAT_FROM_HOST` | `6F680F40` 				| 服务器发送聊天 			|
 | **0F** 	| **待定** 	| `待定` 				| `6F67AFF0` 				| 待定 						|

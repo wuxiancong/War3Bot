@@ -2731,7 +2731,7 @@ QByteArray Client::createW3GSIncomingActionPacket(quint16 sendInterval)
     out.setByteOrder(QDataStream::LittleEndian);
 
     // 1. Header (4 bytes)
-    out << (quint8)0xF7 << (quint8)0x0C << (quint16)0; // Length 占位
+    out << (quint8)0xF7 << (quint8)0x0C << (quint16)0;
 
     // 2. Interval (2 bytes)
     out << (quint16)sendInterval;
@@ -2740,19 +2740,14 @@ QByteArray Client::createW3GSIncomingActionPacket(quint16 sendInterval)
     int crcOffset = packet.size();
     out << (quint16)0;
 
-    // 构造参与 CRC 计算的数据
-    QByteArray dataForChecksum;
-    QDataStream dsChecksum(&dataForChecksum, QIODevice::WriteOnly);
-    dsChecksum.setByteOrder(QDataStream::LittleEndian);
+    // 4. 准备 CRC 计算数据
+    quint16 crcVal = 0;
 
-    // 即使没有动作，这 2 个字节也不能少！
-    dsChecksum << (quint16)sendInterval;
-
-    // 如果有玩家动作，追加到后面
     if (!m_actionQueue.isEmpty()) {
         QByteArray actionBlock;
         QDataStream actOut(&actionBlock, QIODevice::WriteOnly);
         actOut.setByteOrder(QDataStream::LittleEndian);
+
         for (const auto &act : qAsConst(m_actionQueue)) {
             actOut << (quint8)act.pid << (quint16)act.data.size();
             actOut.writeRawData(act.data.constData(), act.data.size());
@@ -2761,14 +2756,14 @@ QByteArray Client::createW3GSIncomingActionPacket(quint16 sendInterval)
 
         // 写入主包
         out.writeRawData(actionBlock.constData(), actionBlock.size());
-        // 追加到校验数据中
-        dataForChecksum.append(actionBlock);
+
+        // 只计算 actionBlock 的 CRC
+        crcVal = calculateCRC32Lower16(actionBlock);
     }
-
-    // 4. 计算 CRC
-    quint16 crcVal = calculateCRC32Lower16(dataForChecksum);
-
-    LOG_INFO(QString("Time: %1, DataLen: %2, CRC: %3").arg(sendInterval).arg(dataForChecksum.size()).arg(crcVal, 4, 16, QChar('0')));
+    else {
+        // 如果没有动作，CRC 就是 0
+        crcVal = 0;
+    }
 
     // 5. 回填 CRC
     out.device()->seek(crcOffset);
