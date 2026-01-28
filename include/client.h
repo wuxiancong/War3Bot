@@ -579,8 +579,8 @@ private:
     QByteArray createW3GSPlayerLoadedPacket(quint8 pid);
     QByteArray createW3GSStartDownloadPacket(quint8 fromPid);
     QByteArray createW3GSRejectJoinPacket(RejectReason reason);
+    QByteArray createW3GSIncomingActionPacket (quint16 sendInterval);
     QByteArray createW3GSPlayerLeftPacket(quint8 pid, LeaveReason reason);
-    QByteArray createW3GSIncomingActionPacket (quint16 sendInterval, bool forceEmpty);
     QByteArray createW3GSSlotInfoJoinPacket(quint8 playerID, const QHostAddress& externalIp, quint16 localPort);
     QByteArray createW3GSMapPartPacket(quint8 toPid, quint8 fromPid, quint32 offset, const QByteArray& chunkData);
     QByteArray createW3GSChatFromHostPacket(const QByteArray &rawBytes, quint8 senderPid = m_botPid, quint8 toPid = 255, ChatFlag flag = Message, quint32 extraData = 0);
