@@ -424,7 +424,7 @@ public:
     void initBotPlayerData();
     bool isHostJoined();
     void swapSlots(int slot1, int slot2);
-    void setGameTickInterval(quint16 interval);
+    void setGameTickInterval(quint16 interval = 50);
     void setHost(QString creatorName) { m_host = creatorName; };
     quint16 getGameTickInterval() const { return m_gameTickInterval; }
     void createGame(const QString &gameName, const QString &password,
