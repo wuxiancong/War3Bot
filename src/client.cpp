@@ -1675,7 +1675,6 @@ void Client::onGameTick()
         QByteArray heartBeat = createW3GSIncomingActionPacket(m_gameTickInterval, true);
 
         // 4. 将两者粘在一起！
-        // 这样魔兽处理完 actionPacket 后，缓冲区正好剩下 heartBeat 的 6 个字节
         finalPacket = actionPacket + heartBeat;
 
         LOG_INFO(QString("⚡ [GameTick] 粘合发送: 动作包(%1字节) + 心跳包(6字节)")
@@ -1741,7 +1740,7 @@ void Client::onGameTick()
     logCount++;
 
     // 4. 执行发送
-    broadcastPacket(tickPacket, 0);
+    broadcastPacket(finalPacket, 0);
 }
 
 void Client::onStartLagFinished()
