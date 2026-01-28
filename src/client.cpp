@@ -898,7 +898,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
     case W3GS_GAMELOADED_SELF: // [0x23] 客户端发送加载完成
     {
-        // 1. 查找发送者
+        // 1. 查找发送者 PID
         quint8 currentPid = 0;
         for (auto it = m_players.begin(); it != m_players.end(); ++it) {
             if (it.value().socket == socket) {
@@ -908,41 +908,27 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         }
         if (currentPid == 0) return;
 
-        // 2. 标记状态
+        // 2. 标记自己加载完成
         m_players[currentPid].isFinishedLoading = true;
         m_players[currentPid].lastResponseTime = QDateTime::currentMSecsSinceEpoch();
         LOG_INFO(QString("⏳ [加载进度] 玩家加载完成: %1 (PID: %2)").arg(m_players[currentPid].name).arg(currentPid));
 
-        // 3. 构建包
+        // 3. 加载状态同步逻辑
         QByteArray selfLoadedPacket = createW3GSPlayerLoadedPacket(currentPid);
-
-        // 4. 双重循环逻辑（拆开写更安全）
 
         for (auto it = m_players.begin(); it != m_players.end(); ++it) {
             quint8 targetPid = it.key();
-            PlayerData &targetPlayer = it.value();
-
-            // === 逻辑 A: 告诉别人“我”好了 ===
-            // 目标不是我自己，且目标不是机器人(因为机器人没Socket)
-            if (targetPid != currentPid && targetPid != m_botPid) {
-                if (targetPlayer.socket && targetPlayer.socket->state() == QAbstractSocket::ConnectedState) {
-                    targetPlayer.socket->write(selfLoadedPacket);
-                }
+            const PlayerData &targetPlayer = it.value();
+            if (targetPid == currentPid || targetPid == m_botPid) continue;
+            if (targetPlayer.socket && targetPlayer.socket->state() == QAbstractSocket::ConnectedState) {
+                targetPlayer.socket->write(selfLoadedPacket);
             }
-
-            // === 逻辑 B: 告诉我“别人”好了 ===
-            // 目标不是我自己 (我自己知道自己好了，不用发)
-            if (targetPid != currentPid) {
-                // 只要目标(target)加载完了，就要告诉我(socket)！
-                // 即使目标是机器人(m_botPid)，也要发！因为机器人默认是 loaded 的。
-                if (targetPlayer.isFinishedLoading) {
-                    socket->write(createW3GSPlayerLoadedPacket(targetPid));
-                    if (targetPid == m_botPid) qDebug() << "已告知客户端主机Bot加载完成";
-                }
+            if (targetPlayer.isFinishedLoading) {
+                socket->write(createW3GSPlayerLoadedPacket(targetPid));
             }
         }
 
-        // 5. 检查全员状态
+        // 4. 检查是否所有人都加载完了
         checkAllPlayersLoaded();
     }
     break;
