@@ -2736,39 +2736,41 @@ QByteArray Client::createW3GSIncomingActionPacket(quint16 sendInterval)
     QDataStream out(&packet, QIODevice::WriteOnly);
     out.setByteOrder(QDataStream::LittleEndian);
 
+    // 1. 处理空包 (6 字节)
     if (m_actionQueue.isEmpty()) {
-        // --- 严格 6 字节空包，绝对不能有 CRC 字段 ---
         out << (quint8)0xF7 << (quint8)0x0C << (quint16)6 << (quint16)sendInterval;
         return packet;
     }
 
-    // --- 带动作包：Header(4) + Interval(2) + CRC(2) + Actions ---
-    out << (quint8)0xF7 << (quint8)0x0C << (quint16)0; // 长度占位
-    out << (quint16)sendInterval;
-
+    // 2. 构造带动作的包 (8 + N 字节)
+    // 先准备好所有的动作块
     QByteArray actionBlocks;
     QDataStream actionOut(&actionBlocks, QIODevice::WriteOnly);
     actionOut.setByteOrder(QDataStream::LittleEndian);
     for (const auto &act : qAsConst(m_actionQueue)) {
         actionOut << (quint8)act.pid << (quint16)act.data.size();
-        actionBlocks.append(act.data);
+        actionBlocks.append(act.data); // 写入原始动作数据
     }
     m_actionQueue.clear();
 
-    // 根据汇编，CRC 计算范围应包含 Interval(2) + 占位(2) + Actions
+    // --- 核心修改：计算 CRC ---
+    // 计算范围仅仅是：Interval(2字节) + ActionBlocks(N字节)
+    // 绝对不要包含那 2 字节的 CRC 占位符！
     QByteArray crcCalcData;
     QDataStream crcOut(&crcCalcData, QIODevice::WriteOnly);
     crcOut.setByteOrder(QDataStream::LittleEndian);
-    crcOut << (quint16)sendInterval << (quint16)0; // 占位
-    crcCalcData.append(actionBlocks);
+    crcOut << sendInterval; // 写入 2 字节间隔
+    crcCalcData.append(actionBlocks); // 紧接着写入所有动作
 
     quint16 crcVal = calculateCRC32Lower16(crcCalcData);
 
-    out << crcVal; // 只有带动作才写入这 2 字节 CRC
-    out.writeRawData(actionBlocks.constData(), actionBlocks.size());
+    // 3. 按顺序组装最终发送的包
+    out << (quint8)0xF7 << (quint8)0x0C;      // Header
+    out << (quint16)(8 + actionBlocks.size()); // Total Length
+    out << sendInterval;                       // Interval
+    out << crcVal;                             // 计算出的 CRC
+    out.writeRawData(actionBlocks.constData(), actionBlocks.size()); // 动作块
 
-    out.device()->seek(2);
-    out << (quint16)packet.size(); // 应该是 8 + actionBlocks.size()
     return packet;
 }
 
