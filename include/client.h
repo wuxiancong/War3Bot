@@ -424,7 +424,7 @@ public:
     void initBotPlayerData();
     bool isHostJoined();
     void swapSlots(int slot1, int slot2);
-    void setGameTickInterval(quint16 interval = 100);
+    void setGameTickInterval(quint16 interval = 50);
     void setHost(QString creatorName) { m_host = creatorName; };
     quint16 getGameTickInterval() const { return m_gameTickInterval; }
     void createGame(const QString &gameName, const QString &password,
@@ -543,7 +543,7 @@ private:
     QTimer                          *m_gameTickTimer        = nullptr;
     QTimer                          *m_startLagTimer        = nullptr;
     quint16                         m_gameStartLag          = 1000;
-    quint16                         m_gameTickInterval      = 100;
+    quint16                         m_gameTickInterval      = 50;
 
     // 设置标志
     bool                            m_isBot                 = false;
