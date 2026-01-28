@@ -2753,63 +2753,42 @@ QByteArray Client::createW3GSIncomingActionPacket(quint16 sendInterval)
     QDataStream out(&packet, QIODevice::WriteOnly);
     out.setByteOrder(QDataStream::LittleEndian);
 
-    // 场景 A: 空心跳 (ICCup 模式) - 必须是 6 字节
-    if (m_actionQueue.isEmpty()) {
-        // 直接硬编码写死，不要 seek 回填，防止出错
-        // F7 0C 06 00 (Header: ID=0C, Len=6)
-        out << (quint8)0xF7 << (quint8)0x0C << (quint16)6;
+    // 1. 写入 Header (4字节)
+    out << (quint8)0xF7 << (quint8)0x0C << (quint16)0; // 长度占位
 
-        // Time Increment (2 bytes)
-        out << (quint16)sendInterval;
+    // --- CRC 计算范围从这里开始 ---
+    int crcStartOffset = packet.size();
 
-        // 此时 packet.size() 刚好是 6
-        // [F7 0C 06 00] [64 00]
-        return packet;
-    }
-
-    // 场景 B: 有动作 (动作数据 + CRC)
-
-    // 1. Header 占位
-    out << (quint8)0xF7 << (quint8)0x0C << (quint16)0;
-
-    // 2. Interval
+    // 2. 写入 Interval (2字节)
     out << (quint16)sendInterval;
 
-    // 3. CRC 占位
-    int crcOffset = packet.size();
+    // 3. 写入 CRC 占位符 (2字节，必须先填 0)
+    int crcFieldOffset = packet.size();
     out << (quint16)0;
 
-    // 4. 写入动作数据
-    QByteArray actionBlock;
-    QDataStream actOut(&actionBlock, QIODevice::WriteOnly);
-    actOut.setByteOrder(QDataStream::LittleEndian);
-
+    // 4. 写入所有动作块
     for (const auto &act : qAsConst(m_actionQueue)) {
-        actOut << (quint8)act.pid << (quint16)act.data.size();
-        actOut.writeRawData(act.data.constData(), act.data.size());
+        out << (quint8)act.pid;
+        out << (quint16)act.data.size();
+        out.writeRawData(act.data.constData(), act.data.size());
     }
     m_actionQueue.clear();
+    // --- CRC 计算范围到这里结束 ---
 
-    out.writeRawData(actionBlock.constData(), actionBlock.size());
+    // 5. 计算 CRC
+    // 计算范围：从 Interval 开始到包末尾的所有数据
+    QByteArray dataToHash = packet.mid(crcStartOffset);
+    quint16 crcVal = calculateCRC32Lower16(dataToHash);
 
-    // 5. 计算 CRC (仅计算动作部分)
-    quint16 crcVal = calculateCRC32Lower16(actionBlock);
-
-    // 6. 回填 CRC
-    // 确保这里的 seek 是成功的
-    if (out.device()->seek(crcOffset)) {
+    // 6. 回填 CRC (回填到刚才填 0 的位置)
+    if (out.device()->seek(crcFieldOffset)) {
         out << crcVal;
-    } else {
-        LOG_ERROR("CRC 回填失败！");
     }
 
     // 7. 回填总长度
     quint16 totalSize = (quint16)packet.size();
-    if (out.device()->seek(2)) {
-        out << totalSize;
-    } else {
-        LOG_ERROR("长度回填失败！");
-    }
+    out.device()->seek(2);
+    out << totalSize;
 
     return packet;
 }
