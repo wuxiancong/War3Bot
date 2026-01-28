@@ -390,7 +390,7 @@ void BotManager::addBotInstance(const QString& username, const QString& password
 
     // 设置 Client 属性
     bot->client->setBotFlag(true); // 标记这是机器人连接
-    bot->client->setGameTickInterval(100);
+    bot->client->setGameTickInterval(50);
     bot->client->setCredentials(username, password, Protocol_SRP_0x53);
 
     // === 信号绑定 ===
@@ -490,7 +490,7 @@ bool BotManager::createGame(const QString &hostName, const QString &gameName, Co
         // 2. 确保 Client 对象存在且信号已绑定
         if (!targetBot->client) {
             targetBot->client = new Client(this);
-            targetBot->client->setGameTickInterval(100);
+            targetBot->client->setGameTickInterval(50);
             targetBot->client->setCredentials(targetBot->username, targetBot->password, Protocol_SRP_0x53);
 
             // 绑定信号
