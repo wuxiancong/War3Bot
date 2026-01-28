@@ -1662,20 +1662,38 @@ void Client::onGameTick()
     }
 
     // 2. 构建数据包
-    QByteArray tickPacket = createW3GSIncomingActionPacket(m_gameTickInterval);
+    QByteArray finalPacket;
+
+    if (m_actionQueue.isEmpty()) {
+        // 1. 如果没有动作，只发一个 6 字节心跳
+        finalPacket = createW3GSIncomingActionPacket(m_gameTickInterval, true);
+    } else {
+        // 2. 如果有动作，先生成动作包
+        QByteArray actionPacket = createW3GSIncomingActionPacket(m_gameTickInterval, false);
+
+        // 3. 紧接着生成一个空心跳包 (6 字节)
+        QByteArray heartBeat = createW3GSIncomingActionPacket(m_gameTickInterval, true);
+
+        // 4. 将两者粘在一起！
+        // 这样魔兽处理完 actionPacket 后，缓冲区正好剩下 heartBeat 的 6 个字节
+        finalPacket = actionPacket + heartBeat;
+
+        LOG_INFO(QString("⚡ [GameTick] 粘合发送: 动作包(%1字节) + 心跳包(6字节)")
+                     .arg(actionPacket.size()));
+    }
 
     // 3. 树状日志逻辑
     static int logCount = 0;
 
-    bool hasAction = (tickPacket.size() > 8);
+    bool hasAction = (finalPacket.size() > 8);
     bool shouldLog = (logCount == 0 || hasAction || (logCount % m_actionLogFrequency < m_actionLogShowLines));
 
     if (shouldLog) {
         LOG_INFO(QString("⏰ [GameTick] 周期 #%1 执行中...").arg(logCount));
 
         // [A] 包内容分析
-        QString hexData = tickPacket.toHex().toUpper();
-        LOG_INFO(QString("   ├─ 📦 数据包: %1 bytes").arg(tickPacket.size()));
+        QString hexData = finalPacket.toHex().toUpper();
+        LOG_INFO(QString("   ├─ 📦 数据包: %1 bytes").arg(finalPacket.size()));
         LOG_INFO(QString("   ├─ 🔢 HEX: %1").arg(hexData));
 
         if (hasAction) LOG_INFO("   ├─ ⚡ 类型: 包含玩家动作指令");
@@ -2724,69 +2742,37 @@ QByteArray Client::createW3GSCountdownEndPacket()
     return packet;
 }
 
-QByteArray Client::createW3GSIncomingActionPacket(quint16 sendInterval)
+QByteArray Client::createW3GSIncomingActionPacket(quint16 sendInterval, bool forceEmpty)
 {
     QByteArray packet;
     QDataStream out(&packet, QIODevice::WriteOnly);
     out.setByteOrder(QDataStream::LittleEndian);
 
-    // 场景 A: 空心跳 (ICCup 模式) - 必须是 6 字节
-    if (m_actionQueue.isEmpty()) {
-        // 直接硬编码写死，不要 seek 回填，防止出错
-        // F7 0C 06 00 (Header: ID=0C, Len=6)
+    // 如果强制要求空包，或者队列为空，则生成 6 字节心跳
+    if (forceEmpty || m_actionQueue.isEmpty()) {
         out << (quint8)0xF7 << (quint8)0x0C << (quint16)6;
-
-        // Time Increment (2 bytes)
         out << (quint16)sendInterval;
-
-        // 此时 packet.size() 刚好是 6
-        // [F7 0C 06 00] [64 00]
         return packet;
     }
 
-    // 场景 B: 有动作 (动作数据 + CRC)
+    // 场景 B: 有动作的包
+    // 标准结构: [F7 0C] [TotalSize] [Interval] [ActionData...]
+    out << (quint8)0xF7 << (quint8)0x0C << (quint16)0; // Size 占位
+    out << (quint16)sendInterval;                      // Interval
 
-    // 1. Header 占位
-    out << (quint8)0xF7 << (quint8)0x0C << (quint16)0;
-
-    // 2. Interval
-    out << (quint16)sendInterval;
-
-    // 3. CRC 占位
-    int crcOffset = packet.size();
-    out << (quint16)0;
-
-    // 4. 写入动作数据
-    QByteArray actionBlock;
-    QDataStream actOut(&actionBlock, QIODevice::WriteOnly);
-    actOut.setByteOrder(QDataStream::LittleEndian);
-
+    // 写入动作数据 (PlayerID + DataSize + Data)
+    // 这里不需要 CRC 占位，除非客户端修改了协议解析逻辑
     for (const auto &act : qAsConst(m_actionQueue)) {
-        actOut << (quint8)act.pid << (quint16)act.data.size();
-        actOut.writeRawData(act.data.constData(), act.data.size());
+        out << (quint8)act.pid;
+        out << (quint16)act.data.size();
+        out.writeRawData(act.data.constData(), act.data.size());
     }
     m_actionQueue.clear();
 
-    out.writeRawData(actionBlock.constData(), actionBlock.size());
-
-    // 5. 计算 CRC (仅计算动作部分)
-    quint16 crcVal = calculateCRC32Lower16(actionBlock);
-
-    // 6. 回填 CRC
-    // 确保这里的 seek 是成功的
-    if (out.device()->seek(crcOffset)) {
-        out << crcVal;
-    } else {
-        LOG_ERROR("CRC Seek Failed!");
-    }
-
-    // 7. 回填总长度
+    // 回填总长度
     quint16 totalSize = (quint16)packet.size();
-    if (out.device()->seek(2)) {
-        out << totalSize;
-    } else {
-        LOG_ERROR("Length Seek Failed!");
-    }
+    out.device()->seek(2);
+    out << totalSize;
 
     return packet;
 }
