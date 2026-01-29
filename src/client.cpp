@@ -919,22 +919,15 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         m_players[currentPid].lastResponseTime = QDateTime::currentMSecsSinceEpoch();
         LOG_INFO(QString("⏳ [加载完成] 玩家: %1 (PID: %2)").arg(m_players[currentPid].name).arg(currentPid));
 
-        QByteArray announcement = createW3GSPlayerLoadedPacket(currentPid);
+        // 构造当前玩家的加载完成包
+        QByteArray playerLoadedPacket = createW3GSPlayerLoadedPacket(currentPid);
 
         for (auto it = m_players.begin(); it != m_players.end(); ++it) {
-            quint8 targetPid = it.key();
-            PlayerData &targetPlayer = it.value();
-
-            if (targetPid == m_botPid) continue;
-
-            if (targetPid != currentPid && targetPlayer.socket) {
-                targetPlayer.socket->write(announcement);
-            }
-
-            if (targetPid != currentPid && targetPlayer.isFinishedLoading) {
-                socket->write(createW3GSPlayerLoadedPacket(targetPid));
+            if (it.key() != m_botPid && it.key() != currentPid && it.value().socket) {
+                it.value().socket->write(playerLoadedPacket);
             }
         }
+
         checkAllPlayersLoaded();
     }
     break;
