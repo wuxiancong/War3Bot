@@ -239,7 +239,7 @@ int main(int argc, char *argv[]) {
             out << "[server]\nbroadcast_port=6112\nenable_broadcast=false\npeer_timeout=300000\ncleanup_interval=60000\nbroadcast_interval=30000\n";
             out << "\n[log]\nlevel=info\nenable_console=true\nlog_file=/var/log/War3Bot/war3bot.log\nmax_size=10485760\nbackup_count=5\n";
             out << "\n[bnet]\nserver=127.0.0.1\nport=6112\npassword=wxc123\n";
-            out << "\n[bots]\nlist_number=1\ninit_count=10\nauto_generate=false\n";
+            out << "\n[bots]\nlist_number=1\ninit_count=10\nauto_generate=false\ndisplay_name=CC.Dota.XX\n";
             defaultConfig.close();
             configFile = writePath;
             LOG_INFO(QString("✅ 已创建默认配置文件: %1").arg(configFile));

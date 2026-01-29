@@ -76,6 +76,11 @@ bool War3Bot::startServer(quint16 port, const QString &configFile)
             QSettings settings(m_configPath, QSettings::IniFormat);
 
             LOG_INFO(QString("正在读取配置: [%1]").arg(m_configPath));
+            QString botDisplayName = settings.value("bots/display_name", "CC.Dota.XX").toString();
+            if (m_client) {
+                m_client->setBotDisplayName(botDisplayName);
+                LOG_INFO(QString("👤 主机器人显示名已设定为: %1").arg(botDisplayName));
+            }
 
             int botCount = settings.value("bots/init_count", 10).toInt();
 
@@ -110,6 +115,9 @@ void War3Bot::connectToBattleNet(QString hostname, quint16 port, QString user, Q
             if (port == 0)          port     = settings.value("bnet/port", 6112).toInt();
             if (user.isEmpty())     user     = settings.value("bnet/username", "").toString();
             if (pass.isEmpty())     pass     = settings.value("bnet/password", "").toString();
+
+            QString botDisplayName = settings.value("bots/display_name", "CC.Dota.XX").toString();
+            m_client->setBotDisplayName(botDisplayName);
 
             LOG_INFO("已从配置文件补全缺失的连接参数。");
         } else {

@@ -139,32 +139,33 @@ private:
 
 private:
     // 机器人容器
-    QVector<Bot*> m_bots;
+    QVector<Bot*>                   m_bots;
+    QString                         m_botDisplayName            = "CC.Dota.XX";
 
     // 动态加载与注册相关
-    QStringList m_allAccountFilePaths;
-    QStringList m_newAccountFilePaths;
+    QStringList                     m_allAccountFilePaths;
+    QStringList                     m_newAccountFilePaths;
     QQueue<QPair<QString, QString>> m_registrationQueue;
-    Client *m_tempRegistrationClient = nullptr;
+    Client                          *m_tempRegistrationClient   = nullptr;
 
-    int m_currentFileIndex = 0;
-    int m_currentAccountIndex = 0;
-    int m_initialLoginCount = 0;
-    int m_totalRegistrationCount = 0;
-    bool m_isMassRegistering = false;
-    quint32 m_globalBotIdCounter = 1;
+    int                             m_currentFileIndex          = 0;
+    int                             m_currentAccountIndex       = 0;
+    int                             m_initialLoginCount         = 0;
+    int                             m_totalRegistrationCount    = 0;
+    quint32                         m_globalBotIdCounter        = 1;
+    bool                            m_isMassRegistering         = false;
 
     // 网络与配置
-    NetManager *m_netManager = nullptr;
-    QString m_targetServer;
-    QString m_configPath;
-    quint16 m_targetPort = 6112;
-    quint16 m_controlPort = 0;
+    QString                         m_targetServer;
+    QString                         m_configPath;
+    quint16                         m_controlPort               = 0;
+    quint16                         m_targetPort                = 6112;
+    NetManager                      *m_netManager               = nullptr;
 
     // 状态缓存
-    QMap<QString, Bot*> m_activeGames;
-    QMap<QString, qint64> m_lastHostTime;
-    QMap<QString, CommandInfo> m_commandInfos;
+    QMap<QString, Bot*>             m_activeGames;
+    QMap<QString, qint64>           m_lastHostTime;
+    QMap<QString, CommandInfo>      m_commandInfos;
 };
 
 #endif // BOTMANAGER_H

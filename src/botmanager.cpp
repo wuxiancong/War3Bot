@@ -149,6 +149,7 @@ void BotManager::initializeBots(quint32 initialCount, const QString &configPath)
     m_targetServer = settings.value("bnet/server", "127.0.0.1").toString();
     m_targetPort = settings.value("bnet/port", 6112).toUInt();
 
+     m_botDisplayName = settings.value("bots/display_name", "CC.Dota.XX").toString();
     bool autoGenerate = settings.value("bots/auto_generate", false).toBool();
     int listNumber = settings.value("bots/list_number", 1).toInt();
 
@@ -158,6 +159,7 @@ void BotManager::initializeBots(quint32 initialCount, const QString &configPath)
 
     LOG_INFO(QString("   ├─ ⚙️ 加载配置: %1").arg(QFileInfo(configPath).fileName()));
     LOG_INFO(QString("   │  ├─ 🖥️ 服务器: %1:%2").arg(m_targetServer).arg(m_targetPort));
+    LOG_INFO(QString("   │  ├─ 👤 显示名: %1").arg(m_botDisplayName));
     LOG_INFO(QString("   │  ├─ 🏭 自动生成: %1").arg(autoGenerate ? "✅ 开启" : "⛔ 关闭"));
     LOG_INFO(QString("   │  └─ 📑 列表编号: #%1 (仅加载 bots_auto_%2.json)").arg(listNumber).arg(listNumber, 2, 10, QChar('0')));
 
@@ -253,6 +255,7 @@ void BotManager::processNextRegistration()
 
     // 3. 执行注册逻辑
     m_tempRegistrationClient = new Client(this);
+    m_tempRegistrationClient->setBotDisplayName(m_botDisplayName);
     m_tempRegistrationClient->setCredentials(user, pass, Protocol_SRP_0x53);
 
     // 连接成功 -> 发送注册包 (延迟50ms确保握手完成)
@@ -491,6 +494,7 @@ bool BotManager::createGame(const QString &hostName, const QString &gameName, Co
         if (!targetBot->client) {
             targetBot->client = new Client(this);
             targetBot->client->setGameTickInterval();
+            targetBot->client->setBotDisplayName(m_botDisplayName);
             targetBot->client->setCredentials(targetBot->username, targetBot->password, Protocol_SRP_0x53);
 
             // 绑定信号

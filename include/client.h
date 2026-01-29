@@ -443,6 +443,7 @@ public:
     bool isBlackListedPort(quint16 port);               // 检查端口黑名单
     QString getBnetPacketName(BNETPacketID id);         // 获取对应的包名
     void writeIpToStreamWithLog(QDataStream &out, const QHostAddress &ip);
+    void setBotDisplayName(const QString &name) { m_botDisplayName = name; }
 
     // --- IP转换辅助 ---
     quint32 ipToUint32(const QString &ipAddress);
@@ -489,7 +490,7 @@ private:
     Command                         *m_command;
 
     // 玩家管理
-    QString                         m_botDisplayName        = "CC.Dota.US1";
+    QString                         m_botDisplayName        = "CC.Dota.XX";
     QList<QTcpSocket*>              m_playerSockets;
     QMap<QTcpSocket*, QByteArray>   m_playerBuffers;
     QMap<quint8, PlayerData>        m_players;
