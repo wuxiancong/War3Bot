@@ -915,19 +915,13 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         }
         if (currentPid == 0) return;
 
+        // 仅仅标记，不发包
         m_players[currentPid].isFinishedLoading = true;
         m_players[currentPid].lastResponseTime = QDateTime::currentMSecsSinceEpoch();
-        LOG_INFO(QString("⏳ [加载完成] 玩家: %1 (PID: %2)").arg(m_players[currentPid].name).arg(currentPid));
 
-        // 构造当前玩家的加载完成包
-        QByteArray playerLoadedPacket = createW3GSPlayerLoadedPacket(currentPid);
+        LOG_INFO(QString("⏳ [加载完成] 玩家: %1 (PID: %2) - 暂存状态，等待全员就绪").arg(m_players[currentPid].name).arg(currentPid));
 
-        for (auto it = m_players.begin(); it != m_players.end(); ++it) {
-            if (it.key() != m_botPid && it.key() != currentPid && it.value().socket) {
-                it.value().socket->write(playerLoadedPacket);
-            }
-        }
-
+        // 触发检查
         checkAllPlayersLoaded();
     }
     break;
@@ -3353,54 +3347,31 @@ void Client::initBotPlayerData()
 
 void Client::checkAllPlayersLoaded()
 {
-    // 0. 前置检查：防止重复启动
-    if (m_gameTickTimer->isActive()) return;
-    if (m_startLagTimer->isActive()) return;
+    if (m_gameTickTimer->isActive() || m_startLagTimer->isActive()) return;
 
-    // 1. 打印根节点
-    LOG_INFO("🔍 [加载检查] 遍历玩家加载状态...");
-
-    bool allLoaded = true;
-    int loadedCount = 0;
-    int totalCount = 0;
-
-    // 2. 遍历玩家列表
+    bool allReady = true;
     for (auto it = m_players.begin(); it != m_players.end(); ++it) {
-        quint8 pid = it.key();
-        const PlayerData &p = it.value();
-
-        // 机器人不参与同步逻辑
-        if (pid == m_botPid) continue;
-
-        totalCount++;
-
-        QString statusStr;
-        if (p.isFinishedLoading) {
-            loadedCount++;
-            statusStr = "✅ 已就绪 (状态: 6)";
-        } else {
-            allLoaded = false;
-            statusStr = "⏳ 加载中... (状态: 5)";
+        if (it.key() == m_botPid) continue;
+        if (!it.value().isFinishedLoading) {
+            allReady = false;
+            break;
         }
-
-        LOG_INFO(QString("   ├─ 👤 [PID: %1] %2 -> %3")
-                     .arg(pid, -3)
-                     .arg(p.name, -15)
-                     .arg(statusStr));
     }
 
-    // 3. 统计输出
-    LOG_INFO(QString("   ├─ 📊 统计: 完成 %1 / 总计 %2").arg(loadedCount).arg(totalCount));
+    if (allReady && m_players.size() > 1) {
+        LOG_INFO("🏁 [全员就绪] 触发一次性同步广播...");
 
-    // 4. 最终判定逻辑
-    if (totalCount > 0 && allLoaded) {
-        LOG_INFO("   └─ 🎉 结果: 全员已到达状态 6 -> 准备切换状态 7");
-        m_gameStarted = true; // 确保游戏逻辑标志位开启
+        for (auto it = m_players.begin(); it != m_players.end(); ++it) {
+            quint8 pid = it.key();
+            if (pid == m_botPid) continue;
+
+            QByteArray playerLoadedPacket = createW3GSPlayerLoadedPacket(pid);
+            broadcastPacket(playerLoadedPacket, 0);
+        }
+
+        m_gameStarted = true;
+        LOG_INFO(QString("      └─ ⏳ 动作: 启动 StartLag 缓冲计时器 (%1 ms)...").arg(m_gameStartLag));
         m_startLagTimer->start(m_gameStartLag);
-
-    } else {
-        int remaining = totalCount - loadedCount;
-        LOG_INFO(QString("   └─ 💤 结果: 还在等待 %1 名玩家...").arg(remaining));
     }
 }
 
