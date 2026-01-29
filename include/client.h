@@ -308,50 +308,49 @@ enum CommandSource {
 // 1. 游戏槽位数据 (Game Slot)
 // =========================================================
 struct GameSlot {
-    quint8      pid                     = 0;    // 玩家ID
-    quint8      downloadStatus          = 0;    // 下载进度 (0-100, 255=无)
-    quint8      slotStatus              = 0;    // 状态 (Open/Closed/Occupied)
-    quint8      computer                = 0;    // 是否电脑 (0=人, 1=电脑)
-    quint8      team                    = 0;    // 队伍ID
-    quint8      color                   = 0;    // 颜色ID
-    quint8      race                    = 32;   // 种族标识 (默认随机)
-    quint8      computerType            = 1;    // 电脑难度
-    quint8      handicap                = 100;  // 生命值百分比
+    quint8          pid                     = 0;    // 玩家ID
+    quint8          downloadStatus          = 0;    // 下载进度 (0-100, 255=无)
+    quint8          slotStatus              = 0;    // 状态 (Open/Closed/Occupied)
+    quint8          computer                = 0;    // 是否电脑 (0=人, 1=电脑)
+    quint8          team                    = 0;    // 队伍ID
+    quint8          color                   = 0;    // 颜色ID
+    quint8          race                    = 32;   // 种族标识 (默认随机)
+    quint8          computerType            = 1;    // 电脑难度
+    quint8          handicap                = 100;  // 生命值百分比
 };
 
 // =========================================================
 // 2. 玩家运行时数据 (Player Runtime Data)
 // =========================================================
 struct PlayerData {
-    // 基础信息
-    quint8       pid                     = 0;
-    QString      name;
-    QString      clientUuid              = "";
-    bool         isVisualHost            = false;
+    qint64          downloadStartTime       = 0;
+    qint64          lastSpeedUpdateTime     = 0;
+    qint64          secondStartTime         = 0;
+    qint64          lastDownloadTime        = 0;
+    qint64          lastResponseTime        = 0;
+    double          currentSpeedKBps        = 0.0;
 
-    // 网络连接
-    QTcpSocket*  socket                  = nullptr;
-    QHostAddress extIp;
-    quint16      extPort                 = 0;
-    QHostAddress intIp;
-    quint16      intPort                 = 0;
+    QString         name;
+    QString         clientUuid;
+    QTcpSocket*     socket = nullptr;
+    QTextCodec*     codec = nullptr;
+    QHostAddress    extIp;
+    QHostAddress    intIp;
+    QString         language;
 
-    // 语言与编码
-    QString      language                = "EN";
-    QTextCodec   *codec                   = nullptr;
+    quint32         lastDownloadOffset      = 0;
+    quint32         currentDownloadOffset   = 0;
+    quint32         bytesSentInWindow       = 0;
+    quint32         bytesSentThisSecond     = 0;
+    quint32         currentLatency          = 0;
 
-    // 下载状态
-    bool         isDownloadStart         = false;
-    quint32      lastDownloadOffset      = 0;
-    quint32      currentDownloadOffset   = 0;
+    quint16         extPort                 = 0;
+    quint16         intPort                 = 0;
 
-    // 加载状态
-    bool         isFinishedLoading       = false;
-
-    // 时间检测
-    qint64       lastDownloadTime        = 0;
-    qint64       lastResponseTime        = 0;
-    quint32      currentLatency          = 0;
+    quint8          pid                     = 0;
+    bool            isVisualHost            = false;
+    bool            isDownloadStart         = false;
+    bool            isFinishedLoading       = false;
 };
 
 struct PlayerAction {
@@ -427,6 +426,7 @@ public:
     void setGameTickInterval(quint16 interval = 50);
     void setHost(QString creatorName) { m_host = creatorName; };
     quint16 getGameTickInterval() const { return m_gameTickInterval; }
+    void setMaxDownloadSpeed(quint32 kbps) { m_maxDownloadSpeed = kbps; }
     void createGame(const QString &gameName, const QString &password,
                     ProviderVersion providerVersion, ComboGameType comboGameType,
                     SubGameType subGameType, LadderType ladderType,CommandSource commandSource);
@@ -512,6 +512,7 @@ private:
     War3Map                         m_war3Map;
     QByteArray                      m_mapData;
     quint32                         m_mapSize               = 0;
+    quint32                         m_maxDownloadSpeed      = 1000;
 
     // 认证管理
     BnetSRP3                        *m_srp                  = nullptr;

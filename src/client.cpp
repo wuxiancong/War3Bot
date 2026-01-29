@@ -310,10 +310,14 @@ void Client::initiateMapDownload(quint8 pid)
     socket->flush();
 
     // --- 步骤 C: 准备状态 ---
-    playerData.isDownloadStart          = true;
-
     playerData.currentDownloadOffset    = 0;
     playerData.lastDownloadOffset       = 0;
+    playerData.bytesSentInWindow        = 0;
+    playerData.bytesSentThisSecond      = 0;
+    playerData.isDownloadStart          = true;
+    playerData.downloadStartTime        = QDateTime::currentMSecsSinceEpoch();
+    playerData.lastSpeedUpdateTime      = playerData.downloadStartTime;
+    playerData.secondStartTime          = playerData.downloadStartTime;
 
     // --- 步骤 D: 立即发送第一波数据 ---
     sendNextMapPart(pid);
@@ -323,41 +327,48 @@ void Client::initiateMapDownload(quint8 pid)
 
 void Client::sendNextMapPart(quint8 toPid, quint8 fromPid)
 {
-    // 1. 基础校验
     if (!m_players.contains(toPid)) return;
     PlayerData &playerData = m_players[toPid];
 
-    // 更新活跃时间
-    playerData.lastDownloadTime = QDateTime::currentMSecsSinceEpoch();
+    if (!playerData.isDownloadStart || m_mapSize == 0) return;
 
-    if (!playerData.isDownloadStart) return;
+    qint64 now = QDateTime::currentMSecsSinceEpoch();
 
-    if (m_mapSize == 0) return;
+    quint32 maxBytesPerSecond = (m_maxDownloadSpeed == 0) ? 0xFFFFFFFF : (m_maxDownloadSpeed * 1024);
+
+    if (now - playerData.secondStartTime >= 1000) {
+        playerData.secondStartTime = now;
+        playerData.bytesSentThisSecond = 0;
+    }
+
+    if (playerData.bytesSentThisSecond >= maxBytesPerSecond) {
+        QTimer::singleShot(100, this, [this, toPid, fromPid](){ sendNextMapPart(toPid, fromPid); });
+        return;
+    }
 
     while (playerData.socket->bytesToWrite() < 64 * 1024)
     {
-        // 计算分片大小
-        int chunkSize = MAX_CHUNK_SIZE; // 1442
+        if (playerData.bytesSentThisSecond >= maxBytesPerSecond) break;
+
+        int chunkSize = MAX_CHUNK_SIZE;
         if (playerData.currentDownloadOffset + chunkSize > m_mapSize) {
             chunkSize = m_mapSize - playerData.currentDownloadOffset;
         }
 
-        // 发送数据
+        if (chunkSize <= 0) break;
+
         QByteArray chunk = m_mapData.mid(playerData.currentDownloadOffset, chunkSize);
         QByteArray packet = createW3GSMapPartPacket(toPid, fromPid, playerData.currentDownloadOffset, chunk);
 
-        qint64 written = playerData.socket->write(packet);
-
-        if (written > 0) {
+        if (playerData.socket->write(packet) > 0) {
             playerData.currentDownloadOffset += chunkSize;
+            playerData.bytesSentThisSecond += packet.size();
+            playerData.bytesSentInWindow += packet.size();
         } else {
-            LOG_ERROR(QString("❌ [分块传输] Socket 写入失败: %1").arg(playerData.socket->errorString()));
             playerData.isDownloadStart = false;
             return;
         }
     }
-
-    playerData.socket->flush();
 }
 
 void Client::onTcpReadyRead()
@@ -1331,8 +1342,10 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         if (m_mapSize == 0) return;
 
         if (m_players.contains(currentPid)) {
-            PlayerData &playerData = m_players[currentPid];
-            playerData.lastResponseTime = QDateTime::currentMSecsSinceEpoch();
+            PlayerData &playerData = m_players[currentPid];            
+            qint64 now = QDateTime::currentMSecsSinceEpoch();
+
+            playerData.lastResponseTime = now;
             playerData.lastDownloadOffset = clientOffset;
 
             // 每传输 ~1MB 触发一次
@@ -1378,6 +1391,22 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
                 playerData.socket->write(createW3GSSlotInfoPacket());
                 playerData.socket->flush();
                 return;
+            }
+
+            // 每 1 秒计算一次平均速度
+            qint64 elapsed = now - playerData.lastSpeedUpdateTime;
+            if (elapsed >= 1000) {
+                // 速度 = (这段时间发的字节 / 1024) / (秒)
+                playerData.currentSpeedKBps = (playerData.bytesSentInWindow / 1024.0) / (elapsed / 1000.0);
+
+                // 重置窗口
+                playerData.bytesSentInWindow = 0;
+                playerData.lastSpeedUpdateTime = now;
+
+                LOG_INFO(QString("📊 [下载监控] 玩家: %1 | 进度: %2% | 速度: %3 KB/s")
+                             .arg(playerData.name)
+                             .arg((int)((double)playerData.lastDownloadOffset/m_mapSize*100))
+                             .arg(playerData.currentSpeedKBps, 0, 'f', 1));
             }
 
             // 发送下一块
@@ -3502,8 +3531,10 @@ void Client::checkPlayerTimeout()
 
     qint64 now = QDateTime::currentMSecsSinceEpoch();
 
-    const qint64 TIMEOUT_DOWNLOADING = 60000; // 60秒
-    const qint64 TIMEOUT_LOBBY_IDLE  = 10000; // 10秒
+    const double MIN_DOWNLOAD_SPEED     = 20.0;
+    const qint64 GRACE_PERIOD           = 10000;
+    const qint64 TIMEOUT_DOWNLOADING    = 60000; // 60秒
+    const qint64 TIMEOUT_LOBBY_IDLE     = 10000; // 10秒
 
     QList<quint8> pidsToKick;
 
@@ -3530,6 +3561,18 @@ void Client::checkPlayerTimeout()
             if (timeSinceLastDownload > TIMEOUT_DOWNLOADING) {
                 kick = true;
                 reasonCategory = QString("下载卡死 (%1ms)").arg(timeSinceLastDownload);
+            }
+
+            qint64 downloadDuration = now - playerData.downloadStartTime;
+
+            // 只有下载超过 10 秒后，才开始检查速度
+            if (downloadDuration > GRACE_PERIOD) {
+                if (playerData.currentSpeedKBps < MIN_DOWNLOAD_SPEED) {
+                    LOG_INFO(QString("👢 [速度淘汰] 踢出玩家 %1 (PID: %2) - 速度太慢: %3 KB/s")
+                                 .arg(playerData.name).arg(it.key())
+                                 .arg(playerData.currentSpeedKBps, 0, 'f', 1));
+                    pidsToKick.append(it.key());
+                }
             }
         } else {
             if (timeSinceLastResponse > TIMEOUT_LOBBY_IDLE) {
