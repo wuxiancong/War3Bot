@@ -342,7 +342,7 @@ void Client::sendNextMapPart(quint8 toPid, quint8 fromPid)
     }
 
     if (playerData.bytesSentThisSecond >= maxBytesPerSecond) {
-        QTimer::singleShot(100, this, [this, toPid, fromPid](){ sendNextMapPart(toPid, fromPid); });
+        QTimer::singleShot(300, this, [this, toPid, fromPid](){ sendNextMapPart(toPid, fromPid); });
         return;
     }
 
@@ -909,44 +909,32 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
     case W3GS_GAMELOADED_SELF: // [0x23] 客户端发送加载完成信号
     {
-        // 1. 查找发送者 PID
         quint8 currentPid = 0;
         for (auto it = m_players.begin(); it != m_players.end(); ++it) {
-            if (it.value().socket == socket) {
-                currentPid = it.key();
-                break;
-            }
+            if (it.value().socket == socket) { currentPid = it.key(); break; }
         }
-
         if (currentPid == 0) return;
 
-        // 2. 标记该玩家加载完成 (状态: 5 -> 6)
         m_players[currentPid].isFinishedLoading = true;
         m_players[currentPid].lastResponseTime = QDateTime::currentMSecsSinceEpoch();
-        LOG_INFO(QString("⏳ [加载进度] 玩家 %1 (PID: %2) 加载完成").arg(m_players[currentPid].name).arg(currentPid));
+        LOG_INFO(QString("⏳ [加载完成] 玩家: %1 (PID: %2)").arg(m_players[currentPid].name).arg(currentPid));
 
-        // 3. 构造该玩家的加载完成包 (0x08)
-        QByteArray selfLoadedPacket = createW3GSPlayerLoadedPacket(currentPid);
+        QByteArray announcement = createW3GSPlayerLoadedPacket(currentPid);
 
-        // 4. 同步状态
         for (auto it = m_players.begin(); it != m_players.end(); ++it) {
             quint8 targetPid = it.key();
             PlayerData &targetPlayer = it.value();
 
-            if (targetPid == m_botPid) continue; // 跳过机器人
+            if (targetPid == m_botPid) continue;
 
-            // 向除了自己以外的人发送我的加载信息
             if (targetPid != currentPid && targetPlayer.socket) {
-                targetPlayer.socket->write(selfLoadedPacket);
+                targetPlayer.socket->write(announcement);
             }
 
-            // 向我自己同步那些已经加载好的人的信息
             if (targetPid != currentPid && targetPlayer.isFinishedLoading) {
                 socket->write(createW3GSPlayerLoadedPacket(targetPid));
             }
         }
-
-        // 5. 检查是否全员就绪，准备触发 0x0B (COUNTDOWN_END)
         checkAllPlayersLoaded();
     }
     break;
@@ -1656,13 +1644,15 @@ void Client::onGameStarted()
     m_gameStarted = true;
     LOG_INFO("   ├─ ⚙️ 状态更新: m_gameStarted = true");
 
-    // 3. 处理机器人隐身
-    broadcastPacket(createW3GSPlayerLeftPacket(2, LEAVE_LOBBY), 0, false);
-    LOG_INFO("   ├─ 👻 [幽灵模式] 已向全员广播机器人(PID:2)离开");
-
-    // 4. 发送倒计时结束包
+    // 3. 发送倒计时结束包
     broadcastPacket(createW3GSCountdownEndPacket(), 0);
     LOG_INFO("   ├─ 📡 广播指令: W3GS_COUNTDOWN_END (0x0B)");
+
+    // 4. 处理机器人隐身
+    QTimer::singleShot(300, this, [this](){
+        broadcastPacket(createW3GSPlayerLeftPacket(2, LEAVE_LOBBY), 0, false);
+        LOG_INFO("   ├─ 👻 [幽灵模式] 已向全员广播机器人(PID:2)离开");
+    });
 
     // 5. 重置剩余玩家的加载状态
     LOG_INFO("   └─ 🔄 初始化玩家加载状态:");
@@ -2469,7 +2459,7 @@ void Client::startGame()
     broadcastPacket(createW3GSCountdownStartPacket(), 0);
 
     // 4. 最后启动定时器
-    m_startTimer->start(5200);
+    m_startTimer->start(5000);
 
     LOG_INFO("⏳ [游戏启动] 开始倒计时...");
 }
