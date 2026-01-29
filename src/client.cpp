@@ -3502,11 +3502,8 @@ void Client::checkPlayerTimeout()
 
     qint64 now = QDateTime::currentMSecsSinceEpoch();
 
-    // 场景 A: 下载中 (60秒)
-    const qint64 TIMEOUT_DOWNLOADING = 60000;
-
-    // 场景 B: 房间闲置 (10秒)
-    const qint64 TIMEOUT_LOBBY_IDLE = 10000;
+    const qint64 TIMEOUT_DOWNLOADING = 60000; // 60秒
+    const qint64 TIMEOUT_LOBBY_IDLE  = 10000; // 10秒
 
     QList<quint8> pidsToKick;
 
@@ -3514,7 +3511,14 @@ void Client::checkPlayerTimeout()
         quint8 pid = it.key();
         PlayerData &playerData = it.value();
 
-        if (pid == m_botPid) continue; // 跳过机器人
+        // 1. 跳过机器人自己
+        if (pid == m_botPid) continue;
+
+        // 2. 跳过房主 (Visual Host)
+        // 房主不受 10 秒或 60 秒的限制，他的生命周期由他自己的 Socket 状态决定
+        if (playerData.isVisualHost) {
+            continue;
+        }
 
         bool kick = false;
         QString reasonCategory = "";
@@ -3537,7 +3541,6 @@ void Client::checkPlayerTimeout()
         if (kick) {
             LOG_INFO(QString("👢 [超时裁判] 标记移除: %1 (PID: %2) - 原因: %3")
                          .arg(playerData.name).arg(pid).arg(reasonCategory));
-
             pidsToKick.append(pid);
         }
     }

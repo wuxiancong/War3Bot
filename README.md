@@ -291,7 +291,6 @@ ps -ef | grep War3Bot
 ss -tulpn | grep :6112
 # 或者
 netstat -tulpn | grep 6112
-```
 
 # 开放 TCP 范围
 sudo ufw allow 6113:7113/tcp
@@ -307,6 +306,7 @@ sudo ufw status
 
 # 查看所有正在监听的 TCP 和 UDP 端口，并显示进程名
 sudo ss -tulnp
+```
 ---
 
 ## 🛡️ 防火墙配置
