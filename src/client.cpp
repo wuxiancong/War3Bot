@@ -1627,22 +1627,21 @@ void Client::onPlayerDisconnected() {
         }
 
         // 4. 广播离开
-        if (!m_gameStarted) {
-            if (!m_playerSockets.isEmpty()) {
-                QByteArray leftPacket = createW3GSPlayerLeftPacket(pidToRemove, LEAVE_LOBBY);
-                broadcastPacket(leftPacket, pidToRemove);
+        if (!m_playerSockets.isEmpty()) {
+            LeaveReason reason = m_gameStarted ? LEAVE_DISCONNECT : LEAVE_LOBBY;
+            QByteArray leftPacket = createW3GSPlayerLeftPacket(pidToRemove, reason);
+            broadcastPacket(leftPacket, 0);
 
-                MultiLangMsg leaveMsg;
-                leaveMsg.add("CN", QString("玩家 [%1] 离开了游戏。").arg(nameToRemove))
-                    .add("EN", QString("Player [%1] has left the game.").arg(nameToRemove));
-                broadcastChatMessage(leaveMsg, pidToRemove);
+            MultiLangMsg leaveMsg;
+            leaveMsg.add("CN", QString("玩家 [%1] 离开了游戏。").arg(nameToRemove))
+                .add("EN", QString("Player [%1] has left the game.").arg(nameToRemove));
+            broadcastChatMessage(leaveMsg, pidToRemove);
 
+            if (!m_gameStarted) {
                 broadcastSlotInfo(pidToRemove);
-
-                LOG_INFO("   └─ 📢 广播同步: 离开包(0x07) + 聊天通知 + 槽位刷新(0x09)");
             }
-        } else {
-            LOG_INFO("   └─ 🎮 [游戏内] 玩家断线，仅在服务端清理，不发送大厅协议包");
+
+            LOG_INFO("   └─ 📢 广播同步: 离开包(0x07) + 聊天通知 + 槽位刷新(0x09)");
         }
     }
 }
@@ -3542,14 +3541,7 @@ void Client::checkPlayerTimeout()
         quint8 pid = it.key();
         PlayerData &playerData = it.value();
 
-        // 1. 跳过机器人自己
-        if (pid == m_botPid) continue;
-
-        // 2. 跳过房主 (Visual Host)
-        // 房主不受 10 秒或 60 秒的限制，他的生命周期由他自己的 Socket 状态决定
-        if (playerData.isVisualHost) {
-            continue;
-        }
+        if (pid == m_botPid || playerData.isVisualHost) continue;
 
         bool kick = false;
         QString reasonCategory = "";
