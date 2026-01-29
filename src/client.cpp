@@ -933,15 +933,14 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
             quint8 targetPid = it.key();
             PlayerData &targetPlayer = it.value();
 
-            // --- 机器人跳过 ---
-            if (targetPid == m_botPid) continue;
+            if (targetPid == m_botPid) continue; // 跳过机器人
 
-            // A. 向所有人广播当前玩家已经加载好的消息
-            if (targetPlayer.socket && targetPlayer.socket->state() == QAbstractSocket::ConnectedState) {
+            // 向除了自己以外的人发送我的加载信息
+            if (targetPid != currentPid && targetPlayer.socket) {
                 targetPlayer.socket->write(selfLoadedPacket);
             }
 
-            // B. 向当前玩家同步其他玩家信息
+            // 向我自己同步那些已经加载好的人的信息
             if (targetPid != currentPid && targetPlayer.isFinishedLoading) {
                 socket->write(createW3GSPlayerLoadedPacket(targetPid));
             }
@@ -1648,6 +1647,8 @@ void Client::onPlayerDisconnected() {
 
 void Client::onGameStarted()
 {
+    if (m_gameStarted) return;
+
     // 1. 打印根节点
     LOG_INFO("🚀 [游戏启动] 倒计时结束，切换至 Loading 阶段");
 
