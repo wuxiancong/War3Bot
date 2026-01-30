@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ==========================================
-#  War3Bot 编译安装与安全配置脚本 (增强版)
+#  War3Bot 编译安装与安全配置脚本 (交互增强版)
 # ==========================================
 
 GREEN='\033[0;32m'
@@ -18,10 +18,6 @@ SERVICE_NAME="war3bot"
 USER_NAME="war3bot"
 SERVICE_PORT=6116
 
-# --- ✨ 字段设置 (在此修改你需要的值) ---
-BOT_LIST_NUMBER="1"
-BOT_DISPLAY_NAME="CC.Dota.US1"  # 修改为你需要的字符串
-
 info() { echo -e "${GREEN}[INFO] $1${NC}"; }
 error() { echo -e "${RED}[ERROR] $1${NC}"; exit 1; }
 warn()  { echo -e "${YELLOW}[WARN] $1${NC}"; }
@@ -30,6 +26,24 @@ warn()  { echo -e "${YELLOW}[WARN] $1${NC}"; }
 if [ "$EUID" -ne 0 ]; then
     error "请使用 sudo 或 root 用户运行此脚本！"
 fi
+
+# ==========================================
+#  ✨ 新增：交互式字段设置
+# ==========================================
+echo -e "${BLUE}==============================================${NC}"
+echo -e "${BLUE}        War3Bot 自动化配置工具                ${NC}"
+echo -e "${BLUE}==============================================${NC}"
+
+# 询问 list_number
+read -p "请输入要使用的机器人列表编号 (list_number) [默认: 1]: " INPUT_LIST_NUMBER
+BOT_LIST_NUMBER=${INPUT_LIST_NUMBER:-"1"}
+
+# 询问 display_name
+read -p "请输入机器人显示名称 (display_name) [默认: CC.Dota.XX]: " INPUT_DISPLAY_NAME
+BOT_DISPLAY_NAME=${INPUT_DISPLAY_NAME:-"CC.Dota.XX"}
+
+echo -e "${GREEN}配置已确认: 编号=$BOT_LIST_NUMBER, 名称=$BOT_DISPLAY_NAME${NC}"
+echo ""
 
 # 2. 依赖安装
 info "检查编译依赖..."
@@ -90,7 +104,7 @@ else
 fi
 
 # ==========================================
-#  📝 ✨ 配置文件处理逻辑 (新增)
+#  📝 配置文件处理逻辑
 # ==========================================
 INI_FILE="$CONFIG_DIR/war3bot.ini"
 
@@ -124,8 +138,7 @@ display_name=$BOT_DISPLAY_NAME
 EOF
 else
     info "配置文件已存在，正在更新字段: list_number=$BOT_LIST_NUMBER, display_name=$BOT_DISPLAY_NAME"
-    # 使用 sed 精确替换 [bots] 节下的字段
-    # 注意：这里简单的 sed 替换假设字段在文件中是唯一的。如果是标准 INI，建议用以下方式：
+    # 使用 sed 修改现有文件
     sed -i "s/^list_number=.*/list_number=$BOT_LIST_NUMBER/" "$INI_FILE"
     sed -i "s/^display_name=.*/display_name=$BOT_DISPLAY_NAME/" "$INI_FILE"
 fi
@@ -135,18 +148,15 @@ fi
 # ==========================================
 info "强制修复权限..."
 
-# A. 程序目录
 chown -R $USER_NAME:$USER_NAME "$INSTALL_PREFIX"
 chmod -R 755 "$INSTALL_PREFIX"
 
-# B. 配置目录
 chown -R $USER_NAME:$USER_NAME "$CONFIG_DIR"
-chmod 755 "$CONFIG_DIR" # 改为 755 确保用户能进入目录读取配置
+chmod 755 "$CONFIG_DIR"
 if [ -f "$INI_FILE" ]; then
-    chmod 644 "$INI_FILE" # 改为 644 确保运行用户可读
+    chmod 644 "$INI_FILE"
 fi
 
-# C. 日志目录
 if [ -d "$LOG_DIR" ]; then
     chown -R $USER_NAME:$USER_NAME "$LOG_DIR"
     chmod -R 750 "$LOG_DIR"
@@ -187,7 +197,7 @@ echo -e "${BLUE}==============================================${NC}"
 echo -e "${BLUE}   安装完成，正在重启服务...${NC}"
 echo -e "${BLUE}==============================================${NC}"
 
-# 10. 停止旧进程（物理杀掉，防止 systemd 没删掉残留）
+# 10. 强制清理残留进程
 pkill -9 -f War3Bot || true
 
 # 11. 刷新并重启
@@ -199,7 +209,7 @@ if systemctl restart $SERVICE_NAME; then
     echo -e "${GREEN}✅ 服务启动成功！${NC}"
     echo -e "   ├─ 执行文件: $INSTALL_PREFIX/bin/War3Bot"
     echo -e "   ├─ 配置文件: $INI_FILE"
-    echo -e "   └─ 字段设置: list_number=$BOT_LIST_NUMBER, name=$BOT_DISPLAY_NAME"
+    echo -e "   └─ 当前配置: list_number=$BOT_LIST_NUMBER, display_name=$BOT_DISPLAY_NAME"
 else
     error "❌ 服务启动失败，请检查: sudo systemctl status $SERVICE_NAME"
 fi
