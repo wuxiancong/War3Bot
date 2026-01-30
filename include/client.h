@@ -490,7 +490,7 @@ private:
     Command                         *m_command;
 
     // 玩家管理
-    QString                         m_botDisplayName        = "CC.Dota.XX";
+    QString                         m_botDisplayName        = "CC.Dota.XXX";
     QList<QTcpSocket*>              m_playerSockets;
     QMap<QTcpSocket*, QByteArray>   m_playerBuffers;
     QMap<quint8, PlayerData>        m_players;

@@ -149,7 +149,7 @@ void BotManager::initializeBots(quint32 initialCount, const QString &configPath)
     m_targetServer = settings.value("bnet/server", "127.0.0.1").toString();
     m_targetPort = settings.value("bnet/port", 6112).toUInt();
 
-     m_botDisplayName = settings.value("bots/display_name", "CC.Dota.XX").toString();
+     m_botDisplayName = settings.value("bots/display_name", "CC.Dota.XXX").toString();
     bool autoGenerate = settings.value("bots/auto_generate", false).toBool();
     int listNumber = settings.value("bots/list_number", 1).toInt();
 

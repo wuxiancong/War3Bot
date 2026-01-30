@@ -140,7 +140,7 @@ private:
 private:
     // 机器人容器
     QVector<Bot*>                   m_bots;
-    QString                         m_botDisplayName            = "CC.Dota.XX";
+    QString                         m_botDisplayName            = "CC.Dota.XXX";
 
     // 动态加载与注册相关
     QStringList                     m_allAccountFilePaths;
