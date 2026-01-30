@@ -33,12 +33,12 @@ bool War3Bot::startServer(quint16 port, const QString &configFile)
     m_configPath = configFile;
     if (m_configPath.isEmpty()) {
         QStringList searchPaths;
-        searchPaths << "config/war3bot.ini";
-        searchPaths << QCoreApplication::applicationDirPath() + "/config/war3bot.ini";
 #ifdef Q_OS_LINUX
-        searchPaths << "/etc/War3Bot/config/war3bot.ini";
+        searchPaths << "/etc/War3Bot/config/war3bot.ini"; // 系统级配置优先
         searchPaths << "/etc/War3Bot/war3bot.ini";
 #endif
+        searchPaths << QCoreApplication::applicationDirPath() + "/config/war3bot.ini";
+        searchPaths << "config/war3bot.ini"; // 本地开发配置最后
         bool foundConfig = false;
         for (const QString &path : qAsConst(searchPaths)) {
             if (QFile::exists(path)) {
