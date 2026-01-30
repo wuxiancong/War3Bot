@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ==========================================
-#  War3Bot 自动化安装与“全路径”配置同步脚本
+#  War3Bot 自动化安装与“多路径同步”修正版
 # ==========================================
 
 GREEN='\033[0;32m'
@@ -12,7 +12,7 @@ NC='\033[0m'
 
 # --- 基础路径配置 ---
 INSTALL_PREFIX="/opt/War3Bot"
-CONFIG_DIR="/etc/War3Bot"
+CONFIG_DIR="/etc/War3Bot/config"  # ✨ 已修正为带 config 子目录的路径
 LOG_DIR="/var/log/War3Bot"
 SERVICE_NAME="war3bot"
 USER_NAME="war3bot"
@@ -31,7 +31,7 @@ fi
 #  ✨ 步骤 A: 交互式获取参数
 # ==========================================
 echo -e "${BLUE}==============================================${NC}"
-echo -e "${BLUE}        War3Bot 自动化配置 (修复版)           ${NC}"
+echo -e "${BLUE}        War3Bot 自动化配置 (路径修正版)       ${NC}"
 echo -e "${BLUE}==============================================${NC}"
 
 read -p "请输入机器人列表编号 (list_number) [默认: 1]: " INPUT_LIST_NUMBER
@@ -40,32 +40,32 @@ BOT_LIST_NUMBER=${INPUT_LIST_NUMBER:-"1"}
 read -p "请输入机器人显示名称 (display_name) [默认: CC.Dota.XXX]: " INPUT_DISPLAY_NAME
 BOT_DISPLAY_NAME=${INPUT_DISPLAY_NAME:-"CC.Dota.XXX"}
 
-info "设置确认: 编号=$BOT_LIST_NUMBER, 名称=$BOT_DISPLAY_NAME"
+info "配置确认: 编号=$BOT_LIST_NUMBER, 名称=$BOT_DISPLAY_NAME"
 echo ""
 
-# 2. 依赖安装
-info "检查编译依赖..."
-apt-get update && apt-get install -y git cmake build-essential qtbase5-dev libqt5network5 || warn "依赖安装可能存在问题"
+# 2. 依赖安装与源码编译
+info "安装依赖并开始编译..."
+apt-get update && apt-get install -y git cmake build-essential qtbase5-dev libqt5network5 || warn "依赖检查异常"
 
-# 3. 编译安装
-info "清理并准备构建目录..."
 rm -rf build && mkdir build && cd build
-
-info "开始编译与安装..."
 cmake -DCMAKE_INSTALL_PREFIX="$INSTALL_PREFIX" .. && make -j$(nproc) && make install || error "编译安装失败"
 
 # ==========================================
-#  ⚙️ 步骤 B: 全路径配置同步更新
+#  ⚙️ 步骤 B: 修正全路径同步修改逻辑
 # ==========================================
 cd .. # 回到源码根目录
-info "正在同步更新全系统所有路径下的配置文件..."
+info "正在同步更新以下 4 个位置的配置文件..."
 
+# 路径 1: 系统服务运行路径 (你要求的 /etc/War3Bot/config/)
 ETC_INI="$CONFIG_DIR/war3bot.ini"
+# 路径 2: 安装目标备份路径
 INSTALL_INI="$INSTALL_PREFIX/config/war3bot.ini"
+# 路径 3: 编译输出路径
 BUILD_INI="./build/config/war3bot.ini"
+# 路径 4: 源码默认配置路径
 SOURCE_INI="./config/war3bot.ini"
 
-# 初始化 /etc 配置（如果不存在）
+# 初始化系统配置文件夹和文件（如果不存在）
 if [ ! -f "$ETC_INI" ]; then
     mkdir -p "$CONFIG_DIR"
     cat > "$ETC_INI" <<EOF
@@ -98,27 +98,35 @@ for FILE_PATH in "${TARGET_FILES[@]}"; do
         sed -i "s/^display_name=.*/display_name=$BOT_DISPLAY_NAME/" "$FILE_PATH"
         info "  -> 已同步: $FILE_PATH"
     else
-        # 针对安装路径特别处理：如果不存在则创建
-        if [[ "$FILE_PATH" == "$INSTALL_INI" ]]; then
-            mkdir -p "$INSTALL_PREFIX/config"
-            cp "$ETC_INI" "$INSTALL_INI"
-            info "  -> 已补齐并同步: $INSTALL_INI"
+        # 特别处理：如果安装目录或系统目录不存在该文件，则创建它
+        if [[ "$FILE_PATH" == "$ETC_INI" || "$FILE_PATH" == "$INSTALL_INI" ]]; then
+            DIR_PATH=$(dirname "$FILE_PATH")
+            mkdir -p "$DIR_PATH"
+            # 如果是安装路径且没有文件，从源码拷一份过来
+            if [ -f "$SOURCE_INI" ]; then
+                cp "$SOURCE_INI" "$FILE_PATH"
+                sed -i "s/^list_number=.*/list_number=$BOT_LIST_NUMBER/" "$FILE_PATH"
+                sed -i "s/^display_name=.*/display_name=$BOT_DISPLAY_NAME/" "$FILE_PATH"
+                info "  -> 已补齐并更新: $FILE_PATH"
+            fi
         fi
     fi
 done
 
 # ==========================================
-#  🛡️ 步骤 C: 权限与服务管理
+#  🛡️ 步骤 C: 权限与服务启动
 # ==========================================
-info "配置系统权限..."
+info "正在应用权限设置..."
 
 if ! id "$USER_NAME" &>/dev/null; then
     useradd -r -s /bin/false "$USER_NAME"
 fi
 
-chown -R $USER_NAME:$USER_NAME "$INSTALL_PREFIX" "$CONFIG_DIR" "$LOG_DIR"
+# 确保 /etc/War3Bot 整个目录的所有权正确
+chown -R $USER_NAME:$USER_NAME "/etc/War3Bot"
+chown -R $USER_NAME:$USER_NAME "$INSTALL_PREFIX" "$LOG_DIR"
 chmod -R 755 "$INSTALL_PREFIX"
-chmod 644 "$ETC_INI" "$INSTALL_INI"
+chmod 644 "$ETC_INI"
 
 # 更新 Systemd 服务文件
 SERVICE_FILE="/etc/systemd/system/$SERVICE_NAME.service"
@@ -132,6 +140,7 @@ Type=simple
 User=$USER_NAME
 Group=$USER_NAME
 WorkingDirectory=$INSTALL_PREFIX
+# ✨ 启动参数指向正确的 /etc/War3Bot/config 路径
 ExecStart=$INSTALL_PREFIX/bin/War3Bot --config $ETC_INI -p $SERVICE_PORT
 Restart=always
 RestartSec=10
@@ -140,17 +149,17 @@ RestartSec=10
 WantedBy=multi-user.target
 EOF
 
-info "正在重启服务..."
+info "正在启动机器人..."
 pkill -9 -f War3Bot || true
 systemctl daemon-reload
 systemctl enable $SERVICE_NAME
 systemctl restart $SERVICE_NAME
 
 echo -e "${GREEN}==============================================${NC}"
-echo -e "${GREEN}✅ 配置同步完成！${NC}"
-echo -e "   ├─ 编号: $BOT_LIST_NUMBER"
-echo -e "   ├─ 名称: $BOT_DISPLAY_NAME"
-echo -e "   └─ 路径: $INSTALL_PREFIX"
+echo -e "${GREEN}✅ 配置已全量同步并启动！${NC}"
+echo -e "   ├─ 系统运行配置: $ETC_INI"
+echo -e "   ├─ 机器人编号: $BOT_LIST_NUMBER"
+echo -e "   ├─ 显示名称: $BOT_DISPLAY_NAME"
 echo -e "${GREEN}==============================================${NC}"
 
 sleep 2
