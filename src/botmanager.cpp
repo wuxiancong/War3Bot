@@ -445,8 +445,9 @@ bool BotManager::createGame(const QString &hostName, const QString &gameName, Co
         targetBot->gameInfo.clientId = clientId;
         targetBot->gameInfo.hostName = hostName;
         targetBot->gameInfo.gameName = gameName;
-        targetBot->client->setHost(hostName);
         targetBot->state = BotState::Creating;
+        targetBot->client->setHost(hostName);
+        targetBot->client->setBotDisplayName(m_botDisplayName);
         targetBot->client->createGame(gameName, "", Provider_TFT_New, Game_TFT_Custom, SubType_None, Ladder_None, commandSource);
 
         LOG_INFO("   └─ 🚀 执行动作: 立即发送 CreateGame 指令");
