@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ==========================================
-#  War3Bot 编译安装与安全配置脚本 (修正版)
+#  War3Bot 编译安装与安全配置脚本 (增强版)
 # ==========================================
 
 GREEN='\033[0;32m'
@@ -10,13 +10,17 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-# 安装路径配置
+# --- 基础路径配置 ---
 INSTALL_PREFIX="/opt/War3Bot"
 CONFIG_DIR="/etc/War3Bot"
 LOG_DIR="/var/log/War3Bot"
 SERVICE_NAME="war3bot"
 USER_NAME="war3bot"
-SERVICE_PORT=6116  # 默认监听端口
+SERVICE_PORT=6116
+
+# --- ✨ 字段设置 (在此修改你需要的值) ---
+BOT_LIST_NUMBER="1"
+BOT_DISPLAY_NAME="CC.Dota.US1"  # 修改为你需要的字符串
 
 info() { echo -e "${GREEN}[INFO] $1${NC}"; }
 error() { echo -e "${RED}[ERROR] $1${NC}"; exit 1; }
@@ -85,7 +89,50 @@ else
     warn "源码目录下未找到 war3files 目录"
 fi
 
-# 9. 设置权限 (⚡️ 重点修复区域)
+# ==========================================
+#  📝 ✨ 配置文件处理逻辑 (新增)
+# ==========================================
+INI_FILE="$CONFIG_DIR/war3bot.ini"
+
+if [ ! -f "$INI_FILE" ]; then
+    info "配置文件不存在，正在创建默认配置..."
+    cat > "$INI_FILE" <<EOF
+[server]
+control_port=6116
+broadcast_port=6112
+peer_timeout=300000
+cleanup_interval=60000
+enable_broadcast=false
+broadcast_interval=30000
+
+[log]
+level=info
+enable_console=true
+log_file=$LOG_DIR/war3bot.log
+max_size=10
+backup_count=5
+
+[bnet]
+server=139.155.155.166
+port=6112
+
+[bots]
+list_number=$BOT_LIST_NUMBER
+init_count=10
+auto_generate=false
+display_name=$BOT_DISPLAY_NAME
+EOF
+else
+    info "配置文件已存在，正在更新字段: list_number=$BOT_LIST_NUMBER, display_name=$BOT_DISPLAY_NAME"
+    # 使用 sed 精确替换 [bots] 节下的字段
+    # 注意：这里简单的 sed 替换假设字段在文件中是唯一的。如果是标准 INI，建议用以下方式：
+    sed -i "s/^list_number=.*/list_number=$BOT_LIST_NUMBER/" "$INI_FILE"
+    sed -i "s/^display_name=.*/display_name=$BOT_DISPLAY_NAME/" "$INI_FILE"
+fi
+
+# ==========================================
+#  🛡️ 权限修复
+# ==========================================
 info "强制修复权限..."
 
 # A. 程序目录
@@ -94,19 +141,15 @@ chmod -R 755 "$INSTALL_PREFIX"
 
 # B. 配置目录
 chown -R $USER_NAME:$USER_NAME "$CONFIG_DIR"
-chmod 700 "$CONFIG_DIR"
-if [ -f "$CONFIG_DIR/war3bot.ini" ]; then
-    chmod 600 "$CONFIG_DIR/war3bot.ini"
+chmod 755 "$CONFIG_DIR" # 改为 755 确保用户能进入目录读取配置
+if [ -f "$INI_FILE" ]; then
+    chmod 644 "$INI_FILE" # 改为 644 确保运行用户可读
 fi
 
-# C. 日志目录 (⚡️ 修复 Permission denied)
-# 先尝试强制修改所有现有日志文件的所有者
+# C. 日志目录
 if [ -d "$LOG_DIR" ]; then
     chown -R $USER_NAME:$USER_NAME "$LOG_DIR"
     chmod -R 750 "$LOG_DIR"
-    
-    # 如果存在 root 拥有的旧日志且无法修改，直接删除让程序重建
-    # rm -f "$LOG_DIR/war3bot.log" 
 fi
 
 # ==========================================
@@ -116,7 +159,6 @@ info "更新 Systemd 服务配置..."
 
 SERVICE_FILE="/etc/systemd/system/$SERVICE_NAME.service"
 
-# ✅ 修复点：ExecStart 路径增加了 /bin
 cat > $SERVICE_FILE <<EOF
 [Unit]
 Description=War3Bot Hosting Service
@@ -127,10 +169,7 @@ Type=simple
 User=$USER_NAME
 Group=$USER_NAME
 WorkingDirectory=$INSTALL_PREFIX
-
-# ⚡️ 修正路径：/opt/War3Bot/bin/War3Bot
-ExecStart=$INSTALL_PREFIX/bin/War3Bot --config $CONFIG_DIR/war3bot.ini -p $SERVICE_PORT
-
+ExecStart=$INSTALL_PREFIX/bin/War3Bot --config $INI_FILE -p $SERVICE_PORT
 Restart=always
 RestartSec=10
 ProtectSystem=full
@@ -148,7 +187,7 @@ echo -e "${BLUE}==============================================${NC}"
 echo -e "${BLUE}   安装完成，正在重启服务...${NC}"
 echo -e "${BLUE}==============================================${NC}"
 
-# 10. 停止旧进程
+# 10. 停止旧进程（物理杀掉，防止 systemd 没删掉残留）
 pkill -9 -f War3Bot || true
 
 # 11. 刷新并重启
@@ -159,8 +198,8 @@ info "启动 $SERVICE_NAME ..."
 if systemctl restart $SERVICE_NAME; then
     echo -e "${GREEN}✅ 服务启动成功！${NC}"
     echo -e "   ├─ 执行文件: $INSTALL_PREFIX/bin/War3Bot"
-    echo -e "   ├─ 配置文件: $CONFIG_DIR/war3bot.ini"
-    echo -e "   └─ 日志文件: $LOG_DIR/war3bot.log"
+    echo -e "   ├─ 配置文件: $INI_FILE"
+    echo -e "   └─ 字段设置: list_number=$BOT_LIST_NUMBER, name=$BOT_DISPLAY_NAME"
 else
     error "❌ 服务启动失败，请检查: sudo systemctl status $SERVICE_NAME"
 fi
