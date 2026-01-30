@@ -57,6 +57,9 @@ cd War3Bot
 chmod +x install.sh
 ./install.sh
 
+## 非 github 克隆需输入下面命令 
+sed -i 's/\r$//' install.sh
+
 ```
 
 
