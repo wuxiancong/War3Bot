@@ -55,6 +55,65 @@
 ...
 ```
 
+```assembly
+6F360CD0  | 53                       | push ebx                                        |
+6F360CD1  | 55                       | push ebp                                        |
+6F360CD2  | 56                       | push esi                                        |
+6F360CD3  | 8BB1 2C010000            | mov esi,dword ptr ds:[ecx+12C]                  |
+6F360CD9  | 85F6                     | test esi,esi                                    |
+6F360CDB  | 57                       | push edi                                        |
+6F360CDC  | 74 54                    | je game.6F360D32                                |
+6F360CDE  | 8B81 30010000            | mov eax,dword ptr ds:[ecx+130]                  |
+6F360CE4  | 8B5C24 24                | mov ebx,dword ptr ss:[esp+24]                   |
+6F360CE8  | 8B2D 9CED926F            | mov ebp,dword ptr ds:[6F92ED9C]                 |
+6F360CEE  | 8D7CF0 04                | lea edi,dword ptr ds:[eax+esi*8+4]              |
+6F360CF2  | 8B47 F8                  | mov eax,dword ptr ds:[edi-8]                    |
+6F360CF5  | 83EF 08                  | sub edi,8                                       |
+6F360CF8  | 83EE 01                  | sub esi,1                                       |
+6F360CFB  | 85C0                     | test eax,eax                                    |
+6F360CFD  | 74 2F                    | je game.6F360D2E                                |
+6F360CFF  | 83B8 94000000 00         | cmp dword ptr ds:[eax+94],0                     |
+6F360D06  | 74 26                    | je game.6F360D2E                                |
+6F360D08  | 83B8 38010000 00         | cmp dword ptr ds:[eax+138],0                    |
+6F360D0F  | 74 1D                    | je game.6F360D2E                                |
+6F360D11  | 8B88 90010000            | mov ecx,dword ptr ds:[eax+190]                  |
+6F360D17  | 3999 AC050000            | cmp dword ptr ds:[ecx+5AC],ebx                  |
+6F360D1D  | 75 0F                    | jne game.6F360D2E                               |
+6F360D1F  | 8B51 08                  | mov edx,dword ptr ds:[ecx+8]                    |
+6F360D22  | 3BD5                     | cmp edx,ebp                                     |
+6F360D24  | 74 08                    | je game.6F360D2E                                |
+6F360D26  | 8B49 10                  | mov ecx,dword ptr ds:[ecx+10]                   |
+6F360D29  | 83F9 40                  | cmp ecx,40                                      |
+6F360D2C  | 75 0D                    | jne game.6F360D3B                               |
+6F360D2E  | 85F6                     | test esi,esi                                    |
+6F360D30  | 75 C0                    | jne game.6F360CF2                               |
+6F360D32  | 5F                       | pop edi                                         |
+6F360D33  | 5E                       | pop esi                                         |
+6F360D34  | 5D                       | pop ebp                                         |
+6F360D35  | 33C0                     | xor eax,eax                                     |
+6F360D37  | 5B                       | pop ebx                                         |
+6F360D38  | C2 3000                  | ret 30                                          |
+6F360D3B  | 8BB0 90010000            | mov esi,dword ptr ds:[eax+190]                  |
+6F360D41  | 8B76 04                  | mov esi,dword ptr ds:[esi+4]                    |
+6F360D44  | 8B7C24 34                | mov edi,dword ptr ss:[esp+34]                   |
+6F360D48  | 8937                     | mov dword ptr ds:[edi],esi                      |
+6F360D4A  | 8B7424 38                | mov esi,dword ptr ss:[esp+38]                   |
+6F360D4E  | 8916                     | mov dword ptr ds:[esi],edx                      |
+6F360D50  | 8B5424 3C                | mov edx,dword ptr ss:[esp+3C]                   |
+6F360D54  | 890A                     | mov dword ptr ds:[edx],ecx                      |
+6F360D56  | 8B88 90010000            | mov ecx,dword ptr ds:[eax+190]                  |
+6F360D5C  | 6A 00                    | push 0                                          |
+6F360D5E  | E8 8DEBFEFF              | call game.6F34F8F0                              |
+6F360D63  | 8B4C24 40                | mov ecx,dword ptr ss:[esp+40]                   |
+6F360D67  | 5F                       | pop edi                                         |
+6F360D68  | 5E                       | pop esi                                         |
+6F360D69  | 5D                       | pop ebp                                         |
+6F360D6A  | 8901                     | mov dword ptr ds:[ecx],eax                      |
+6F360D6C  | B8 01000000              | mov eax,1                                       |
+6F360D71  | 5B                       | pop ebx                                         |
+6F360D72  | C2 3000                  | ret 30                                          |
+```
+
 ## 3. 详细逻辑分析
 
 ### 3.1 调用栈上下文
