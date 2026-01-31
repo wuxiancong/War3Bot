@@ -444,6 +444,7 @@ public:
     QString getBnetPacketName(BNETPacketID id);         // 获取对应的包名
     void writeIpToStreamWithLog(QDataStream &out, const QHostAddress &ip);
     void setBotDisplayName(const QString &name) { m_botDisplayName = name; }
+    const QMap<quint8, PlayerData> &getPlayers() const { return m_players; }
 
     // --- IP转换辅助 ---
     quint32 ipToUint32(const QString &ipAddress);
@@ -465,6 +466,7 @@ signals:
     void authenticated();
     void accountCreated();
     void gameCreateFail();
+    void visualHostLeft();
     void socketError(const QString &error);
     void hostJoinedGame(const QString &username);
     void gameCreateSuccess(CommandSource commandSource);

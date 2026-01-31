@@ -1598,6 +1598,7 @@ void Client::onPlayerDisconnected() {
                     broadcastChatMessage(transferMsg, 0);
                 }
             }
+            emit visualHostLeft();
         }
 
         // 4. 广播离开

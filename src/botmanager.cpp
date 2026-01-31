@@ -405,6 +405,7 @@ void BotManager::addBotInstance(const QString& username, const QString& password
     connect(bot->client, &Client::authenticated, this, [this, bot]() { this->onBotAuthenticated(bot); });
     connect(bot->client, &Client::accountCreated, this, [this, bot]() { this->onBotAccountCreated(bot); });
     connect(bot->client, &Client::gameCreateFail, this, [this, bot]() { this->onBotGameCreateFail(bot); });
+    connect(bot->client, &Client::visualHostLeft, this, [this, bot]() { this->onBotVisualHostLeft(bot); });
     connect(bot->client, &Client::gameCreateSuccess, this, [this, bot]() { this->onBotGameCreateSuccess(bot); });
     connect(bot->client, &Client::socketError, this, [this, bot](QString error) { this->onBotError(bot, error); });
     connect(bot->client, &Client::hostJoinedGame, this, [this, bot](const QString &name) { this->onHostJoinedGame(bot, name); });
@@ -505,6 +506,7 @@ bool BotManager::createGame(const QString &hostName, const QString &gameName, Co
             connect(targetBot->client, &Client::authenticated, this, [this, targetBot]() { this->onBotAuthenticated(targetBot); });
             connect(targetBot->client, &Client::accountCreated, this, [this, targetBot]() { this->onBotAccountCreated(targetBot); });
             connect(targetBot->client, &Client::gameCreateFail, this, [this, targetBot]() { this->onBotGameCreateFail(targetBot); });
+            connect(targetBot->client, &Client::visualHostLeft, this, [this, targetBot]() { this->onBotVisualHostLeft(targetBot); });
             connect(targetBot->client, &Client::gameCreateSuccess, this, [this, targetBot]() { this->onBotGameCreateSuccess(targetBot); });
             connect(targetBot->client, &Client::socketError, this, [this, targetBot](QString error) { this->onBotError(targetBot, error); });
             connect(targetBot->client, &Client::hostJoinedGame, this, [this, targetBot](const QString &name) { this->onHostJoinedGame(targetBot, name); });
@@ -898,8 +900,33 @@ void BotManager::onCommandReceived(const QString &userName, const QString &clien
     }
     // ==================== 处理 /unhost ====================
     else if (command == "/unhost") {
-        LOG_INFO("🛑 [取消房间流程]");
-        LOG_INFO("   └─ 🚀 执行动作: 返回游戏大厅");
+        LOG_INFO("🛑 [取消房间流程] 指令接收成功");
+
+        Bot *targetBot = nullptr;
+        // 1. 寻找该 UUID 拥有的活跃机器人
+        for (Bot *bot : qAsConst(m_bots)) {
+            // 只要不是断开连接状态，且 UUID 匹配
+            if (bot->state != BotState::Disconnected && bot->gameInfo.clientId == clientId) {
+                targetBot = bot;
+                break;
+            }
+        }
+
+        if (targetBot) {
+            LOG_INFO(QString("   ├─ 👤 房主: %1").arg(targetBot->gameInfo.hostName));
+            LOG_INFO(QString("   └─ 🚀 正在执行解散: Bot-%1 (%2)").arg(targetBot->id).arg(targetBot->gameInfo.gameName));
+
+            // 2. 调用 removeGame，它内部会执行 bot->client->cancelGame()
+            // 房主主动取消，不需要标记断线 (disconnectFlag = false)
+            removeGame(targetBot, false);
+
+            // 3. 通知 Launcher 端 (同步 UI 状态)
+            m_netManager->sendMessageToClient(clientId, S_C_MESSAGE, MSG_HOST_UNHOST_GAME);
+
+        } else {
+            LOG_WARNING(QString("   └─ ❌ 拒绝请求: UUID %1 当前没有正在托管的房间").arg(clientId.left(8)));
+            m_netManager->sendMessageToClient(clientId, S_C_ERROR, ERR_PERMISSION_DENIED);
+        }
     }
     // ==================== 处理 /bot ====================
     else if (command == "/bot") {
@@ -975,6 +1002,45 @@ void BotManager::onBotGameCreateFail(Bot *bot)
 
     // 4. 闭环日志
     LOG_INFO("   └─ 🔄 [状态重置] 游戏信息已清除");
+}
+
+void BotManager::onBotVisualHostLeft(Bot *bot)
+{
+    if (!bot || !bot->client) return;
+
+    QString newUuid = "";
+    QString newHostName = "";
+
+    // 1. 获取 Client 中的玩家映射表
+    const QMap<quint8, PlayerData> &players = bot->client->getPlayers();
+
+    // 2. 遍历寻找现在谁是 VisualHost
+    for (auto it = players.begin(); it != players.end(); ++it) {
+        const PlayerData &p = it.value();
+
+        // 排除机器人自己 (PID 2)
+        // 寻找那个在 Client::onPlayerDisconnected 中被设为 isVisualHost = true 的真人
+        if (p.pid != 2 && p.isVisualHost) {
+            newUuid = p.clientUuid;
+            newHostName = p.name;
+            break;
+        }
+    }
+
+    // 3. 执行所有权交接或释放
+    if (!newUuid.isEmpty()) {
+        LOG_INFO(QString("👤 [所有权交接] 房主离开，Bot-%1 控制权移交给: %2 (UUID: %3)")
+                     .arg(bot->id).arg(newHostName, newUuid));
+
+        bot->gameInfo.clientId = newUuid;
+        bot->gameInfo.hostName = newHostName;
+    }
+    else {
+        LOG_INFO(QString("👤 [所有权释放] 房主离开，无有效 UUID 继承人。Bot-%1 现在变为公共状态")
+                     .arg(bot->id));
+
+        bot->gameInfo.clientId = "";
+    }
 }
 
 void BotManager::onHostJoinedGame(Bot *bot, const QString &hostName)

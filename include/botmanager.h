@@ -118,6 +118,7 @@ private slots:
     void onHostJoinedGame(Bot *bot, const QString &hostName);
     void onBotError(Bot *bot, QString error);
     void onBotGameCreateSuccess(Bot *bot);
+    void onBotVisualHostLeft(Bot *bot);
     void onBotAccountCreated(Bot *bot);
     void onBotGameCreateFail(Bot *bot);
     void onBotAuthenticated(Bot *bot);
