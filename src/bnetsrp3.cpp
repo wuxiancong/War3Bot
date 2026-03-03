@@ -35,11 +35,205 @@ BigInt BnetSRP3::N = BigInt(bnetsrp3_N_val, 32);
 BigInt BnetSRP3::g = BigInt((quint64)bnetsrp3_g_val);
 BigInt BnetSRP3::I = BigInt(bnetsrp3_I_val, 20);
 
-// 内部静态辅助函数
+// =========================================================
+// 0. 内部静态辅助函数 (必须放在调用者之前)
+// =========================================================
+
 static QString debug_buf_to_hex(const unsigned char *buf, size_t len)
 {
     return QString(QByteArray((const char*)buf, len).toHex());
 }
+
+// =========================================================
+// 1. 构造与析构函数
+// =========================================================
+
+BnetSRP3::BnetSRP3(const QString &username, const QString &password)
+{
+    init(username, password, nullptr);
+}
+
+BnetSRP3::BnetSRP3(const QString &username, BigInt &salt)
+{
+    init(username, QString(), &salt);
+}
+
+BnetSRP3::~BnetSRP3()
+{
+    if (B) delete B;
+}
+
+// =========================================================
+// 2. 登录流程相关函数 (步骤 1 -> 4)
+// =========================================================
+
+// 步骤 1: 获取客户端公钥 A
+BigInt BnetSRP3::getClientSessionPublicKey() const
+{
+    BigInt A = g.powm(a, N);
+    LOG_INFO(QString("[SRP 步骤 1.1] 客户端公钥 A (BigInt): %1").arg(A.toHexString()));
+    return A;
+}
+
+// 步骤 2: 设置服务器返回的 Salt
+void BnetSRP3::setSalt(BigInt salt_)
+{
+    s = salt_;
+
+    unsigned char buf[32];
+    memset(buf, 0, 32);
+    s.getData(buf, 32, 4, false);
+
+    m_raw_salt = QByteArray((const char*)buf, 32);
+
+    LOG_INFO(QString("[SRP 内部] 更新 BigInt 盐值 s: %1").arg(s.toHexString()));
+    LOG_INFO(QString("[SRP 内部] 更新原始盐值 (小端序/LE): %1").arg(debug_buf_to_hex(buf, 32)));
+}
+
+// 步骤 3: 计算会话密钥 K
+BigInt BnetSRP3::getHashedClientSecret(BigInt &B_ref) const
+{
+    LOG_INFO(QString("[SRP 步骤 2.2] 服务端公钥 B (BigInt): %1").arg(B_ref.toHexString()));
+    BigInt clientSecret = getClientSecret(B_ref);
+    return hashSecret(clientSecret);
+}
+
+// 步骤 4: 计算证明 M1
+BigInt BnetSRP3::getClientPasswordProof(BigInt &A, BigInt &B_ref, BigInt &K) const
+{
+    LOG_INFO("[SRP 内部] 开始计算 M1 证明...");
+
+    QByteArray proofData;
+    unsigned char buf[128];
+
+    // 1. I (H(g)^H(N))
+    I.getData(buf, 20, 1, false);
+    LOG_INFO(QString("  > I (Buffer):        %1").arg(debug_buf_to_hex(buf, 20)));
+    proofData.append((const char*)buf, 20);
+
+    // 2. H(username)
+    t_hash usernameHash;
+    QByteArray userBytes = m_username.toLatin1();
+    little_endian_sha1_hash(&usernameHash, userBytes.size(), userBytes.constData());
+
+    LOG_INFO(QString("  > H(U) (Buffer):     %1").arg(debug_buf_to_hex((unsigned char*)usernameHash, 20)));
+    proofData.append((const char*)usernameHash, 20);
+
+    // 3. Salt
+    LOG_INFO(QString("  > 盐值 (小端序/LE):   %1").arg(QString(m_raw_salt.toHex())));
+    proofData.append(m_raw_salt);
+
+    // 4. A
+    A.getData(buf, 32, 1, false);
+    LOG_INFO(QString("  > A (小端序/LE):     %1").arg(debug_buf_to_hex(buf, 32)));
+    proofData.append((const char*)buf, 32);
+
+    // 5. B
+    B_ref.getData(buf, 32, 1, false);
+    LOG_INFO(QString("  > B (小端序/LE):     %1").arg(debug_buf_to_hex(buf, 32)));
+    proofData.append((const char*)buf, 32);
+
+    // 6. K
+    K.getData(buf, 40, 1, false);
+    LOG_INFO(QString("  > K (小端序/LE):     %1").arg(debug_buf_to_hex(buf, 40)));
+    proofData.append((const char*)buf, 40);
+
+    // 计算最终 Hash
+    t_hash proofHash;
+    little_endian_sha1_hash(&proofHash, proofData.size(), proofData.constData());
+
+    BigInt M1((unsigned char*)proofHash, 20, 1, false);
+
+    LOG_INFO(QString("[SRP 内部] M1 结果 (BigInt): %1").arg(M1.toHexString()));
+
+    return M1;
+}
+
+// =========================================================
+// 3. 注册流程相关函数
+// =========================================================
+
+BigInt BnetSRP3::getSalt() const
+{
+    return s;
+}
+
+BigInt BnetSRP3::getVerifier() const
+{
+    return g.powm(getClientPrivateKey(), N);
+}
+
+// =========================================================
+// 4. 服务端模拟逻辑相关函数
+// =========================================================
+
+BigInt BnetSRP3::getServerSessionPublicKey(BigInt &v)
+{
+    if (!B) {
+        B = new BigInt((v + g.powm(b, N)) % N);
+    }
+    return *B;
+}
+
+BigInt BnetSRP3::getServerSecret(BigInt &A, BigInt &v)
+{
+    // 1. 获取/生成 B 和 u
+    BigInt B_val = getServerSessionPublicKey(v);
+    BigInt u = getScrambler(B_val);
+
+    // 2. 计算 v^u % N
+    BigInt v_pow_u = v.powm(u, N);
+
+    // 3. 计算底数 Base = (A * v^u) % N
+    BigInt base_unmod = A * v_pow_u;
+    BigInt base = base_unmod % N;
+
+    // 4. 计算 S = Base^b % N
+    BigInt S = base.powm(b, N);
+
+    LOG_INFO("=== [客户端(ServerLogic) S 计算细节] ===");
+    LOG_INFO(QString("A:       %1").arg(A.toHexString()));
+    LOG_INFO(QString("v:       %1").arg(v.toHexString()));
+    LOG_INFO(QString("B:       %1").arg(B_val.toHexString()));
+    LOG_INFO(QString("b:       %1").arg(b.toHexString()));
+    LOG_INFO(QString("u:       %1").arg(u.toHexString()));
+    LOG_INFO(QString("v^u%N:   %1").arg(v_pow_u.toHexString()));
+    LOG_INFO(QString("A*v^u:   %1").arg(base_unmod.toHexString()));
+    LOG_INFO(QString("Base:    %1").arg(base.toHexString()));
+    LOG_INFO(QString("S:       %1").arg(S.toHexString()));
+
+    return S;
+}
+
+BigInt BnetSRP3::getHashedServerSecret(BigInt &A, BigInt &v)
+{
+    BigInt serverSecret = getServerSecret(A, v);
+    return hashSecret(serverSecret);
+}
+
+BigInt BnetSRP3::getServerPasswordProof(BigInt &A, BigInt &M, BigInt &K) const
+{
+    QByteArray proofData;
+    unsigned char buf[128];
+
+    A.getData(buf, 32, 4, false);
+    proofData.append((const char*)buf, 32);
+
+    M.getData(buf, 20, 4, false);
+    proofData.append((const char*)buf, 20);
+
+    K.getData(buf, 40, 4, false);
+    proofData.append((const char*)buf, 40);
+
+    t_hash proofHash;
+    little_endian_sha1_hash(&proofHash, proofData.size(), proofData.constData());
+
+    return BigInt((unsigned char*)proofHash, 20, 1, false);
+}
+
+// =========================================================
+// 5. 内部计算与初始化辅助
+// =========================================================
 
 void BnetSRP3::init(const QString &username, const QString &password, BigInt* salt)
 {
@@ -65,21 +259,6 @@ void BnetSRP3::init(const QString &username, const QString &password, BigInt* sa
     m_raw_salt = QByteArray((const char*)buf, 32);
 
     LOG_INFO(QString("[SRP 初始化] 原始盐值 (小端序/LE): %1").arg(debug_buf_to_hex(buf, 32)));
-}
-
-BnetSRP3::BnetSRP3(const QString &username, BigInt &salt)
-{
-    init(username, QString(), &salt);
-}
-
-BnetSRP3::BnetSRP3(const QString &username, const QString &password)
-{
-    init(username, password, nullptr);
-}
-
-BnetSRP3::~BnetSRP3()
-{
-    if (B) delete B;
 }
 
 BigInt BnetSRP3::getClientPrivateKey() const
@@ -134,8 +313,6 @@ BigInt BnetSRP3::getScrambler(BigInt &B_ref) const
 
 BigInt BnetSRP3::getClientSecret(BigInt &B_ref) const
 {
-    // SRP 核心公式: S = (B - g^x)^(a + u * x) % N
-
     // 1. 获取私钥 x 和 扰码 u
     BigInt x = getClientPrivateKey();
     BigInt u = getScrambler(B_ref);
@@ -163,38 +340,6 @@ BigInt BnetSRP3::getClientSecret(BigInt &B_ref) const
     LOG_INFO(QString("x*u:     %1").arg(x_mul_u.toHexString()));
     LOG_INFO(QString("Exp:     %1").arg(exp.toHexString()));
     LOG_INFO(QString("S (Result): %1").arg(S.toHexString()));
-
-    return S;
-}
-
-BigInt BnetSRP3::getServerSecret(BigInt &A, BigInt &v)
-{
-    // SRP 服务端公式: S = (A * v^u)^b % N
-
-    // 1. 获取/生成 B 和 u
-    BigInt B_val = getServerSessionPublicKey(v);
-    BigInt u = getScrambler(B_val);
-
-    // 2. 计算 v^u % N
-    BigInt v_pow_u = v.powm(u, N);
-
-    // 3. 计算底数 Base = (A * v^u) % N
-    BigInt base_unmod = A * v_pow_u;
-    BigInt base = base_unmod % N;
-
-    // 4. 计算 S = Base^b % N
-    BigInt S = base.powm(b, N);
-
-    LOG_INFO("=== [客户端(ServerLogic) S 计算细节] ===");
-    LOG_INFO(QString("A:       %1").arg(A.toHexString()));
-    LOG_INFO(QString("v:       %1").arg(v.toHexString()));
-    LOG_INFO(QString("B:       %1").arg(B_val.toHexString()));
-    LOG_INFO(QString("b:       %1").arg(b.toHexString()));
-    LOG_INFO(QString("u:       %1").arg(u.toHexString()));
-    LOG_INFO(QString("v^u%N:   %1").arg(v_pow_u.toHexString()));
-    LOG_INFO(QString("A*v^u:   %1").arg(base_unmod.toHexString()));
-    LOG_INFO(QString("Base:    %1").arg(base.toHexString()));
-    LOG_INFO(QString("S:       %1").arg(S.toHexString()));
 
     return S;
 }
@@ -231,126 +376,4 @@ BigInt BnetSRP3::hashSecret(BigInt &secret) const
     LOG_INFO(QString("[SRP 内部] 计算出的会话密钥 K (BigInt): %1").arg(K.toHexString()));
 
     return K;
-}
-
-BigInt BnetSRP3::getVerifier() const
-{
-    return g.powm(getClientPrivateKey(), N);
-}
-
-BigInt BnetSRP3::getSalt() const
-{
-    return s;
-}
-
-void BnetSRP3::setSalt(BigInt salt_)
-{
-    s = salt_;
-
-    unsigned char buf[32];
-    memset(buf, 0, 32);
-    s.getData(buf, 32, 4, false);
-
-    m_raw_salt = QByteArray((const char*)buf, 32);
-
-    LOG_INFO(QString("[SRP 内部] 更新 BigInt 盐值 s: %1").arg(s.toHexString()));
-    LOG_INFO(QString("[SRP 内部] 更新原始盐值 (小端序/LE): %1").arg(debug_buf_to_hex(buf, 32)));
-}
-
-BigInt BnetSRP3::getClientSessionPublicKey() const
-{
-    BigInt A = g.powm(a, N);
-    LOG_INFO(QString("[SRP 步骤 1.1] 客户端公钥 A (BigInt): %1").arg(A.toHexString()));
-    return A;
-}
-
-BigInt BnetSRP3::getServerSessionPublicKey(BigInt &v)
-{
-    if (!B) {
-        B = new BigInt((v + g.powm(b, N)) % N);
-    }
-    return *B;
-}
-
-BigInt BnetSRP3::getHashedClientSecret(BigInt &B_ref) const
-{
-    LOG_INFO(QString("[SRP 步骤 2.2] 服务端公钥 B (BigInt): %1").arg(B_ref.toHexString()));
-    BigInt clientSecret = getClientSecret(B_ref);
-    return hashSecret(clientSecret);
-}
-
-BigInt BnetSRP3::getHashedServerSecret(BigInt &A, BigInt &v)
-{
-    BigInt serverSecret = getServerSecret(A, v);
-    return hashSecret(serverSecret);
-}
-
-BigInt BnetSRP3::getClientPasswordProof(BigInt &A, BigInt &B_ref, BigInt &K) const
-{
-    LOG_INFO("[SRP 内部] 开始计算 M1 证明...");
-
-    QByteArray proofData;
-    unsigned char buf[256];
-
-    // 1. I (H(g)^H(N))
-    I.getData(buf, 20, 1, false);
-    LOG_INFO(QString("  > I (Buffer):        %1").arg(debug_buf_to_hex(buf, 20)));
-    proofData.append((const char*)buf, 20);
-
-    // 2. H(username)
-    t_hash usernameHash;
-    QByteArray userBytes = m_username.toLatin1();
-    little_endian_sha1_hash(&usernameHash, userBytes.size(), userBytes.constData());
-
-    LOG_INFO(QString("  > H(U) (Buffer):     %1").arg(debug_buf_to_hex((unsigned char*)usernameHash, 20)));
-    proofData.append((const char*)usernameHash, 20);
-
-    // 3. Salt
-    LOG_INFO(QString("  > 盐值 (小端序/LE):   %1").arg(QString(m_raw_salt.toHex())));
-    proofData.append(m_raw_salt);
-
-    // 4. A
-    A.getData(buf, 32, 1, false);
-    LOG_INFO(QString("  > A (小端序/LE):     %1").arg(debug_buf_to_hex(buf, 32)));
-    proofData.append((const char*)buf, 32);
-
-    // 5. B
-    B_ref.getData(buf, 32, 1, false);
-    LOG_INFO(QString("  > B (小端序/LE):     %1").arg(debug_buf_to_hex(buf, 32)));
-    proofData.append((const char*)buf, 32);
-
-    // 6. K
-    K.getData(buf, 40, 1, false);
-    LOG_INFO(QString("  > K (小端序/LE):     %1").arg(debug_buf_to_hex(buf, 40)));
-    proofData.append((const char*)buf, 40);
-
-    // 计算最终 Hash
-    t_hash proofHash;
-    little_endian_sha1_hash(&proofHash, proofData.size(), proofData.constData());
-
-    BigInt M1((unsigned char*)proofHash, 20, 1, false);
-
-    LOG_INFO(QString("[SRP 内部] M1 结果 (BigInt): %1").arg(M1.toHexString()));
-
-    return M1;
-}
-
-BigInt BnetSRP3::getServerPasswordProof(BigInt &A, BigInt &M, BigInt &K) const
-{
-    QByteArray proofData;
-    unsigned char buf[128];
-
-    A.getData(buf, 32, 4, false);
-    proofData.append((const char*)buf, 32);
-
-    M.getData(buf, 20, 4, false);
-    proofData.append((const char*)buf, 20);
-
-    K.getData(buf, 40, 4, false);
-    proofData.append((const char*)buf, 40);
-
-    t_hash proofHash;
-    little_endian_sha1_hash(&proofHash, proofData.size(), proofData.constData());
-
-    return BigInt((unsigned char*)proofHash, 20, 1, false);
 }
