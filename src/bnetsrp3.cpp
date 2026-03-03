@@ -363,8 +363,8 @@ BigInt BnetSRP3::hashSecret(BigInt &secret) const
     little_endian_sha1_hash(&even_hash, 16, even);
 
     QByteArray hashedSecret;
-    unsigned char* pOdd = (unsigned char*)odd_hash;
-    unsigned char* pEven = (unsigned char*)even_hash;
+    unsigned char *pOdd = (unsigned char*)odd_hash;
+    unsigned char *pEven = (unsigned char*)even_hash;
 
     for (int i = 0; i < 20; i++) {
         hashedSecret.append(pOdd[i]);
