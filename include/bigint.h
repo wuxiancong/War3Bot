@@ -34,24 +34,24 @@ public:
     BigInt(const unsigned char *input, int input_size, int blockSize = 1, bool bigEndian = true);
 
     // 拷贝构造与赋值 (使用编译器生成的默认实现，QVector 支持隐式共享)
-    BigInt(const BigInt& other) = default;
-    BigInt& operator=(const BigInt& other) = default;
+    BigInt(const BigInt &other) = default;
+    BigInt &operator=(const BigInt &other) = default;
     ~BigInt() = default;
 
     // === 比较运算符 ===
-    bool operator== (const BigInt& right) const;
-    bool operator!= (const BigInt& right) const;
-    bool operator<  (const BigInt& right) const;
-    bool operator>  (const BigInt& right) const;
-    bool operator<= (const BigInt& right) const;
-    bool operator>= (const BigInt& right) const;
+    bool operator== (const BigInt &right) const;
+    bool operator!= (const BigInt &right) const;
+    bool operator<  (const BigInt &right) const;
+    bool operator>  (const BigInt &right) const;
+    bool operator<= (const BigInt &right) const;
+    bool operator>= (const BigInt &right) const;
 
     // === 算术运算符 ===
-    BigInt operator+ (const BigInt& right) const;
-    BigInt operator- (const BigInt& right) const; // 注意：若结果为负，则返回 0 (仅支持无符号)
-    BigInt operator* (const BigInt& right) const;
-    BigInt operator/ (const BigInt& right) const;
-    BigInt operator% (const BigInt& right) const;
+    BigInt operator+ (const BigInt &right) const;
+    BigInt operator- (const BigInt &right) const; // 注意：若结果为负，则返回 0 (仅支持无符号)
+    BigInt operator* (const BigInt &right) const;
+    BigInt operator/ (const BigInt &right) const;
+    BigInt operator% (const BigInt &right) const;
 
     // 按字节左移 (bytes * 8 位) - 用于数据段对齐
     BigInt operator<< (int bytesToShift) const;
@@ -75,7 +75,7 @@ public:
      * 计算 (this ^ exp) % mod
      * 这是 SRP 协议中最核心的加密计算函数。
      */
-    BigInt powm(const BigInt& exp, const BigInt& mod) const;
+    BigInt powm(const BigInt &exp, const BigInt &mod) const;
 
     /**
      * @brief 导出为字节数组
