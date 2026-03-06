@@ -72,6 +72,7 @@ struct PacketHeader {
     quint32 seq;
     quint16 payloadLen;
     quint16 checksum;
+    char    signature[16];
 };
 
 struct SCMessagePacket {
@@ -82,6 +83,7 @@ struct SCMessagePacket {
 
 struct CSRegisterPacket {
     char clientId[40];
+    char hardwareId[65];
     char username[32];
     char localIp[16];
     char publicIp[16];

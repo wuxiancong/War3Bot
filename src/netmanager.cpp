@@ -314,7 +314,25 @@ void NetManager::handleIncomingDatagram(const QNetworkDatagram &datagram)
         return;
     }
 
-    // 2. CRC 校验
+    // 2. 安全签名校验 (HMAC)
+    char receivedSign[16];
+    memcpy(receivedSign, header->signature, 16);
+    memset(header->signature, 0, 16);
+
+    // 使用服务端的 Secret 重新计算一遍签名
+    QByteArray secret = getAppSecret();
+    QByteArray signSource = data + secret;
+    QByteArray expectedHash = QCryptographicHash::hash(signSource, QCryptographicHash::Sha256);
+
+    // 比对签名
+    if (memcmp(receivedSign, expectedHash.constData(), 16) != 0) {
+        LOG_WARNING(QString("🚫 [拦截] 非法客户端或数据篡改! 来源: %1:%2")
+                        .arg(datagram.senderAddress().toString())
+                        .arg(datagram.senderPort()));
+        return;
+    }
+
+    // 3. CRC 校验
     quint64 recvChecksum = header->checksum;
     header->checksum = 0;
     if (calculateStandardCRC16(data) != recvChecksum) {
@@ -322,7 +340,7 @@ void NetManager::handleIncomingDatagram(const QNetworkDatagram &datagram)
         return;
     }
 
-    // 3. 分发
+    // 4. 分发
     char *payload = data.data() + sizeof(PacketHeader);
     QHostAddress sender = datagram.senderAddress();
     quint64 port = datagram.senderPort();
@@ -365,9 +383,10 @@ void NetManager::handleRegister(const PacketHeader *header, const CSRegisterPack
     Q_UNUSED(header);
 
     // 提取字符串数据
-    QString clientId = QString::fromUtf8(packet->clientId, strnlen(packet->clientId, sizeof(packet->clientId)));
-    QString username = QString::fromUtf8(packet->username, strnlen(packet->username, sizeof(packet->username)));
-    QString localIp  = QString::fromUtf8(packet->localIp, strnlen(packet->localIp, sizeof(packet->localIp)));
+    QString hardwareId = QString::fromUtf8(packet->hardwareId, strnlen(packet->clientId, sizeof(packet->clientId))).trimmed();
+    QString clientId = QString::fromUtf8(packet->clientId, strnlen(packet->clientId, sizeof(packet->clientId))).trimmed();
+    QString username = QString::fromUtf8(packet->username, strnlen(packet->username, sizeof(packet->username))).trimmed();
+    QString localIp  = QString::fromUtf8(packet->localIp, strnlen(packet->localIp, sizeof(packet->localIp))).trimmed();
 
     // 🆕 提取客户端上报的公网IP
     QString reportedPublicIp = QString::fromUtf8(packet->publicIp, strnlen(packet->publicIp, sizeof(packet->publicIp)));
@@ -375,6 +394,18 @@ void NetManager::handleRegister(const PacketHeader *header, const CSRegisterPack
     if (clientId.isEmpty()) return;
 
     QWriteLocker locker(&m_registerInfosLock);
+
+    if (isHardwareIdBanned(hardwareId)) {
+        LOG_WARNING("🚫 拒绝注册：该机器码已被封禁 -> " + hardwareId);
+        return;
+    }
+
+    for (const auto &peer : m_registerInfos) {
+        if (peer.hardwareId == hardwareId && peer.username != username) {
+            LOG_WARNING(QString("🚫 拒绝多开：机器 %1 已有账号 %2 在线").arg(hardwareId.left(8), peer.username));
+            return;
+        }
+    }
 
     // === Session ID 生成 ===
     quint32 newSessionId = 0;
@@ -396,6 +427,7 @@ void NetManager::handleRegister(const PacketHeader *header, const CSRegisterPack
     // 存储用户信息
     RegisterInfo info;
     info.clientId = clientId;
+    info.hardwareId = hardwareId;
     info.username = username;
     info.localIp = localIp;
     info.localPort = packet->localPort;
@@ -406,6 +438,7 @@ void NetManager::handleRegister(const PacketHeader *header, const CSRegisterPack
     info.firstSeen = now;
     info.isRegistered = true;
     info.natType = packet->natType;
+    info.lastSeq = header->seq;
 
     m_registerInfos[clientId] = info;
     m_sessionIndex[newSessionId] = clientId;
@@ -538,7 +571,18 @@ void NetManager::handleHeartbeat(const PacketHeader *header, const QHostAddress 
 
 void NetManager::handleCommand(const PacketHeader *header, const CSCommandPacket *packet)
 {
-    QString serverRecClientId; // 服务器端记录的 ClientID
+    QWriteLocker locker(&m_registerInfosLock);
+    if (!m_sessionIndex.contains(header->sessionId)) return;
+
+    RegisterInfo &info = m_registerInfos[m_sessionIndex.value(header->sessionId)];
+
+    if (header->seq <= info.lastSeq) {
+        LOG_WARNING(QString("🛡️ [重放拦截] 收到重复/过期的包, Seq: %1").arg(header->seq));
+        return;
+    }
+    info.lastSeq = header->seq;
+
+    QString serverRecClientId;
 
     // 1. Session 验证与查找
     {
@@ -552,7 +596,6 @@ void NetManager::handleCommand(const PacketHeader *header, const CSCommandPacket
                 return;
             }
         } else {
-            // 这是最常见的非法包，用一行日志即可
             LOG_WARNING(QString("⚠️ [指令拒绝] 无效 SessionID: %1 (来自未注册或已过期的连接)").arg(header->sessionId));
             return;
         }
@@ -1458,3 +1501,5 @@ QString NetManager::packetTypeToString(PacketType type)
 }
 
 bool NetManager::isRunning() const { return m_isRunning; }
+
+QByteArray NetManager::getAppSecret() const { return "CC_War3_@#_Platform_2026_SecureKey"; }

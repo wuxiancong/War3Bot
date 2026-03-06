@@ -39,12 +39,14 @@ enum RegistrationState {
 
 struct RegisterInfo {
     QString clientId;
+    QString hardwareId;
     QString username;
     QString localIp;
     quint64 localPort;
     QString publicIp;
     quint64 publicPort;
     quint32 sessionId;
+    quint32 lastSeq;
     quint64 lastSeen;
     quint64 firstSeen;
     QString crcToken;
@@ -63,6 +65,7 @@ public:
     bool startServer(quint64 port, const QString &configFile = "war3bot.ini");
     void stopServer();
     bool isRunning() const;
+    QByteArray getAppSecret() const;
     QList<RegisterInfo> getOnlinePlayers() const;
     bool isClientRegistered(const QString &clientId) const;
     bool sendMessageToClient(const QString &clientId, PacketType type, quint8 code, quint64 data = 0, bool isUdp = false);
