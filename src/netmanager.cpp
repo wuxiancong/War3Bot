@@ -87,7 +87,7 @@ bool NetManager::setupDatabase()
     // 1. 根据平台环境选择驱动和基础配置
 #ifdef Q_OS_WIN
     QString driver = "QSQLITE";
-    QString dbName = QCoreApplication::applicationDirPath() + "/CCBattlePlatform.db";
+    QString dbName = QCoreApplication::applicationDirPath() + "/cc_battle_platform.db";
     QString autoInc = "AUTOINCREMENT";
 #else
     // Ubuntu/Linux 生产环境：使用 MySQL
@@ -538,31 +538,26 @@ void NetManager::handleIncomingDatagram(const QNetworkDatagram &datagram)
         return;
     }
 
-    // 2. 安全签名校验 (HMAC)
     char receivedSign[16];
     memcpy(receivedSign, header->signature, 16);
-    memset(header->signature, 0, 16);
+    quint16 recvChecksum = header->checksum;
 
-    // 使用服务端的 Secret 重新计算一遍签名
+    memset(header->signature, 0, 16); // 签名位清零
+    header->checksum = 0;             // CRC位清零
+
+    // --- 2. 安全签名校验 (HMAC) ---
     QByteArray secret = getAppSecret();
     QByteArray signSource = data + secret;
     QByteArray expectedHash = QCryptographicHash::hash(signSource, QCryptographicHash::Sha256);
 
-    // 比对签名
     if (memcmp(receivedSign, expectedHash.constData(), 16) != 0) {
-        LOG_WARNING(QString("🚫 [拦截] 非法客户端或数据篡改! 来源: %1:%2")
-                        .arg(datagram.senderAddress().toString())
-                        .arg(datagram.senderPort()));
+        LOG_WARNING(QString("🚫 [拦截] 签名校验失败! 来源: %1").arg(datagram.senderAddress().toString()));
         return;
     }
 
-    memcpy(header->signature, receivedSign, 16);
-
-    // 3. CRC 校验
-    quint64 recvChecksum = header->checksum;
-    header->checksum = 0;
+    // --- 3. CRC 校验 ---
     if (calculateStandardCRC16(data) != recvChecksum) {
-        LOG_WARNING("CRC 校验失败");
+        LOG_WARNING(QString("❌ [丢弃] CRC 校验失败! 来源: %1").arg(datagram.senderAddress().toString()));
         return;
     }
 
