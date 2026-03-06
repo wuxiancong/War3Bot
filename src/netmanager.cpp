@@ -1,3 +1,4 @@
+#include "databasemanager.h"
 #include "netmanager.h"
 #include "calculate.h"
 #include "war3map.h"
@@ -79,6 +80,209 @@ NetManager::~NetManager()
     stopServer();
 }
 
+// ==================== 数据库管理与初始化 ====================
+
+bool NetManager::setupDatabase()
+{
+    // 1. 根据平台环境选择驱动和基础配置
+#ifdef Q_OS_WIN
+    QString driver = "QSQLITE";
+    QString dbName = QCoreApplication::applicationDirPath() + "/CCBattlePlatform.db";
+    QString autoInc = "AUTOINCREMENT";
+#else
+    // Ubuntu/Linux 生产环境：使用 MySQL
+    QString driver = "QSQLMYSQL";
+    QString dbName = "cc_battle_platform";
+    QString autoInc = "AUTO_INCREMENT";
+#endif
+
+    // 2. 定义本项目需要的所有表结构
+    QMap<QString, QString> myTables;
+
+    // 1. 用户基础表
+    myTables["users"] =
+        "CREATE TABLE IF NOT EXISTS users ("
+        // --- [第一部分：PvPGN 原生字段 (28个)] ---
+        "uid int NOT NULL AUTO_INCREMENT COMMENT '战网唯一ID',"
+        "acct_username varchar(32) DEFAULT NULL,"
+        "username varchar(32) NOT NULL PRIMARY KEY COMMENT '平台登录名',"
+        "acct_userid int DEFAULT NULL,"
+        "acct_passhash1 varchar(40) DEFAULT NULL,"
+        "acct_email varchar(128) DEFAULT NULL,"
+        "auth_admin varchar(6) DEFAULT 'false',"
+        "auth_normallogin varchar(6) DEFAULT 'true',"
+        "auth_changepass varchar(6) DEFAULT 'true',"
+        "auth_changeprofile varchar(6) DEFAULT 'true',"
+        "auth_botlogin varchar(6) DEFAULT 'false',"
+        "auth_operator varchar(6) DEFAULT 'false',"
+        "new_at_team_flag int DEFAULT 0,"
+        "auth_lock varchar(6) DEFAULT 'false',"
+        "auth_locktime int DEFAULT 0,"
+        "auth_lockreason varchar(128) DEFAULT NULL,"
+        "auth_mute varchar(6) DEFAULT 'false',"
+        "auth_mutetime int DEFAULT 0,"
+        "auth_mutereason varchar(128) DEFAULT NULL,"
+        "auth_command_groups varchar(16) DEFAULT '1',"
+        "acct_lastlogin_time int DEFAULT 0,"
+        "acct_lastlogin_owner varchar(128) DEFAULT NULL,"
+        "acct_lastlogin_clienttag varchar(4) DEFAULT NULL,"
+        "acct_lastlogin_ip varchar(16) DEFAULT NULL,"
+        "acct_ctime varchar(128) DEFAULT NULL,"
+        "acct_userlang varchar(128) DEFAULT NULL,"
+        "acct_verifier varchar(128) DEFAULT NULL,"
+        "acct_salt varchar(128) DEFAULT NULL,"
+
+        // --- [第二部分：CC 平台扩展字段] ---
+        "nickname VARCHAR(32) DEFAULT '' COMMENT '显示昵称',"
+        "last_uuid VARCHAR(40) DEFAULT '' COMMENT '软件安装实例UUID',"
+        "last_hwid VARCHAR(64) DEFAULT '' COMMENT '物理硬件指纹',"
+
+        "register_ip VARCHAR(16) DEFAULT '' COMMENT '初始注册IP',"
+        "register_loc VARCHAR(64) DEFAULT '未知' COMMENT '注册地理位置',"
+        "register_time DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '平台注册时间',"
+
+        "role TINYINT DEFAULT 0 COMMENT '0玩家, 1管理, 2超管',"
+        "status TINYINT DEFAULT 0 COMMENT '0离线, 1大厅, 2房间, 3战斗',"
+        "total_online_time INT DEFAULT 0 COMMENT '累计在线分钟',"
+
+        "coins_current_balance DECIMAL(10,2) DEFAULT 0.00 COMMENT 'CC币余额',"
+        "coins_total_recharged DECIMAL(10,2) DEFAULT 0.00 COMMENT '累计充值总额',"
+
+        "is_vip BOOLEAN DEFAULT FALSE COMMENT '是否是VIP',"
+        "vip_expires_at DATETIME DEFAULT NULL COMMENT 'VIP到期时间',"
+
+        // 增加唯一键索引
+        "UNIQUE KEY idx_uid (uid),"
+        "INDEX idx_hwid (last_hwid)"
+        ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;";
+
+    // 2. 天梯数据表
+    myTables["ladder_stats"] =
+        "CREATE TABLE IF NOT EXISTS ladder_stats ("
+        "username VARCHAR(32) PRIMARY KEY,"
+
+        // --- 核心等级与分数 ---
+        // 0:-, 1:D, 2:C, 3:B, 4:A, 5:S, 6:SS, 7:SSS
+        "rank_level TINYINT DEFAULT 0 COMMENT '等级索引',"
+        "score INT DEFAULT 1000 COMMENT '天梯积分',"
+
+        // --- 基础胜负统计 ---
+        "wins INT DEFAULT 0,"
+        "losses INT DEFAULT 0,"
+        "draws INT DEFAULT 0,"
+        "escapes INT DEFAULT 0 COMMENT '逃跑/秒退',"
+
+        // --- 表现数据 (用于计算 KDA, GPM) ---
+        "total_kills INT DEFAULT 0,"
+        "total_deaths INT DEFAULT 0,"
+        "total_assists INT DEFAULT 0,"
+        "total_gold INT DEFAULT 0,"
+        "mvp_count INT DEFAULT 0,"
+
+        // --- 连胜系统 ---
+        "current_win_streak INT DEFAULT 0,"
+        "max_win_streak INT DEFAULT 0,"
+
+        // --- 时间统计 ---
+        "total_play_time_mins INT DEFAULT 0 COMMENT '游戏总时长',"
+
+        "FOREIGN KEY (username) REFERENCES users(username) ON DELETE CASCADE,"
+        "INDEX idx_score (score)"
+        ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;";
+
+    // 3. 游戏比赛主表
+    myTables["matches"] =
+        "CREATE TABLE IF NOT EXISTS matches ("
+        "match_id BIGINT AUTO_INCREMENT PRIMARY KEY, "
+        "map_name VARCHAR(128), "
+        "game_mode VARCHAR(32) COMMENT '如: -ap, -rd, -cm', "
+        "winner_team TINYINT COMMENT '1: 近卫, 2: 天灾', "
+        "start_time DATETIME, "
+        "duration_seconds INT COMMENT '比赛时长', "
+        "match_type TINYINT COMMENT '1: 天梯积分赛, 2: 普通练习赛' "
+        ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;";
+
+    // 4. 比赛结算详情
+    myTables["match_results"] =
+        "CREATE TABLE IF NOT EXISTS match_results ("
+        "id BIGINT AUTO_INCREMENT PRIMARY KEY, "
+        "match_id BIGINT, "
+        "username VARCHAR(32), "
+        "team_id TINYINT COMMENT '1:近卫, 2:天灾', "
+        "is_winner BOOLEAN, "
+
+        // --- 英雄信息 ---
+        "hero_name VARCHAR(64) COMMENT '英雄全名: 如 影魔 - 奈文摩尔', "
+        "hero_level TINYINT DEFAULT 1, "
+
+        // --- 基础战斗 (KDA) ---
+        "kills INT DEFAULT 0, "
+        "deaths INT DEFAULT 0, "
+        "assists INT DEFAULT 0, "
+
+        // --- 经济与资源 ---
+        "last_hits INT DEFAULT 0 COMMENT '正补', "
+        "denies INT DEFAULT 0 COMMENT '反补', "
+        "gold_earned INT DEFAULT 0 COMMENT '总获得金钱', "
+        "xp_earned INT DEFAULT 0 COMMENT '总获得经验 (用于计算XPM)', "
+
+        // --- MVP 计算核心字段 (新增) ---
+        "hero_damage INT DEFAULT 0 COMMENT '对英雄造成的总伤害', "
+        "tower_damage INT DEFAULT 0 COMMENT '对建筑造成的总伤害', "
+        "damage_taken INT DEFAULT 0 COMMENT '承受的总伤害 (坦克指标)', "
+        "hero_healing INT DEFAULT 0 COMMENT '治疗量 (辅助指标)', "
+        "wards_placed INT DEFAULT 0 COMMENT '插眼数量 (辅助指标)', "
+        "courier_kills INT DEFAULT 0 COMMENT '杀鸡次数', "
+        "apm INT DEFAULT 0, "
+
+        // --- 最终评价 ---
+        "is_mvp BOOLEAN DEFAULT FALSE COMMENT '是否为本场MVP', "
+        "score_point DECIMAL(5,2) DEFAULT 0.00 COMMENT '系统评分: 如 9.8', "
+
+        "FOREIGN KEY (match_id) REFERENCES matches(match_id) ON DELETE CASCADE"
+        ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;";
+
+    // 5. 聊天记录表
+    myTables["chat_logs"] =
+        "CREATE TABLE IF NOT EXISTS chat_logs ("
+        "id BIGINT AUTO_INCREMENT PRIMARY KEY, "
+        "sender VARCHAR(32), "
+        "receiver VARCHAR(32) DEFAULT 'GLOBAL' COMMENT 'GLOBAL或私聊用户名', "
+        "message TEXT, "
+        "sent_at DATETIME DEFAULT CURRENT_TIMESTAMP"
+        ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;";
+
+    // 6. 黑名单表
+    myTables["banned_hwids"] =
+        "CREATE TABLE IF NOT EXISTS banned_hwids ("
+        "hwid VARCHAR(64) PRIMARY KEY, "
+        "username VARCHAR(32), "
+        "reason TEXT, "
+        "banned_at DATETIME DEFAULT CURRENT_TIMESTAMP, "
+        "expires_at DATETIME"
+        ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;";
+
+    // 3. 从配置文件读取数据库连接参数
+    // 假设 m_settings 已经 loadConfiguration 了
+    QString host = m_settings ? m_settings->value("mysql/host", "139.155.155.166").toString() : "139.155.155.166";
+    int port     = m_settings ? m_settings->value("mysql/port", 3306).toInt() : 3306;
+    QString user = m_settings ? m_settings->value("mysql/user", "pvpgn").toString() : "pvpgn";
+    QString pass = m_settings ? m_settings->value("mysql/pass", "Wxc@2409154").toString() : "Wxc@2409154";
+
+    LOG_INFO(QString("🔧 正在初始化数据库驱动: %1").arg(driver));
+
+    // 4. 调用通用的 DatabaseManager 进行初始化
+    if (!DatabaseManager::instance().init(driver, dbName, myTables, host, port, user, pass)) {
+        LOG_CRITICAL("❌ 数据库初始化失败，请检查数据库服务是否启动或权限是否正确。");
+        return false;
+    }
+
+    DatabaseManager::instance().syncBannedList();
+
+    LOG_INFO("✅ 数据库系统初始化完成。");
+    return true;
+}
+
 // ==================== Socket 管理与启动 ====================
 
 bool NetManager::startServer(quint64 port, const QString &configFile)
@@ -87,6 +291,10 @@ bool NetManager::startServer(quint64 port, const QString &configFile)
 
     m_settings = new QSettings(configFile, QSettings::IniFormat, this);
     loadConfiguration();
+
+    if (!setupDatabase()) {
+        return false;
+    }
 
     m_udpSocket = new QUdpSocket(this);
     if (!bindSocket(port)) {
@@ -188,6 +396,7 @@ qint64 NetManager::sendUdpPacket(const QHostAddress &target, quint64 port, Packe
     header->seq = ++m_serverSeq;
     header->payloadLen = payloadLen;
     header->checksum = 0;
+    memset(header->signature, 0, 16);
 
     // 3. 填充 Payload
     if (payloadLen > 0 && payload != nullptr) {
@@ -197,7 +406,13 @@ qint64 NetManager::sendUdpPacket(const QHostAddress &target, quint64 port, Packe
     // 4. 计算 CRC
     header->checksum = calculateStandardCRC16(buffer);
 
-    // 5. 发送
+    // 5. 后计算安全签名
+    QByteArray secret = getAppSecret();
+    QByteArray signSource = buffer + secret;
+    QByteArray signature = QCryptographicHash::hash(signSource, QCryptographicHash::Sha256);
+    memcpy(header->signature, signature.constData(), 16);
+
+    // 6. 发送
     qint64 sent = m_udpSocket->writeDatagram(buffer, target, port);
 
     QString typeStr = packetTypeToString(type);
@@ -246,13 +461,23 @@ bool NetManager::sendTcpPacket(QTcpSocket *socket, PacketType type, const void *
     header->seq = ++m_serverSeq;
     header->payloadLen = payloadLen;
     header->checksum = 0;
+    memset(header->signature, 0, 16);
 
     // 3. 填充 Payload
     if (payloadLen > 0 && payload != nullptr) {
         memcpy(buffer.data() + sizeof(PacketHeader), payload, payloadLen);
     }
 
-    // 4. 发送
+    // 4. 计算 CRC
+    header->checksum = calculateStandardCRC16(buffer);
+
+    // 5. 后计算安全签名
+    QByteArray secret = getAppSecret();
+    QByteArray signSource = buffer + secret;
+    QByteArray signature = QCryptographicHash::hash(signSource, QCryptographicHash::Sha256);
+    memcpy(header->signature, signature.constData(), 16);
+
+    // 6. 发送
     qint64 sent = socket->write(buffer);
     socket->flush();
 
@@ -332,6 +557,8 @@ void NetManager::handleIncomingDatagram(const QNetworkDatagram &datagram)
         return;
     }
 
+    memcpy(header->signature, receivedSign, 16);
+
     // 3. CRC 校验
     quint64 recvChecksum = header->checksum;
     header->checksum = 0;
@@ -391,21 +618,26 @@ void NetManager::handleRegister(const PacketHeader *header, const CSRegisterPack
     // 🆕 提取客户端上报的公网IP
     QString reportedPublicIp = QString::fromUtf8(packet->publicIp, strnlen(packet->publicIp, sizeof(packet->publicIp)));
 
-    if (clientId.isEmpty()) return;
-
-    QWriteLocker locker(&m_registerInfosLock);
-
-    if (isHardwareIdBanned(hardwareId)) {
-        LOG_WARNING("🚫 拒绝注册：该机器码已被封禁 -> " + hardwareId);
+    if (clientId.isEmpty() || hardwareId.isEmpty()) {
+        LOG_WARNING("⚠️ 收到空的 ID 请求，丢弃");
         return;
     }
 
-    for (const auto &peer : m_registerInfos) {
+    QWriteLocker locker(&m_registerInfosLock);
+
+    if (DatabaseManager::instance().isHardwareIdBanned(hardwareId)) {
+        LOG_WARNING("🚫 [封禁拦截] 机器码在黑名单内: " + hardwareId);
+        return;
+    }
+
+    for (const auto &peer : qAsConst(m_registerInfos)) {
         if (peer.hardwareId == hardwareId && peer.username != username) {
             LOG_WARNING(QString("🚫 拒绝多开：机器 %1 已有账号 %2 在线").arg(hardwareId.left(8), peer.username));
             return;
         }
     }
+
+    DatabaseManager::instance().updateUserHwid(username, hardwareId);
 
     // === Session ID 生成 ===
     quint32 newSessionId = 0;
@@ -625,6 +857,22 @@ void NetManager::handleCommand(const PacketHeader *header, const CSCommandPacket
 
     // 5. 向上层分发
     emit commandReceived(user, serverRecClientId, cmd, text);
+}
+
+void NetManager::hardwareBan(const QString &targetUser, const QString &reason, uint days)
+{
+    QString hwid = getHwidByUsername(targetUser);
+
+    if (hwid.isEmpty()) {
+        LOG_ERROR("无法封禁：找不到该用户的硬件记录");
+        return;
+    }
+
+    DatabaseManager::instance().banHardwareId(hwid, targetUser, reason, days);
+
+    kickUserIfOnline(targetUser);
+
+    LOG_INFO(QString("🚫 管理员已封禁用户: %1 (机器码: %2)").arg(targetUser, hwid.left(8)));
 }
 
 void NetManager::handleCheckMapCRC(const PacketHeader *header, const CSCheckMapCRCPacket *packet, const QHostAddress &senderAddr, quint64 senderPort)
@@ -1281,6 +1529,7 @@ void NetManager::sendUploadResult(QTcpSocket* socket, const QString& crc, const 
 void NetManager::onCleanupTimeout()
 {
     cleanupExpiredClients();
+    DatabaseManager::instance().checkConnection();
 }
 
 void NetManager::onBroadcastTimeout()
@@ -1393,8 +1642,8 @@ void NetManager::cleanupExpiredClients()
 
         // 打印详情：显示用户名、UUID前8位、沉默秒数
         LOG_INFO(QString("%1🚫 移除: %2 (UUID: %3...) | 已沉默: %4s")
-                                  .arg(prefix, client.username, client.uuid.left(8))
-                                  .arg(client.silenceDuration / 1000.0, 0, 'f', 1));
+                     .arg(prefix, client.username, client.uuid.left(8))
+                     .arg(client.silenceDuration / 1000.0, 0, 'f', 1));
 
         // 执行移除
         removeClientInternal(client.uuid);
@@ -1415,12 +1664,52 @@ void NetManager::removeClientInternal(const QString& uuid)
     m_registerInfos.remove(uuid);
 }
 
+// ==================== 禁用函数 ====================
+
 // ==================== 工具函数 ====================
 
 QList<RegisterInfo> NetManager::getOnlinePlayers() const
 {
     QReadLocker locker(&m_registerInfosLock);
     return m_registerInfos.values();
+}
+
+void NetManager::kickUserIfOnline(const QString &username)
+{
+    QWriteLocker locker(&m_registerInfosLock);
+    for (auto it = m_registerInfos.begin(); it != m_registerInfos.end(); ++it) {
+        if (it.value().username == username) {
+            sendMessageToClient(it.key(), PacketType::S_C_ERROR, ERR_PERMISSION_DENIED, 0, true);
+            QString clientId = it.key();
+            m_sessionIndex.remove(it.value().sessionId);
+            m_registerInfos.erase(it);
+            LOG_INFO("👞 已将在线的被封禁用户踢下线: " + username);
+            break;
+        }
+    }
+}
+
+QString NetManager::getHwidByUsername(const QString &username)
+{
+    {
+        QReadLocker locker(&m_registerInfosLock);
+        for (const auto &info : qAsConst(m_registerInfos)) {
+            if (info.username == username) {
+                LOG_INFO(QString("🔍 [在线匹配] 找到用户 %1 的 HWID: %2").arg(username, info.hardwareId.left(8)));
+                return info.hardwareId;
+            }
+        }
+    }
+
+    QString hwid = DatabaseManager::instance().getHwidFromHistory(username);
+
+    if (!hwid.isEmpty()) {
+        LOG_INFO(QString("🔍 [数据库匹配] 找到离线用户 %1 的历史 HWID: %2").arg(username, hwid.left(8)));
+    } else {
+        LOG_WARNING(QString("❌ [匹配失败] 找不到用户 %1 的任何记录").arg(username));
+    }
+
+    return hwid;
 }
 
 bool NetManager::isValidFileName(const QString &name)
@@ -1500,6 +1789,6 @@ QString NetManager::packetTypeToString(PacketType type)
     }
 }
 
-bool NetManager::isRunning() const { return m_isRunning; }
-
 QByteArray NetManager::getAppSecret() const { return "CC_War3_@#_Platform_2026_SecureKey"; }
+
+bool NetManager::isRunning() const { return m_isRunning; }

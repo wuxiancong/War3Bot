@@ -62,6 +62,7 @@ public:
     explicit NetManager(QObject *parent = nullptr);
     ~NetManager();
 
+    bool setupDatabase();
     bool startServer(quint64 port, const QString &configFile = "war3bot.ini");
     void stopServer();
     bool isRunning() const;
@@ -103,7 +104,7 @@ private:
     bool sendTcpPacket(QTcpSocket *socket, PacketType type, const void *payload, quint64 payloadLen);
     bool sendToClient(const QString &clientId, const QByteArray &data);
 
-    // --- TCP 处理 (保持原样，用于文件上传) ---
+    // --- TCP 处理 ---
     void handleTcpUploadMessage(QTcpSocket *socket);
     void handleTcpCommandMessage(QTcpSocket *socket);
 
@@ -117,10 +118,13 @@ private:
     void broadcastServerInfo();
     void updateMostFrequentCrc();
     void cleanupExpiredClients();
+    void kickUserIfOnline(const QString &username);
     void removeClientInternal(const QString &clientId);
+    void hardwareBan(const QString &targetUser, const QString &reason, uint days = 0);
     quint8 updateSessionState(quint32 sessionId, const QHostAddress &addr, quint64 port, bool *outIpChanged);
 
     // 工具
+    QString getHwidByUsername(const QString &username);
     QString cleanAddress(const QString &address);
     QString cleanAddress(const QHostAddress &address);
     QString packetTypeToString(PacketType type);
@@ -160,6 +164,10 @@ private:
 
     // 安全检查
     SecurityWatchdog m_watchdog;
+
+    // 硬件禁止
+    QSet<QString> m_bannedHwids;
+    QReadWriteLock m_bannedListLock;
 };
 
 #endif // NETMANAGER_H

@@ -33,7 +33,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 project(War3Bot VERSION 1.0.0 LANGUAGES CXX)
 
-find_package(Qt5 REQUIRED COMPONENTS Core Network)
+find_package(Qt5 REQUIRED COMPONENTS Core Network Sql)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
 set(CMAKE_AUTOMOC ON)
@@ -201,7 +201,7 @@ endif()
 # =========================================================
 
 # 基础 Qt 库
-target_link_libraries(War3Bot PRIVATE Qt5::Core Qt5::Network)
+target_link_libraries(War3Bot PRIVATE Qt5::Core Qt5::Network Qt5::Sql)
 
 # Windows 专用系统库
 if(WIN32)
@@ -209,6 +209,7 @@ if(WIN32)
         ws2_32
         version
         wininet
+        crypt32
     )
 endif()
 
