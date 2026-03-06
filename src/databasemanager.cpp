@@ -21,32 +21,44 @@ bool DatabaseManager::init(const QString &driver, const QString &dbName,
                            const QString &host, int port,
                            const QString &user, const QString &pass)
 {
-    // 1. 动态设置驱动
-    m_db = QSqlDatabase::addDatabase(driver);
+    const QString connName = QSqlDatabase::defaultConnection;
+
+    if (QSqlDatabase::contains(connName)) {
+        m_db = QSqlDatabase();
+        QSqlDatabase::removeDatabase(connName);
+    }
+
+    m_db = QSqlDatabase::addDatabase(driver, connName);
 
     if (driver == "QSQLITE") {
         m_db.setDatabaseName(dbName);
     } else {
-        // MySQL 逻辑
         m_db.setHostName(host);
         m_db.setPort(port);
         m_db.setUserName(user);
         m_db.setPassword(pass);
 
-        // 先连服务器创建库 (MySQL 特有步骤)
-        if (!m_db.open()) return false;
-        QSqlQuery query;
+        if (!m_db.open()) {
+            LOG_CRITICAL(QString("❌ [DB] 连接服务器失败: %1").arg(m_db.lastError().text()));
+            return false;
+        }
+
+        QSqlQuery query(m_db);
         query.exec(QString("CREATE DATABASE IF NOT EXISTS `%1` DEFAULT CHARACTER SET utf8mb4").arg(dbName));
-        m_db.setDatabaseName(dbName);
+
         m_db.close();
+        m_db.setDatabaseName(dbName);
+
+        if (!m_db.open()) {
+            LOG_CRITICAL(QString("❌ [DB] 切换数据库失败: %1").arg(m_db.lastError().text()));
+            return false;
+        }
     }
 
-    if (!m_db.open()) {
-        LOG_CRITICAL(QString("❌ 数据库打开失败: %1").arg(m_db.lastError().text()));
+    if (!m_db.isOpen() && !m_db.open()) {
         return false;
     }
 
-    // 2. 初始化所有表结构
     return executeSchema(tables);
 }
 

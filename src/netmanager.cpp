@@ -274,7 +274,6 @@ bool NetManager::setupDatabase()
     // 4. 调用通用的 DatabaseManager 进行初始化
     if (!DatabaseManager::instance().init(driver, dbName, myTables, host, port, user, pass)) {
         LOG_CRITICAL("❌ 数据库初始化失败，请检查数据库服务是否启动或权限是否正确。");
-        return false;
     }
 
     DatabaseManager::instance().syncBannedList();
