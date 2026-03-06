@@ -538,26 +538,29 @@ void NetManager::handleIncomingDatagram(const QNetworkDatagram &datagram)
         return;
     }
 
-    char receivedSign[16];
-    memcpy(receivedSign, header->signature, 16);
-    quint16 recvChecksum = header->checksum;
+    quint16 receivedChecksum = header->checksum;
+    char receivedSignature[16];
+    memcpy(receivedSignature, header->signature, 16);
 
     memset(header->signature, 0, 16); // 签名位清零
     header->checksum = 0;             // CRC位清零
 
     // --- 2. 安全签名校验 (HMAC) ---
     QByteArray secret = getAppSecret();
-    QByteArray signSource = data + secret;
-    QByteArray expectedHash = QCryptographicHash::hash(signSource, QCryptographicHash::Sha256);
+    QCryptographicHash hasher(QCryptographicHash::Sha256);
+    hasher.addData(data);
+    hasher.addData(secret);
+    QByteArray expectedHash = hasher.result();
 
-    if (memcmp(receivedSign, expectedHash.constData(), 16) != 0) {
-        LOG_WARNING(QString("🚫 [拦截] 签名校验失败! 来源: %1").arg(datagram.senderAddress().toString()));
+    if (memcmp(receivedSignature, expectedHash.constData(), 16) != 0) {
+        LOG_WARNING("🚫 签名校验失败!");
         return;
     }
 
     // --- 3. CRC 校验 ---
-    if (calculateStandardCRC16(data) != recvChecksum) {
-        LOG_WARNING(QString("❌ [丢弃] CRC 校验失败! 来源: %1").arg(datagram.senderAddress().toString()));
+    memcpy(header->signature, receivedSignature, 16);
+    if (calculateStandardCRC16(data) != receivedChecksum) {
+        LOG_WARNING("❌ CRC 校验失败!");
         return;
     }
 

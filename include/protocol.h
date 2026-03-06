@@ -55,7 +55,7 @@ enum ErrorCode : quint8 {
     ERR_NO_BOTS_AVAILABLE           = 9,
     ERR_CREATE_FAILED               = 10,
     ERR_NOT_ENOUGH_PLAYERS          = 11,
-    MSG_HOST_UNHOST_GAME              = 12
+    MSG_HOST_UNHOST_GAME            = 12
 };
 
 enum MessageCode : quint8 {
