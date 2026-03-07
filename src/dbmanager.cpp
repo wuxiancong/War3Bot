@@ -4,6 +4,7 @@
 #include <QDateTime>
 #include <QSqlError>
 #include <QSqlQuery>
+#include <QTcpSocket>
 
 // --- 日志辅助工具 ---
 static int g_indent = 0;
@@ -70,6 +71,23 @@ bool DbManager::init(const QString &driver, const QString &dbName,
         LOG_TREE("路径: " + dbName, false, true);
     } else {
         LOG_TREE(QString("环境: Linux/MySQL (%1:%2)").arg(host).arg(port));
+
+        LOG_TREE(QString("🌐 [网络预检] 正在探测远程端口 %1:%2 ...").arg(host).arg(port));
+        QTcpSocket probeSocket;
+        QElapsedTimer timer;
+        timer.start();
+
+        probeSocket.connectToHost(host, port);
+        if (!probeSocket.waitForConnected(3000)) {
+            LOG_TREE("❌ [致命] 网络连接探测失败！原因: 目标端口不可达或被防火墙拦截", true);
+            LOG_TREE("│   建议检查: 1. 云服务器安全组 3306 端口是否放行; 2. 服务器宝塔/ufw防火墙是否开启", true, true);
+            return false;
+        }
+        LOG_TREE(QString("│   └── ✅ 端口响应成功 (耗时: %1 ms)").arg(timer.elapsed()));
+        probeSocket.disconnectFromHost();
+
+        LOG_TREE("正在建立数据库物理通道 (发送握手信息)...");
+
         m_db.setHostName(host);
         m_db.setPort(port);
         m_db.setUserName(user);
@@ -94,7 +112,8 @@ bool DbManager::init(const QString &driver, const QString &dbName,
 
     // 3. 打开业务连接
     if (!m_db.open()) {
-        LOG_TREE("❌ 最终连接打开失败: " + m_db.lastError().text(), true, true);
+        LOG_TREE("❌ [认证/权限错误] 物理连接失败: " + m_db.lastError().text(), true, true);
+        LOG_TREE("│   提示: 端口已通但无法登录，请检查用户名/密码，或 MySQL 远程访问权限(GRANT)", true, true);
         return false;
     }
     LOG_TREE("✅ 数据库物理通道连接成功");
