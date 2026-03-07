@@ -69,7 +69,7 @@ struct PacketHeader {
     quint8  version;
     quint8  command;
     quint32 sessionId;
-    quint32 seq;
+    quint64 seq;
     quint16 payloadLen;
     quint16 checksum;
     char    signature[16];

@@ -46,7 +46,7 @@ struct RegisterInfo {
     QString publicIp;
     quint64 publicPort;
     quint32 sessionId;
-    quint32 lastSeq;
+    quint64 lastSeq;
     quint64 lastSeen;
     quint64 firstSeen;
     QString crcToken;
@@ -160,7 +160,7 @@ private:
 
     // Session 管理
     quint32 m_nextSessionId;
-    quint32 m_serverSeq;
+    quint64 m_serverSeq;
 
     // 安全检查
     SecurityWatchdog m_watchdog;
