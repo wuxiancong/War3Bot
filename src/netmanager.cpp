@@ -84,22 +84,28 @@ NetManager::~NetManager()
 
 bool NetManager::setupDatabase()
 {
+    LOG_INFO("│   ├── 🛠️ [setupDatabase] 准备数据库配置...");
+
     // 1. 根据平台环境选择驱动和基础配置
+    QString driver, dbName, autoInc;
 #ifdef Q_OS_WIN
-    QString driver = "QSQLITE";
-    QString dbName = QCoreApplication::applicationDirPath() + "/cc_battle_platform.db";
-    QString autoInc = "AUTOINCREMENT";
+    driver = "QSQLITE";
+    dbName = QCoreApplication::applicationDirPath() + "/cc_battle_platform.db";
+    autoInc = "AUTOINCREMENT";
+    LOG_INFO("│   │   ├── 💻 检测到运行环境: Windows (使用 SQLite)");
+    LOG_INFO("│   │   └── 📄 数据库文件路径: " + dbName);
 #else
-    // Ubuntu/Linux 生产环境：使用 MySQL
-    QString driver = "QSQLMYSQL";
-    QString dbName = "cc_battle_platform";
-    QString autoInc = "AUTO_INCREMENT";
+    driver = "QSQLMYSQL";
+    dbName = "cc_battle_platform";
+    autoInc = "AUTO_INCREMENT";
+    LOG_INFO("│   │   ├── 🐧 检测到运行环境: Linux (使用 MySQL)");
+    LOG_INFO("│   │   └── 🗄️ 数据库名称: " + dbName);
 #endif
 
     // 2. 定义本项目需要的所有表结构
     QMap<QString, QString> myTables;
 
-    // 1. 用户基础表
+    // a. 用户基础表
     myTables["users"] =
         "CREATE TABLE IF NOT EXISTS users ("
         // --- [第一部分：PvPGN 原生字段 (28个)] ---
@@ -156,7 +162,7 @@ bool NetManager::setupDatabase()
         "INDEX idx_hwid (last_hwid)"
         ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;";
 
-    // 2. 天梯数据表
+    // b. 天梯数据表
     myTables["ladder_stats"] =
         "CREATE TABLE IF NOT EXISTS ladder_stats ("
         "username VARCHAR(32) PRIMARY KEY,"
@@ -190,7 +196,7 @@ bool NetManager::setupDatabase()
         "INDEX idx_score (score)"
         ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;";
 
-    // 3. 游戏比赛主表
+    // c. 游戏比赛主表
     myTables["matches"] =
         "CREATE TABLE IF NOT EXISTS matches ("
         "match_id BIGINT AUTO_INCREMENT PRIMARY KEY, "
@@ -202,7 +208,7 @@ bool NetManager::setupDatabase()
         "match_type TINYINT COMMENT '1: 天梯积分赛, 2: 普通练习赛' "
         ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;";
 
-    // 4. 比赛结算详情
+    // d. 比赛结算详情
     myTables["match_results"] =
         "CREATE TABLE IF NOT EXISTS match_results ("
         "id BIGINT AUTO_INCREMENT PRIMARY KEY, "
@@ -242,7 +248,7 @@ bool NetManager::setupDatabase()
         "FOREIGN KEY (match_id) REFERENCES matches(match_id) ON DELETE CASCADE"
         ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;";
 
-    // 5. 聊天记录表
+    // e. 聊天记录表
     myTables["chat_logs"] =
         "CREATE TABLE IF NOT EXISTS chat_logs ("
         "id BIGINT AUTO_INCREMENT PRIMARY KEY, "
@@ -252,7 +258,7 @@ bool NetManager::setupDatabase()
         "sent_at DATETIME DEFAULT CURRENT_TIMESTAMP"
         ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;";
 
-    // 6. 黑名单表
+    // f. 黑名单表
     myTables["banned_hwids"] =
         "CREATE TABLE IF NOT EXISTS banned_hwids ("
         "hwid VARCHAR(64) PRIMARY KEY, "
@@ -262,23 +268,32 @@ bool NetManager::setupDatabase()
         "expires_at DATETIME"
         ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;";
 
-    // 3. 从配置文件读取数据库连接参数
-    // 假设 m_settings 已经 loadConfiguration 了
+        LOG_INFO(QString("│   │   ├── 📝 已加载表结构定义: %1 张表").arg(myTables.size()));
+
+    // 3. 读取连接参数
     QString host = m_settings ? m_settings->value("mysql/host", "139.155.155.166").toString() : "139.155.155.166";
     int port     = m_settings ? m_settings->value("mysql/port", 3306).toInt() : 3306;
     QString user = m_settings ? m_settings->value("mysql/user", "pvpgn").toString() : "pvpgn";
     QString pass = m_settings ? m_settings->value("mysql/pass", "Wxc@2409154").toString() : "Wxc@2409154";
 
-    LOG_INFO(QString("🔧 正在初始化数据库驱动: %1").arg(driver));
-
-    // 4. 调用通用的 DatabaseManager 进行初始化
-    if (!DatabaseManager::instance().init(driver, dbName, myTables, host, port, user, pass)) {
-        LOG_CRITICAL("❌ 数据库初始化失败，请检查数据库服务是否启动或权限是否正确。");
+    if (driver == "QSQLMYSQL") {
+        LOG_INFO(QString("│   │   ├── 🌐 远程服务器: %1:%2").arg(host).arg(port));
+        LOG_INFO(QString("│   │   └── 👤 数据库用户: %1").arg(user));
     }
 
+    // 4. 调用通用的 DatabaseManager 进行初始化
+    LOG_INFO(QString("│   │   └── 🚀 移交权限至 DatabaseManager 进行物理初始化..."));
+
+    if (!DatabaseManager::instance().init(driver, dbName, myTables, host, port, user, pass)) {
+        LOG_CRITICAL("│   ├── ❌ [错误] 数据库初始化关键环节失败！");
+        return false;
+    }
+
+    // 5. 后续同步操作
+    LOG_INFO("│   ├── ♻️  正在执行数据预热与同步...");
     DatabaseManager::instance().syncBannedList();
 
-    LOG_INFO("✅ 数据库系统初始化完成。");
+    LOG_INFO("│   └── ✅ 数据库环境部署就绪");
     return true;
 }
 
@@ -288,35 +303,53 @@ bool NetManager::startServer(quint64 port, const QString &configFile)
 {
     if (m_isRunning) return true;
 
+    // 1. 根节点：启动流程
+    LOG_INFO("📂 [NetManager] 开始全系统启动流程...");
+
+    // 2. 配置文件加载
+    LOG_INFO(QString("├── 📄 正在读取配置文件: %1").arg(configFile));
     m_settings = new QSettings(configFile, QSettings::IniFormat, this);
     loadConfiguration();
+    LOG_INFO("│   └── ✅ 配置信息已载入内存");
 
+    // 3. 进入数据库核心初始化 (这里是你的核心需求)
+    LOG_INFO("├── 🔧 启动数据库子系统...");
     if (!setupDatabase()) {
+        LOG_CRITICAL("│   └── ❌ 数据库初始化异常中断，停止服务器启动！");
         return false;
     }
 
+    // 4. UDP 网络配置
+    LOG_INFO(QString("├── 📡 正在配置 UDP 链路 (目标端口: %1)...").arg(port));
     m_udpSocket = new QUdpSocket(this);
     if (!bindSocket(port)) {
+        LOG_ERROR("│   └── ❌ UDP 端口绑定失败");
         cleanupResources();
         return false;
     }
     setupSocketOptions();
+    LOG_INFO(QString("│   └── ✅ UDP 链路就绪: %1").arg(m_udpSocket->localPort()));
 
     connect(m_udpSocket, &QUdpSocket::readyRead, this, &NetManager::onUDPReadyRead);
 
+    // 5. TCP 监听配置
+    LOG_INFO(QString("├── 🤝 正在开启 TCP 服务监听 (端口: %1)...").arg(port));
     m_tcpServer = new QTcpServer(this);
     if (!m_tcpServer->listen(QHostAddress::AnyIPv4, port)) {
-        LOG_ERROR(QString("❌ TCP 启动失败: %1").arg(m_tcpServer->errorString()));
+        LOG_ERROR(QString("│   └── ❌ TCP 监听失败: %1").arg(m_tcpServer->errorString()));
         cleanupResources();
         return false;
     }
     connect(m_tcpServer, &QTcpServer::newConnection, this, &NetManager::onNewTcpConnection);
+    LOG_INFO("│   └── ✅ TCP 服务已在线");
 
+    // 6. 最终完成
     m_listenPort = m_udpSocket->localPort();
     m_isRunning = true;
     setupTimers();
 
-    LOG_INFO(QString("✅ 服务端启动 - UDP/TCP端口: %1").arg(m_listenPort));
+    LOG_INFO(QString("└── 🎉 服务端启动圆满完成 - UDP/TCP 端口: %1").arg(m_listenPort));
+
     emit serverStarted(port);
     return true;
 }

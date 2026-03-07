@@ -378,6 +378,7 @@ void Client::onTcpReadyRead()
 
         QByteArray headerData = m_tcpSocket->peek(4);
         if ((quint8)headerData[0] != BNET_HEADER) {
+            LOG_ERROR(QString("⚠️ [网络] 发现非法协议头: 0x%1，跳过该字节").arg((quint8)headerData[0], 2, 16, QChar('0')));
             m_tcpSocket->read(1);
             continue;
         }
@@ -386,6 +387,8 @@ void Client::onTcpReadyRead()
         QDataStream lenStream(headerData.mid(2, 2));
         lenStream.setByteOrder(QDataStream::LittleEndian);
         lenStream >> length;
+        LOG_DEBUG(QString("📥 [TCP流] 捕获包头: ID=0x%1, 声明长度=%2, 当前缓冲区=%3")
+                      .arg((quint8)headerData[1], 2, 16, QChar('0')).arg(length).arg(m_tcpSocket->bytesAvailable()));
 
         if (m_tcpSocket->bytesAvailable() < length) return;
 
@@ -1893,12 +1896,18 @@ void Client::sendAuthInfo()
 void Client::handleAuthCheck(const QByteArray &data)
 {
     // 1. 打印根节点
-    LOG_INFO("🔍 [Auth Check] 处理认证挑战 (0x51)");
+    LOG_INFO(QString("🔍 [Auth Check] 处理认证挑战 (0x51) | 有效载荷长度: %1").arg(data.size()));
 
-    if (data.size() < 24) {
-        LOG_ERROR(QString("   └─ ❌ [错误] 包长度不足: %1").arg(data.size()));
-        LOG_INFO("      [原始数据]:");
-        dumpPacket(data);
+    dumpPacket(data);
+
+    if (data.size() < 20) {
+        LOG_CRITICAL("❌ [协议错误] 服务端返回的数据过短，无法解析 Token。");
+        LOG_CRITICAL("👉 可能原因: 1. 服务器拒绝了你的 Version(26) 或 ProductID(W3XP); 2. 你的 IP 被服务器防火墙拉黑。");
+
+        if (data.size() >= 4) {
+            quint32 errType = qFromLittleEndian<quint32>(data.left(4).data());
+            LOG_ERROR(QString("   └─ 服务端返回 LogonType: 0x%1 (0 表示旧版认证或失败)").arg(errType, 8, 16, QChar('0')));
+        }
         return;
     }
 
