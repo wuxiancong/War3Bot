@@ -442,6 +442,7 @@ public:
     bool bindToRandomPort();                            // 绑定随机UDP端口
     bool isBlackListedPort(quint16 port);               // 检查端口黑名单
     QString getBnetPacketName(BNETPacketID id);         // 获取对应的包名
+    void dumpPacket(const QByteArray &bytes);
     void writeIpToStreamWithLog(QDataStream &out, const QHostAddress &ip);
     void setBotDisplayName(const QString &name) { m_botDisplayName = name; }
     const QMap<quint8, PlayerData> &getPlayers() const { return m_players; }

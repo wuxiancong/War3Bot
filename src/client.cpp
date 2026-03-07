@@ -1897,6 +1897,8 @@ void Client::handleAuthCheck(const QByteArray &data)
 
     if (data.size() < 24) {
         LOG_ERROR(QString("   └─ ❌ [错误] 包长度不足: %1").arg(data.size()));
+        LOG_INFO("      [原始数据]:");
+        dumpPacket(data);
         return;
     }
 
@@ -1911,6 +1913,14 @@ void Client::handleAuthCheck(const QByteArray &data)
     QByteArray mpqFileName = data.mid(offset, strEnd - offset);
     offset = strEnd + 1;
     strEnd = data.indexOf('\0', offset);
+    if (strEnd == -1) {
+        if (offset < data.size()) {
+            strEnd = data.size();
+        } else {
+            LOG_ERROR("   └─ ❌ [错误] 无法找到 Formula String");
+            return;
+        }
+    }
     QByteArray formulaString = data.mid(offset, strEnd - offset);
     int mpqNumber = extractMPQNumber(mpqFileName.constData());
 
@@ -3379,6 +3389,22 @@ void Client::checkAllPlayersLoaded()
 // =========================================================
 // 13. 辅助工具函数
 // =========================================================
+
+void Client::dumpPacket(const QByteArray &bytes)
+{
+    QString hex;
+    QString ascii;
+    for (int i = 0; i < bytes.size(); ++i) {
+        uchar c = static_cast<uchar>(bytes.at(i));
+        hex += QString("%1 ").arg(c, 2, 16, QChar('0')).toUpper();
+        ascii += (c >= 32 && c <= 126) ? QChar(c) : QChar('.');
+        if ((i + 1) % 16 == 0 || i == bytes.size() - 1) {
+            int padding = (15 - (i % 16)) * 3;
+            LOG_INFO(QString("      %1 %2 %3").arg(hex.leftJustified(hex.size() + padding), "|", ascii));
+            hex.clear(); ascii.clear();
+        }
+    }
+};
 
 bool Client::bindToRandomPort()
 {
