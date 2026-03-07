@@ -267,7 +267,7 @@ bool NetManager::setupDatabase()
         LOG_INFO(QString("│   │   ├── 📝 已加载表结构定义: %1 张表").arg(myTables.size()));
 
     // 3. 读取连接参数
-    QString host = m_settings ? m_settings->value("mysql/host", "139.155.155.166").toString() : "139.155.155.166";
+    QString host = m_settings ? m_settings->value("mysql/host", "127.0.0.1").toString() : "127.0.0.1";
     int port     = m_settings ? m_settings->value("mysql/port", 3306).toInt() : 3306;
     QString user = m_settings ? m_settings->value("mysql/user", "pvpgn").toString() : "pvpgn";
     QString pass = m_settings ? m_settings->value("mysql/pass", "Wxc@2409154").toString() : "Wxc@2409154";

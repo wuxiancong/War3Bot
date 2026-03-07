@@ -240,7 +240,7 @@ int main(int argc, char *argv[]) {
             out << "\n[log]\nlevel=info\nenable_console=true\nlog_file=/var/log/War3Bot/war3bot.log\nmax_size=10485760\nbackup_count=5\n";
             out << "\n[bnet]\nserver=127.0.0.1\nport=6112\npassword=wxc123\n";
             out << "\n[bots]\nlist_number=1\ninit_count=10\nauto_generate=false\ndisplay_name=CC.Dota.XXX\n";
-            out << "\n[mysql]\nhost=139.155.155.166\nport=3306\nuser=pvpgn\npass=Wxc@2409154\n";
+            out << "\n[mysql]\nhost=127.0.0.1\nport=3306\nuser=pvpgn\npass=Wxc@2409154\n";
             defaultConfig.close();
             configFile = writePath;
             LOG_INFO(QString("✅ 已创建默认配置文件: %1").arg(configFile));
