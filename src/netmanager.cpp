@@ -308,11 +308,10 @@ bool NetManager::startServer(quint64 port, const QString &configFile)
     loadConfiguration();
     LOG_INFO("│   └── ✅ 配置信息已载入内存");
 
-    // 3. 进入数据库核心初始化 (这里是你的核心需求)
+    // 3. 进入数据库核心初始化
     LOG_INFO("├── 🔧 启动数据库子系统...");
     if (!setupDatabase()) {
-        LOG_CRITICAL("│   └── ❌ 数据库初始化异常中断，停止服务器启动！");
-        return false;
+        LOG_CRITICAL("│   └── ❌ 数据库初始化异常中断，数据无法保存到服务器！");
     }
 
     // 4. UDP 网络配置
