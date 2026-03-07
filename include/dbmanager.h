@@ -1,16 +1,16 @@
-#ifndef DATABASEMANAGER_H
-#define DATABASEMANAGER_H
+#ifndef DBMANAGER_H
+#define DBMANAGER_H
 
 #include <QSet>
 #include <QtSql>
 #include <QObject>
 #include <QReadWriteLock>
 
-class DatabaseManager : public QObject
+class DbManager : public QObject
 {
     Q_OBJECT
 public:
-    static DatabaseManager &instance();
+    static DbManager &instance();
 
     /**
      * @brief 通用初始化函数
@@ -38,15 +38,15 @@ public:
     void checkConnection();
 
 private:
-    explicit DatabaseManager(QObject *parent = nullptr);
-    ~DatabaseManager();
+    explicit DbManager(QObject *parent = nullptr);
+    ~DbManager();
 
-    DatabaseManager(const DatabaseManager&) = delete;
-    DatabaseManager& operator=(const DatabaseManager&) = delete;
+    DbManager(const DbManager&) = delete;
+    DbManager& operator=(const DbManager&) = delete;
 
     QSqlDatabase m_db;
     QSet<QString> m_bannedCache;
     QReadWriteLock m_cacheLock;
 };
 
-#endif // DATABASEMANAGER_H
+#endif // DBMANAGER_H

@@ -1,4 +1,4 @@
-#include "databasemanager.h"
+#include "dbmanager.h"
 #include "netmanager.h"
 #include "calculate.h"
 #include "war3map.h"
@@ -87,19 +87,15 @@ bool NetManager::setupDatabase()
     LOG_INFO("│   ├── 🛠️ [setupDatabase] 准备数据库配置...");
 
     // 1. 根据平台环境选择驱动和基础配置
-    QString driver, dbName, autoInc;
 #ifdef Q_OS_WIN
-    driver = "QSQLITE";
-    dbName = QCoreApplication::applicationDirPath() + "/cc_battle_platform.db";
-    autoInc = "AUTOINCREMENT";
-    LOG_INFO("│   │   ├── 💻 检测到运行环境: Windows (使用 SQLite)");
-    LOG_INFO("│   │   └── 📄 数据库文件路径: " + dbName);
+    QString driver = "QSQLITE";
+    QString dbName = QCoreApplication::applicationDirPath() + "/platform.db";
+    QString autoInc = "AUTOINCREMENT";
 #else
-    driver = "QSQLMYSQL";
-    dbName = "cc_battle_platform";
-    autoInc = "AUTO_INCREMENT";
-    LOG_INFO("│   │   ├── 🐧 检测到运行环境: Linux (使用 MySQL)");
-    LOG_INFO("│   │   └── 🗄️ 数据库名称: " + dbName);
+    // Ubuntu/Linux 生产环境：驱动名称 -> QMYSQL
+    QString driver = "QMYSQL";
+    QString dbName = "platform";
+    QString autoInc = "AUTO__INCREMENT";
 #endif
 
     // 2. 定义本项目需要的所有表结构
@@ -281,17 +277,17 @@ bool NetManager::setupDatabase()
         LOG_INFO(QString("│   │   └── 👤 数据库用户: %1").arg(user));
     }
 
-    // 4. 调用通用的 DatabaseManager 进行初始化
-    LOG_INFO(QString("│   │   └── 🚀 移交权限至 DatabaseManager 进行物理初始化..."));
+    // 4. 调用通用的 DbManager 进行初始化
+    LOG_INFO(QString("│   │   └── 🚀 移交权限至 DbManager 进行物理初始化..."));
 
-    if (!DatabaseManager::instance().init(driver, dbName, myTables, host, port, user, pass)) {
+    if (!DbManager::instance().init(driver, dbName, myTables, host, port, user, pass)) {
         LOG_CRITICAL("│   ├── ❌ [错误] 数据库初始化关键环节失败！");
         return false;
     }
 
     // 5. 后续同步操作
     LOG_INFO("│   ├── ♻️  正在执行数据预热与同步...");
-    DatabaseManager::instance().syncBannedList();
+    DbManager::instance().syncBannedList();
 
     LOG_INFO("│   └── ✅ 数据库环境部署就绪");
     return true;
@@ -674,7 +670,7 @@ void NetManager::handleRegister(const PacketHeader *header, const CSRegisterPack
 
     QWriteLocker locker(&m_registerInfosLock);
 
-    if (DatabaseManager::instance().isHardwareIdBanned(hardwareId)) {
+    if (DbManager::instance().isHardwareIdBanned(hardwareId)) {
         LOG_WARNING("🚫 [封禁拦截] 机器码在黑名单内: " + hardwareId);
         return;
     }
@@ -686,7 +682,7 @@ void NetManager::handleRegister(const PacketHeader *header, const CSRegisterPack
         }
     }
 
-    DatabaseManager::instance().updateUserHwid(username, hardwareId);
+    DbManager::instance().updateUserHwid(username, hardwareId);
 
     // === Session ID 生成 ===
     quint32 newSessionId = 0;
@@ -917,7 +913,7 @@ void NetManager::hardwareBan(const QString &targetUser, const QString &reason, u
         return;
     }
 
-    DatabaseManager::instance().banHardwareId(hwid, targetUser, reason, days);
+    DbManager::instance().banHardwareId(hwid, targetUser, reason, days);
 
     kickUserIfOnline(targetUser);
 
@@ -1578,7 +1574,7 @@ void NetManager::sendUploadResult(QTcpSocket* socket, const QString& crc, const 
 void NetManager::onCleanupTimeout()
 {
     cleanupExpiredClients();
-    DatabaseManager::instance().checkConnection();
+    DbManager::instance().checkConnection();
 }
 
 void NetManager::onBroadcastTimeout()
@@ -1750,7 +1746,7 @@ QString NetManager::getHwidByUsername(const QString &username)
         }
     }
 
-    QString hwid = DatabaseManager::instance().getHwidFromHistory(username);
+    QString hwid = DbManager::instance().getHwidFromHistory(username);
 
     if (!hwid.isEmpty()) {
         LOG_INFO(QString("🔍 [数据库匹配] 找到离线用户 %1 的历史 HWID: %2").arg(username, hwid.left(8)));

@@ -1,4 +1,4 @@
-#include "databasemanager.h"
+#include "dbmanager.h"
 #include "logger.h"
 #include <QDebug>
 #include <QDateTime>
@@ -26,20 +26,20 @@ public:
 };
 // ------------------
 
-DatabaseManager &DatabaseManager::instance() {
-    static DatabaseManager instance;
+DbManager &DbManager::instance() {
+    static DbManager instance;
     return instance;
 }
 
-DatabaseManager::DatabaseManager(QObject *parent) : QObject(parent) {
+DbManager::DbManager(QObject *parent) : QObject(parent) {
 
 }
 
-DatabaseManager::~DatabaseManager() {
+DbManager::~DbManager() {
     if (m_db.isOpen()) m_db.close();
 }
 
-bool DatabaseManager::init(const QString &driver, const QString &dbName,
+bool DbManager::init(const QString &driver, const QString &dbName,
                            const QMap<QString, QString> &tables,
                            const QString &host, int port,
                            const QString &user, const QString &pass)
@@ -105,7 +105,7 @@ bool DatabaseManager::init(const QString &driver, const QString &dbName,
     return schemaOk;
 }
 
-bool DatabaseManager::executeSchema(const QMap<QString, QString> &tables) {
+bool DbManager::executeSchema(const QMap<QString, QString> &tables) {
     LOG_TREE("📑 正在同步表结构...");
     SCOPE_LEVEL;
 
@@ -127,7 +127,7 @@ bool DatabaseManager::executeSchema(const QMap<QString, QString> &tables) {
     return true;
 }
 
-void DatabaseManager::syncBannedList() {
+void DbManager::syncBannedList() {
     LOG_TREE("♻️ 正在同步黑名单缓存...");
     SCOPE_LEVEL;
 
@@ -143,7 +143,7 @@ void DatabaseManager::syncBannedList() {
     LOG_TREE(QString("✅ 同步完成，缓存数量: %1").arg(count), false, true);
 }
 
-bool DatabaseManager::isHardwareIdBanned(const QString &hwid) {
+bool DbManager::isHardwareIdBanned(const QString &hwid) {
     QReadLocker locker(&m_cacheLock);
     bool isBanned = m_bannedCache.contains(hwid.toUpper());
     if (isBanned) {
@@ -152,7 +152,7 @@ bool DatabaseManager::isHardwareIdBanned(const QString &hwid) {
     return isBanned;
 }
 
-bool DatabaseManager::banHardwareId(const QString &hwid, const QString &username, const QString &reason, uint days) {
+bool DbManager::banHardwareId(const QString &hwid, const QString &username, const QString &reason, uint days) {
     LOG_TREE(QString("🚫 执行封禁: 用户[%1] HWID[%2]").arg(username, hwid));
     SCOPE_LEVEL;
 
@@ -177,7 +177,7 @@ bool DatabaseManager::banHardwareId(const QString &hwid, const QString &username
     return false;
 }
 
-bool DatabaseManager::unbanHardwareId(const QString &hwid) {
+bool DbManager::unbanHardwareId(const QString &hwid) {
     LOG_TREE(QString("🔓 执行解封: HWID[%1]").arg(hwid));
     SCOPE_LEVEL;
 
@@ -195,7 +195,7 @@ bool DatabaseManager::unbanHardwareId(const QString &hwid) {
     return false;
 }
 
-QString DatabaseManager::getHwidFromHistory(const QString &username) {
+QString DbManager::getHwidFromHistory(const QString &username) {
     LOG_TREE(QString("🔍 查询历史记录: 用户[%1]").arg(username));
     QSqlQuery query(m_db);
     query.prepare("SELECT last_hwid FROM users WHERE username = :user LIMIT 1");
@@ -209,7 +209,7 @@ QString DatabaseManager::getHwidFromHistory(const QString &username) {
     return "";
 }
 
-void DatabaseManager::updateUserHwid(const QString &username, const QString &hwid) {
+void DbManager::updateUserHwid(const QString &username, const QString &hwid) {
     LOG_TREE(QString("📝 更新用户指纹: %1 -> %2").arg(username, hwid));
     QSqlQuery query(m_db);
     query.prepare("UPDATE users SET last_hwid = :hwid, lastlogin_time = UNIX_TIMESTAMP() WHERE username = :user");
@@ -220,7 +220,7 @@ void DatabaseManager::updateUserHwid(const QString &username, const QString &hwi
     }
 }
 
-void DatabaseManager::checkConnection() {
+void DbManager::checkConnection() {
     if (!m_db.isOpen() || !m_db.isValid()) {
         LOG_TREE("📡 [DB] 连接断开，触发重连流程...");
         SCOPE_LEVEL;
