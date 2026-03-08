@@ -115,12 +115,12 @@ signals:
     void botStateChanged(int botId, QString username, BotState newState);
 
 private slots:
+    void onBotGameCreateFail(Bot *bot, GameCreationStatus status);
     void onHostJoinedGame(Bot *bot, const QString &hostName);
     void onBotError(Bot *bot, QString error);
     void onBotGameCreateSuccess(Bot *bot);
     void onBotVisualHostLeft(Bot *bot);
     void onBotAccountCreated(Bot *bot);
-    void onBotGameCreateFail(Bot *bot);
     void onBotAuthenticated(Bot *bot);
     void onBotDisconnected(Bot *bot);
     void onBotGameCanceled(Bot *bot);

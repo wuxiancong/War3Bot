@@ -466,10 +466,10 @@ signals:
     void disconnected();
     void authenticated();
     void accountCreated();
-    void gameCreateFail();
     void visualHostLeft();
     void socketError(const QString &error);
     void hostJoinedGame(const QString &username);
+    void gameCreateFail(GameCreationStatus status);
     void gameCreateSuccess(CommandSource commandSource);
     void requestCreateGame(const QString &username, const QString &gameName, CommandSource commandSource);
 

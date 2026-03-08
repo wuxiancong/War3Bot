@@ -619,7 +619,7 @@ void Client::handleBNETTcpPacket(BNETPacketID id, const QByteArray &data)
     case SID_STARTADVEX3:
     {
         if (data.size() < 4) return;
-        quint32 status;
+        GameCreationStatus status;
         QDataStream ds(data);
         ds.setByteOrder(QDataStream::LittleEndian);
         ds >> status;
@@ -633,14 +633,14 @@ void Client::handleBNETTcpPacket(BNETPacketID id, const QByteArray &data)
             switch (status) {
             case GameCreate_NameExists:      errStr = "房间名已存在"; break;
             case GameCreate_TypeUnavailable: errStr = "游戏类型不可用"; break;
-            case GameCreate_Error:           errStr = "通用创建错误"; break;
+            case GameCreate_Error:           errStr = "游戏创建错误"; break;
             default:                         errStr = QString("Code 0x%1").arg(QString::number(status, 16)); break;
             }
             LOG_ERROR(QString("   ├─ ❌ 结果: 创建失败"));
             LOG_INFO(QString("   └─ 📝 原因: %1").arg(errStr));
 
             // 触发失败信号，BotManager 会处理并通知客户端
-            emit gameCreateFail();
+            emit gameCreateFail(status);
         }
     }
     break;
