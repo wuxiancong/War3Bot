@@ -143,6 +143,12 @@ port=6112
 list_number=1
 init_count=10
 auto_generate=false
+
+[mysql]
+host=127.0.0.1
+port=3306
+user=pvpgn
+pass=yourpassword
 ```
 
 ### 3. 配置 Systemd 服务
@@ -398,22 +404,38 @@ War3Bot/
 |── bncsutil/               # bncsutil 目录
 |── war3files/              # war3 文件目录
 ├── include/                # 头文件目录
-│   ├── client.h            # 连接战网
-│   ├── logger.h            # 日志系统
-│   ├── p2pserver.h         # P2P连接
+│   ├── bigint.h            # 大数计算
+│   ├── bitrotate.h         # 字节反转
+│   ├── bnethash.h          # 哈希计算
+│   ├── bnetsrp3.h          # srp登录
 │   |── botmanager.h        # 机器人管理
-│   |── bnetsrp3.h          # srp3
+│   |── calculate.h         # 相关计算
+│   ├── client.h            # 连接战网
+│   ├── command.h           # 内部命令
+│   ├── dbmanager.h         # 数据库管理
+│   ├── ingame.h            # 游戏数据
+│   ├── logger.h            # 日志系统
+│   ├── netmanager.h        # 网络连接
+│   |── protocol.h          # 协议定义
+│   ├── securitywatchdog.h  # 看门狗
 │   ├── war3bot.h           # 机器人
-│   └── war3map.h
+│   └── war3map.h			# war3地图
 ├── src/                    # 源代码目录
-│   ├── main.cpp            # 入口文件
-│   ├── client.cpp          # 连接战网
-│   ├── logger.cpp          # 日志系统
-│   ├── p2pserver.cpp       # P2P连接
+│   ├── bigint.cpp          # 大数计算
+│   ├── bnethash.cpp        # 哈希计算
+│   ├── bnetsrp3.cpp        # srp登录
 │   |── botmanager.cpp      # 机器人管理
-│   |── bnetsrp3.cpp        # srp3
+│   |── calculate.cpp       # 相关计算
+│   ├── client.cpp          # 连接战网
+│   ├── command.cpp         # 内部命令
+│   ├── dbmanager.cpp       # 数据库管理
+│   ├── ingame.cpp          # 游戏数据
+│   ├── logger.cpp          # 日志系统
+│   ├── main.cpp            # 主函数
+│   ├── netmanager.cpp      # 网络连接
+│   ├── securitywatchdog.cpp# 看门狗
 │   ├── war3bot.cpp         # 机器人
-│   └── war3map.cpp
+│   └── war3map.cpp			# war3地图
 |── lib/                    # 库目录
 └── config/                 # 配置相关
     ├── war3bot.ini         # 配置文件模板
@@ -456,34 +478,86 @@ stop
 sudo ./war3bot -x "stop"
 ```
 
-### 支持的数据包 (W3GS)
+### 支持的数据包 (SID & W3GS)
 
-**Client -> Server (C->S):**
+```cpp
+// TCP 协议 ID (BNET)
+enum BNETPacketID {
+    SID_NULL                    = 0x00, // [C->S] 空包
+    SID_STOPADV                 = 0x02, // [C->S] 停止广播
+    SID_ENTERCHAT               = 0x0A, // [C->S] 进入聊天
+    SID_GETCHANNELLIST          = 0x0B, // [C->S] 获取频道列表
+    SID_JOINCHANNEL             = 0x0C, // [C->S] 加入频道
+    SID_CHATCOMMAND             = 0x0E, // [C->S] 聊天命令
+    SID_CHATEVENT               = 0x0F, // [C->S] 聊天事件
+    SID_STARTADVEX3             = 0x1C, // [C->S] 创建房间(TFT)
+    SID_PING                    = 0x25, // [C->S] 心跳包
+    SID_LOGONRESPONSE           = 0x29, // [C->S] 登录响应(旧)
+    SID_LOGONRESPONSE2          = 0x3A, // [C->S] 登录响应(中)
+    SID_NETGAMEPORT             = 0x45, // [C->S] 游戏端口通知
+    SID_AUTH_INFO               = 0x50, // [C->S] 认证信息
+    SID_AUTH_CHECK              = 0x51, // [C->S] 版本检查
+    SID_AUTH_ACCOUNTCREATE      = 0x52, // [C->S] 账号创建
+    SID_AUTH_ACCOUNTLOGON       = 0x53, // [C->S] SRP登录请求
+    SID_AUTH_ACCOUNTLOGONPROOF  = 0x54  // [C->S] SRP登录验证
+};
 
-| ID | 描述 |
-| :--- | :--- |
-| `0x00` | SID_NULL |
-| `0x0A` | SID_ENTERCHAT |
-| `0x0F` | SID_CHATEVENT |
-| `0x1C` | SID_STARTADVEX3 |
-| `0x25` | SID_PING |
-| `0x29` | SID_LOGONRESPONSE |
-| `0x3A` | SID_LOGONRESPONSE2 |
-| `0x4C` | SID_REQUIREDWORK |
-| `0x50` | SID_AUTH_INFO |
-| `0x51` | SID_AUTH_CHECK |
-| `0x53` | SID_AUTH_ACCOUNTLOGON |
-| `0x54` | SID_AUTH_ACCOUNTLOGONPROOF |
+// W3GS 协议 ID 定义 (TCP 游戏逻辑 & UDP 局域网广播)
+enum W3GSPacketID {
+    // --- 基础握手与心跳 (TCP) ---
+    W3GS_PING_FROM_HOST         = 0x01, // [S->C] 主机发送的心跳包 (每30秒)
+    W3GS_PONG_TO_HOST           = 0x46, // [C->S] 客户端回复的心跳包
 
-**Server -> Client (S->C):**
+    // --- 房间/大厅信息 (TCP) ---
+    W3GS_SLOTINFOJOIN           = 0x04, // [S->C] 玩家加入时发送的完整槽位信息
+    W3GS_REJECTJOIN             = 0x05, // [S->C] 拒绝加入 (房间满/游戏开始)
+    W3GS_PLAYERINFO             = 0x06, // [S->C] 玩家详细信息 (PID, IP, 端口等)
+    W3GS_PLAYERLEFT             = 0x07, // [S->C] 通知某玩家离开
+    W3GS_PLAYERLOADED           = 0x08, // [S->C] 通知某玩家加载完毕
+    W3GS_SLOTINFO               = 0x09, // [S->C] 槽位状态更新 (Slot Update)
+    W3GS_REQJOIN                = 0x1E, // [C->S] 客户端请求加入房间
+    W3GS_LEAVEREQ               = 0x21, // [C->S] 客户端请求离开
+    W3GS_GAMELOADED_SELF        = 0x23, // [C->S] 客户端通知自己加载完毕
+    W3GS_CLIENTINFO             = 0x37, // [C->S] 客户端发送自身信息 (端口等)
+    W3GS_LEAVERS                = 0x1B, // [S->C] 离开者列表 / 踢人响应 (部分版本)
+    W3GS_HOST_KICK_PLAYER       = 0x1C, // [S->C] 主机踢人
 
-| ID | 描述 |
-| :--- | :--- |
-| `0x02` | PONG_TO_HOST |
-| `0x03` | REJECT |
-| `0x08` | SLOT_INFO |
-| `0x18` | PLAYER_LEFT |
-| `0x0E` | CHAT_FROM_HOST |
+    // --- 游戏流程控制 (TCP) ---
+    W3GS_COUNTDOWN_START        = 0x0A, // [S->C] 开始倒计时
+    W3GS_COUNTDOWN_END          = 0x0B, // [S->C] 倒计时结束 (游戏开始)
+    W3GS_START_LAG              = 0x10, // [S->C] 开始等待界面 (有人卡顿)
+    W3GS_STOP_LAG               = 0x11, // [S->C] 停止等待界面
+    W3GS_OUTGOING_KEEPALIVE     = 0x27, // [C->S] 客户端保持连接
+    W3GS_DROPREQ                = 0x29, // [C->S] 请求断开连接 (掉线/强退)
+
+    // --- 游戏内动作与同步 (TCP) ---
+    W3GS_INCOMING_ACTION        = 0x0C, // [S->C] 广播玩家动作 (核心同步包)
+    W3GS_OUTGOING_ACTION        = 0x26, // [C->S] 客户端发送动作 (点击/技能)
+    W3GS_INCOMING_ACTION2       = 0x48, // [S->C] 扩展动作包 (通常用于录像/裁判)
+
+    // --- 聊天系统 (TCP) ---
+    W3GS_CHAT_FROM_HOST         = 0x0F, // [S->C] 主机转发的聊天消息
+    W3GS_CHAT_TO_HOST           = 0x28, // [C->S] 客户端发送的聊天消息
+
+    // --- 地图下载与校验 (TCP) ---
+    W3GS_MAPCHECK               = 0x3D, // [S->C] 主机发起地图校验请求
+    W3GS_STARTDOWNLOAD          = 0x3F, // [S->C] 主机通知开始下载 / [C->S] 客户端请求开始
+    W3GS_MAPSIZE                = 0x42, // [C->S] 客户端报告地图大小/CRC状态
+    W3GS_MAPPART                = 0x43, // [S->C] 地图文件分片数据
+    W3GS_MAPPARTOK              = 0x44, // [C->S] 客户端确认收到分片 (ACK)
+    W3GS_MAPPARTNOTOK           = 0x45, // [C->S] 客户端报告分片错误 (NACK)
+
+    // --- 局域网发现与 P2P (UDP) ---
+    W3GS_SEARCHGAME             = 0x2F, // [UDP] 搜索局域网游戏
+    W3GS_GAMEINFO               = 0x30, // [UDP] 游戏信息广播 (Game Info)
+    W3GS_CREATEGAME             = 0x31, // [UDP] 创建游戏广播
+    W3GS_REFRESHGAME            = 0x32, // [UDP] 刷新游戏信息 (Refresh)
+    W3GS_DECREATEGAME           = 0x33, // [UDP] 取消/销毁游戏
+    W3GS_PING_FROM_OTHERS       = 0x35, // [UDP] P2P Ping
+    W3GS_PONG_TO_OTHERS         = 0x36, // [UDP] P2P Pong
+    W3GS_TEST                   = 0x88  // [UDP] 测试/私有包
+};
+```
 
 ---
 
