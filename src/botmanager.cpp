@@ -967,11 +967,14 @@ void BotManager::onBotGameCreateSuccess(Bot *bot)
     LOG_INFO(QString("   ├─ 👤 归属用户: %1").arg(clientId));
     LOG_INFO(QString("   └─ 🏠 房间名称: %1").arg(bot->gameInfo.gameName));
 
+    LOG_INFO(QString("🎮 [房间创建成功] 准备通知客户端进场: %1").arg(bot->gameInfo.gameName));
+
     // 4. 发送 TCP 控制指令让客户端进入
     if (m_netManager) {
-        bool ok = m_netManager->sendEnterRoomCommand(clientId, m_controlPort, bot->commandSource == From_Server);
+        bool okToGameLoby = m_netManager->sendEnterRoomCommand(clientId, m_controlPort, bot->commandSource == From_Server);
+        bool okToLauncher = m_netManager->sendMessageToClient(clientId, S_C_MESSAGE, MSG_HOST_CREATED_GAME);
 
-        if (ok) {
+        if (okToGameLoby && okToLauncher) {
             LOG_INFO(QString("   └─ 🚀 自动进入: 指令已发送 (目标端口: %1)").arg(m_controlPort));
         } else {
             LOG_ERROR("   └─ ❌ 自动进入: 发送失败 (目标用户不在线或未记录通道)");
@@ -1113,7 +1116,7 @@ void BotManager::onBotPendingTaskTimeout()
 
                 // 2. 通知客户端
                 if (!bot->gameInfo.clientId.isEmpty()) {
-                    m_netManager->sendMessageToClient(bot->gameInfo.clientId, S_C_ERROR, ERR_CREATE_FAILED, 4);
+                    m_netManager->sendMessageToClient(bot->gameInfo.clientId, S_C_ERROR, ERR_WAIT_HOST_TIMEOUT);
                 }
 
                 // 3. 取消游戏

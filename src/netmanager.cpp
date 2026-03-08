@@ -651,127 +651,103 @@ void NetManager::handleIncomingDatagram(const QNetworkDatagram &datagram)
 
 void NetManager::handleRegister(const PacketHeader *header, const CSRegisterPacket *packet, const QHostAddress &senderAddr, quint64 senderPort)
 {
-    Q_UNUSED(header);
+    // 1. 数据解析
+    QString hardwareId = QString::fromUtf8(packet->hardwareId).trimmed();
+    QString clientId   = QString::fromUtf8(packet->clientId).trimmed();
+    QString username   = QString::fromUtf8(packet->username).trimmed();
+    QString localIp    = QString::fromUtf8(packet->localIp).trimmed();
+    QString reportedPublicIp = QString::fromUtf8(packet->publicIp).trimmed();
+    QString actualPublicIp = cleanAddress(senderAddr);
+    QString natStr = natTypeToString(static_cast<NATType>(packet->natType));
 
-    // 提取字符串数据
-    QString hardwareId = QString::fromUtf8(packet->hardwareId, strnlen(packet->clientId, sizeof(packet->clientId))).trimmed();
-    QString clientId = QString::fromUtf8(packet->clientId, strnlen(packet->clientId, sizeof(packet->clientId))).trimmed();
-    QString username = QString::fromUtf8(packet->username, strnlen(packet->username, sizeof(packet->username))).trimmed();
-    QString localIp  = QString::fromUtf8(packet->localIp, strnlen(packet->localIp, sizeof(packet->localIp))).trimmed();
+    // 2. 安全检查
+    if (clientId.isEmpty() || hardwareId.isEmpty() || username.isEmpty()) {
+        LOG_WARNING(QString("┌─ [注册失败] 关键字段缺失"));
+        LOG_WARNING(QString("└─ 来源: %1:%2 | UID: %3 | User: %4").arg(actualPublicIp).arg(senderPort).arg(clientId.left(8), username));
+        return;
+    }
 
-    // 🆕 提取客户端上报的公网IP
-    QString reportedPublicIp = QString::fromUtf8(packet->publicIp, strnlen(packet->publicIp, sizeof(packet->publicIp)));
-
-    if (clientId.isEmpty() || hardwareId.isEmpty()) {
-        LOG_WARNING("⚠️ 收到空的 ID 请求，丢弃");
+    if (DbManager::instance().isHardwareIdBanned(hardwareId)) {
+        LOG_WARNING(QString("┌─ [注册拦截] 该机器码 HWID 已被封禁"));
+        LOG_WARNING(QString("└─ 用户: %1 | HWID: %2").arg(username, hardwareId));
         return;
     }
 
     QWriteLocker locker(&m_registerInfosLock);
-
-    if (DbManager::instance().isHardwareIdBanned(hardwareId)) {
-        LOG_WARNING("🚫 [封禁拦截] 机器码在黑名单内: " + hardwareId);
-        return;
-    }
-
     for (const auto &peer : qAsConst(m_registerInfos)) {
         if (peer.hardwareId == hardwareId && peer.username != username) {
-            LOG_WARNING(QString("🚫 拒绝多开：机器 %1 已有账号 %2 在线").arg(hardwareId.left(8), peer.username));
+            LOG_WARNING(QString("┌─ [注册拦截] 拒绝多开"));
+            LOG_WARNING(QString("└─ 机器 %1 已有账号 %2 在线，当前请求: %3").arg(hardwareId.left(8), peer.username, username));
             return;
         }
     }
 
-    DbManager::instance().updateUserHwid(username, hardwareId);
-
-    // === Session ID 生成 ===
+    // 3. 业务处理
     quint32 newSessionId = 0;
-    do {
-        newSessionId = QRandomGenerator::global()->generate();
-    } while (newSessionId == 0 || m_sessionIndex.contains(newSessionId));
+    do { newSessionId = QRandomGenerator::global()->generate(); } while (newSessionId == 0 || m_sessionIndex.contains(newSessionId));
 
-    // === 清理旧会话 ===
     if (m_registerInfos.contains(clientId)) {
-        quint32 oldSession = m_registerInfos[clientId].sessionId;
-        m_sessionIndex.remove(oldSession);
-        LOG_INFO(QString("♻️ 用户重连，清理旧 Session: %1").arg(oldSession));
+        m_sessionIndex.remove(m_registerInfos[clientId].sessionId);
     }
 
     qint64 now = QDateTime::currentMSecsSinceEpoch();
-    QString actualPublicIp = cleanAddress(senderAddr);
-    QString natStr = natTypeToString(static_cast<NATType>(packet->natType));
-
-    // 存储用户信息
     RegisterInfo info;
-    info.clientId = clientId;
-    info.hardwareId = hardwareId;
-    info.username = username;
-    info.localIp = localIp;
-    info.localPort = packet->localPort;
-    info.publicIp = actualPublicIp;
-    info.publicPort = senderPort;
-    info.sessionId = newSessionId;
-    info.lastSeen = now;
-    info.firstSeen = now;
-    info.isRegistered = true;
-    info.natType = packet->natType;
-    info.lastSeq = header->seq;
+    info.clientId = clientId; info.hardwareId = hardwareId; info.username = username;
+    info.localIp = localIp; info.localPort = packet->localPort;
+    info.publicIp = actualPublicIp; info.publicPort = senderPort;
+    info.sessionId = newSessionId; info.lastSeen = now; info.firstSeen = now;
+    info.isRegistered = true; info.natType = packet->natType; info.lastSeq = header->seq;
 
     m_registerInfos[clientId] = info;
     m_sessionIndex[newSessionId] = clientId;
+    DbManager::instance().updateUserHwid(username, hardwareId);
 
-    locker.unlock();
+    // 4. 打印简洁树状日志
+    LOG_INFO(QString("┌── [用户注册] 来自: %1:%2").arg(actualPublicIp).arg(senderPort));
+    LOG_INFO(QString("├── 身份: %1 (SID: %2)").arg(username).arg(newSessionId));
+    LOG_INFO(QString("├── 设备: UUID: %1 | HWID: %2").arg(clientId.left(8), hardwareId.left(8)));
+    LOG_INFO(QString("├── 本地: %1:%2").arg(localIp).arg(packet->localPort));
 
-    // ✅ 打印详细日志 (包含您要求的两个字段对比)
-    LOG_INFO("--------------------[ 📝 用户注册请求 ]--------------------");
-    LOG_INFO(QString("   ├─ Session ID:     %1").arg(newSessionId));
-    LOG_INFO(QString("   ├─ Username:       %1").arg(username));
-    LOG_INFO(QString("   ├─ Client UUID:    %1").arg(clientId));
-    LOG_INFO(QString("   ├─ Local Address:  %1:%2").arg(localIp).arg(packet->localPort));
-    // 显示客户端自己检测到的 (Reported)
-    LOG_INFO(QString("   ├─ Public(Report): %1:%2").arg(reportedPublicIp).arg(packet->publicPort));
-    // 显示服务端实际看到的 (Actual)
-    LOG_INFO(QString("   ├─ Public(Actual): %1:%2").arg(actualPublicIp).arg(senderPort));
-    LOG_INFO(QString("   └─ NAT Type:       %1").arg(natStr));
-    LOG_INFO("----------------------------------------------------------");
+    // 对比汇报与实际
+    QString ipStatus = (reportedPublicIp == actualPublicIp) ? "一致" : "不一致/尚未获取";
+    LOG_INFO(QString("├── 公网: %1:%2 (汇报: %3:%4 | %5)")
+                 .arg(actualPublicIp).arg(senderPort).arg(reportedPublicIp.isEmpty() ? "None" : reportedPublicIp).arg(packet->publicPort).arg(ipStatus));
 
-    // 发送响应
+    LOG_INFO(QString("└── NAT : %1 | Seq: %2 | 状态: 注册成功").arg(natStr).arg(header->seq));
+
+    // 5. 发送响应
     SCRegisterPacket resp;
     resp.sessionId = newSessionId;
-    resp.status = Registered;
-
+    resp.status = 2; // Registered
     sendUdpPacket(senderAddr, senderPort, S_C_REGISTER, &resp, sizeof(resp));
 }
 
 void NetManager::handleUnregister(const PacketHeader *header)
 {
-    // SessionID 为 0 表示无效或未注册
     if (header->sessionId == 0) return;
 
     QWriteLocker locker(&m_registerInfosLock);
-
-    // ✅ 1. 利用索引快速查找 (O(1) 时间复杂度)
-    if (m_sessionIndex.contains(header->sessionId)) {
-
-        // 2. 从索引中移除，并获取对应的 Client UUID
-        QString uuid = m_sessionIndex.take(header->sessionId);
-
-        // 3. 从主信息表中移除，并获取信息用于打印日志
-        if (m_registerInfos.contains(uuid)) {
-            RegisterInfo info = m_registerInfos.take(uuid);
-
-            LOG_INFO("--------------------[ 👋 用户注销请求 ]--------------------");
-            LOG_INFO(QString("   ├─ Username:    %1").arg(info.username));
-            LOG_INFO(QString("   ├─ Client UUID: %1").arg(info.clientId));
-            LOG_INFO(QString("   └─ Session ID:  %1").arg(header->sessionId));
-            LOG_INFO("-------------------------------------------------------");
-        }
-        else {
-            // 理论上不应该进这里，除非索引和主表数据不一致
-            LOG_WARNING(QString("⚠️ 索引存在但主表丢失数据: %1").arg(uuid));
-        }
+    if (!m_sessionIndex.contains(header->sessionId)) {
+        LOG_WARNING(QString("┌─ [注销失败] 未找到会话"));
+        LOG_WARNING(QString("└─ SessionID: %1").arg(header->sessionId));
+        return;
     }
-    else {
-        LOG_WARNING(QString("⚠️ 收到未知 Session %1 的注销请求").arg(header->sessionId));
+
+    QString uuid = m_sessionIndex.take(header->sessionId);
+    if (m_registerInfos.contains(uuid)) {
+        RegisterInfo info = m_registerInfos.take(uuid);
+
+        // 计算在线时长
+        qint64 durationSec = (QDateTime::currentMSecsSinceEpoch() - info.firstSeen) / 1000;
+        QString durationStr = QString("%1h %2m %3s").arg(durationSec / 3600).arg((durationSec % 3600) / 60).arg(durationSec % 60);
+
+        // 打印简洁日志
+        LOG_INFO(QString("┌── [用户注销] 用户: %1").arg(info.username));
+        LOG_INFO(QString("├── 会话: SID: %1 | Seq: %2").arg(header->sessionId).arg(header->seq));
+        LOG_INFO(QString("├── 时长: %1").arg(durationStr));
+        LOG_INFO(QString("└── 状态: 已离线 (内存资源已回收)"));
+    } else {
+        LOG_ERROR(QString("└── [系统异常] 索引与主表不同步 (UUID: %1)").arg(uuid));
     }
 }
 
