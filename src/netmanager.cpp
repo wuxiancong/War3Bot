@@ -662,8 +662,23 @@ void NetManager::handleRegister(const PacketHeader *header, const CSRegisterPack
 
     // 2. 安全检查
     if (clientId.isEmpty() || hardwareId.isEmpty() || username.isEmpty()) {
-        LOG_WARNING(QString("┌─ [注册失败] 关键字段缺失"));
-        LOG_WARNING(QString("└─ 来源: %1:%2 | UID: %3 | User: %4").arg(actualPublicIp).arg(senderPort).arg(clientId.left(8), username));
+        // a. 打印根节点和来源
+        LOG_WARNING(QString("┌── [注册失败] 关键协议字段缺失"));
+        LOG_WARNING(QString("├── 来源地址: %1:%2").arg(actualPublicIp).arg(senderPort));
+
+        // b. 细化每个字段的具体状态
+        QString uidStatus = clientId.isEmpty()   ? "EMPTY" : "OK";
+        QString hwidStatus = hardwareId.isEmpty() ? "EMPTY" : "OK";
+        QString userStatus = username.isEmpty()   ? "EMPTY" : "OK";
+
+        LOG_WARNING(QString("├── 字段校验: UID[%1] | HWID[%2] | User[%3]")
+                        .arg(uidStatus, hwidStatus, userStatus));
+
+        // c. 打印截断的原始数据快照
+        LOG_WARNING(QString("├── 原始快照: User(%1) | UID(%2)...")
+                        .arg(username.isEmpty() ? "EMPTY" : username, clientId.isEmpty() ? "EMPTY" : clientId.left(8)));
+
+        LOG_WARNING(QString("└── 动作执行: 丢弃该非法数据包"));
         return;
     }
 
