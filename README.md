@@ -19,6 +19,7 @@ sudo apt install -y qtbase5-dev qt5-qmake libqt5core5a libqt5network5
 # 3. 安装其他依赖
 sudo apt install -y libgmp-dev zlib1g-dev libbz2-dev libgmp-dev
 
+- 安装方式1：
 # 4. 克隆项目代码
 git clone https://github.com/wuxiancong/War3Bot.git
 cd War3Bot
@@ -35,7 +36,9 @@ sudo journalctl -u war3bot -f
 cd ~
 War3Bot --help
 
-# 7. 脚本运行
+- 安装方式二：
+
+# 7. 脚本运行（推荐）
 git clone https://github.com/wuxiancong/War3Bot.git
 cd War3Bot
 chmod +x install.sh
