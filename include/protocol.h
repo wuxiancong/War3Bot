@@ -53,10 +53,13 @@ enum ErrorCode : quint8 {
     ERR_NAME_TOO_LONG               = 7,
     ERR_GAME_NAME_EXISTS            = 8,
     ERR_NO_BOTS_AVAILABLE           = 9,
-    ERR_CREATE_FAILED               = 10,
-    ERR_NOT_ENOUGH_PLAYERS          = 11,
-    MSG_HOST_UNHOST_GAME            = 12,
-    ERR_WAIT_HOST_TIMEOUT           = 13
+    ERR_NOT_ENOUGH_PLAYERS          = 10,
+    MSG_HOST_UNHOST_GAME            = 11,
+    ERR_WAIT_HOST_TIMEOUT           = 12,
+    ERR_CREATE_ERROR                = 13,
+    ERR_TASK_TIMEOUT                = 14,
+    ERR_CREATE_INTERRUPTED          = 15,
+    ERR_TASK_INTERRUPTED            = 16
 };
 
 enum MessageCode : quint8 {

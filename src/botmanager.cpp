@@ -992,7 +992,7 @@ void BotManager::onBotGameCreateFail(Bot *bot, GameCreationStatus status)
     if (!bot) return;
 
     // 1. 将魔兽原始状态码转换为业务错误码
-    ErrorCode finalErr = ERR_CREATE_FAILED;
+    ErrorCode finalErr = ERR_UNKNOWN;
     QString reasonStr = "未知错误";
 
     switch (status) {
@@ -1005,8 +1005,8 @@ void BotManager::onBotGameCreateFail(Bot *bot, GameCreationStatus status)
         reasonStr = "地图类型不支持";
         break;
     case 0x03: // GameCreate_Error
-        finalErr = ERR_CREATE_FAILED;
-        reasonStr = "游戏创建失败";
+        finalErr = ERR_CREATE_ERROR;
+        reasonStr = "游戏创建有错误";
         break;
     default:
         finalErr = ERR_UNKNOWN;
@@ -1114,9 +1114,9 @@ void BotManager::onBotPendingTaskTimeout()
                 // 2. 清除标记
                 bot->pendingTask.hasTask = false;
 
-                // 3. 通知用户 (1 表示超时)
+                // 3. 通知用户
                 if (!bot->pendingTask.clientId.isEmpty()) {
-                    m_netManager->sendMessageToClient(bot->pendingTask.clientId, S_C_ERROR, ERR_CREATE_FAILED, 3);
+                    m_netManager->sendMessageToClient(bot->pendingTask.clientId, S_C_ERROR, ERR_TASK_TIMEOUT);
                     LOG_INFO(QString("   ├─ 👤 通知用户: %1 (Reason: 1-Timeout)").arg(bot->pendingTask.clientId.left(8)));
                 }
 
@@ -1155,58 +1155,53 @@ void BotManager::onBotError(Bot *bot, QString error)
 {
     if (!bot) return;
 
-    // 1. 打印详细错误日志
-    LOG_ERROR(QString("❌ [Bot异常中断] Bot-%1 (%2)").arg(bot->id).arg(bot->username));
-    LOG_INFO(QString("   ├─ 🚩 当前状态: %1").arg(static_cast<int>(bot->state)));
-    LOG_INFO(QString("   ├─ 📄 错误信息: %1").arg(error));
+    // 1. 打印异常根节点
+    LOG_ERROR(QString("┌── ❌ [Bot异常中断] Bot-%1 (%2)").arg(bot->id).arg(bot->username));
+    LOG_INFO(QString("├── 状态: %1 | 原因: %2").arg(static_cast<int>(bot->state)).arg(error));
 
     QString ownerId = bot->gameInfo.clientId;
 
-    // 2. 针对不同业务阶段进行补偿通知
+    // 2. 针对不同业务阶段进行精确通知
     if (!ownerId.isEmpty()) {
-
-        // 场景 A: 正在创建房间 或 房间已建好但房主还没进去 (Creating / Reserved)
+        // 场景 A: 正在向魔兽引擎申请房间 (Creating) 或 已申请成功正等待房主 (Reserved)
         if (bot->state == BotState::Creating || bot->state == BotState::Reserved) {
-            LOG_INFO(QString("   ├─ 👤 [创建阶段中断] 通知用户: %1").arg(ownerId.left(8)));
-            m_netManager->sendMessageToClient(ownerId, S_C_ERROR, ERR_CREATE_FAILED, 2);
+            LOG_INFO(QString("├── 通知: 用户 %1 (Code: ERR_CREATE_INTERRUPTED)").arg(ownerId.left(8)));
+            m_netManager->sendMessageToClient(ownerId, S_C_ERROR, ERR_CREATE_INTERRUPTED);
         }
-
-        // 场景 B: 房主已经在房间大厅里了 (Waiting)
+        // 场景 B: 房主已在大厅 (Waiting)
         else if (bot->state == BotState::Waiting) {
-            LOG_INFO(QString("   ├─ 👤 [大厅阶段掉线] 通知用户: %1").arg(ownerId.left(8)));
+            LOG_INFO(QString("├── 通知: 用户 %1 (Code: MSG_HOST_UNHOST_GAME)").arg(ownerId.left(8)));
             m_netManager->sendMessageToClient(ownerId, S_C_MESSAGE, MSG_HOST_UNHOST_GAME);
         }
-
-        // 场景 C: 游戏已经开始了 (InGame)
+        // 场景 C: 游戏内 (InGame)
         else if (bot->state == BotState::InGame) {
-            LOG_INFO(QString("   ├─ 👤 [游戏阶段掉线] 房间已毁: %1").arg(bot->gameInfo.gameName));
+            LOG_INFO(QString("├── 警报: 正在进行的房间 [%1] 已由于Bot崩溃销毁").arg(bot->gameInfo.gameName));
         }
     }
 
     // 3. 处理挂起任务
     if (bot->pendingTask.hasTask && !bot->pendingTask.clientId.isEmpty()) {
+        QString taskOwner = bot->pendingTask.clientId;
         bot->pendingTask.hasTask = false;
-        m_netManager->sendMessageToClient(bot->pendingTask.clientId, S_C_ERROR, ERR_CREATE_FAILED, 2);
-        LOG_INFO(QString("   ├─ 📋 [任务清理] 已取消挂起任务: %1").arg(bot->pendingTask.gameName));
+        m_netManager->sendMessageToClient(taskOwner, S_C_ERROR, ERR_TASK_INTERRUPTED);
+        LOG_INFO(QString("├── 清理: 已取消用户 %1 的挂起任务: %2").arg(taskOwner.left(8), bot->pendingTask.gameName));
     }
 
-    // 4. 清理资源
+    // 4. 执行资源回收与状态重置
     removeGame(bot, true);
-
-    // 5. 广播 Bot 列表状态更新
     emit botStateChanged(bot->id, bot->username, bot->state);
 
-    // 6. 自动重连逻辑
+    // 5. 自动重连计划
     if (bot->client && !bot->client->isConnected()) {
         int retryDelay = 5000 + (bot->id * 1000);
-        LOG_INFO(QString("   └─ 🔄 [自动重连] 计划于 %1 ms 后执行...").arg(retryDelay));
+        LOG_INFO(QString("└── 动作: 计划于 %1ms 后尝试自动重连").arg(retryDelay));
         QTimer::singleShot(retryDelay, this, [this, bot]() {
             if (m_bots.contains(bot) && bot->client && !bot->client->isConnected()) {
                 bot->client->connectToHost(m_targetServer, m_targetPort);
             }
         });
     } else {
-        LOG_INFO("   └─ 🛑 [流程结束] 无需重连");
+        LOG_INFO("└── 动作: 流程结束 (无需重连)");
     }
 }
 
