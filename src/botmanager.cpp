@@ -429,6 +429,14 @@ bool BotManager::createGame(const QString &hostName, const QString &gameName, Co
     bool needConnect = false;
 
     // 1. 优先复用在线空闲的
+    if (m_bots.isEmpty()) {
+        LOG_ERROR("┌── ❌ [创建失败] 核心服务未运行");
+        LOG_ERROR("└── 原因: 机器人池为空，没有任何 Bot 进程连接到服务端");
+
+        m_netManager->sendMessageToClient(clientId, S_C_ERROR, ERR_NO_BOTS_AVAILABLE);
+        return false;
+    }
+
     for (Bot *bot : qAsConst(m_bots)) {
         if (bot->state == BotState::Idle && bot->client && bot->client->isConnected()) {
             targetBot = bot;
