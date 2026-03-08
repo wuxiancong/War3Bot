@@ -647,22 +647,35 @@ void BotManager::onBotAccountCreated(Bot *bot)
 
 void BotManager::onCommandReceived(const QString &userName, const QString &clientId, const QString &command, const QString &text)
 {
-    // 1. 频率限制 (Cooldown) - 防止恶意刷屏
-    const qint64 CREATE_COOLDOWN_MS = 1000;
     qint64 now = QDateTime::currentMSecsSinceEpoch();
 
-    if (m_lastHostTime.contains(clientId)) {
-        qint64 diff = now - m_lastHostTime.value(clientId);
-        if (diff < CREATE_COOLDOWN_MS) {
-            // 操作太频繁，请稍后再试。
-            quint32 remaining = (quint32)(CREATE_COOLDOWN_MS - diff);
+    // --- 1. 配置不同指令的冷却时间 (单位: 毫秒) ---
+    QMap<QString, qint64> cooldownRules;
+    cooldownRules.insert("/host", 2000);    // 创建房间比较重，给 2秒
+    cooldownRules.insert("/start", 3000);   // 开始游戏涉及多端同步，给 3秒
+    cooldownRules.insert("/join", 500);     // 模拟进入较轻，给 0.5秒
+    cooldownRules.insert("/unhost", 1000);  // 取消房间，给 1秒
+    const qint64 DEFAULT_COOLDOWN = 1000;   // 默认 1秒
+
+    qint64 requiredWait = cooldownRules.value(command, DEFAULT_COOLDOWN);
+
+    // --- 2. 检查特定指令的冷却状态 ---
+    if (m_commandCooldowns.contains(clientId)) {
+        qint64 lastExec = m_commandCooldowns[clientId].value(command, 0);
+        qint64 diff = now - lastExec;
+
+        if (diff < requiredWait) {
+            quint32 remaining = static_cast<quint32>(requiredWait - diff);
             m_netManager->sendMessageToClient(clientId, S_C_ERROR, ERR_COOLDOWN, remaining);
+
+            LOG_WARNING(QString("┌── ⏳ [频率限制] 指令: %1").arg(command));
+            LOG_WARNING(QString("└── 来源: %1 | 剩余: %2 ms").arg(userName).arg(remaining));
             return;
         }
     }
 
-    // 更新最后操作时间
-    m_lastHostTime.insert(clientId, now);
+    // --- 3. 校验通过，更新该指令的时间戳 ---
+    m_commandCooldowns[clientId][command] = now;
 
     // 2. 权限检查
     if (!m_netManager->isClientRegistered(clientId)) {
