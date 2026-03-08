@@ -29,6 +29,8 @@ cmake -DCMAKE_INSTALL_PREFIX=/usr/local/War3Bot ..
 make -j$(nproc)
 sudo make install
 
+sudo journalctl -u war3bot -f
+
 # 6. 验证编译结果
 cd ~
 War3Bot --help
