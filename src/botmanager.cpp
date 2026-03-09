@@ -965,32 +965,34 @@ void BotManager::onBotGameCreateSuccess(Bot *bot)
 {
     if (!bot || !bot->client) return;
 
-    // 1. 更新状态
+    // 1. 更新内部状态
     bot->hostJoined = false;
     bot->state = BotState::Reserved;
     bot->gameInfo.createTime = QDateTime::currentMSecsSinceEpoch();
 
     QString lowerName = bot->gameInfo.gameName.toLower();
     if (!lowerName.isEmpty()) {
-        if (m_activeGames.contains(lowerName)) {
-            LOG_WARNING(QString("⚠️ 状态同步警告: 房间名 %1 已存在于列表中").arg(lowerName));
-        }
         m_activeGames.insert(lowerName, bot);
-        LOG_INFO(QString("✅ [全局注册] 房间名已锁定: %1 -> Bot-%2").arg(lowerName).arg(bot->id));
     }
 
-    // 2. 获取房主 UUID
+    // 2. 获取端口并进行严格诊断
+    quint16 botListenPort = bot->client->getListenPort();
     QString clientId = bot->gameInfo.clientId;
 
-    // 3. 打印头部日志
+    // 3. 打印详细树状日志
     LOG_INFO("🎮 [房间创建完成回调]");
-    LOG_INFO(QString("   ├─ 🤖 执行实例: %1").arg(bot->username));
-    LOG_INFO(QString("   ├─ 👤 归属用户: %1").arg(clientId));
-    LOG_INFO(QString("   └─ 🏠 房间名称: %1").arg(bot->gameInfo.gameName));
+    LOG_INFO(QString("   ├─ 🤖 机器人实例: %1 (ID: %2)").arg(bot->username).arg(bot->id));
+    LOG_INFO(QString("   ├─ 👤 房主 UUID:  %1").arg(clientId.left(8) + "..."));
+    LOG_INFO(QString("   ├─ 🏠 房间名称:  %1").arg(bot->gameInfo.gameName));
 
-    LOG_INFO(QString("🎮 [房间创建成功] 准备通知客户端进场: %1").arg(bot->gameInfo.gameName));
+    // 诊断端口状态
+    if (botListenPort == 0) {
+        LOG_ERROR("   ├─ ❌ 端口错误: 获取到 0！(检查 bindToRandomPort 是否成功)");
+    } else {
+        LOG_INFO(QString("   ├─ 🔌 分配端口:  %1").arg(botListenPort));
+    }
 
-    // 4. 发送 TCP 控制指令让客户端进入
+    // 4. 发送 TCP 控制指令
     if (m_netManager) {
         quint16 botListenPort = bot->client->getListenPort();
         bool okToGameLoby = m_netManager->sendEnterRoomCommand(clientId, m_controlPort, bot->commandSource == From_Server);
@@ -1005,7 +1007,6 @@ void BotManager::onBotGameCreateSuccess(Bot *bot)
         LOG_INFO("   └─ 🛑 系统错误: NetManager 未绑定，无法发送指令");
     }
 
-    // 5. 广播状态变更
     emit botStateChanged(bot->id, bot->username, bot->state);
 }
 
