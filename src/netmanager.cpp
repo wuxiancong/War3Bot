@@ -605,7 +605,6 @@ void NetManager::handleIncomingDatagram(const QNetworkDatagram &datagram)
 
     // --- 4. CRC 校验 ---
     qDebug() << "│   ├── [3. 内容校验]";
-    // 注意：计算前恢复签名位，因为发送端计算 CRC 时签名位可能已填充
     memcpy(header->signature, receivedSignature, 16);
     quint16 calculatedCrc = calculateStandardCRC16(data);
 
@@ -640,7 +639,6 @@ void NetManager::handleIncomingDatagram(const QNetworkDatagram &datagram)
             handleCommand(header, reinterpret_cast<CSCommandPacket*>(payload));
         }
         break;
-    // ... 其他 case 建议也加上类似的简短日志 ...
     default:
         qDebug() << "└── ❓ 未知指令类型:" << (int)cmd;
         break;

@@ -75,7 +75,7 @@ private:
     Logger(QObject *parent = nullptr);
     ~Logger();
 
-    void log(LogLevel level, const QString &message);
+    void log(LogLevel level, const QString &message, int depth = 0);
     bool rotateLogFileIfNeeded();
     bool performLogRotation();
     void consoleOutput(LogLevel level, const QString &message);

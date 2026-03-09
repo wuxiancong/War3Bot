@@ -315,39 +315,44 @@ void Logger::critical(const QString &message)
     log(LOG_CRITICAL, message);
 }
 
-void Logger::log(LogLevel level, const QString &message)
+void Logger::log(LogLevel level, const QString &message, int depth)
 {
     if (level < m_logLevel) return;
 
     QMutexLocker locker(&m_mutex);
 
+    // 1. 实现简单树状缩进
+    QString indent = QString(depth * 4, ' ');
+    QString treeMessage = (depth > 0 ? "└─ " : "") + message;
+
     QString levelStr;
     switch (level) {
-    case LOG_DEBUG: levelStr = "DEBUG"; break;
-    case LOG_INFO: levelStr = "INFO"; break;
-    case LOG_WARNING: levelStr = "WARNING"; break;
-    case LOG_ERROR: levelStr = "ERROR"; break;
+    case LOG_DEBUG:    levelStr = "DEBUG"; break;
+    case LOG_INFO:     levelStr = "INFO"; break;
+    case LOG_WARNING:  levelStr = "WARNING"; break;
+    case LOG_ERROR:    levelStr = "ERROR"; break;
     case LOG_CRITICAL: levelStr = "CRITICAL"; break;
     }
 
     QString timestamp = QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss.zzz");
-    QString logMessage = QString("[%1] [%2] %3").arg(timestamp, levelStr, message);
+    QString logMessage = QString("[%1] [%2] %3%4").arg(timestamp, levelStr, indent, treeMessage);
 
-    // 1. 控制台输出 (带颜色)
     if (m_consoleOutput) {
         consoleOutput(level, logMessage);
     }
 
-    // 2. 文件输出
+    // 2. 文件输出逻辑及错误细化
     if ((!m_stream || !m_logFile || !m_logFile->isOpen()) && !m_logFileName.isEmpty()) {
         if (m_stream) { delete m_stream; m_stream = nullptr; }
         if (m_logFile) { delete m_logFile; m_logFile = nullptr; }
 
         QFileInfo fileInfo(m_logFileName);
         QDir dir = fileInfo.dir();
+
         if (!dir.exists()) {
             if (!dir.mkpath(".")) {
-                if (m_consoleOutput) consoleOutput("CRITICAL: ...", true);
+                QString errorReason = QString("严重错误: 无法创建日志目录 [%1]，请检查磁盘权限或路径有效性。").arg(dir.absolutePath());
+                if (m_consoleOutput) consoleOutput(LOG_CRITICAL, errorReason);
                 return;
             }
         }
@@ -358,14 +363,15 @@ void Logger::log(LogLevel level, const QString &message)
             m_stream->setCodec("UTF-8");
             m_stream->setGenerateByteOrderMark(true);
         } else {
-            if (m_consoleOutput) consoleOutput("无法打开日志文件...", true);
+            QString errorReason = QString("严重错误: 无法打开文件 [%1], 原因: %2")
+                                      .arg(m_logFileName, m_logFile->errorString());
+            if (m_consoleOutput) consoleOutput(LOG_CRITICAL, errorReason);
             delete m_logFile;
             m_logFile = nullptr;
             return;
         }
     }
 
-    // 写入日志到文件 (纯文本，无 ANSI 码)
     if (m_stream) {
         *m_stream << logMessage << "\n";
         m_stream->flush();

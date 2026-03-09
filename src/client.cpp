@@ -3446,14 +3446,39 @@ bool Client::bindToRandomPort()
 
 quint16 Client::getListenPort() const
 {
-    if (m_tcpServer && m_tcpServer->isListening()) {
-        return m_tcpServer->serverPort();
-    }
+    LOG_INFO("------------------------------------------");
+    LOG_INFO("[端口探针] 正在为 Client 指令检索核心通信端口...");
 
+    // 1. 优先检索 UDP 套接字
     if (m_udpSocket && m_udpSocket->state() == QAbstractSocket::BoundState) {
-        return m_udpSocket->localPort();
+        quint16 udpP = m_udpSocket->localPort();
+        LOG_INFO("├─ 📡 [命中] UDP 广播套接字处于 BoundState");
+        LOG_INFO(QString("│  ├─ 通信协议: War3/UDP (用于游戏握手和同步)"));
+        LOG_INFO(QString("│  └─ 本地端口: %1 (核心游戏端口)").arg(udpP));
+        LOG_INFO(QString("└─ ✅ [选用] 返回机器人动态 UDP 端口: %1").arg(udpP));
+        return udpP;
     }
 
+    // 2. 检索 TCP 会话套接字
+    if (m_tcpSocket && m_tcpSocket->state() == QAbstractSocket::ConnectedState) {
+        quint16 tcpP = m_tcpSocket->localPort();
+        LOG_INFO("├─ 📞 [命中] TCP 套接字处于 ConnectedState");
+        LOG_INFO(QString("│  ├─ 通信协议: War3/TCP (用于 Session 数据流)"));
+        LOG_INFO(QString("│  └─ 本地映射端口: %1").arg(tcpP));
+        LOG_INFO(QString("└─ ⚠️ [选用] UDP 无效，返回 TCP 本地分配端口: %1").arg(tcpP));
+        return tcpP;
+    }
+
+    // 3. 检测 TCP Server 端口
+    if (m_tcpServer && m_tcpServer->isListening()) {
+        quint16 serverP = m_tcpServer->serverPort();
+        LOG_INFO("├─ 🏢 [诊断] 监控到活跃的 TCP 管理服务端(Server)");
+        LOG_INFO(QString("│  └─ 服务侦听端口: %1 (注意: 此为固定监听端口)").arg(serverP));
+        LOG_INFO("│      ❗ 策略过滤: 已阻止返回该端口。魔兽客户端连接 6116 将会被防火墙拦截。");
+    }
+
+    // 4. 全部失败
+    LOG_INFO("└─ ❌ [失败] 未能在 Client 中捕获任何有效的业务数据套接字");
     return 0;
 }
 
