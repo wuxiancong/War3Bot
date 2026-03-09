@@ -977,6 +977,7 @@ void BotManager::onBotGameCreateSuccess(Bot *bot)
 
     // 2. 获取端口并进行严格诊断
     quint16 botListenPort = bot->client->getListenPort();
+    quint32 serverMapCrc = bot->client->getMapCRC();
     QString clientId = bot->gameInfo.clientId;
 
     // 3. 打印详细树状日志
@@ -984,6 +985,7 @@ void BotManager::onBotGameCreateSuccess(Bot *bot)
     LOG_INFO(QString("   ├─ 🤖 机器人实例: %1 (ID: %2)").arg(bot->username).arg(bot->id));
     LOG_INFO(QString("   ├─ 👤 房主 UUID:  %1").arg(clientId.left(8) + "..."));
     LOG_INFO(QString("   ├─ 🏠 房间名称:  %1").arg(bot->gameInfo.gameName));
+    LOG_INFO(QString("   ├─ 🛡️ 地图校验:  0x%1").arg(QString::number(serverMapCrc, 16).toUpper()));
 
     // 诊断端口状态
     if (botListenPort == 0) {
@@ -997,6 +999,13 @@ void BotManager::onBotGameCreateSuccess(Bot *bot)
         quint16 botListenPort = bot->client->getListenPort();
         bool okToGameLoby = m_netManager->sendEnterRoomCommand(clientId, m_controlPort, bot->commandSource == From_Server);
         bool okToLauncher = m_netManager->sendMessageToClient(clientId, S_C_MESSAGE, MSG_HOST_CREATED_GAME, botListenPort);
+        bool okToCheckCrc = m_netManager->sendMessageToClient(clientId, S_C_MESSAGE, MSG_CHECK_MAP_CRC, static_cast<quint64>(serverMapCrc));
+
+        if (okToCheckCrc) {
+            LOG_INFO("   └─ 🚀 校验指令: 已发送服务端 CRC 供客户端比对");
+        } else {
+            LOG_ERROR("   └─ ❌ 校验指令: 发送失败 (目标用户不在线或未记录通道)");
+        }
 
         if (okToGameLoby && okToLauncher) {
             LOG_INFO(QString("   └─ 🚀 自动进入: 指令已发送 (目标端口: %1)").arg(m_controlPort));

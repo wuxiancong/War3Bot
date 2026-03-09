@@ -64,7 +64,8 @@ enum ErrorCode : quint8 {
 
 enum MessageCode : quint8 {
     MSG_HOST_JOINED_GAME            = 0,
-    MSG_HOST_CREATED_GAME           = 1
+    MSG_HOST_CREATED_GAME           = 1,
+    MSG_CHECK_MAP_CRC               = 2
 };
 
 #pragma pack(push, 1)

@@ -3490,6 +3490,15 @@ bool Client::isBlackListedPort(quint16 port)
     return blacklist.contains(port);
 }
 
+quint32 Client::getMapCRC() const
+{
+    if (!m_war3Map.isValid()) {
+        return 0;
+    }
+
+    return m_war3Map.getMapCRC();
+}
+
 void Client::sendPingLoop()
 {
     // 状态检查：如果游戏已开始或正在倒计时，必须停止！

@@ -441,6 +441,7 @@ public:
     QString getPrimaryIPv4();                           // 获取本机IPv4
     bool bindToRandomPort();                            // 绑定随机UDP端口
     quint16 getListenPort()const;                       // 获取监听端口
+    quint32 getMapCRC() const;                          // 获取地图CRC
     bool isBlackListedPort(quint16 port);               // 检查端口黑名单
     QString getBnetPacketName(BNETPacketID id);         // 获取对应的包名
     void dumpPacket(const QByteArray &bytes);
