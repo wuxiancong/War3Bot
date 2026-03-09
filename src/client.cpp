@@ -3444,6 +3444,19 @@ bool Client::bindToRandomPort()
     return false;
 }
 
+quint16 Client::getListenPort() const
+{
+    if (m_tcpServer && m_tcpServer->isListening()) {
+        return m_tcpServer->serverPort();
+    }
+
+    if (m_udpSocket && m_udpSocket->state() == QAbstractSocket::BoundState) {
+        return m_udpSocket->localPort();
+    }
+
+    return 0;
+}
+
 bool Client::isBlackListedPort(quint16 port)
 {
     static const QSet<quint16> blacklist = {

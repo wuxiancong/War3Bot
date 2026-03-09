@@ -963,7 +963,7 @@ void BotManager::onCommandReceived(const QString &userName, const QString &clien
 
 void BotManager::onBotGameCreateSuccess(Bot *bot)
 {
-    if (!bot) return;
+    if (!bot || !bot->client) return;
 
     // 1. 更新状态
     bot->hostJoined = false;
@@ -992,8 +992,9 @@ void BotManager::onBotGameCreateSuccess(Bot *bot)
 
     // 4. 发送 TCP 控制指令让客户端进入
     if (m_netManager) {
+        quint16 botListenPort = bot->client->getListenPort();
         bool okToGameLoby = m_netManager->sendEnterRoomCommand(clientId, m_controlPort, bot->commandSource == From_Server);
-        bool okToLauncher = m_netManager->sendMessageToClient(clientId, S_C_MESSAGE, MSG_HOST_CREATED_GAME);
+        bool okToLauncher = m_netManager->sendMessageToClient(clientId, S_C_MESSAGE, MSG_HOST_CREATED_GAME, botListenPort);
 
         if (okToGameLoby && okToLauncher) {
             LOG_INFO(QString("   └─ 🚀 自动进入: 指令已发送 (目标端口: %1)").arg(m_controlPort));
