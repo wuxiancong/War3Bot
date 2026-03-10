@@ -606,9 +606,7 @@ Bot *BotManager::findBotByClientId(const QString &clientId)
     if (clientId.isEmpty()) return nullptr;
 
     for (Bot *bot : qAsConst(m_bots)) {
-        if (bot->state != BotState::Disconnected &&
-            bot->state != BotState::Idle &&
-            bot->gameInfo.clientId == clientId) {
+        if (bot->state != BotState::Disconnected && bot->isOwner(clientId)) {
             return bot;
         }
     }
@@ -788,13 +786,10 @@ void BotManager::onCommandReceived(const QString &userName, const QString &clien
     // --- 1. 基础校验 ---
     if (!m_netManager->isClientRegistered(clientId)) {
         m_netManager->sendMessageToClient(clientId, S_C_ERROR, ERR_PERMISSION_DENIED);
-        LOG_WARNING(QString("⚠️ [拒绝] 未注册用户指令: %1 (%2)").arg(userName, clientId.left(8)));
         return;
     }
 
-    if (!checkCooldown(clientId, command, now)) {
-        return;
-    }
+    if (!checkCooldown(clientId, command, now)) return;
 
     LOG_INFO("📨 [收到用户指令]");
     LOG_INFO(QString("   ├─ 👤 发送者: %1 (UUID: %2...)").arg(userName, clientId.left(8)));
@@ -808,27 +803,39 @@ void BotManager::onCommandReceived(const QString &userName, const QString &clien
         return;
     }
 
-    // B. 控制指令
+    // B. 获取关联的机器人
     Bot *myBot = findBotByClientId(clientId);
+
+    // --- 3. 特殊处理 /unhost ---
+    if (command == "/unhost") {
+        if (myBot) {
+            LOG_INFO(QString("   └─ 🚀 执行动作: 解散/撤回房间 [%1] (状态: %2)")
+                         .arg(myBot->gameInfo.gameName)
+                         .arg(static_cast<int>(myBot->state)));
+            removeGame(myBot, false);
+        } else {
+            LOG_INFO("   └─ ℹ️ 用户名下无活跃房间，静默完成解散流程");
+        }
+
+        m_netManager->sendMessageToClient(clientId, S_C_MESSAGE, MSG_HOST_UNHOST_GAME);
+        return;
+    }
+
+    // --- 4. 其他控制指令 ---
     if (!myBot) {
-        LOG_WARNING(QString("   └─ ❌ 拒绝: 用户名下当前没有活跃房间"));
+        LOG_WARNING(QString("   └─ ❌ 拒绝: 用户名下当前没有活跃房间，无法执行 %1").arg(command));
         m_netManager->sendMessageToClient(clientId, S_C_ERROR, ERR_PERMISSION_DENIED);
         return;
     }
 
-    if (command == "/unhost") {
-        LOG_INFO(QString("   └─ 🚀 执行动作: 解散房间 [%1]").arg(myBot->gameInfo.gameName));
-        removeGame(myBot, false);
-        m_netManager->sendMessageToClient(clientId, S_C_MESSAGE, MSG_HOST_UNHOST_GAME);
-    }
-    else if (command == "/start") {
+    if (command == "/start") {
         if (myBot->state == BotState::Waiting && myBot->client) {
             LOG_INFO("   └─ 🚀 执行动作: 启动游戏");
             myBot->client->startGame();
             myBot->state = BotState::Starting;
             emit botStateChanged(myBot->id, myBot->username, myBot->state);
         } else {
-            LOG_WARNING("   └─ ⚠️ 忽略: 机器人状态不满足开始条件");
+            LOG_WARNING(QString("   └─ ⚠️ 忽略: 状态 %1 不满足开始条件").arg(static_cast<int>(myBot->state)));
         }
     }
     else if (command == "/swap") {
@@ -848,7 +855,7 @@ void BotManager::onCommandReceived(const QString &userName, const QString &clien
         }
     }
     else {
-        LOG_WARNING(QString("   └─ ❓ 未知命令: %1").arg(command));
+        LOG_WARNING(QString("   └─ ❓ 未知命令: %1 (将被忽略)").arg(command));
     }
 }
 

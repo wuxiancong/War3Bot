@@ -27,11 +27,11 @@ enum class BotState {
 
 // === 2. 房间信息结构体 ===
 struct GameInfo {
-    QString gameName;
-    QString mapName;
-    QString mapPath;
-    QString hostName;
-    QString clientId;
+    QString gameName = "";
+    QString mapName = "";
+    QString mapPath = "";
+    QString hostName = "";
+    QString clientId = "";
 
     int maxPlayers = 10;
     int currentPlayerCount = 0;
