@@ -441,6 +441,43 @@ War3Bot/
 
 ---
 
+## 地图下载
+
+1.  **安装 Nginx**:
+    ```bash
+    sudo apt update
+    sudo apt install nginx
+    ```
+
+2.  **配置静态目录**:
+    编辑配置：`sudo nano /etc/nginx/sites-available/default`
+    在 `server` 块中添加一段逻辑：
+    ```nginx
+    server {
+        listen 80; # 监听 80 端口
+        server_name _;
+
+        # 核心配置：将 /maps/ 这个 URL 路径指向你磁盘的物理路径
+        location /maps/ {
+            alias /opt/War3Bot/war3files/maps/;
+            autoindex on;       # 允许查看文件列表（可选，方便调试）
+            access_log off;     # 减少日志，提高性能
+        }
+    }
+    ```
+
+3.  **设置权限**:
+    确保 Nginx 的用户（通常是 `www-data`）有权读取该目录：
+    ```bash
+    sudo chmod -R 755 /opt/War3Bot/war3files/maps/
+    ```
+
+4.  **重启服务**:
+    ```bash
+    sudo systemctl restart nginx
+    ```
+
+---
 ## 📚 协议与内部命令
 
 ### 支持的命令行 (CMD)
