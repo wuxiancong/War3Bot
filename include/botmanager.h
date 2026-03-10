@@ -68,6 +68,10 @@ struct Bot {
 
     ~Bot() { if (client) client->deleteLater(); }
 
+    bool isOwner(const QString &senderClientId) const {
+        return !gameInfo.clientId.isEmpty() && gameInfo.clientId == senderClientId;
+    }
+
     void resetGameState() {
         gameInfo = GameInfo();
         pendingTask = Task();
@@ -81,6 +85,7 @@ struct Bot {
 struct CommandInfo {
     QString text;
     QString clientId;
+    quint32 botId;
     qint64 timestamp;
 };
 
@@ -101,8 +106,11 @@ public:
     void stopAll();
     int loadMoreBots(int count);
     void removeGame(Bot *bot, bool disconnectFlag = false);
+    Bot *findBotByClientId(const QString &clientId);
 
     // --- 游戏创建与指令 ---
+    bool checkCooldown(const QString &clientId, const QString &command, qint64 now);
+    void handleHostCommand(const QString &userName, const QString &clientId, const QString &text);
     bool createGame(const QString& hostName, const QString &gameName, CommandSource commandSource, const QString &clientUuid);
     void onCommandReceived(const QString &userName, const QString &clientUuid, const QString &command, const QString &text);
 

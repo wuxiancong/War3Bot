@@ -149,7 +149,7 @@ void BotManager::initializeBots(quint32 initialCount, const QString &configPath)
     m_targetServer = settings.value("bnet/server", "127.0.0.1").toString();
     m_targetPort = settings.value("bnet/port", 6112).toUInt();
 
-     m_botDisplayName = settings.value("bots/display_name", "CC.Dota.XXX").toString();
+    m_botDisplayName = settings.value("bots/display_name", "CC.Dota.XXX").toString();
     bool autoGenerate = settings.value("bots/auto_generate", false).toBool();
     int listNumber = settings.value("bots/list_number", 1).toInt();
 
@@ -601,6 +601,134 @@ const QVector<Bot*>& BotManager::getAllBots() const
     return m_bots;
 }
 
+Bot *BotManager::findBotByClientId(const QString &clientId)
+{
+    if (clientId.isEmpty()) return nullptr;
+
+    for (Bot *bot : qAsConst(m_bots)) {
+        if (bot->state != BotState::Disconnected &&
+            bot->state != BotState::Idle &&
+            bot->gameInfo.clientId == clientId) {
+            return bot;
+        }
+    }
+    return nullptr;
+}
+
+bool BotManager::checkCooldown(const QString &clientId, const QString &command, qint64 now)
+{
+    // 1. 定义冷却规则 (也可以定义为类成员变量以提高性能)
+    static QMap<QString, qint64> cooldownRules;
+    if (cooldownRules.isEmpty()) {
+        cooldownRules.insert("/host", 2000);
+        cooldownRules.insert("/start", 3000);
+        cooldownRules.insert("/join", 500);
+        cooldownRules.insert("/unhost", 1000);
+        cooldownRules.insert("/swap", 500);
+    }
+    const qint64 DEFAULT_COOLDOWN = 1000;
+
+    qint64 requiredWait = cooldownRules.value(command, DEFAULT_COOLDOWN);
+
+    // 2. 检查记录
+    if (m_commandCooldowns.contains(clientId)) {
+        qint64 lastExec = m_commandCooldowns[clientId].value(command, 0);
+        qint64 diff = now - lastExec;
+
+        if (diff < requiredWait) {
+            quint32 remaining = static_cast<quint32>(requiredWait - diff);
+            // 通知客户端进入冷却
+            m_netManager->sendMessageToClient(clientId, S_C_ERROR, ERR_COOLDOWN, remaining);
+
+            LOG_WARNING(QString("⏳ [频率限制] UUID: %1 | 指令: %2 | 剩余: %3ms")
+                            .arg(clientId.left(8), command).arg(remaining));
+            return false;
+        }
+    }
+
+    // 3. 更新时间戳并放行
+    m_commandCooldowns[clientId][command] = now;
+    return true;
+}
+
+void BotManager::handleHostCommand(const QString &userName, const QString &clientId, const QString &text)
+{
+    LOG_INFO("🎮 [创建房间流程]");
+
+    // 1. 重复开房检查
+    if (findBotByClientId(clientId) != nullptr) {
+        LOG_WARNING(QString("   └─ ⚠️ 拦截: 用户 %1 已拥有活跃房间").arg(userName));
+        m_netManager->sendMessageToClient(clientId, S_C_ERROR, ERR_ALREADY_IN_GAME);
+        return;
+    }
+
+    // 2. 参数解析
+    QStringList parts = text.split(" ", Qt::SkipEmptyParts);
+    if (parts.size() < 2) {
+        LOG_ERROR("   └─ ❌ 错误: 参数不足 (用法: /host <模式> <房名>)");
+        m_netManager->sendMessageToClient(clientId, S_C_ERROR, ERR_PARAM_ERROR);
+        return;
+    }
+
+    QString mapModel = parts[0].toLower();
+    QString inputGameName = parts.mid(1).join(" ");
+
+    // 3. 模式校验
+    static const QVector<QString> allowModels = {
+        "ap", "cm", "rd", "sd", "ar", "xl", "aptb", "cmtb", "rdtb", "sdtb", "artb", "xltb",
+        "ap83", "cm83", "rd83", "sd83", "ar83", "xl83", "ap83tb", "cm83tb", "rd83tb", "sd83tb", "ar83tb", "xl83tb"
+    };
+
+    if (!allowModels.contains(mapModel)) {
+        LOG_ERROR(QString("   └─ ❌ 错误: 不支持的模式 [%1]").arg(mapModel));
+        m_netManager->sendMessageToClient(clientId, S_C_ERROR, ERR_MAP_NOT_SUPPORTED);
+        return;
+    }
+
+    // 4. 房名预处理 (截断与后缀)
+    QString baseName = inputGameName.trimmed();
+    if (baseName.isEmpty()) baseName = QString("%1's Game").arg(userName);
+
+    QString suffix = QString(" (%1/%2)").arg(1).arg(10);
+    const int MAX_BYTES = 31;
+    int availableBytes = MAX_BYTES - suffix.toUtf8().size();
+
+    QByteArray nameBytes = baseName.toUtf8();
+    if (nameBytes.size() > availableBytes) {
+        nameBytes = nameBytes.left(availableBytes);
+        while (nameBytes.size() > 0) {
+            QString tryStr = QString::fromUtf8(nameBytes);
+            if (tryStr.toUtf8().size() == nameBytes.size() && !tryStr.contains(QChar::ReplacementCharacter)) break;
+            nameBytes.chop(1);
+        }
+        LOG_INFO(QString("   ├─ ✂️ 房名过长，已执行 UTF-8 安全截断"));
+    }
+
+    QString finalGameName = QString::fromUtf8(nameBytes) + suffix;
+
+    // 5. 重名检查
+    if (m_activeGames.contains(finalGameName.toLower())) {
+        LOG_ERROR(QString("   └─ ❌ 错误: 房间名 [%1] 已存在").arg(finalGameName));
+        m_netManager->sendMessageToClient(clientId, S_C_ERROR, ERR_GAME_NAME_EXISTS);
+        return;
+    }
+
+    // 6. 缓存指令信息
+    CommandInfo info;
+    info.clientId = clientId;
+    info.text = text.trimmed();
+    info.timestamp = QDateTime::currentMSecsSinceEpoch();
+    m_commandInfos.insert(userName, info);
+
+    LOG_INFO(QString("   ├─ ✅ 最终房名: [%1]").arg(finalGameName));
+    LOG_INFO(QString("   └─ 🚀 提交任务: 调用 createGame()"));
+
+    // 7. 执行创建
+    if (!createGame(userName, finalGameName, From_Client, clientId)) {
+        m_netManager->sendMessageToClient(clientId, S_C_ERROR, ERR_NO_BOTS_AVAILABLE);
+    }
+}
+
 // === 槽函数实现 ===
 
 void BotManager::onBotAuthenticated(Bot *bot)
@@ -657,307 +785,70 @@ void BotManager::onCommandReceived(const QString &userName, const QString &clien
 {
     qint64 now = QDateTime::currentMSecsSinceEpoch();
 
-    // --- 1. 配置不同指令的冷却时间 (单位: 毫秒) ---
-    QMap<QString, qint64> cooldownRules;
-    cooldownRules.insert("/host", 2000);    // 创建房间比较重，给 2秒
-    cooldownRules.insert("/start", 3000);   // 开始游戏涉及多端同步，给 3秒
-    cooldownRules.insert("/join", 500);     // 模拟进入较轻，给 0.5秒
-    cooldownRules.insert("/unhost", 1000);  // 取消房间，给 1秒
-    const qint64 DEFAULT_COOLDOWN = 1000;   // 默认 1秒
-
-    qint64 requiredWait = cooldownRules.value(command, DEFAULT_COOLDOWN);
-
-    // --- 2. 检查特定指令的冷却状态 ---
-    if (m_commandCooldowns.contains(clientId)) {
-        qint64 lastExec = m_commandCooldowns[clientId].value(command, 0);
-        qint64 diff = now - lastExec;
-
-        if (diff < requiredWait) {
-            quint32 remaining = static_cast<quint32>(requiredWait - diff);
-            m_netManager->sendMessageToClient(clientId, S_C_ERROR, ERR_COOLDOWN, remaining);
-
-            LOG_WARNING(QString("┌── ⏳ [频率限制] 指令: %1").arg(command));
-            LOG_WARNING(QString("└── 来源: %1 | 剩余: %2 ms").arg(userName).arg(remaining));
-            return;
-        }
-    }
-
-    // --- 3. 校验通过，更新该指令的时间戳 ---
-    m_commandCooldowns[clientId][command] = now;
-
-    // 2. 权限检查
+    // --- 1. 基础校验 ---
     if (!m_netManager->isClientRegistered(clientId)) {
         m_netManager->sendMessageToClient(clientId, S_C_ERROR, ERR_PERMISSION_DENIED);
-        LOG_WARNING(QString("   └─ ⚠️ 忽略未注册用户的指令: %1 (%2)").arg(userName, clientId));
+        LOG_WARNING(QString("⚠️ [拒绝] 未注册用户指令: %1 (%2)").arg(userName, clientId.left(8)));
         return;
     }
 
-    QString fullCmd = command + (text.isEmpty() ? "" : " " + text);
+    if (!checkCooldown(clientId, command, now)) {
+        return;
+    }
 
     LOG_INFO("📨 [收到用户指令]");
     LOG_INFO(QString("   ├─ 👤 发送者: %1 (UUID: %2...)").arg(userName, clientId.left(8)));
-    LOG_INFO(QString("   └─ 💬 内容:   %1").arg(fullCmd));
+    LOG_INFO(QString("   └─ 💬 内容:   %1 %2").arg(command, text));
 
-    // 3. 处理 /host 指令
-    if (command == "/host") {        
-        // 全局前置检查：是否已经拥有房间？
-        for (Bot *bot : qAsConst(m_bots)) {
-            if (bot->state != BotState::Disconnected &&
-                bot->state != BotState::InLobby &&
-                bot->state != BotState::Idle &&
-                bot->gameInfo.clientId == clientId) {
-                // 你已经有一个正在进行的游戏/房间了！请先 /unhost 或结束游戏。
-                LOG_WARNING(QString("   └─ ⚠️ 拦截重复开房请求: 用户 %1 已在 Bot-%2 中").arg(userName).arg(bot->id));
-                m_netManager->sendMessageToClient(clientId, S_C_ERROR, ERR_ALREADY_IN_GAME);
-                return;
-            }
-        }
+    // --- 2. 指令逻辑分发 ---
 
-        LOG_INFO("🎮 [创建房间请求记录]");
+    // A. 建房指令
+    if (command == "/host") {
+        handleHostCommand(userName, clientId, text);
+        return;
+    }
 
-        QStringList parts = text.split(" ", Qt::SkipEmptyParts);
+    // B. 控制指令
+    Bot *myBot = findBotByClientId(clientId);
+    if (!myBot) {
+        LOG_WARNING(QString("   └─ ❌ 拒绝: 用户名下当前没有活跃房间"));
+        m_netManager->sendMessageToClient(clientId, S_C_ERROR, ERR_PERMISSION_DENIED);
+        return;
+    }
 
-        // 检查参数数量
-        if (parts.size() < 2) {
-            // 格式错误。用法: /host <模式> <房名>
-            m_netManager->sendMessageToClient(clientId, S_C_ERROR, ERR_PARAM_ERROR);
-            return;
-        }
-
-        QString mapModel = parts[0].toLower();
-        QString inputGameName = parts.mid(1).join(" ");
-
-        // 4.1 检查地图模式
-        QVector<QString> allowModels = {
-            "ap", "cm", "rd", "sd", "ar", "xl",
-            "aptb", "cmtb", "rdtb", "sdtb", "artb", "xltb",
-            "ap83", "cm83", "rd83", "sd83", "ar83", "xl83",
-            "ap83tb", "cm83tb", "rd83tb", "sd83tb", "ar83tb", "xl83tb"
-        };
-
-        if (!allowModels.contains(mapModel)) {
-            // 不支持的地图模式
-            m_netManager->sendMessageToClient(clientId, S_C_ERROR, ERR_MAP_NOT_SUPPORTED);
-            return;
-        }
-
-        // 构建数据结构
-        CommandInfo commandInfo;
-        commandInfo.clientId = clientId;
-        commandInfo.text = text.trimmed();
-        commandInfo.timestamp = QDateTime::currentMSecsSinceEpoch();
-        m_commandInfos.insert(userName, commandInfo);
-
-        LOG_INFO(QString("   ├─ 👤 用户: %1").arg(userName));
-        LOG_INFO(QString("   ├─ 🆔 UUID: %1").arg(clientId));
-        LOG_INFO(QString("   └─ 💾 已存入 HostMap (当前缓存数: %1)").arg(m_commandInfos.size()));
-
-        // 4.2 房名预处理与截断
-        LOG_INFO("🎮 [创建房间基本信息]");
-        QString baseName = text.trimmed();
-        if (baseName.isEmpty()) {
-            baseName = QString("%1's Game").arg(userName);
-            LOG_INFO(QString("   ├─ ℹ️ 自动命名: %1").arg(baseName));
-        } else {
-            LOG_INFO(QString("   ├─ 📝 指定名称: %1").arg(baseName));
-        }
-
-        QString suffix = QString(" (%1/%2)").arg(1).arg(10);
-
-        const int MAX_BYTES = 31;
-        int suffixBytes = suffix.toUtf8().size();
-        int availableBytes = MAX_BYTES - suffixBytes;
-
-        LOG_INFO(QString("   ├─ 📏 空间计算: 总限 %1 Bytes | 后缀占用 %2 Bytes | 剩余可用 %3 Bytes")
-                     .arg(MAX_BYTES).arg(suffixBytes).arg(availableBytes));
-
-        if (availableBytes <= 0) {
-            LOG_ERROR("   └─ ❌ 失败: 后缀过长，无空间容纳房名");
-            // 房间名过长
-            m_netManager->sendMessageToClient(clientId, S_C_ERROR, ERR_NAME_TOO_LONG);
-            return;
-        }
-
-        QByteArray nameBytes = baseName.toUtf8();
-        int originalSize = nameBytes.size();
-        bool wasTruncated = false;
-
-        if (nameBytes.size() > availableBytes) {
-            nameBytes = nameBytes.left(availableBytes);
-            while (nameBytes.size() > 0) {
-                QString tryStr = QString::fromUtf8(nameBytes);
-                if (tryStr.toUtf8().size() == nameBytes.size() && !tryStr.contains(QChar::ReplacementCharacter)) {
-                    break;
-                }
-                nameBytes.chop(1);
-            }
-            wasTruncated = true;
-        }
-
-        // 拼接最终房名
-        QString finalGameName = QString::fromUtf8(nameBytes) + suffix;
-
-        // 4.3 检查是否重名
-        if (m_activeGames.contains(finalGameName.toLower())) {
-            // 房间名已存在
-            m_netManager->sendMessageToClient(clientId, S_C_ERROR, ERR_GAME_NAME_EXISTS);
-            return;
-        }
-
-        // 打印截断结果
-        if (wasTruncated) {
-            LOG_INFO(QString("   ├─ ✂️ 触发截断: 原始 %1 Bytes -> 截断后 %2 Bytes")
-                         .arg(originalSize).arg(nameBytes.size()));
-        }
-
-        LOG_INFO(QString("   ├─ ✅ 最终房名: [%1]").arg(finalGameName));
-        LOG_INFO("   └─ 🚀 执行动作: 调用 createGame()");
-
-        // 4.4 执行创建
-        bool scheduled = createGame(userName, finalGameName, From_Client, clientId);
-        if (!scheduled) {
-            // 暂时无法创建房间，请稍后再试。
-            m_netManager->sendMessageToClient(clientId, S_C_ERROR, ERR_NO_BOTS_AVAILABLE);
-        }
-    } else if (command == "/swap") {
-        LOG_INFO("🔄 [交换请求记录]");
-
-        // 1. 寻找用户当前所在的、且处于等待状态的 Bot
-        Bot *targetBot = nullptr;
-        for (Bot *bot : qAsConst(m_bots)) {
-            if (bot->state == BotState::Waiting && bot->gameInfo.clientId == clientId) {
-                targetBot = bot;
-                break;
-            }
-        }
-
-        if (!targetBot) {
-            // 用户没有正在主持的房间，或者房间已经开始
-            m_netManager->sendMessageToClient(clientId, S_C_ERROR, ERR_PERMISSION_DENIED);
-            return;
-        }
-
-        // 2. 解析参数
-        QStringList parts = text.split(" ", Qt::SkipEmptyParts);
-        if (parts.size() < 2) {
-            // 参数不足
-            m_netManager->sendMessageToClient(clientId, S_C_ERROR, ERR_PARAM_ERROR);
-            return;
-        }
-
-        bool ok1, ok2;
-        int s1 = parts[0].toInt(&ok1);
-        int s2 = parts[1].toInt(&ok2);
-
-        if (ok1 && ok2) {
-            LOG_INFO(QString("   ├─ 🔢 参数: %1 <-> %2").arg(s1).arg(s2));
-            LOG_INFO(QString("   └─ 🚀 执行动作: 调用 swapSlots()"));
-
-            // 3. 调用 Client 执行交换
-            if (targetBot->client) {
-                targetBot->client->swapSlots(s1, s2);
-            }
-        } else {
-            LOG_ERROR("   └─ ❌ 格式错误: 参数必须为数字");
-        }
+    if (command == "/unhost") {
+        LOG_INFO(QString("   └─ 🚀 执行动作: 解散房间 [%1]").arg(myBot->gameInfo.gameName));
+        removeGame(myBot, false);
+        m_netManager->sendMessageToClient(clientId, S_C_MESSAGE, MSG_HOST_UNHOST_GAME);
     }
     else if (command == "/start") {
-        LOG_INFO("🚀 [启动请求记录]");
-
-        // 1. 寻找 Bot
-        Bot *targetBot = nullptr;
-        for (Bot *bot : qAsConst(m_bots)) {
-            // 必须是 Waiting 状态 (即已经在房间里) 且是房主
-            if (bot->state == BotState::Waiting && bot->gameInfo.clientId == clientId) {
-                targetBot = bot;
-                break;
-            }
+        if (myBot->state == BotState::Waiting && myBot->client) {
+            LOG_INFO("   └─ 🚀 执行动作: 启动游戏");
+            myBot->client->startGame();
+            myBot->state = BotState::Starting;
+            emit botStateChanged(myBot->id, myBot->username, myBot->state);
+        } else {
+            LOG_WARNING("   └─ ⚠️ 忽略: 机器人状态不满足开始条件");
         }
-
-        if (!targetBot) {
-            m_netManager->sendMessageToClient(clientId, S_C_ERROR, ERR_PERMISSION_DENIED);
-            return;
-        }
-
-        LOG_INFO(QString("   ├─ 👤 房主: %1").arg(userName));
-
-        // 2. 执行启动
-        if (targetBot->client) {
-            // 可选：检查人数
-            if (targetBot->client->getOccupiedSlots() < 2) {
-                // m_netManager->sendMessageToClient(clientId, S_C_ERROR, ERR_NOT_ENOUGH_PLAYERS);
-                // return;
-            }
-
-            LOG_INFO("   └─ 🚀 执行动作: 调用 startGame()");
-            targetBot->client->startGame();
-
-            // 更新 Bot 状态为 Starting
-            targetBot->state = BotState::Starting;
-            emit botStateChanged(targetBot->id, targetBot->username, targetBot->state);
+    }
+    else if (command == "/swap") {
+        QStringList parts = text.split(" ", Qt::SkipEmptyParts);
+        if (parts.size() >= 2 && myBot->client) {
+            int s1 = parts[0].toInt();
+            int s2 = parts[1].toInt();
+            LOG_INFO(QString("   └─ 🚀 执行动作: 交换槽位 %1 <-> %2").arg(s1).arg(s2));
+            myBot->client->swapSlots(s1, s2);
         }
     }
     else if (command == "/latency" || command == "/lat") {
-        LOG_INFO("🚀 [修改游戏延迟]");
-
-        // 1. 寻找用户当前所在的、且处于游戏状态的 Bot
-        Bot *targetBot = nullptr;
-        for (Bot *bot : qAsConst(m_bots)) {
-            if (bot->state == BotState::InGame && bot->gameInfo.clientId == clientId) {
-                targetBot = bot;
-                break;
-            }
-        }
-
-        if (!targetBot) {
-            m_netManager->sendMessageToClient(clientId, S_C_ERROR, ERR_PERMISSION_DENIED);
-            return;
-        }
-
         int val = text.toInt();
-        if (val > 0) {
-            targetBot->client->setGameTickInterval((quint16)val);
+        if (val >= 10 && val <= 100 && myBot->client) {
+            LOG_INFO(QString("   └─ 🚀 执行动作: 修改延迟为 %1ms").arg(val));
+            myBot->client->setGameTickInterval((quint16)val);
         }
     }
-    // ==================== 处理 /unhost ====================
-    else if (command == "/unhost") {
-        LOG_INFO("🛑 [取消房间流程] 指令接收成功");
-
-        Bot *targetBot = nullptr;
-        // 1. 寻找该 UUID 拥有的活跃机器人
-        for (Bot *bot : qAsConst(m_bots)) {
-            // 只要不是断开连接状态，且 UUID 匹配
-            if (bot->state != BotState::Disconnected && bot->gameInfo.clientId == clientId) {
-                targetBot = bot;
-                break;
-            }
-        }
-
-        if (targetBot) {
-            LOG_INFO(QString("   ├─ 👤 房主: %1").arg(targetBot->gameInfo.hostName));
-            LOG_INFO(QString("   └─ 🚀 正在执行解散: Bot-%1 (%2)").arg(targetBot->id).arg(targetBot->gameInfo.gameName));
-
-            // 2. 调用 removeGame，它内部会执行 bot->client->cancelGame()
-            // 房主主动取消，不需要标记断线 (disconnectFlag = false)
-            removeGame(targetBot, false);
-
-            // 3. 通知 Launcher 端 (同步 UI 状态)
-            m_netManager->sendMessageToClient(clientId, S_C_MESSAGE, MSG_HOST_UNHOST_GAME);
-
-        } else {
-            LOG_WARNING(QString("   └─ ❌ 拒绝请求: UUID %1 当前没有正在托管的房间").arg(clientId.left(8)));
-            m_netManager->sendMessageToClient(clientId, S_C_ERROR, ERR_PERMISSION_DENIED);
-        }
-    }
-    // ==================== 处理 /bot ====================
-    else if (command == "/bot") {
-        LOG_INFO("🤖 [Bot 切换流程]");
-        LOG_INFO("   └─ 🚀 执行动作: 切换 Bot 状态/所有者");
-    }
-    // ==================== 未知指令 ====================
     else {
-        LOG_WARNING("⚠️ [指令未处理]");
-        LOG_INFO(QString("   └─ ❓ 未知命令: %1 (将被忽略)").arg(command));
+        LOG_WARNING(QString("   └─ ❓ 未知命令: %1").arg(command));
     }
 }
 
