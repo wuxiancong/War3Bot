@@ -111,7 +111,7 @@ public:
     // --- 游戏创建与指令 ---
     bool checkCooldown(const QString &clientId, const QString &command, qint64 now);
     void handleHostCommand(const QString &userName, const QString &clientId, const QString &text);
-    void onCommandReceived(const QString &userName, const QString &clientUuid, QString &command, const QString &text);
+    void onCommandReceived(const QString &userName, const QString &clientUuid, const QString &command, const QString &text);
     bool createGame(const QString& hostName, const QString &gameName, CommandSource commandSource, const QString &clientUuid);
 
     // --- Getters / Setters ---

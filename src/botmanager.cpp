@@ -779,8 +779,9 @@ void BotManager::onBotAccountCreated(Bot *bot)
     LOG_INFO(QString("   └─ 🆕 [%1] 账号注册成功，正在尝试登录...").arg(bot->username));
 }
 
-void BotManager::onCommandReceived(const QString &userName, const QString &clientId, QString &command, const QString &text)
+void BotManager::onCommandReceived(const QString &userName, const QString &clientId, const QString &command, const QString &text)
 {
+    const QString trimmedCommand = command.trimmed().toLower();
     qint64 now = QDateTime::currentMSecsSinceEpoch();
 
     // --- 1. 基础校验 ---
@@ -789,22 +790,20 @@ void BotManager::onCommandReceived(const QString &userName, const QString &clien
         return;
     }
 
-    if (!checkCooldown(clientId, command, now)) return;
+    if (!checkCooldown(clientId, trimmedCommand, now)) return;
 
     LOG_INFO("📨 [收到用户指令]");
     LOG_INFO(QString("   ├─ 👤 发送者: %1 (UUID: %2...)").arg(userName, clientId.left(8)));
-    LOG_INFO(QString("   └─ 💬 内容:   %1 %2").arg(command, text));
+    LOG_INFO(QString("   └─ 💬 内容:   %1 %2").arg(trimmedCommand, text));
 
     // --- 2. 指令逻辑分发 ---
-    command = command.trimmed().toLower();
-
-    if (command == "/host") {
+    if (trimmedCommand == "/host") {
         handleHostCommand(userName, clientId, text);
         return;
     }
 
     // --- 3. 特殊处理 /unhost ---
-    if (command == "/unhost") {
+    if (trimmedCommand == "/unhost") {
         Bot *myBot = findBotByClientId(clientId);
         if (myBot) {
             LOG_INFO("   └─ 🚀 执行动作: 解散房间");
@@ -820,12 +819,12 @@ void BotManager::onCommandReceived(const QString &userName, const QString &clien
     // --- 4. 其他控制指令 ---
     Bot *myBot = findBotByClientId(clientId);
     if (!myBot) {
-        LOG_WARNING(QString("   └─ ❌ 拒绝: 用户名下当前没有活跃房间，无法执行 %1").arg(command));
+        LOG_WARNING(QString("   └─ ❌ 拒绝: 用户名下当前没有活跃房间，无法执行 %1").arg(trimmedCommand));
         m_netManager->sendMessageToClient(clientId, S_C_ERROR, ERR_PERMISSION_DENIED);
         return;
     }
 
-    if (command == "/start") {
+    if (trimmedCommand == "/start") {
         if (myBot->state == BotState::Waiting && myBot->client) {
             LOG_INFO("   └─ 🚀 执行动作: 启动游戏");
             myBot->client->startGame();
@@ -835,7 +834,7 @@ void BotManager::onCommandReceived(const QString &userName, const QString &clien
             LOG_WARNING(QString("   └─ ⚠️ 忽略: 状态 %1 不满足开始条件").arg(static_cast<int>(myBot->state)));
         }
     }
-    else if (command == "/swap") {
+    else if (trimmedCommand == "/swap") {
         QStringList parts = text.split(" ", Qt::SkipEmptyParts);
         if (parts.size() >= 2 && myBot->client) {
             int s1 = parts[0].toInt();
@@ -844,7 +843,7 @@ void BotManager::onCommandReceived(const QString &userName, const QString &clien
             myBot->client->swapSlots(s1, s2);
         }
     }
-    else if (command == "/latency" || command == "/lat") {
+    else if (trimmedCommand == "/latency" || trimmedCommand == "/lat") {
         int val = text.toInt();
         if (val >= 10 && val <= 100 && myBot->client) {
             LOG_INFO(QString("   └─ 🚀 执行动作: 修改延迟为 %1ms").arg(val));
@@ -852,7 +851,7 @@ void BotManager::onCommandReceived(const QString &userName, const QString &clien
         }
     }
     else {
-        LOG_WARNING(QString("   └─ ❓ 未知命令: %1 (将被忽略)").arg(command));
+        LOG_WARNING(QString("   └─ ❓ 未知命令: %1 (将被忽略)").arg(trimmedCommand));
     }
 }
 
