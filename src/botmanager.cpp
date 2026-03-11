@@ -779,7 +779,7 @@ void BotManager::onBotAccountCreated(Bot *bot)
     LOG_INFO(QString("   └─ 🆕 [%1] 账号注册成功，正在尝试登录...").arg(bot->username));
 }
 
-void BotManager::onCommandReceived(const QString &userName, const QString &clientId, const QString &command, const QString &text)
+void BotManager::onCommandReceived(const QString &userName, const QString &clientId, QString &command, const QString &text)
 {
     qint64 now = QDateTime::currentMSecsSinceEpoch();
 
@@ -796,25 +796,21 @@ void BotManager::onCommandReceived(const QString &userName, const QString &clien
     LOG_INFO(QString("   └─ 💬 内容:   %1 %2").arg(command, text));
 
     // --- 2. 指令逻辑分发 ---
+    command = command.trimmed().toLower();
 
-    // A. 建房指令
     if (command == "/host") {
         handleHostCommand(userName, clientId, text);
         return;
     }
 
-    // B. 获取关联的机器人
-    Bot *myBot = findBotByClientId(clientId);
-
     // --- 3. 特殊处理 /unhost ---
     if (command == "/unhost") {
+        Bot *myBot = findBotByClientId(clientId);
         if (myBot) {
-            LOG_INFO(QString("   └─ 🚀 执行动作: 解散/撤回房间 [%1] (状态: %2)")
-                         .arg(myBot->gameInfo.gameName)
-                         .arg(static_cast<int>(myBot->state)));
+            LOG_INFO("   └─ 🚀 执行动作: 解散房间");
             removeGame(myBot, false);
         } else {
-            LOG_INFO("   └─ ℹ️ 用户名下无活跃房间，静默完成解散流程");
+            LOG_INFO("   └─ ℹ️ 房间已在断开时自动清理，指令仅做同步确认");
         }
 
         m_netManager->sendMessageToClient(clientId, S_C_MESSAGE, MSG_HOST_UNHOST_GAME);
@@ -822,6 +818,7 @@ void BotManager::onCommandReceived(const QString &userName, const QString &clien
     }
 
     // --- 4. 其他控制指令 ---
+    Bot *myBot = findBotByClientId(clientId);
     if (!myBot) {
         LOG_WARNING(QString("   └─ ❌ 拒绝: 用户名下当前没有活跃房间，无法执行 %1").arg(command));
         m_netManager->sendMessageToClient(clientId, S_C_ERROR, ERR_PERMISSION_DENIED);
