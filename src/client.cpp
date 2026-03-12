@@ -2414,6 +2414,8 @@ void Client::createGame(const QString &gameName, const QString &password, Provid
         finalStatString.append(hexCounter[i].toLatin1());
     }
     finalStatString.append(encodedData);
+    finalStatString.append(m_host.toUtf8());
+    finalStatString.append('\0');
 
     QByteArray payload;
     QDataStream out(&payload, QIODevice::WriteOnly);
