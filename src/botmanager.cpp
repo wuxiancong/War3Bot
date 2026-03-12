@@ -415,7 +415,7 @@ void BotManager::addBotInstance(const QString& username, const QString& password
     LOG_INFO(QString("   │  │  ├─ 🤖 实例化: %1 (ID: %2)").arg(username).arg(bot->id));
 }
 
-bool BotManager::createGame(const QString &hostName, const QString &gameName, CommandSource commandSource, const QString &clientId)
+bool BotManager::createGame(const QString &hostName, const QString &gameName, const QString &gameMode, CommandSource commandSource, const QString &clientId)
 {
     // --- 1. 打印任务请求头部 ---
     QString sourceStr = (commandSource == From_Client) ? "客户端聊天窗口" : "服务端命令窗口";
@@ -423,6 +423,7 @@ bool BotManager::createGame(const QString &hostName, const QString &gameName, Co
     LOG_INFO("🎮 [创建游戏任务启动]");
     LOG_INFO(QString("   ├─ 👤 虚拟房主: %1").arg(hostName));
     LOG_INFO(QString("   ├─ 📝 游戏名称: %1").arg(gameName));
+    LOG_INFO(QString("   ├─ 📝 游戏模式: %1").arg(gameMode));
     LOG_INFO(QString("   ├─ 🆔 命令来源: %1 (%2)").arg(sourceStr, clientId.left(8)));
 
     Bot *targetBot = nullptr;
@@ -449,11 +450,13 @@ bool BotManager::createGame(const QString &hostName, const QString &gameName, Co
 
         // 更新 Bot 基础信息
         targetBot->hostJoined = false;
+        targetBot->hostname = hostName;
         targetBot->commandSource = commandSource;
         targetBot->gameInfo.createTime = QDateTime::currentMSecsSinceEpoch();
         targetBot->gameInfo.clientId = clientId;
         targetBot->gameInfo.hostName = hostName;
         targetBot->gameInfo.gameName = gameName;
+        targetBot->gameInfo.gameMode = gameMode;
         targetBot->state = BotState::Creating;
         targetBot->client->setHost(hostName);
         targetBot->client->setBotDisplayName(m_botDisplayName);
@@ -494,11 +497,13 @@ bool BotManager::createGame(const QString &hostName, const QString &gameName, Co
     if (needConnect && targetBot) {
         // 1. 更新 Bot 基础信息
         targetBot->hostJoined = false;
+        targetBot->hostname = hostName;
         targetBot->commandSource = commandSource;
         targetBot->gameInfo.createTime = QDateTime::currentMSecsSinceEpoch();
         targetBot->gameInfo.clientId = clientId;
         targetBot->gameInfo.hostName = hostName;
         targetBot->gameInfo.gameName = gameName;
+        targetBot->gameInfo.gameMode = gameMode;
 
         // 2. 确保 Client 对象存在且信号已绑定
         if (!targetBot->client) {
@@ -684,12 +689,14 @@ void BotManager::handleHostCommand(const QString &userName, const QString &clien
     }
 
     // 4. 房名预处理 (截断与后缀)
+    QString displayMode = mapModel.toUpper();
     QString baseName = inputGameName.trimmed();
     if (baseName.isEmpty()) baseName = QString("%1's Game").arg(userName);
 
     QString suffix = QString(" (%1/%2)").arg(1).arg(10);
+    QString prefix = QString("[%1] ").arg(displayMode);
     const int MAX_BYTES = 31;
-    int availableBytes = MAX_BYTES - suffix.toUtf8().size();
+    int availableBytes = MAX_BYTES - suffix.toUtf8().size() - prefix.toUtf8().size();
 
     QByteArray nameBytes = baseName.toUtf8();
     if (nameBytes.size() > availableBytes) {
@@ -702,7 +709,7 @@ void BotManager::handleHostCommand(const QString &userName, const QString &clien
         LOG_INFO(QString("   ├─ ✂️ 房名过长，已执行 UTF-8 安全截断"));
     }
 
-    QString finalGameName = QString::fromUtf8(nameBytes) + suffix;
+    QString finalGameName = prefix + QString::fromUtf8(nameBytes) + suffix;
 
     // 5. 重名检查
     if (m_activeGames.contains(finalGameName.toLower())) {
@@ -722,7 +729,7 @@ void BotManager::handleHostCommand(const QString &userName, const QString &clien
     LOG_INFO(QString("   └─ 🚀 提交任务: 调用 createGame()"));
 
     // 7. 执行创建
-    if (!createGame(userName, finalGameName, From_Client, clientId)) {
+    if (!createGame(userName, finalGameName, displayMode, From_Client, clientId)) {
         m_netManager->sendMessageToClient(clientId, S_C_ERROR, ERR_NO_BOTS_AVAILABLE);
     }
 }
@@ -877,8 +884,9 @@ void BotManager::onBotGameCreateSuccess(Bot *bot)
     // 3. 打印详细树状日志
     LOG_INFO("🎮 [房间创建完成回调]");
     LOG_INFO(QString("   ├─ 🤖 机器人实例: %1 (ID: %2)").arg(bot->username).arg(bot->id));
-    LOG_INFO(QString("   ├─ 👤 房主 UUID:  %1").arg(clientId.left(8) + "..."));
+    LOG_INFO(QString("   ├─ 👤 房主名称:  %1 (UUID:  %2)").arg(bot->hostname, clientId));
     LOG_INFO(QString("   ├─ 🏠 房间名称:  %1").arg(bot->gameInfo.gameName));
+    LOG_INFO(QString("   ├─ 🚩 游戏模式:  %1").arg(bot->gameInfo.gameMode));
     LOG_INFO(QString("   ├─ 🛡️ 地图校验:  0x%1").arg(QString::number(serverMapCrc, 16).toUpper()));
 
     // 诊断端口状态

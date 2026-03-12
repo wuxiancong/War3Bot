@@ -28,6 +28,7 @@ enum class BotState {
 // === 2. 房间信息结构体 ===
 struct GameInfo {
     QString gameName = "";
+    QString gameMode = "";
     QString mapName = "";
     QString mapPath = "";
     QString hostName = "";
@@ -46,6 +47,7 @@ struct Bot {
     quint32 id;
     Client *client;
     BotState state;
+    QString hostname;
     QString username;
     QString password;
     GameInfo gameInfo;
@@ -112,7 +114,7 @@ public:
     bool checkCooldown(const QString &clientId, const QString &command, qint64 now);
     void handleHostCommand(const QString &userName, const QString &clientId, const QString &text);
     void onCommandReceived(const QString &userName, const QString &clientUuid, const QString &command, const QString &text);
-    bool createGame(const QString& hostName, const QString &gameName, CommandSource commandSource, const QString &clientUuid);
+    bool createGame(const QString& hostName, const QString &gameName, const QString &gameMode, CommandSource commandSource, const QString &clientUuid);
 
     // --- Getters / Setters ---
     const QVector<Bot*>& getAllBots() const;
