@@ -128,7 +128,7 @@ bool NetManager::setupDatabase()
         "acct_lastlogin_time int DEFAULT 0,"
         "acct_lastlogin_owner varchar(128) DEFAULT NULL,"
         "acct_lastlogin_clienttag varchar(4) DEFAULT NULL,"
-        "acct_lastlogin_ip varchar(16) DEFAULT NULL,"
+        "acct_lastlogin_ip varchar(45) DEFAULT NULL COMMENT '支持IPv6',"
         "acct_ctime varchar(128) DEFAULT NULL,"
         "acct_userlang varchar(128) DEFAULT NULL,"
         "acct_verifier varchar(128) DEFAULT NULL,"
@@ -139,12 +139,20 @@ bool NetManager::setupDatabase()
         "last_uuid VARCHAR(40) DEFAULT '' COMMENT '软件安装实例UUID',"
         "last_hwid VARCHAR(64) DEFAULT '' COMMENT '物理硬件指纹',"
 
-        // --- [新增：双重验证与来源追踪字段] ---
+        // --- [双重验证与来源追踪] ---
         "web_password_hash VARCHAR(255) DEFAULT NULL COMMENT '网页端登录密码Hash',"
         "login_source VARCHAR(20) DEFAULT 'web' COMMENT '登录来源: web, launcher, game',"
-        "is_web_verified TINYINT(1) DEFAULT 0 COMMENT '网页端验证状态 (1为已通过网页验证)',"
+        "is_web_verified TINYINT(1) DEFAULT 0 COMMENT '网页端验证状态',"
 
-        "register_ip VARCHAR(16) DEFAULT '' COMMENT '初始注册IP',"
+        // --- [新增：认证与安全相关字段] ---
+        "tellphone_number VARCHAR(20) DEFAULT NULL COMMENT '绑定手机号',"
+        "is_email_verified TINYINT(1) DEFAULT 0 COMMENT '邮箱是否已激活',"
+        "is_phone_verified TINYINT(1) DEFAULT 0 COMMENT '手机是否已绑定',"
+        "total_ingame_time INT DEFAULT 0 COMMENT '游戏内累计时长(分钟)',"
+        "cheat_records_count INT DEFAULT 0 COMMENT '作弊记录次数',"
+        "report_records_count INT DEFAULT 0 COMMENT '被举报次数',"
+
+        "register_ip VARCHAR(45) DEFAULT '' COMMENT '初始注册IP (支持IPv6)',"
         "register_loc VARCHAR(64) DEFAULT '未知' COMMENT '注册地理位置',"
         "register_time DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '平台注册时间',"
 
@@ -160,7 +168,9 @@ bool NetManager::setupDatabase()
 
         // 增加唯一键索引
         "UNIQUE KEY idx_uid (uid),"
-        "INDEX idx_hwid (last_hwid)"
+        "INDEX idx_hwid (last_hwid),"
+        "INDEX idx_email (acct_email),"
+        "INDEX idx_phone (tellphone_number)"
         ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;";
 
     // b. 天梯数据表
