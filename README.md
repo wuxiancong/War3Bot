@@ -44,7 +44,7 @@ cd War3Bot
 chmod +x install.sh
 ./install.sh
 
-## 非 github 克隆需输入下面命令 
+## 非 github 克隆需输入下面命令 (如：通过上传文件夹的方式到服务器)
 sed -i 's/\r$//' install.sh
 
 ```
