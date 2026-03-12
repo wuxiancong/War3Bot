@@ -800,7 +800,7 @@ void BotManager::onCommandReceived(const QString &userName, const QString &clien
     if (!checkCooldown(clientId, trimmedCommand, now)) return;
 
     LOG_INFO("📨 [收到用户指令]");
-    LOG_INFO(QString("   ├─ 👤 发送者: %1 (UUID: %2...)").arg(userName, clientId.left(8)));
+    LOG_INFO(QString("   ├─ 👤 发送者: %1 (UUID: %2)").arg(userName, clientId));
     LOG_INFO(QString("   └─ 💬 内容:   %1 %2").arg(trimmedCommand, text));
 
     // --- 2. 指令逻辑分发 ---
