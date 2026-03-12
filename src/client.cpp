@@ -2395,12 +2395,16 @@ void Client::createGame(const QString &gameName, const QString &password, Provid
     }
 
     QString mapName = QFileInfo(m_lastLoadedMapPath).fileName();
-    QByteArray encodedData = m_war3Map.getEncodedStatString(m_botDisplayName);
+    QString statDisplayName = m_host.isEmpty() ? m_botDisplayName : m_host;
+    QByteArray encodedData = m_war3Map.getEncodedStatString(statDisplayName);
     if (encodedData.isEmpty()) {
         LOG_CRITICAL("   └─ ❌ [严重错误] StatString 生成失败");
         return;
     }
-    LOG_INFO(QString("   ├─ 🗺️ 地图加载: %1 (StatString Ready)").arg(mapName));
+
+    LOG_INFO(QString("   ├─ 🗺️ 地图加载: %1").arg(mapName));
+    LOG_INFO(QString("   ├─ 👤 视觉房主: %1 %2")
+                 .arg(statDisplayName, m_host.isEmpty() ? "(机器人)" : ""));
 
     // 4. 参数构建
     m_hostCounter++;
@@ -2414,8 +2418,6 @@ void Client::createGame(const QString &gameName, const QString &password, Provid
         finalStatString.append(hexCounter[i].toLatin1());
     }
     finalStatString.append(encodedData);
-    finalStatString.append(m_host.toUtf8());
-    finalStatString.append('\0');
 
     QByteArray payload;
     QDataStream out(&payload, QIODevice::WriteOnly);

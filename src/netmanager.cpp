@@ -139,6 +139,11 @@ bool NetManager::setupDatabase()
         "last_uuid VARCHAR(40) DEFAULT '' COMMENT '软件安装实例UUID',"
         "last_hwid VARCHAR(64) DEFAULT '' COMMENT '物理硬件指纹',"
 
+        // --- [新增：双重验证与来源追踪字段] ---
+        "web_password_hash VARCHAR(255) DEFAULT NULL COMMENT '网页端登录密码Hash',"
+        "login_source VARCHAR(20) DEFAULT 'web' COMMENT '登录来源: web, launcher, game',"
+        "is_web_verified TINYINT(1) DEFAULT 0 COMMENT '网页端验证状态 (1为已通过网页验证)',"
+
         "register_ip VARCHAR(16) DEFAULT '' COMMENT '初始注册IP',"
         "register_loc VARCHAR(64) DEFAULT '未知' COMMENT '注册地理位置',"
         "register_time DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '平台注册时间',"
