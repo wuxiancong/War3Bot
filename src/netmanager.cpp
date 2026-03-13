@@ -144,7 +144,7 @@ bool NetManager::setupDatabase()
         "login_source VARCHAR(20) DEFAULT 'web' COMMENT '登录来源: web, launcher, game',"
         "is_web_verified TINYINT(1) DEFAULT 0 COMMENT '网页端验证状态',"
 
-        // --- [新增：认证与安全相关字段] ---
+        // --- [认证与安全相关字段] ---
         "tellphone_number VARCHAR(20) DEFAULT NULL COMMENT '绑定手机号',"
         "is_email_verified TINYINT(1) DEFAULT 0 COMMENT '邮箱是否已激活',"
         "is_phone_verified TINYINT(1) DEFAULT 0 COMMENT '手机是否已绑定',"
@@ -152,13 +152,22 @@ bool NetManager::setupDatabase()
         "cheat_records_count INT DEFAULT 0 COMMENT '作弊记录次数',"
         "report_records_count INT DEFAULT 0 COMMENT '被举报次数',"
 
+        // --- [Token 验证相关字段] ---
+        "email_verify_token VARCHAR(64) DEFAULT NULL COMMENT '邮箱验证Token',"
+        "email_verify_expires DATETIME DEFAULT NULL COMMENT '邮箱验证链接过期时间',"
+        "password_reset_token VARCHAR(64) DEFAULT NULL COMMENT '密码重置Token',"
+        "password_reset_expires DATETIME DEFAULT NULL COMMENT '密码重置链接过期时间',"
+
         "register_ip VARCHAR(45) DEFAULT '' COMMENT '初始注册IP (支持IPv6)',"
-        "register_loc VARCHAR(64) DEFAULT '未知' COMMENT '注册地理位置',"
+        "register_location VARCHAR(64) DEFAULT '未知' COMMENT '注册地理位置',"
         "register_time DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '平台注册时间',"
+        "deleted_time DATETIME DEFAULT NULL COMMENT '注销时间(软删除)',"
 
         "role TINYINT DEFAULT 0 COMMENT '0玩家, 1管理, 2超管',"
         "status TINYINT DEFAULT 0 COMMENT '0离线, 1大厅, 2房间, 3战斗',"
         "total_online_time INT DEFAULT 0 COMMENT '累计在线分钟',"
+        "avatar_url VARCHAR(255) DEFAULT '' COMMENT '用户头像路径',"
+        "banned_until DATETIME DEFAULT NULL COMMENT 'Web端封禁截止时间',"
 
         "coins_current_balance DECIMAL(10,2) DEFAULT 0.00 COMMENT 'CC币余额',"
         "coins_total_recharged DECIMAL(10,2) DEFAULT 0.00 COMMENT '累计充值总额',"
@@ -279,7 +288,7 @@ bool NetManager::setupDatabase()
         "expires_at DATETIME"
         ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;";
 
-        LOG_INFO(QString("│   │   ├── 📝 已加载表结构定义: %1 张表").arg(myTables.size()));
+    LOG_INFO(QString("│   │   ├── 📝 已加载表结构定义: %1 张表").arg(myTables.size()));
 
     // 3. 读取连接参数
     QString host = m_settings ? m_settings->value("mysql/host", "127.0.0.1").toString() : "127.0.0.1";
