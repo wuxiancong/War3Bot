@@ -44,9 +44,15 @@ private:
     DbManager(const DbManager&) = delete;
     DbManager& operator=(const DbManager&) = delete;
 
-    QSqlDatabase m_db;
-    QSet<QString> m_bannedCache;
-    QReadWriteLock m_cacheLock;
+    QSqlDatabase    m_db;
+    QSet<QString>   m_bannedCache;
+    QReadWriteLock  m_cacheLock;
+    QStringList     m_targetTables = {
+        "users", "ladder_stats", "matches",
+        "match_results", "player_hero_stats",
+        "player_mode_stats", "friendships",
+        "chat_logs", "banned_hwids"
+    };
 };
 
 #endif // DBMANAGER_H

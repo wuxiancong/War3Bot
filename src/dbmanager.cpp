@@ -8,7 +8,8 @@
 
 // --- 日志辅助工具 ---
 static int g_indent = 0;
-void LOG_TREE(const QString &msg, bool isError = false, bool isLast = false) {
+void LOG_TREE(const QString &msg, bool isError = false, bool isLast = false)
+{
     QString prefix = "";
     for (int i = 0; i < g_indent; ++i) {
         prefix += "│   ";
@@ -27,16 +28,19 @@ public:
 };
 // ------------------
 
-DbManager &DbManager::instance() {
+DbManager &DbManager::instance()
+{
     static DbManager instance;
     return instance;
 }
 
-DbManager::DbManager(QObject *parent) : QObject(parent) {
+DbManager::DbManager(QObject *parent) : QObject(parent)
+{
 
 }
 
-DbManager::~DbManager() {
+DbManager::~DbManager()
+{
     if (m_db.isOpen()) m_db.close();
 }
 
@@ -124,9 +128,7 @@ bool DbManager::init(const QString &driver, const QString &dbName,
         QStringList actualTables = m_db.tables();
         LOG_INFO("│   ├── 🔍 数据库表验证:");
 
-        QStringList targetTables = {"users", "ladder_stats", "matches", "match_results", "player_hero_stats", "player_mode_stats",
-                                    "friendships", "chat_logs", "banned_hwids"};
-        for (const QString &tableName : targetTables) {
+        for (const QString &tableName : qAsConst(m_targetTables)) {
             if (actualTables.contains(tableName, Qt::CaseInsensitive)) {
                 LOG_INFO(QString("│   │   └── ✅ 表 [%1] 确认存在").arg(tableName));
             } else {
@@ -137,15 +139,14 @@ bool DbManager::init(const QString &driver, const QString &dbName,
     return schemaOk;
 }
 
-bool DbManager::executeSchema(const QMap<QString, QString> &tables) {
+bool DbManager::executeSchema(const QMap<QString, QString> &tables)
+{
     LOG_TREE("📑 正在同步表结构...");
     SCOPE_LEVEL;
 
     QSqlQuery query(m_db);
 
-    QStringList order = {"users", "matches", "ladder_stats", "match_results", "chat_logs", "banned_hwids"};
-
-    for (const QString &tableName : order) {
+    for (const QString &tableName : qAsConst(m_targetTables)) {
         if (!tables.contains(tableName)) continue;
 
         LOG_TREE(QString("正在处理表: %1").arg(tableName));
@@ -159,7 +160,8 @@ bool DbManager::executeSchema(const QMap<QString, QString> &tables) {
     return true;
 }
 
-void DbManager::syncBannedList() {
+void DbManager::syncBannedList()
+{
     LOG_TREE("♻️ 正在同步黑名单缓存...");
     SCOPE_LEVEL;
 
@@ -175,7 +177,8 @@ void DbManager::syncBannedList() {
     LOG_TREE(QString("✅ 同步完成，缓存数量: %1").arg(count), false, true);
 }
 
-bool DbManager::isHardwareIdBanned(const QString &hwid) {
+bool DbManager::isHardwareIdBanned(const QString &hwid)
+{
     QReadLocker locker(&m_cacheLock);
     bool isBanned = m_bannedCache.contains(hwid.toUpper());
     if (isBanned) {
@@ -184,7 +187,8 @@ bool DbManager::isHardwareIdBanned(const QString &hwid) {
     return isBanned;
 }
 
-bool DbManager::banHardwareId(const QString &hwid, const QString &username, const QString &reason, uint days) {
+bool DbManager::banHardwareId(const QString &hwid, const QString &username, const QString &reason, uint days)
+{
     LOG_TREE(QString("🚫 执行封禁: 用户[%1] HWID[%2]").arg(username, hwid));
     SCOPE_LEVEL;
 
@@ -209,7 +213,8 @@ bool DbManager::banHardwareId(const QString &hwid, const QString &username, cons
     return false;
 }
 
-bool DbManager::unbanHardwareId(const QString &hwid) {
+bool DbManager::unbanHardwareId(const QString &hwid)
+{
     LOG_TREE(QString("🔓 执行解封: HWID[%1]").arg(hwid));
     SCOPE_LEVEL;
 
@@ -227,7 +232,8 @@ bool DbManager::unbanHardwareId(const QString &hwid) {
     return false;
 }
 
-QString DbManager::getHwidFromHistory(const QString &username) {
+QString DbManager::getHwidFromHistory(const QString &username)
+{
     LOG_TREE(QString("🔍 查询历史记录: 用户[%1]").arg(username));
     QSqlQuery query(m_db);
     query.prepare("SELECT last_hwid FROM users WHERE username = :user LIMIT 1");
@@ -241,7 +247,8 @@ QString DbManager::getHwidFromHistory(const QString &username) {
     return "";
 }
 
-void DbManager::updateUserHwid(const QString &username, const QString &hwid) {
+void DbManager::updateUserHwid(const QString &username, const QString &hwid)
+{
     LOG_TREE(QString("📝 更新用户指纹: %1 -> %2").arg(username, hwid));
     QSqlQuery query(m_db);
     query.prepare("UPDATE users SET last_hwid = :hwid, lastlogin_time = UNIX_TIMESTAMP() WHERE username = :user");
@@ -252,7 +259,8 @@ void DbManager::updateUserHwid(const QString &username, const QString &hwid) {
     }
 }
 
-void DbManager::checkConnection() {
+void DbManager::checkConnection()
+{
     if (!m_db.isOpen() || !m_db.isValid()) {
         LOG_TREE("📡 [DB] 连接断开，触发重连流程...");
         SCOPE_LEVEL;
