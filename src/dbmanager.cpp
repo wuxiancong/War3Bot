@@ -120,7 +120,20 @@ bool DbManager::init(const QString &driver, const QString &dbName,
 
     // 4. 执行建表脚本
     bool schemaOk = executeSchema(tables);
-    LOG_INFO(schemaOk ? "✨ [完成] 数据库初始化成功" : "💥 [终止] 数据库初始化失败");
+    if (schemaOk) {
+        QStringList actualTables = m_db.tables();
+        LOG_INFO("│   ├── 🔍 数据库表验证:");
+
+        QStringList targetTables = {"users", "ladder_stats", "matches", "match_results", "player_hero_stats", "player_mode_stats",
+                                    "friendships", "chat_logs", "banned_hwids"};
+        for (const QString &tableName : targetTables) {
+            if (actualTables.contains(tableName, Qt::CaseInsensitive)) {
+                LOG_INFO(QString("│   │   └── ✅ 表 [%1] 确认存在").arg(tableName));
+            } else {
+                LOG_ERROR(QString("│   │   └── ❌ 表 [%1] 缺失！").arg(tableName));
+            }
+        }
+    }
     return schemaOk;
 }
 

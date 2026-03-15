@@ -89,12 +89,12 @@ bool NetManager::setupDatabase()
     // 1. 根据平台环境选择驱动和基础配置
 #ifdef Q_OS_WIN
     QString driver = "QSQLITE";
-    QString dbName = QCoreApplication::applicationDirPath() + "/platform.db";
+    QString dbName = QCoreApplication::applicationDirPath() + "/pvpgn.db";
     QString autoInc = "AUTOINCREMENT";
 #else
     // Ubuntu/Linux 生产环境：驱动名称 -> QMYSQL
     QString driver = "QMYSQL";
-    QString dbName = "platform";
+    QString dbName = "pvpgn";
     QString autoInc = "AUTO__INCREMENT";
 #endif
 
@@ -268,7 +268,48 @@ bool NetManager::setupDatabase()
         "FOREIGN KEY (match_id) REFERENCES matches(match_id) ON DELETE CASCADE"
         ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;";
 
-    // e. 聊天记录表
+    // e. 英雄汇总统计表
+    myTables["player_hero_stats"] =
+        "CREATE TABLE IF NOT EXISTS player_hero_stats ("
+        "id BIGINT AUTO_INCREMENT PRIMARY KEY,"
+        "username VARCHAR(32),"
+        "hero_name VARCHAR(64),"
+        "games_played INT DEFAULT 0,"
+        "wins INT DEFAULT 0,"
+        "total_kills INT DEFAULT 0,"
+        "total_deaths INT DEFAULT 0,"
+        "total_assists INT DEFAULT 0,"
+        "max_kills INT DEFAULT 0 COMMENT '该英雄单场最高击杀',"
+        "max_duration_secs INT DEFAULT 0 COMMENT '该英雄最长比赛时间',"
+        "UNIQUE KEY idx_user_hero (username, hero_name),"
+        "FOREIGN KEY (username) REFERENCES users(username) ON DELETE CASCADE"
+        ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;";
+
+    // f. 游戏模式汇总表
+    myTables["player_mode_stats"] =
+        "CREATE TABLE IF NOT EXISTS player_mode_stats ("
+        "id BIGINT AUTO_INCREMENT PRIMARY KEY,"
+        "username VARCHAR(32),"
+        "game_mode VARCHAR(32),"
+        "games_played INT DEFAULT 0,"
+        "wins INT DEFAULT 0,"
+        "UNIQUE KEY idx_user_mode (username, game_mode),"
+        "FOREIGN KEY (username) REFERENCES users(username) ON DELETE CASCADE"
+        ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;";
+
+    // g. 好友关系表
+    myTables["friendships"] =
+        "CREATE TABLE IF NOT EXISTS friendships ("
+        "user_id VARCHAR(32),"
+        "friend_id VARCHAR(32),"
+        "status TINYINT DEFAULT 0 COMMENT '0:申请中, 1:已是好友, 2:黑名单',"
+        "created_at DATETIME DEFAULT CURRENT_TIMESTAMP,"
+        "PRIMARY KEY (user_id, friend_id),"
+        "FOREIGN KEY (user_id) REFERENCES users(username) ON DELETE CASCADE,"
+        "FOREIGN KEY (friend_id) REFERENCES users(username) ON DELETE CASCADE"
+        ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;";
+
+    // h. 聊天记录表
     myTables["chat_logs"] =
         "CREATE TABLE IF NOT EXISTS chat_logs ("
         "id BIGINT AUTO_INCREMENT PRIMARY KEY, "
@@ -278,7 +319,7 @@ bool NetManager::setupDatabase()
         "sent_at DATETIME DEFAULT CURRENT_TIMESTAMP"
         ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;";
 
-    // f. 黑名单表
+    // i. 黑名单表
     myTables["banned_hwids"] =
         "CREATE TABLE IF NOT EXISTS banned_hwids ("
         "hwid VARCHAR(64) PRIMARY KEY, "
