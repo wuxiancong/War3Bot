@@ -48,7 +48,7 @@ private:
     QSet<QString>   m_bannedCache;
     QReadWriteLock  m_cacheLock;
     QStringList     m_targetTables = {
-        "users", "ladder_stats", "matches",
+        "users", "temp_users", "ladder_stats", "matches",
         "match_results", "player_hero_stats",
         "player_mode_stats", "friendships",
         "chat_logs", "banned_hwids"

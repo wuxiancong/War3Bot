@@ -182,7 +182,35 @@ bool NetManager::setupDatabase()
         "INDEX idx_phone (tellphone_number)"
         ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;";
 
-    // b. 天梯数据表
+    // b. 用户临时表
+    myTables["temp_users"] =
+        "CREATE TABLE IF NOT EXISTS temp_users ("
+        "id INT NOT NULL AUTO_INCREMENT PRIMARY KEY COMMENT '临时表自增ID',"
+        "username VARCHAR(32) NOT NULL COMMENT '平台登录名',"
+        "acct_email VARCHAR(128) NOT NULL COMMENT '注册邮箱',"
+        "tellphone_number VARCHAR(20) DEFAULT NULL COMMENT '绑定手机号',"
+
+        // --- [密码与安全相关] ---
+        "web_password_hash VARCHAR(255) NOT NULL COMMENT '网页端登录密码Hash',"
+        "encrypted_password VARCHAR(255) NOT NULL COMMENT '加密的明文密码用于PvPGN注册',"
+        "acct_salt VARCHAR(128) DEFAULT NULL COMMENT '战网密码盐值',"
+        "acct_verifier VARCHAR(128) DEFAULT NULL COMMENT '战网密码验证器',"
+
+        // --- [邮箱验证相关] ---
+        "email_verify_token VARCHAR(64) NOT NULL COMMENT '邮箱验证Token',"
+        "email_verify_expires DATETIME NOT NULL COMMENT '邮箱验证链接过期时间',"
+
+        // --- [注册信息] ---
+        "register_ip VARCHAR(45) DEFAULT '' COMMENT '初始注册IP (支持IPv6)',"
+        "created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '临时记录创建时间',"
+
+        // --- [索引] ---
+        "UNIQUE KEY idx_temp_username (username),"
+        "UNIQUE KEY idx_temp_email (acct_email),"
+        "INDEX idx_temp_token (email_verify_token)"
+        ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;";
+
+    // c. 天梯数据表
     myTables["ladder_stats"] =
         "CREATE TABLE IF NOT EXISTS ladder_stats ("
         "username VARCHAR(32) PRIMARY KEY,"
@@ -216,7 +244,7 @@ bool NetManager::setupDatabase()
         "INDEX idx_score (score)"
         ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;";
 
-    // c. 游戏比赛主表
+    // d. 游戏比赛主表
     myTables["matches"] =
         "CREATE TABLE IF NOT EXISTS matches ("
         "match_id BIGINT AUTO_INCREMENT PRIMARY KEY, "
@@ -228,7 +256,7 @@ bool NetManager::setupDatabase()
         "match_type TINYINT COMMENT '1: 天梯积分赛, 2: 普通练习赛' "
         ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;";
 
-    // d. 比赛结算详情
+    // e. 比赛结算详情
     myTables["match_results"] =
         "CREATE TABLE IF NOT EXISTS match_results ("
         "id BIGINT AUTO_INCREMENT PRIMARY KEY, "
@@ -268,7 +296,7 @@ bool NetManager::setupDatabase()
         "FOREIGN KEY (match_id) REFERENCES matches(match_id) ON DELETE CASCADE"
         ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;";
 
-    // e. 英雄汇总统计表
+    // f. 英雄汇总统计表
     myTables["player_hero_stats"] =
         "CREATE TABLE IF NOT EXISTS player_hero_stats ("
         "id BIGINT AUTO_INCREMENT PRIMARY KEY,"
@@ -285,7 +313,7 @@ bool NetManager::setupDatabase()
         "FOREIGN KEY (username) REFERENCES users(username) ON DELETE CASCADE"
         ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;";
 
-    // f. 游戏模式汇总表
+    // g. 游戏模式汇总表
     myTables["player_mode_stats"] =
         "CREATE TABLE IF NOT EXISTS player_mode_stats ("
         "id BIGINT AUTO_INCREMENT PRIMARY KEY,"
@@ -297,7 +325,7 @@ bool NetManager::setupDatabase()
         "FOREIGN KEY (username) REFERENCES users(username) ON DELETE CASCADE"
         ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;";
 
-    // g. 好友关系表
+    // h. 好友关系表
     myTables["friendships"] =
         "CREATE TABLE IF NOT EXISTS friendships ("
         "user_id VARCHAR(32),"
@@ -309,7 +337,7 @@ bool NetManager::setupDatabase()
         "FOREIGN KEY (friend_id) REFERENCES users(username) ON DELETE CASCADE"
         ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;";
 
-    // h. 聊天记录表
+    // i. 聊天记录表
     myTables["chat_logs"] =
         "CREATE TABLE IF NOT EXISTS chat_logs ("
         "id BIGINT AUTO_INCREMENT PRIMARY KEY, "
@@ -319,7 +347,7 @@ bool NetManager::setupDatabase()
         "sent_at DATETIME DEFAULT CURRENT_TIMESTAMP"
         ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;";
 
-    // i. 黑名单表
+    // g. 黑名单表
     myTables["banned_hwids"] =
         "CREATE TABLE IF NOT EXISTS banned_hwids ("
         "hwid VARCHAR(64) PRIMARY KEY, "
