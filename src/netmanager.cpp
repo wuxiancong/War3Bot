@@ -337,7 +337,16 @@ bool NetManager::setupDatabase()
         "FOREIGN KEY (friend_id) REFERENCES users(username) ON DELETE CASCADE"
         ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;";
 
-    // i. 聊天记录表
+    // i. 邮件发送记录表
+    myTables["email_logs"] =
+        "CREATE TABLE IF NOT EXISTS email_logs ("
+        "id INT NOT NULL AUTO_INCREMENT PRIMARY KEY COMMENT '自增ID', "
+        "email VARCHAR(128) NOT NULL COMMENT '邮箱地址', "
+        "sent_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '发送时间', "
+        "INDEX idx_email_sent (email, sent_at)"
+        ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;";
+
+    // j. 聊天记录表
     myTables["chat_logs"] =
         "CREATE TABLE IF NOT EXISTS chat_logs ("
         "id BIGINT AUTO_INCREMENT PRIMARY KEY, "
@@ -347,7 +356,7 @@ bool NetManager::setupDatabase()
         "sent_at DATETIME DEFAULT CURRENT_TIMESTAMP"
         ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;";
 
-    // g. 黑名单表
+    // k. 黑名单表
     myTables["banned_hwids"] =
         "CREATE TABLE IF NOT EXISTS banned_hwids ("
         "hwid VARCHAR(64) PRIMARY KEY, "

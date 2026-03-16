@@ -51,7 +51,7 @@ private:
         "users", "temp_users", "ladder_stats", "matches",
         "match_results", "player_hero_stats",
         "player_mode_stats", "friendships",
-        "chat_logs", "banned_hwids"
+        "email_logs", "chat_logs", "banned_hwids"
     };
 };
 
