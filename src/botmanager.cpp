@@ -407,8 +407,9 @@ void BotManager::addBotInstance(const QString& username, const QString& password
     connect(bot->client, &Client::visualHostLeft, this, [this, bot]() { this->onBotVisualHostLeft(bot); });
     connect(bot->client, &Client::gameCreateSuccess, this, [this, bot]() { this->onBotGameCreateSuccess(bot); });
     connect(bot->client, &Client::socketError, this, [this, bot](QString error) { this->onBotError(bot, error); });
-    connect(bot->client, &Client::hostJoinedGame, this, [this, bot](const QString &name) { this->onHostJoinedGame(bot, name); });
+    connect(bot->client, &Client::hostJoinedGame, this, [this, bot](const QString &name) { this->onBotHostJoinedGame(bot, name); });
     connect(bot->client, &Client::gameCreateFail, this, [this, bot](GameCreationStatus status) { this->onBotGameCreateFail(bot, status); });
+    connect(bot->client, &Client::roomPingsUpdated, this, [this, bot](const QMap<quint8, quint32> &pings) { this->onBotRoomPingsUpdated(bot, pings); });
 
     m_bots.append(bot);
 
@@ -521,8 +522,9 @@ bool BotManager::createGame(const QString &hostName, const QString &gameName, co
             connect(targetBot->client, &Client::visualHostLeft, this, [this, targetBot]() { this->onBotVisualHostLeft(targetBot); });
             connect(targetBot->client, &Client::gameCreateSuccess, this, [this, targetBot]() { this->onBotGameCreateSuccess(targetBot); });
             connect(targetBot->client, &Client::socketError, this, [this, targetBot](QString error) { this->onBotError(targetBot, error); });
-            connect(targetBot->client, &Client::hostJoinedGame, this, [this, targetBot](const QString &name) { this->onHostJoinedGame(targetBot, name); });
+            connect(targetBot->client, &Client::hostJoinedGame, this, [this, targetBot](const QString &name) { this->onBotHostJoinedGame(targetBot, name); });
             connect(targetBot->client, &Client::gameCreateFail, this, [this, targetBot](GameCreationStatus status) { this->onBotGameCreateFail(targetBot, status); });
+            connect(targetBot->client, &Client::roomPingsUpdated, this, [this, targetBot](const QMap<quint8, quint32> &pings) { this->onBotRoomPingsUpdated(targetBot, pings); });
         } else {
             targetBot->client->setCredentials(targetBot->username, targetBot->password, Protocol_SRP_0x53);
         }
@@ -1004,7 +1006,7 @@ void BotManager::onBotVisualHostLeft(Bot *bot)
     }
 }
 
-void BotManager::onHostJoinedGame(Bot *bot, const QString &hostName)
+void BotManager::onBotHostJoinedGame(Bot *bot, const QString &hostName)
 {
     if (!bot) return;
 
@@ -1083,6 +1085,21 @@ void BotManager::onBotPendingTaskTimeout()
             }
         }
     }
+}
+
+void BotManager::onBotRoomPingsUpdated(Bot *bot, const QMap<quint8, quint32> &pings)
+{
+    if (!bot || bot->gameInfo.clientId.isEmpty() || !m_netManager) {
+        return;
+    }
+
+    QVariantMap vMap;
+
+    for (auto it = pings.constBegin(); it != pings.constEnd(); ++it) {
+        vMap.insert(QString::number(it.key()), it.value());
+    }
+
+    m_netManager->sendRoomPings(bot->gameInfo.clientId, vMap);
 }
 
 void BotManager::onBotError(Bot *bot, QString error)

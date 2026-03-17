@@ -437,6 +437,7 @@ public:
 
     // --- 工具函数 ---
     void sendPingLoop();                                // 定时发送Ping
+    void syncPingsToLauncher();                         // 报告玩家Ping
     void checkPlayerTimeout();                          // 检查玩家超时
     QString getPrimaryIPv4();                           // 获取本机IPv4
     bool bindToRandomPort();                            // 绑定随机UDP端口
@@ -473,6 +474,7 @@ signals:
     void hostJoinedGame(const QString &username);
     void gameCreateFail(GameCreationStatus status);
     void gameCreateSuccess(CommandSource commandSource);
+    void roomPingsUpdated(const QMap<quint8, quint32> &pings);
     void requestCreateGame(const QString &username, const QString &gameName, CommandSource commandSource);
 
 private slots:

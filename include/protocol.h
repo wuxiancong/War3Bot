@@ -24,7 +24,8 @@ enum PacketType : quint8 {
     S_C_PONG                        = 0x0D,
     S_C_ERROR                       = 0x0E,
     S_C_MESSAGE                     = 0x0F,
-    S_C_UPLOADRESULT                = 0x10
+    S_C_UPLOADRESULT                = 0x10,
+    S_C_PING_LIST                   = 0x11
 };
 
 // ==================== 错误码定义 ====================

@@ -1580,6 +1580,16 @@ bool NetManager::sendToClient(const QString &clientId, const QByteArray &data)
     return true;
 }
 
+void NetManager::sendRoomPings(const QString &clientId, const QVariantMap &pings)
+{
+    QJsonDocument doc = QJsonDocument::fromVariant(pings);
+    QByteArray payload = doc.toJson(QJsonDocument::Compact);
+    sendMessageToClient(clientId, PacketType::S_C_PING_LIST, 0, 0, false);
+    if (m_tcpClients.contains(clientId)) {
+        sendTcpPacket(m_tcpClients[clientId], PacketType::S_C_PING_LIST, payload.data(), payload.size());
+    }
+}
+
 void NetManager::sendUploadResult(QTcpSocket* socket, const QString& crc, const QString& fileName, bool success, UploadErrorCode reason)
 {
     if (!socket || !m_udpSocket) return;

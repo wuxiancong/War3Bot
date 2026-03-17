@@ -125,8 +125,9 @@ signals:
     void botStateChanged(int botId, QString username, BotState newState);
 
 private slots:
+    void onBotRoomPingsUpdated(Bot *bot, const QMap<quint8, quint32> &pings);
     void onBotGameCreateFail(Bot *bot, GameCreationStatus status);
-    void onHostJoinedGame(Bot *bot, const QString &hostName);
+    void onBotHostJoinedGame(Bot *bot, const QString &hostName);
     void onBotError(Bot *bot, QString error);
     void onBotGameCreateSuccess(Bot *bot);
     void onBotVisualHostLeft(Bot *bot);

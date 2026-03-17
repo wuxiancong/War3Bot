@@ -1439,11 +1439,20 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
         if (currentPid != 0) {
             qint64 now = QDateTime::currentMSecsSinceEpoch();
+             quint32 nowTick = static_cast<quint32>(QDateTime::currentMSecsSinceEpoch() & 0xFFFFFFFF);
             PlayerData &p = m_players[currentPid];
-            p.currentLatency = (quint32)(now - sentTick);
+            p.currentLatency = nowTick - sentTick;
             p.lastResponseTime = now;
 
             LOG_DEBUG(QString("💓 Pong [PID:%1]: %2 ms").arg(currentPid).arg(p.currentLatency));
+
+            QMap<quint8, quint32> pingMap;
+            for (auto it = m_players.begin(); it != m_players.end(); ++it) {
+                if (it.key() == m_botPid) continue;
+                pingMap.insert(it.key(), it.value().currentLatency);
+            }
+
+            emit roomPingsUpdated(pingMap);
         }
     }
     break;
@@ -3501,6 +3510,16 @@ quint32 Client::getMapCRC() const
     }
 
     return m_war3Map.getMapCRC();
+}
+
+void Client::syncPingsToLauncher()
+{
+    QMap<quint8, quint32> pingMap;
+    for (auto it = m_players.begin(); it != m_players.end(); ++it) {
+        if (it.key() == m_botPid) continue;
+        pingMap.insert(it.key(), it.value().currentLatency);
+    }
+    emit roomPingsUpdated(pingMap);
 }
 
 void Client::sendPingLoop()
