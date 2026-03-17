@@ -1094,10 +1094,20 @@ void BotManager::onBotRoomPingsUpdated(Bot *bot, const QMap<quint8, quint32> &pi
     }
 
     QVariantMap vMap;
+    QString detailLog;
 
     for (auto it = pings.constBegin(); it != pings.constEnd(); ++it) {
-        vMap.insert(QString::number(it.key()), it.value());
+        QString pidStr = QString::number(it.key());
+        vMap.insert(pidStr, it.value());
+        if (!detailLog.isEmpty()) detailLog += " ";
+        detailLog += QString("[%1: %2ms]").arg(pidStr).arg(it.value());
     }
+
+    LOG_INFO(QString("💓 [延迟上报] 来自 Bot-%1 (%2)").arg(bot->id).arg(bot->username));
+    LOG_INFO(QString("   ├─ 🏠 归属房间: %1").arg(bot->gameInfo.gameName));
+    LOG_INFO(QString("   ├─ 👥 活跃槽位: %1").arg(pings.size()));
+    LOG_INFO(QString("   ├─ 📈 详情汇总: %1").arg(detailLog.isEmpty() ? "None" : detailLog));
+    LOG_INFO(QString("   └─ 📡 转发指令: m_netManager->sendRoomPings"));
 
     m_netManager->sendRoomPings(bot->gameInfo.clientId, vMap);
 }

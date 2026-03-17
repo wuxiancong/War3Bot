@@ -1584,9 +1584,21 @@ void NetManager::sendRoomPings(const QString &clientId, const QVariantMap &pings
 {
     QJsonDocument doc = QJsonDocument::fromVariant(pings);
     QByteArray payload = doc.toJson(QJsonDocument::Compact);
-    sendMessageToClient(clientId, PacketType::S_C_PING_LIST, 0, 0, false);
+
+    if (payload.isEmpty()) {
+        payload = "{}";
+    }
+
+    LOG_INFO(QString("📡 [控制通道] 下发房间实时 Ping 列表"));
+    LOG_INFO(QString("   ├─ 🎯 目标 ID: %1").arg(clientId.left(8)));
+    LOG_INFO(QString("   ├─ 📊 数据项:  %1").arg(pings.size()));
+    LOG_INFO(QString("   ├─ 📦 负载:    %1").arg(QString::fromUtf8(payload)));
+    LOG_INFO(QString("   └─ 🚀 协议类型: S_C_PING_LIST (TCP)"));
+
     if (m_tcpClients.contains(clientId)) {
         sendTcpPacket(m_tcpClients[clientId], PacketType::S_C_PING_LIST, payload.data(), payload.size());
+    } else {
+        LOG_ERROR(QString("   ⚠️ [下发失败] 找不到客户端 %1 的活跃 TCP 连接").arg(clientId.left(8)));
     }
 }
 

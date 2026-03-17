@@ -2564,7 +2564,8 @@ QByteArray Client::createW3GSPingFromHostPacket()
     // 2. Payload (4 bytes)
     // 通常使用当前系统运行时间 (毫秒)
     // 客户端收到后会在 0x46 (Pong) 包里原样发回来，用于计算延迟
-    out << (quint32)QDateTime::currentMSecsSinceEpoch();
+    quint32 currentTick = static_cast<quint32>(QDateTime::currentMSecsSinceEpoch() & 0xFFFFFFFF);
+    out << currentTick;
 
     return packet;
 }
