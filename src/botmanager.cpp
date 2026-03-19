@@ -1142,35 +1142,44 @@ void BotManager::onBotRoomPingsUpdated(Bot *bot, const QMap<quint8, quint32> &pi
 
 void BotManager::onBotReadyStateChanged(Bot *bot, const QMap<quint8, QVariantMap> &readyData)
 {
-    if (!bot || bot->gameInfo.clientId.isEmpty() || !m_netManager) {
-        return;
-    }
+    if (!bot || !m_netManager) return;
 
     QVariantMap vMap;
-    QString detailLog;
-
+    QString snapshot;
     for (auto it = readyData.constBegin(); it != readyData.constEnd(); ++it) {
         QString pidStr = QString::number(it.key());
-        QVariantMap status = it.value();
+        vMap.insert(pidStr, it.value());
 
-        vMap.insert(pidStr, status);
+        QVariantMap inner = it.value();
+        bool isReady = inner.value("r").toBool();
+        int seconds = inner.value("c").toInt();
+        snapshot += QString("[%1:%2(%3s)] ").arg(pidStr, isReady ? "R" : "W").arg(seconds);
+    }
 
-        bool isReady = status.value("r").toBool();
-        int countdown = status.value("c").toInt();
+    int broadcastCount = 0;
 
-        if (!detailLog.isEmpty()) detailLog += " | ";
-        detailLog += QString("[PID %1: %2(%3s)]")
-                         .arg(pidStr, isReady ? "READY" : "WAIT")
-                         .arg(countdown);
+    // 发送给房主 (Host)
+    if (!bot->gameInfo.clientId.isEmpty()) {
+        m_netManager->sendRoomReadyStates(bot->gameInfo.clientId, vMap);
+        broadcastCount++;
+    }
+
+    // 发送给房间内所有其他加入者 (Joiners)
+    const QMap<quint8, PlayerData> &roomPlayers = bot->client->getPlayers();
+    for (const auto &player : roomPlayers) {
+        if (player.pid != 2 &&
+            !player.clientUuid.isEmpty() &&
+            player.clientUuid != bot->gameInfo.clientId)
+        {
+            m_netManager->sendRoomReadyStates(player.clientUuid, vMap);
+            broadcastCount++;
+        }
     }
 
     LOG_INFO(QString("✅ [状态/倒计时同步] 来自 Bot-%1 (%2)").arg(bot->id).arg(bot->username));
     LOG_INFO(QString("   ├─ 🏠 归属房间: %1").arg(bot->gameInfo.gameName));
-    LOG_INFO(QString("   ├─ 👥 活跃人数: %1").arg(readyData.size()));
-    LOG_INFO(QString("   ├─ 📈 实时快照: %1").arg(detailLog.isEmpty() ? "None" : detailLog));
-    LOG_INFO(QString("   └─ 📡 转发指令: m_netManager->sendRoomReadyStates"));
-
-    m_netManager->sendRoomReadyStates(bot->gameInfo.clientId, vMap);
+    LOG_INFO(QString("   ├─ 📊 状态快照: %1").arg(snapshot.isEmpty() ? "None" : snapshot.trimmed()));
+    LOG_INFO(QString("   └─ 📡 广播统计: 已推送至 %1 个 Launcher 实例").arg(broadcastCount));
 }
 
 void BotManager::onBotError(Bot *bot, QString error)
