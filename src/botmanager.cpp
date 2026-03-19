@@ -410,7 +410,7 @@ void BotManager::addBotInstance(const QString& username, const QString& password
     connect(bot->client, &Client::hostJoinedGame, this, [this, bot](const QString &name) { this->onBotHostJoinedGame(bot, name); });
     connect(bot->client, &Client::gameCreateFail, this, [this, bot](GameCreationStatus status) { this->onBotGameCreateFail(bot, status); });
     connect(bot->client, &Client::roomPingsUpdated, this, [this, bot](const QMap<quint8, quint32> &pings) { this->onBotRoomPingsUpdated(bot, pings); });
-    connect(bot->client, &Client::readyStateChanged, this, [this, bot](const QMap<quint8, bool> &readyStates) { this->onBotReadyStateChanged(bot, readyStates); });
+    connect(bot->client, &Client::readyStateChanged, this, [this, bot](const QMap<quint8, QVariantMap> &readyData) { this->onBotReadyStateChanged(bot, readyData); });
 
     m_bots.append(bot);
 
@@ -526,7 +526,7 @@ bool BotManager::createGame(const QString &hostName, const QString &gameName, co
             connect(targetBot->client, &Client::hostJoinedGame, this, [this, targetBot](const QString &name) { this->onBotHostJoinedGame(targetBot, name); });
             connect(targetBot->client, &Client::gameCreateFail, this, [this, targetBot](GameCreationStatus status) { this->onBotGameCreateFail(targetBot, status); });
             connect(targetBot->client, &Client::roomPingsUpdated, this, [this, targetBot](const QMap<quint8, quint32> &pings) { this->onBotRoomPingsUpdated(targetBot, pings); });
-            connect(targetBot->client, &Client::readyStateChanged, this, [this, targetBot](const QMap<quint8, bool> &readyStates) { this->onBotReadyStateChanged(targetBot, readyStates); });
+            connect(targetBot->client, &Client::readyStateChanged, this, [this, targetBot](const QMap<quint8, QVariantMap> &readyData) { this->onBotReadyStateChanged(targetBot, readyData); });
         } else {
             targetBot->client->setCredentials(targetBot->username, targetBot->password, Protocol_SRP_0x53);
         }
@@ -1160,8 +1160,7 @@ void BotManager::onBotReadyStateChanged(Bot *bot, const QMap<quint8, QVariantMap
 
         if (!detailLog.isEmpty()) detailLog += " | ";
         detailLog += QString("[PID %1: %2(%3s)]")
-                         .arg(pidStr)
-                         .arg(isReady ? "READY" : "WAIT")
+                         .arg(pidStr, isReady ? "READY" : "WAIT")
                          .arg(countdown);
     }
 
