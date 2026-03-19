@@ -3538,7 +3538,9 @@ void Client::sendPingLoop()
 
     checkPlayerTimeout();
 
-    if (m_players.isEmpty()) return;
+    if (!isConnected() || m_players.isEmpty()) {
+        return;
+    }
 
     QByteArray pingPacket = createW3GSPingFromHostPacket();
 
@@ -3610,10 +3612,11 @@ void Client::updateCountdowns()
 
     for (quint8 pid : pidsToKick) {
         if (m_players.contains(pid)) {
-            LOG_INFO(QString("👢 [准备超时] 强制断开未准备玩家: %1 (PID: %2)")
-                         .arg(m_players[pid].name).arg(pid));
-            if (m_players[pid].socket) {
-                m_players[pid].socket->disconnectFromHost();
+            PlayerData &p = m_players[pid];
+            LOG_INFO(QString("👢 [准备超时] 准备踢出玩家: %1 (PID: %2)").arg(p.name).arg(pid));
+
+            if (p.socket) {
+                QTimer::singleShot(0, p.socket, &QTcpSocket::disconnectFromHost);
             }
         }
     }
