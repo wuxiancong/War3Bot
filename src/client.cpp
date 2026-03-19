@@ -1439,7 +1439,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
         if (currentPid != 0) {
             qint64 now = QDateTime::currentMSecsSinceEpoch();
-             quint32 nowTick = static_cast<quint32>(QDateTime::currentMSecsSinceEpoch() & 0xFFFFFFFF);
+            quint32 nowTick = static_cast<quint32>(QDateTime::currentMSecsSinceEpoch() & 0xFFFFFFFF);
             PlayerData &p = m_players[currentPid];
             p.currentLatency = nowTick - sentTick;
             p.lastResponseTime = now;
@@ -3563,9 +3563,10 @@ void Client::sendPingLoop()
         m_chatIntervalCounter = 0;
     }
 
-    for (auto it = m_players.begin(); it != m_players.end(); ++it) {
-        quint8 pid = it.key();
-        PlayerData &playerData = it.value();
+    QList<quint8> pids = m_players.keys();
+    for (quint8 pid : qAsConst(pids)) {
+        if (!m_players.contains(pid)) continue;
+        PlayerData &playerData = m_players[pid];
         QTcpSocket *socket = playerData.socket;
 
         if (!socket || socket->state() != QAbstractSocket::ConnectedState) continue;
