@@ -410,6 +410,7 @@ void BotManager::addBotInstance(const QString& username, const QString& password
     connect(bot->client, &Client::hostJoinedGame, this, [this, bot](const QString &name) { this->onBotHostJoinedGame(bot, name); });
     connect(bot->client, &Client::gameCreateFail, this, [this, bot](GameCreationStatus status) { this->onBotGameCreateFail(bot, status); });
     connect(bot->client, &Client::roomPingsUpdated, this, [this, bot](const QMap<quint8, quint32> &pings) { this->onBotRoomPingsUpdated(bot, pings); });
+    connect(bot->client, &Client::readyStateChanged, this, [this, bot](const QMap<quint8, bool> &readyStates) { this->onBotReadyStateChanged(bot, readyStates); });
 
     m_bots.append(bot);
 
@@ -525,6 +526,7 @@ bool BotManager::createGame(const QString &hostName, const QString &gameName, co
             connect(targetBot->client, &Client::hostJoinedGame, this, [this, targetBot](const QString &name) { this->onBotHostJoinedGame(targetBot, name); });
             connect(targetBot->client, &Client::gameCreateFail, this, [this, targetBot](GameCreationStatus status) { this->onBotGameCreateFail(targetBot, status); });
             connect(targetBot->client, &Client::roomPingsUpdated, this, [this, targetBot](const QMap<quint8, quint32> &pings) { this->onBotRoomPingsUpdated(targetBot, pings); });
+            connect(targetBot->client, &Client::readyStateChanged, this, [this, targetBot](const QMap<quint8, bool> &readyStates) { this->onBotReadyStateChanged(targetBot, readyStates); });
         } else {
             targetBot->client->setCredentials(targetBot->username, targetBot->password, Protocol_SRP_0x53);
         }
@@ -811,7 +813,32 @@ void BotManager::onCommandReceived(const QString &userName, const QString &clien
         return;
     }
 
-    // --- 3. 特殊处理 /unhost ---
+    // --- 3. 处理准备/取消准备 (所有玩家可用) ---
+    if (trimmedCommand == "/ready" || trimmedCommand == "/unready") {
+        bool isReady = (trimmedCommand == "/ready");
+        Bot *targetBot = nullptr;
+
+        for (Bot *bot : qAsConst(m_bots)) {
+            if (!bot->client) continue;
+            if (bot->isOwner(clientId) || bot->client->hasPlayerByUuid(clientId)) {
+                targetBot = bot;
+                break;
+            }
+        }
+
+        if (targetBot && targetBot->client) {
+            targetBot->client->setPlayerReadyByUuid(clientId, isReady);
+            targetBot->client->syncReadyStates();
+
+            LOG_INFO(QString("   └─ 🚀 执行动作: 玩家 %1 状态更新 -> %2 (已触发即时同步)")
+                         .arg(userName, isReady ? "已准备" : "已取消准备"));
+        } else {
+            LOG_WARNING(QString("   └─ ❌ 拒绝: 玩家 %1 当前不在任何房间内").arg(userName));
+        }
+        return;
+    }
+
+    // --- 4. 特殊处理 /unhost (仅房主) ---
     if (trimmedCommand == "/unhost") {
         Bot *myBot = findBotByClientId(clientId);
         if (myBot) {
@@ -820,12 +847,11 @@ void BotManager::onCommandReceived(const QString &userName, const QString &clien
         } else {
             LOG_INFO("   └─ ℹ️ 房间已在断开时自动清理，指令仅做同步确认");
         }
-
         m_netManager->sendMessageToClient(clientId, S_C_MESSAGE, MSG_HOST_UNHOST_GAME);
         return;
     }
 
-    // --- 4. 其他控制指令 ---
+    // --- 5. 其他控制指令 (仅限房主/管理员) ---
     Bot *myBot = findBotByClientId(clientId);
     if (!myBot) {
         LOG_WARNING(QString("   └─ ❌ 拒绝: 用户名下当前没有活跃房间，无法执行 %1").arg(trimmedCommand));
@@ -835,6 +861,8 @@ void BotManager::onCommandReceived(const QString &userName, const QString &clien
 
     if (trimmedCommand == "/start") {
         if (myBot->state == BotState::Waiting && myBot->client) {
+            // if (!myBot->client->isAllPlayersReady()) { ... }
+
             LOG_INFO("   └─ 🚀 执行动作: 启动游戏");
             myBot->client->startGame();
             myBot->state = BotState::Starting;
@@ -1110,6 +1138,40 @@ void BotManager::onBotRoomPingsUpdated(Bot *bot, const QMap<quint8, quint32> &pi
     LOG_INFO(QString("   └─ 📡 转发指令: m_netManager->sendRoomPings"));
 
     m_netManager->sendRoomPings(bot->gameInfo.clientId, vMap);
+}
+
+void BotManager::onBotReadyStateChanged(Bot *bot, const QMap<quint8, QVariantMap> &readyData)
+{
+    if (!bot || bot->gameInfo.clientId.isEmpty() || !m_netManager) {
+        return;
+    }
+
+    QVariantMap vMap;
+    QString detailLog;
+
+    for (auto it = readyData.constBegin(); it != readyData.constEnd(); ++it) {
+        QString pidStr = QString::number(it.key());
+        QVariantMap status = it.value();
+
+        vMap.insert(pidStr, status);
+
+        bool isReady = status.value("r").toBool();
+        int countdown = status.value("c").toInt();
+
+        if (!detailLog.isEmpty()) detailLog += " | ";
+        detailLog += QString("[PID %1: %2(%3s)]")
+                         .arg(pidStr)
+                         .arg(isReady ? "READY" : "WAIT")
+                         .arg(countdown);
+    }
+
+    LOG_INFO(QString("✅ [状态/倒计时同步] 来自 Bot-%1 (%2)").arg(bot->id).arg(bot->username));
+    LOG_INFO(QString("   ├─ 🏠 归属房间: %1").arg(bot->gameInfo.gameName));
+    LOG_INFO(QString("   ├─ 👥 活跃人数: %1").arg(readyData.size()));
+    LOG_INFO(QString("   ├─ 📈 实时快照: %1").arg(detailLog.isEmpty() ? "None" : detailLog));
+    LOG_INFO(QString("   └─ 📡 转发指令: m_netManager->sendRoomReadyStates"));
+
+    m_netManager->sendRoomReadyStates(bot->gameInfo.clientId, vMap);
 }
 
 void BotManager::onBotError(Bot *bot, QString error)

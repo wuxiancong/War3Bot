@@ -71,6 +71,7 @@ public:
     bool isClientRegistered(const QString &clientId) const;
     bool sendMessageToClient(const QString &clientId, PacketType type, quint8 code, quint64 data = 0, bool isUdp = false);
     bool sendEnterRoomCommand(const QString &clientId, quint64 port, bool isServerCmd);
+    void sendRoomReadyStates(const QString &clientId, const QVariantMap &readyStates);
     void sendRoomPings(const QString &clientId, const QVariantMap &pings);
     bool sendRetryCommand(QTcpSocket *socket);
 

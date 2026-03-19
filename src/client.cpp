@@ -2444,8 +2444,8 @@ void Client::createGame(const QString &gameName, const QString &password, Provid
     sendPacket(SID_STARTADVEX3, payload);
 
     if (!m_pingTimer->isActive()) {
-        m_pingTimer->start(2000);
-        LOG_INFO("   └─ 💓 动作: 发送请求(0x1C) + 启动 Ping 循环 (5s)");
+        m_pingTimer->start(1000);
+        LOG_INFO("   └─ 💓 动作: 发送请求(0x1C) + 启动 Ping 循环 (1s)");
     } else {
         LOG_INFO("   └─ 📤 动作: 发送请求(0x1C) (Ping 循环运行中)");
     }
@@ -3534,6 +3534,8 @@ void Client::sendPingLoop()
         return;
     }
 
+    updateCountdowns();
+
     checkPlayerTimeout();
 
     if (m_players.isEmpty()) return;
@@ -3581,6 +3583,72 @@ void Client::sendPingLoop()
 
         socket->flush();
     }
+}
+
+void Client::updateCountdowns()
+{
+    bool needSync = false;
+
+    for (auto it = m_players.begin(); it != m_players.end(); ++it) {
+        PlayerData &p = it.value();
+
+        if (it.key() == m_botPid || p.isVisualHost) {
+            continue;
+        }
+
+        if (!p.isReady) {
+            if (p.readyCountdown > 0) {
+                p.readyCountdown--;
+                needSync = true;
+            } else {
+                if (p.socket && p.socket->state() == QAbstractSocket::ConnectedState) {
+                    LOG_INFO(QString("👢 [准备超时] 踢出未准备玩家: %1 (PID: %2)").arg(p.name).arg(it.key()));
+                    p.socket->disconnectFromHost();
+                }
+            }
+        }
+    }
+
+    // 如果任何人的秒数发生了变化，统一同步一次
+    if (needSync) {
+        syncReadyStates();
+    }
+}
+
+void Client::syncReadyStates()
+{
+    QMap<quint8, QVariantMap> readyData;
+
+    for (auto it = m_players.begin(); it != m_players.end(); ++it) {
+        if (it.key() == m_botPid) continue;
+
+        QVariantMap pStatus;
+        pStatus.insert("r", it.value().isReady);        // ready 状态 (bool)
+        pStatus.insert("c", it.value().readyCountdown); // 剩余秒数 (int)
+
+        readyData.insert(it.key(), pStatus);
+    }
+
+    emit readyStateChanged(readyData);
+}
+
+void Client::setPlayerReadyByUuid(const QString &uuid, bool ready)
+{
+    for (auto it = m_players.begin(); it != m_players.end(); ++it) {
+        if (it.value().clientUuid == uuid) {
+            it.value().isReady = ready;
+            it.value().readyCountdown = 10;
+            it.value().lastCountdownTick = QDateTime::currentMSecsSinceEpoch();
+            return;
+        }
+    }
+}
+
+bool Client::hasPlayerByUuid(const QString &uuid) const {
+    for (const auto &p : m_players) {
+        if (p.clientUuid == uuid) return true;
+    }
+    return false;
 }
 
 void Client::checkPlayerTimeout()

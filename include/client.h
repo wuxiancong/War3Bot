@@ -351,6 +351,9 @@ struct PlayerData {
     bool            isVisualHost            = false;
     bool            isDownloadStart         = false;
     bool            isFinishedLoading       = false;
+    bool            isReady                 = false;
+    int             readyCountdown          = 10;
+    qint64          lastCountdownTick       = 0;
 };
 
 struct PlayerAction {
@@ -420,10 +423,13 @@ public:
     void joinChannel(const QString &channelName);       // 加入频道
 
     // --- 游戏主机管理 ---
-    void initBotPlayerData();
     bool isHostJoined();
+    void syncReadyStates();
+    void initBotPlayerData();
     void swapSlots(int slot1, int slot2);
     void setGameTickInterval(quint16 interval = 50);
+    bool hasPlayerByUuid(const QString &uuid) const;
+    void setPlayerReadyByUuid(const QString &uuid, bool ready);
     void setHost(QString creatorName) { m_host = creatorName; };
     quint16 getGameTickInterval() const { return m_gameTickInterval; }
     void setMaxDownloadSpeed(quint32 kbps) { m_maxDownloadSpeed = kbps; }
@@ -437,6 +443,7 @@ public:
 
     // --- 工具函数 ---
     void sendPingLoop();                                // 定时发送Ping
+    void updateCountdowns();                            // 未准备倒计时
     void syncPingsToLauncher();                         // 报告玩家Ping
     void checkPlayerTimeout();                          // 检查玩家超时
     QString getPrimaryIPv4();                           // 获取本机IPv4
@@ -475,6 +482,7 @@ signals:
     void gameCreateFail(GameCreationStatus status);
     void gameCreateSuccess(CommandSource commandSource);
     void roomPingsUpdated(const QMap<quint8, quint32> &pings);
+    void readyStateChanged(const QMap<quint8, QVariantMap> &readyData);
     void requestCreateGame(const QString &username, const QString &gameName, CommandSource commandSource);
 
 private slots:

@@ -1602,6 +1602,20 @@ void NetManager::sendRoomPings(const QString &clientId, const QVariantMap &pings
     }
 }
 
+void NetManager::sendRoomReadyStates(const QString &clientId, const QVariantMap &readyStates)
+{
+    QJsonDocument doc = QJsonDocument::fromVariant(readyStates);
+    QByteArray payload = doc.toJson(QJsonDocument::Compact);
+
+    if (payload.isEmpty()) payload = "{}";
+
+    if (m_tcpClients.contains(clientId)) {
+        sendTcpPacket(m_tcpClients[clientId], PacketType::S_C_READY_LIST, payload.data(), payload.size());
+
+        LOG_INFO(QString("🚀 [TCP 下发] 准备状态表 -> Client:%1").arg(clientId.left(8)));
+    }
+}
+
 void NetManager::sendUploadResult(QTcpSocket* socket, const QString& crc, const QString& fileName, bool success, UploadErrorCode reason)
 {
     if (!socket || !m_udpSocket) return;
