@@ -1,4 +1,4 @@
-#include "client.h"
+..#include "client.h"
 #include "logger.h"
 #include "bnethash.h"
 #include "bnetsrp3.h"
@@ -868,6 +868,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         playerData.isVisualHost = nameMatch;
         playerData.readyCountdown = 10;
         playerData.isReady = false;
+        playerData.lastResponseTime = QDateTime::currentMSecsSinceEpoch();
 
         m_players.insert(newPid, playerData);
 
@@ -900,6 +901,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
             playerData.pid, playerData.name, playerData.extIp, playerData.extPort, playerData.intIp, playerData.intPort);
         broadcastPacket(newPlayerInfoPacket, newPid);
         broadcastSlotInfo();
+        syncReadyStates();
 
         LOG_INFO("   └─ 📢 广播状态: 同步新玩家信息 & 刷新槽位");
     }
@@ -3597,6 +3599,7 @@ void Client::updateCountdowns()
 
     for (auto it = m_players.begin(); it != m_players.end(); ++it) {
         PlayerData &p = it.value();
+
         if (it.key() == m_botPid || p.isVisualHost) continue;
 
         if (!p.isReady) {
@@ -3616,10 +3619,9 @@ void Client::updateCountdowns()
     for (quint8 pid : pidsToKick) {
         if (m_players.contains(pid)) {
             PlayerData &p = m_players[pid];
-            LOG_INFO(QString("👢 [准备超时] 准备踢出玩家: %1 (PID: %2)").arg(p.name).arg(pid));
-
+            LOG_INFO(QString("👢 [准备超时] 踢出玩家: %1").arg(p.name));
             if (p.socket) {
-                QTimer::singleShot(0, p.socket, &QTcpSocket::disconnectFromHost);
+                p.socket->disconnectFromHost();
             }
         }
     }
@@ -3633,8 +3635,8 @@ void Client::syncReadyStates()
         if (it.key() == m_botPid) continue;
 
         QVariantMap pStatus;
-        pStatus.insert("r", it.value().isReady);        // ready 状态 (bool)
-        pStatus.insert("c", it.value().readyCountdown); // 剩余秒数 (int)
+        pStatus.insert("r", it.value().isReady);
+        pStatus.insert("c", it.value().readyCountdown);
 
         readyData.insert(it.key(), pStatus);
     }
@@ -3647,8 +3649,10 @@ void Client::setPlayerReadyByUuid(const QString &uuid, bool ready)
     for (auto it = m_players.begin(); it != m_players.end(); ++it) {
         if (it.value().clientUuid == uuid) {
             it.value().isReady = ready;
-            it.value().readyCountdown = 10;
-            it.value().lastCountdownTick = QDateTime::currentMSecsSinceEpoch();
+            if (!ready) {
+                it.value().readyCountdown = 10;
+            }
+            syncReadyStates();
             return;
         }
     }
