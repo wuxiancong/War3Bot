@@ -56,18 +56,19 @@ enum ErrorCode : quint8 {
     ERR_GAME_NAME_EXISTS            = 8,
     ERR_NO_BOTS_AVAILABLE           = 9,
     ERR_NOT_ENOUGH_PLAYERS          = 10,
-    MSG_HOST_UNHOST_GAME            = 11,
-    ERR_WAIT_HOST_TIMEOUT           = 12,
-    ERR_CREATE_ERROR                = 13,
-    ERR_TASK_TIMEOUT                = 14,
-    ERR_CREATE_INTERRUPTED          = 15,
-    ERR_TASK_INTERRUPTED            = 16
+    ERR_WAIT_HOST_TIMEOUT           = 11,
+    ERR_CREATE_ERROR                = 12,
+    ERR_TASK_TIMEOUT                = 13,
+    ERR_CREATE_INTERRUPTED          = 14,
+    ERR_TASK_INTERRUPTED            = 15
 };
 
 enum MessageCode : quint8 {
     MSG_HOST_JOINED_GAME            = 0,
     MSG_HOST_CREATED_GAME           = 1,
-    MSG_CHECK_MAP_CRC               = 2
+    MSG_CHECK_MAP_CRC               = 2,
+    MSG_HOST_LEAVE_GAME             = 3,
+    MSG_HOST_UNHOST_GAME            = 4,
 };
 
 #pragma pack(push, 1)

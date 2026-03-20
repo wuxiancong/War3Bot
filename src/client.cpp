@@ -866,6 +866,8 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         playerData.lastResponseTime = now;
         playerData.lastDownloadTime = now;
         playerData.isVisualHost = nameMatch;
+        playerData.readyCountdown = 10;
+        playerData.isReady = false;
 
         m_players.insert(newPid, playerData);
 

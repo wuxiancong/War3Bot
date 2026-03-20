@@ -1001,36 +1001,39 @@ void BotManager::onBotVisualHostLeft(Bot *bot)
 
     QString newUuid = "";
     QString newHostName = "";
+    quint8 newHostPid = 0;
 
-    // 1. 获取 Client 中的玩家映射表
     const QMap<quint8, PlayerData> &players = bot->client->getPlayers();
 
-    // 2. 遍历寻找现在谁是 VisualHost
+    // 1. 寻找继承人
     for (auto it = players.begin(); it != players.end(); ++it) {
-        const PlayerData &p = it.value();
-
-        // 排除机器人自己 (PID 2)
-        // 寻找那个在 Client::onPlayerDisconnected 中被设为 isVisualHost = true 的真人
-        if (p.pid != 2 && p.isVisualHost) {
-            newUuid = p.clientUuid;
-            newHostName = p.name;
+        if (it.key() != 2 && it.value().isVisualHost) {
+            newUuid = it.value().clientUuid;
+            newHostName = it.value().name;
+            newHostPid = it.key();
             break;
         }
     }
 
-    // 3. 执行所有权交接或释放
+    // 2. 执行所有权交接逻辑
     if (!newUuid.isEmpty()) {
-        LOG_INFO(QString("👤 [所有权交接] 房主离开，Bot-%1 控制权移交给: %2 (UUID: %3)")
-                     .arg(bot->id).arg(newHostName, newUuid));
+        LOG_INFO(QString("👑 [房主移交] 目标: %1 | 新房主: %2 (PID: %3)")
+                     .arg(bot->gameInfo.gameName, newHostName).arg(newHostPid));
 
         bot->gameInfo.clientId = newUuid;
         bot->gameInfo.hostName = newHostName;
+        bot->hostname = newHostName;
+
+        // 3. 向全房间广播通知
+        for (const auto &p : players) {
+            if (p.pid != 2 && !p.clientUuid.isEmpty()) {
+                m_netManager->sendMessageToClient(p.clientUuid, PacketType::S_C_MESSAGE, MSG_HOST_LEAVE_GAME, newHostPid);
+            }
+        }
     }
     else {
-        LOG_INFO(QString("👤 [所有权释放] 房主离开，无有效 UUID 继承人。Bot-%1 现在变为公共状态")
-                     .arg(bot->id));
-
-        bot->gameInfo.clientId = "";
+        LOG_INFO(QString("🚫 [房间关闭] 房主离开且无继承人"));
+        removeGame(bot, false);
     }
 }
 
