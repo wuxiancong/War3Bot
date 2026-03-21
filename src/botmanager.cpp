@@ -1147,42 +1147,65 @@ void BotManager::onBotReadyStateChanged(Bot *bot, const QMap<quint8, QVariantMap
 {
     if (!bot || !m_netManager) return;
 
+    LOG_INFO(QString("📡 [状态广播序列] 开始处理数据同步..."));
+    LOG_INFO(QString("   ├─ 🏠 房间名称: %1").arg(bot->gameInfo.gameName));
+    LOG_INFO(QString("   ├─ 🤖 负责机器人: Bot-%1 (%2)").arg(bot->id).arg(bot->username));
+
+    LOG_INFO("   ├─ 📦 原始数据内容 (readyData):");
+
     QVariantMap vMap;
-    QString snapshot;
-    for (auto it = readyData.constBegin(); it != readyData.constEnd(); ++it) {
-        QString pidStr = QString::number(it.key());
-        vMap.insert(pidStr, it.value());
+    if (readyData.isEmpty()) {
+        LOG_INFO("   │  └─ ⚠️ [警告] readyData 映射表为空！");
+    } else {
+        for (auto it = readyData.constBegin(); it != readyData.constEnd(); ++it) {
+            quint8 pid = it.key();
+            QVariantMap innerData = it.value();
 
-        QVariantMap inner = it.value();
-        bool isReady = inner.value("r").toBool();
-        int seconds = inner.value("c").toInt();
-        snapshot += QString("[%1:%2(%3s)] ").arg(pidStr, isReady ? "R" : "W").arg(seconds);
-    }
+            bool isReady = innerData.value("r").toBool();
+            int countdown = innerData.value("c").toInt();
 
-    int broadcastCount = 0;
+            vMap.insert(QString::number(pid), innerData);
 
-    // 发送给房主 (Host)
-    if (!bot->gameInfo.clientId.isEmpty()) {
-        m_netManager->sendRoomReadyStates(bot->gameInfo.clientId, vMap);
-        broadcastCount++;
-    }
-
-    // 发送给房间内所有其他加入者 (Joiners)
-    const QMap<quint8, PlayerData> &roomPlayers = bot->client->getPlayers();
-    for (const auto &player : roomPlayers) {
-        if (player.pid != 2 &&
-            !player.clientUuid.isEmpty() &&
-            player.clientUuid != bot->gameInfo.clientId)
-        {
-            m_netManager->sendRoomReadyStates(player.clientUuid, vMap);
-            broadcastCount++;
+            bool isLast = (it == readyData.constEnd() - 1);
+            QString prefix = isLast ? "   │  └─ " : "   │  ├─ ";
+            LOG_INFO(QString("%1PID[%2]: { 准备状态(r): %3, 倒计时(c): %4s }")
+                         .arg(prefix)
+                         .arg(pid)
+                         .arg(isReady ? "✅ READY" : "⏳ WAITING")
+                         .arg(countdown));
         }
     }
 
-    LOG_INFO(QString("✅ [状态/倒计时同步] 来自 Bot-%1 (%2)").arg(bot->id).arg(bot->username));
-    LOG_INFO(QString("   ├─ 🏠 归属房间: %1").arg(bot->gameInfo.gameName));
-    LOG_INFO(QString("   ├─ 📊 状态快照: %1").arg(snapshot.isEmpty() ? "None" : snapshot.trimmed()));
-    LOG_INFO(QString("   └─ 📡 广播统计: 已推送至 %1 个 Launcher 实例").arg(broadcastCount));
+    QSet<QString> targetUuids;
+
+    if (!bot->gameInfo.clientId.isEmpty()) {
+        targetUuids.insert(bot->gameInfo.clientId);
+    }
+
+    const QMap<quint8, PlayerData> &roomPlayers = bot->client->getPlayers();
+    for (const auto &player : roomPlayers) {
+        if (!player.clientUuid.isEmpty()) {
+            targetUuids.insert(player.clientUuid);
+        }
+    }
+
+    LOG_INFO(QString("   ├─ 📡 广播发送目标 (%1 个实例):").arg(targetUuids.size()));
+
+    int sendCount = 0;
+    if (targetUuids.isEmpty()) {
+        LOG_INFO("   │  └─ ❌ [错误] 找不到任何有效的发送目标 (UUID 全空)！");
+    } else {
+        for (const QString &uuid : targetUuids) {
+            m_netManager->sendRoomReadyStates(uuid, vMap);
+            sendCount++;
+
+            bool isLast = (sendCount == targetUuids.size());
+            QString prefix = isLast ? "   │  └─ " : "   │  ├─ ";
+            LOG_INFO(QString("%1发送至 UUID: %2").arg(prefix, uuid));
+        }
+    }
+
+    LOG_INFO(QString("   └─ ✅ 任务完成。共计下发 %1 条 UI 状态更新。").arg(sendCount));
 }
 
 void BotManager::onBotError(Bot *bot, QString error)
