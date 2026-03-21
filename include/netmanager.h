@@ -68,6 +68,7 @@ public:
     bool isRunning() const;
     QByteArray getAppSecret() const;
     QList<RegisterInfo> getOnlinePlayers() const;
+    QString getUuidByPreJoinName(const QString &userName);
     bool isClientRegistered(const QString &clientId) const;
     bool sendMessageToClient(const QString &clientId, PacketType type, quint8 code, quint64 data = 0, bool isUdp = false);
     bool sendEnterRoomCommand(const QString &clientId, quint64 port, bool isServerCmd);
@@ -155,6 +156,10 @@ private:
     QMap<quint32, QString> m_sessionIndex;
     QMap<QString, int> m_crcCounts;
     QString m_crcRootPath;
+
+    // 房间加入
+    QMap<QString, QString> m_preJoinMap;
+    mutable QReadWriteLock m_preJoinLock;
 
     // 上传安全
     QReadWriteLock m_tokenLock;

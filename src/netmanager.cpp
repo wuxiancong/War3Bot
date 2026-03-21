@@ -731,10 +731,29 @@ void NetManager::handleIncomingDatagram(const QNetworkDatagram &datagram)
             handleRegister(header, reinterpret_cast<CSRegisterPacket*>(payload), datagram.senderAddress(), datagram.senderPort());
         }
         break;
-    case C_S_HEARTBEAT:
-        qDebug() << "└── [处理] 心跳包 (HEARTBEAT)";
+
+    case PacketType::C_S_HEARTBEAT:
+    case PacketType::C_S_PING:
         handleHeartbeat(header, datagram.senderAddress(), datagram.senderPort());
         break;
+
+    case PacketType::C_S_JOIN_ROOM_INFO:
+        if (header->payloadLen >= sizeof(CSJoinRoomInfoPacket)) {
+            const CSJoinRoomInfoPacket *info = reinterpret_cast<const CSJoinRoomInfoPacket*>(payload);
+
+            QString userName = QString::fromUtf8(info->userName, strnlen(info->userName, 32)).trimmed();
+            QString clientId = QString::fromUtf8(info->clientId, strnlen(info->clientId, 64)).trimmed();
+
+            if (!userName.isEmpty()) {
+                QWriteLocker locker(&m_preJoinLock);
+                m_preJoinMap.insert(userName.toLower(), clientId);
+
+                LOG_INFO(QString("📝 [意向登记] 玩家: %1 -> 预绑 UUID: %2")
+                             .arg(userName, clientId));
+            }
+        }
+        break;
+
     case C_S_COMMAND:
         qDebug() << "└── [处理] 业务指令 (COMMAND)";
         if (header->payloadLen >= sizeof(CSCommandPacket)) {
@@ -1357,16 +1376,6 @@ void NetManager::handleTcpCommandMessage(QTcpSocket *socket)
 
         // 6. 处理具体指令
         switch (static_cast<PacketType>(pHeader->command)) {
-
-        case PacketType::C_S_HEARTBEAT:
-        case PacketType::C_S_PING:
-        {
-            SCPongPacket pong;
-            pong.status = 1;
-            sendTcpPacket(socket, PacketType::S_C_PONG, &pong, sizeof(pong));
-        }
-        break;
-
         case PacketType::C_S_COMMAND:
             if (pHeader->payloadLen >= sizeof(CSCommandPacket)) {
                 const CSCommandPacket *cmdPkt = reinterpret_cast<const CSCommandPacket*>(payload);
@@ -1835,8 +1844,6 @@ void NetManager::removeClientInternal(const QString& uuid)
     m_registerInfos.remove(uuid);
 }
 
-// ==================== 禁用函数 ====================
-
 // ==================== 工具函数 ====================
 
 QList<RegisterInfo> NetManager::getOnlinePlayers() const
@@ -1881,6 +1888,23 @@ QString NetManager::getHwidByUsername(const QString &username)
     }
 
     return hwid;
+}
+
+QString NetManager::getUuidByPreJoinName(const QString &pName)
+{
+    if (pName.isEmpty()) return "";
+
+    QString lowerName = pName.toLower();
+    QWriteLocker locker(&m_preJoinLock);
+
+    if (m_preJoinMap.contains(lowerName)) {
+        QString uuid = m_preJoinMap.take(lowerName);
+        LOG_INFO(QString("🎯 [UUID 匹配成功] 玩家: %1 -> UUID: %2")
+                     .arg(pName, uuid.left(8)));
+        return uuid;
+    }
+
+    return "";
 }
 
 bool NetManager::isValidFileName(const QString &name)

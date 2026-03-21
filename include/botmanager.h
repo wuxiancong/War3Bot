@@ -118,7 +118,7 @@ public:
 
     // --- Getters / Setters ---
     const QVector<Bot*>& getAllBots() const;
-    void setNetManager(NetManager *server) { m_netManager = server; }
+    void setNetManager(NetManager *netManager) { m_netManager = netManager; }
     void setServerPort(quint16 port) { m_controlPort = port; }
 
 signals:

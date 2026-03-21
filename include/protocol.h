@@ -26,7 +26,8 @@ enum PacketType : quint8 {
     S_C_MESSAGE                     = 0x0F,
     S_C_UPLOADRESULT                = 0x10,
     S_C_PING_LIST                   = 0x11,
-    S_C_READY_LIST                  = 0x12
+    S_C_READY_LIST                  = 0x12,
+    C_S_JOIN_ROOM_INFO              = 0x13
 };
 
 // ==================== 错误码定义 ====================
@@ -140,6 +141,12 @@ struct SCUploadResultPacket {
     quint8 reason;
 };
 
+struct CSJoinRoomInfoPacket {
+    char userName[32];
+    char roomName[32];
+    char hostName[32];
+    char clientId[64];
+};
 #pragma pack(pop)
 
 #endif // PROTOCOL_H

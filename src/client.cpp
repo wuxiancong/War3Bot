@@ -869,6 +869,16 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         playerData.readyCountdown = 10;
         playerData.isReady = false;
         playerData.lastResponseTime = QDateTime::currentMSecsSinceEpoch();
+        if (m_netManager) {
+            playerData.clientUuid = m_netManager->getUuidByPreJoinName(clientPlayerName);
+
+            if (!playerData.clientUuid.isEmpty()) {
+                LOG_INFO(QString("🔗 [关联成功] 玩家: %1 <-> UUID: %2")
+                             .arg(clientPlayerName, playerData.clientUuid.left(8)));
+            } else {
+                LOG_WARNING(QString("⚠️ [关联失败] 玩家 %1 没报备 UUID (可能是房主或旧版客户端)").arg(clientPlayerName));
+            }
+        }
 
         m_players.insert(newPid, playerData);
 
