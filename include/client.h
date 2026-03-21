@@ -416,6 +416,9 @@ public:
     bool isConnected() const;
     void setCredentials(const QString &user, const QString &pass, LoginProtocol protocol = Protocol_SRP_0x53);
 
+    // 设置 NetManager 指针
+    void setNetManager(NetManager* netManager) { m_netManager = netManager; }
+
     // --- 战网交互 ---
     void createAccount();                               // 注册账号
     void enterChat();                                   // 进入聊天
@@ -609,9 +612,6 @@ private:
     void handleBNETTcpPacket(BNETPacketID id, const QByteArray &data);
     void handleW3GSUdpPacket(const QByteArray &data, const QHostAddress &sender, quint16 senderPort);
     void handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &payload);
-
-    // 设置 NetManager 指针
-    void setNetManager(NetManager* server) { m_netManager = server; }
 
     // --- 频道管理 ---
     void joinRandomChannel();
