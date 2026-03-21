@@ -878,6 +878,8 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
             } else {
                 LOG_WARNING(QString("⚠️ [关联失败] 玩家 %1 没报备 UUID (可能是房主或旧版客户端)").arg(clientPlayerName));
             }
+        } else {
+            LOG_CRITICAL(QString("❌ [严重错误] Client 实例中的 m_netManager 指针为空！无法为玩家 %1 关联 UUID").arg(clientPlayerName));
         }
 
         m_players.insert(newPid, playerData);
