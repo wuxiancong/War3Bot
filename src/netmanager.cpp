@@ -730,8 +730,14 @@ void NetManager::handleIncomingDatagram(const QNetworkDatagram &datagram)
 
     qDebug() << "│   └── [4. 指令分发] 命令ID:" << (int)cmd << "序列号:" << header->seq;
 
+    QString currentClientId;
+    {
+        QReadLocker locker(&m_registerInfosLock);
+        currentClientId = m_sessionIndex.value(header->sessionId);
+    }
+
     switch (cmd) {
-    case C_S_REGISTER:
+    case PacketType::C_S_REGISTER:
         qDebug() << "└── [处理] 注册请求 (REGISTER)";
         if (header->payloadLen >= sizeof(CSRegisterPacket)) {
             handleRegister(header, reinterpret_cast<CSRegisterPacket*>(payload), datagram.senderAddress(), datagram.senderPort());
@@ -743,31 +749,44 @@ void NetManager::handleIncomingDatagram(const QNetworkDatagram &datagram)
         handleHeartbeat(header, datagram.senderAddress(), datagram.senderPort());
         break;
 
+    case PacketType::C_S_CHECKMAPCRC:
+        if (header->payloadLen >= sizeof(CSCheckMapCRCPacket)) {
+            LOG_INFO("🔍 [UDP 接收] C_S_CHECKMAPCRC (地图校验检查)");
+            handleCheckMapCRC(header, reinterpret_cast<CSCheckMapCRCPacket*>(payload),
+                              datagram.senderAddress(), datagram.senderPort());
+        }
+        break;
+
     case PacketType::C_S_JOIN_ROOM_INFO:
         if (header->payloadLen >= sizeof(CSJoinRoomInfoPacket)) {
             const CSJoinRoomInfoPacket *info = reinterpret_cast<const CSJoinRoomInfoPacket*>(payload);
+            QString userName = QString::fromUtf8(info->userName).trimmed();
+            QString clientId = QString::fromUtf8(info->clientId).trimmed();
 
-            QString userName = QString::fromUtf8(info->userName, strnlen(info->userName, 32)).trimmed();
-            QString clientId = QString::fromUtf8(info->clientId, strnlen(info->clientId, 64)).trimmed();
-
-            if (!userName.isEmpty()) {
+            LOG_INFO("📥 [UDP 接收] C_S_JOIN_ROOM_INFO (加入意向申报)");
+            if (!userName.isEmpty() && !clientId.isEmpty()) {
                 QWriteLocker locker(&m_preJoinLock);
                 m_preJoinMap.insert(userName.toLower(), clientId);
-
-                LOG_INFO(QString("📝 [意向登记] 玩家: %1 -> 预绑 UUID: %2")
-                             .arg(userName, clientId));
+                LOG_INFO(QString("   ├── 👤 玩家: %1").arg(userName));
+                LOG_INFO(QString("   └── ✅ 状态: 映射记录成功"));
+            } else {
+                LOG_ERROR("   └── ❌ 状态: 字段解析为空");
             }
         }
         break;
 
-    case C_S_COMMAND:
+    case PacketType::C_S_COMMAND:
         qDebug() << "└── [处理] 业务指令 (COMMAND)";
         if (header->payloadLen >= sizeof(CSCommandPacket)) {
             handleCommand(header, reinterpret_cast<CSCommandPacket*>(payload));
         }
         break;
+
     default:
-        qDebug() << "└── ❓ 未知指令类型:" << (int)cmd;
+        LOG_INFO("❓ [UDP 未知指令]");
+        LOG_INFO(QString("   └─ 🔢 Command: %1 (0x%2)")
+                     .arg(static_cast<int>(cmd))
+                     .arg(QString::number(static_cast<int>(cmd), 16).toUpper()));
         break;
     }
 }
@@ -1419,9 +1438,9 @@ void NetManager::handleTcpCommandMessage(QTcpSocket *socket)
         }
 
         // 6. 处理具体指令
-        switch (static_cast<PacketType>(pHeader->command))
-        {
-        case PacketType::C_S_HEARTBEAT: {
+        switch (static_cast<PacketType>(pHeader->command)) {
+        case PacketType::C_S_HEARTBEAT:
+        case PacketType::C_S_PING: {
             updateSessionState(pHeader->sessionId, socket->peerAddress(), socket->peerPort(), nullptr);
 
             // 回复 Pong
@@ -1429,58 +1448,43 @@ void NetManager::handleTcpCommandMessage(QTcpSocket *socket)
             pong.status = 2;
             sendTcpPacket(socket, PacketType::S_C_PONG, &pong, sizeof(pong));
 
-            LOG_DEBUG(QString("💓 [TCP Heartbeat] Session: %1").arg(pHeader->sessionId));
-            break;
-        }
-
-        case PacketType::C_S_PING: {
-            updateSessionState(pHeader->sessionId, socket->peerAddress(), socket->peerPort(), nullptr);
-
-            SCPongPacket pong;
-            pong.status = 2;
-            sendTcpPacket(socket, PacketType::S_C_PONG, &pong, sizeof(pong));
-
-            LOG_DEBUG(QString("🏓 [TCP Ping] Session: %1").arg(pHeader->sessionId));
+            LOG_DEBUG(QString("💓 [TCP %1] Session: %2")
+                          .arg(static_cast<PacketType>(pHeader->command) == PacketType::C_S_HEARTBEAT ? "Heartbeat" : "Ping")
+                          .arg(pHeader->sessionId));
             break;
         }
 
         case PacketType::C_S_COMMAND:
-            LOG_INFO("🚩 [命中] 正在进入 C_S_COMMAND 分支...");
+            LOG_INFO("🚩 [命中] 正在进入 TCP C_S_COMMAND 分支...");
             if (pHeader->payloadLen >= sizeof(CSCommandPacket)) {
                 const CSCommandPacket *cmdPkt = reinterpret_cast<const CSCommandPacket*>(payload);
                 QString text = QString::fromUtf8(cmdPkt->text, strnlen(cmdPkt->text, sizeof(cmdPkt->text)));
-                QString cmd = QString::fromUtf8(cmdPkt->command, strnlen(cmdPkt->command, sizeof(cmdPkt->command)));
+                QString cmdStr = QString::fromUtf8(cmdPkt->command, strnlen(cmdPkt->command, sizeof(cmdPkt->command)));
                 QString user = QString::fromUtf8(cmdPkt->username, strnlen(cmdPkt->username, sizeof(cmdPkt->username)));
 
-                // 如果到现在还没 ClientID，说明这是个未授权的连接发来的指令
                 if (currentClientId.isEmpty()) {
-                    LOG_INFO("🛑 [指令拒绝]");
+                    LOG_INFO("🛑 [TCP 指令拒绝]");
                     LOG_ERROR("   ├─ ❌ 原因: 未鉴权连接 (无有效 SessionID)");
-                    if (cmd == "/host") {
+                    if (cmdStr == "/host") {
                         LOG_INFO("   └─ 🛡️ 动作: 发送 RETRY_HOST 指令");
                         sendRetryCommand(socket);
-                        return;
                     }
-                    LOG_INFO("   └─ 🛡️ 动作: 忽略指令");
                     break;
                 }
 
                 LOG_INFO("🎮 [TCP 指令接收]");
                 LOG_INFO(QString("   ├─ 👤 发送者: %1").arg(user));
                 LOG_INFO(QString("   ├─ 🔗 来源ID: %1").arg(currentClientId));
-                LOG_INFO(QString("   ├─ 💬 指令:   %1").arg(cmd));
-                if (!text.isEmpty()) {
-                    LOG_INFO(QString("   ├─ 📄 参数:   %1").arg(text));
-                }
+                LOG_INFO(QString("   ├─ 💬 指令:   %1").arg(cmdStr));
+                if (!text.isEmpty()) LOG_INFO(QString("   ├─ 📄 参数:   %1").arg(text));
                 LOG_INFO("   └─ 🚀 动作:    分发至 BotManager");
 
-                // 这里直接用 currentClientId，它一定是最新的
-                emit commandReceived(user, currentClientId, cmd, text);
+                emit commandReceived(user, currentClientId, cmdStr, text);
             }
             break;
 
         case PacketType::C_S_JOIN_ROOM_INFO: {
-            LOG_INFO("🚩 [命中] 正在进入 C_S_JOIN_ROOM_INFO 分支...");
+            LOG_INFO("🚩 [命中] 正在进入 TCP C_S_JOIN_ROOM_INFO 分支...");
             if (pHeader->payloadLen >= sizeof(CSJoinRoomInfoPacket)) {
                 const CSJoinRoomInfoPacket *info = reinterpret_cast<const CSJoinRoomInfoPacket*>(payload);
                 QString userName = QString::fromUtf8(info->userName).trimmed();
@@ -1502,7 +1506,6 @@ void NetManager::handleTcpCommandMessage(QTcpSocket *socket)
         }
 
         default:
-            // 处理未知包
             LOG_INFO("❓ [TCP 未知指令]");
             LOG_INFO(QString("   └─ 🔢 Command: %1").arg(pHeader->command));
             break;
