@@ -72,6 +72,12 @@ enum MessageCode : quint8 {
     MSG_HOST_UNHOST_GAME            = 4,
 };
 
+enum TcpConnType {
+    Tcp_Unknown                     = 0,
+    Tcp_Upload                      = 1,
+    Tcp_Command                     = 2
+};
+
 #pragma pack(push, 1)
 
 struct PacketHeader {

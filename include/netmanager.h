@@ -110,6 +110,7 @@ private:
     // --- TCP 处理 ---
     void handleTcpUploadMessage(QTcpSocket *socket);
     void handleTcpCommandMessage(QTcpSocket *socket);
+    TcpConnType identifyTcpProtocol(QTcpSocket *socket);
 
     // --- 内部管理 ---
     void loadConfiguration();
