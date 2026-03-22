@@ -29,78 +29,96 @@ War3Bot::~War3Bot()
 
 bool War3Bot::startServer(quint16 port, const QString &configFile)
 {
+    LOG_INFO("🚀 [System] 开始启动 War3Bot 服务器...");
+
     // 1. 配置文件搜索逻辑
+    LOG_INFO("├── 📂 配置文件检索...");
     m_configPath = configFile;
+    bool foundConfig = false;
+
     if (m_configPath.isEmpty()) {
         QStringList searchPaths;
 #ifdef Q_OS_LINUX
-        searchPaths << "/etc/War3Bot/config/war3bot.ini"; // 系统级配置优先
+        searchPaths << "/etc/War3Bot/config/war3bot.ini";
         searchPaths << "/etc/War3Bot/war3bot.ini";
 #endif
         searchPaths << QCoreApplication::applicationDirPath() + "/config/war3bot.ini";
-        searchPaths << "config/war3bot.ini"; // 本地开发配置最后
-        bool foundConfig = false;
+        searchPaths << "config/war3bot.ini";
+
         for (const QString &path : qAsConst(searchPaths)) {
             if (QFile::exists(path)) {
                 m_configPath = path;
                 foundConfig = true;
-                LOG_INFO(QString("✅ 找到配置文件: %1").arg(QDir::toNativeSeparators(m_configPath)));
+                LOG_INFO(QString("│   ├── ✅ 匹配到有效配置: %1").arg(QDir::toNativeSeparators(m_configPath)));
                 break;
             }
         }
-        if (!foundConfig) {
-            m_configPath = "config/war3bot.ini";
-            LOG_WARNING("⚠️ 未找到配置文件，将尝试默认路径: config/war3bot.ini");
-        }
+    } else {
+        foundConfig = QFile::exists(m_configPath);
+        if (foundConfig) LOG_INFO(QString("│   ├── ✅ 使用手动指定配置: %1").arg(m_configPath));
     }
 
-    // 防止重复启动
+    if (!foundConfig) {
+        m_configPath = "config/war3bot.ini";
+        LOG_WARNING("│   └── ⚠️ 未找到任何配置文件，回退至默认路径: config/war3bot.ini");
+    }
+
+    // 2. 运行状态检查
     if (m_netManager && m_netManager->isRunning()) {
-        LOG_WARNING("服务器已在运行中");
+        LOG_WARNING("└── ⛔ 启动中止: 服务器实例已在运行中");
         return true;
     }
 
-    // 初始化 NetManager
+    // 3. 核心组件初始化
+    LOG_INFO("├── 🔧 核心组件初始化...");
     if (!m_netManager) {
         m_netManager = new NetManager(this);
         m_botManager->setNetManager(m_netManager);
-        m_client->setNetManager(m_netManager);
-        // 连接命令信号
+
+        // 关键依赖注入
+        if (m_client) m_client->setNetManager(m_netManager);
+
         connect(m_netManager, &NetManager::commandReceived, m_botManager, &BotManager::onCommandReceived);
+        LOG_INFO("│   ├── NetManager: 已实例化");
+        LOG_INFO("│   └── 🔗 指令链路: NetManager -> BotManager [已绑定]");
     }
 
-    // 启动网络服务
+    // 4. 网络服务启动
+    LOG_INFO(QString("├── 🌐 网络服务绑定 (Port: %1)...").arg(port));
     bool success = m_netManager->startServer(port, m_configPath);
 
-    if (success) {
-        if (QFile::exists(m_configPath)) {
-            QSettings settings(m_configPath, QSettings::IniFormat);
+    if (!success) {
+        LOG_ERROR("└── ❌ 致命错误: 服务器端口绑定失败 (可能被占用)");
+        return false;
+    }
+    LOG_INFO("│   └── ✅ 监听成功");
 
-            LOG_INFO(QString("正在读取配置: [%1]").arg(m_configPath));
-            QString botDisplayName = settings.value("bots/display_name", "CC.Dota.XXX").toString();
-            if (m_client) {
-                m_client->setBotDisplayName(botDisplayName);
-                LOG_INFO(QString("👤 主机器人显示名已设定为: %1").arg(botDisplayName));
-            }
+    // 5. 业务参数解析与机器人集群启动
+    if (QFile::exists(m_configPath)) {
+        QSettings settings(m_configPath, QSettings::IniFormat);
+        LOG_INFO(QString("├── 📑 解析业务配置: [%1]").arg(QFileInfo(m_configPath).fileName()));
 
-            int botCount = settings.value("bots/init_count", 10).toInt();
+        QString botDisplayName = settings.value("bots/display_name", "CC.Dota.XXX").toString();
+        int botCount = settings.value("bots/init_count", 10).toInt();
 
-            LOG_INFO(QString("🚀 系统启动中: 目标在线机器人数量 [%1]").arg(botCount));
-
-            // 1. 设置服务器端口
-            m_botManager->setServerPort(port);
-
-            // 2. 初始化机器人集群
-            m_botManager->initializeBots(botCount, m_configPath);
-
-        } else {
-            LOG_ERROR(QString("❌ 致命错误: 找不到配置文件: %1").arg(m_configPath));
+        if (m_client) {
+            m_client->setBotDisplayName(botDisplayName);
+            LOG_INFO(QString("│   ├── 👤 主机器人显示名: %1").arg(botDisplayName));
         }
+
+        LOG_INFO(QString("└── 🤖 机器人集群初始化 (目标在线: %1)...").arg(botCount));
+
+        // 执行集群启动
+        m_botManager->setServerPort(port);
+        m_botManager->initializeBots(botCount, m_configPath);
+
+        LOG_INFO("    ✨ [System] War3Bot 服务器已准备就绪");
     } else {
-        LOG_ERROR("启动 War3Bot 服务器失败 (端口可能被占用)");
+        LOG_ERROR("└── ❌ 致命错误: 无法打开配置文件进行业务逻辑初始化");
+        return false;
     }
 
-    return success;
+    return true;
 }
 
 void War3Bot::connectToBattleNet(QString hostname, quint16 port, QString user, QString pass)

@@ -255,6 +255,7 @@ void BotManager::processNextRegistration()
 
     // 3. 执行注册逻辑
     m_tempRegistrationClient = new Client(this);
+    m_tempRegistrationClient->setNetManager(m_netManager);
     m_tempRegistrationClient->setBotDisplayName(m_botDisplayName);
     m_tempRegistrationClient->setCredentials(user, pass, Protocol_SRP_0x53);
 
@@ -389,6 +390,7 @@ void BotManager::addBotInstance(const QString& username, const QString& password
 
     // 初始化组件
     bot->client = new class Client(this);
+    bot->client->setNetManager(m_netManager);
     bot->commandSource = From_Server;
 
     // 设置 Client 属性
@@ -511,6 +513,7 @@ bool BotManager::createGame(const QString &hostName, const QString &gameName, co
         if (!targetBot->client) {
             targetBot->client = new Client(this);
             targetBot->client->setGameTickInterval();
+            targetBot->client->setNetManager(m_netManager);
             targetBot->client->setBotDisplayName(m_botDisplayName);
             targetBot->client->setCredentials(targetBot->username, targetBot->password, Protocol_SRP_0x53);
 
