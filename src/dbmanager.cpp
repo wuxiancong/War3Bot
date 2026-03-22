@@ -251,7 +251,7 @@ void DbManager::updateUserHwid(const QString &username, const QString &hwid)
 {
     LOG_TREE(QString("📝 更新用户指纹: %1 -> %2").arg(username, hwid));
     QSqlQuery query(m_db);
-    query.prepare("UPDATE users SET last_hwid = :hwid, lastlogin_time = UNIX_TIMESTAMP() WHERE username = :user");
+    query.prepare("UPDATE users SET last_hwid = :hwid, acct_lastlogin_time = UNIX_TIMESTAMP() WHERE username = :user");
     query.bindValue(":user", username);
     query.bindValue(":hwid", hwid);
     if (!query.exec()) {

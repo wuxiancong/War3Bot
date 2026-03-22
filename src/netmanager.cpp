@@ -567,30 +567,48 @@ qint64 NetManager::sendUdpPacket(const QHostAddress &target, quint64 port, Packe
 
 bool NetManager::sendTcpPacket(QTcpSocket *socket, PacketType type, const void *payload, quint64 payloadLen)
 {
-    // 0. 前置检查
+    // 0. 基础指针空校验
     if (!socket) {
         LOG_ERROR("❌ [TCP] 发送失败: Socket 指针为空");
         return false;
     }
-    if (socket->state() != QAbstractSocket::ConnectedState) {
-        LOG_WARNING(QString("❌ [TCP] 发送失败: Socket 未连接 (State: %1)").arg(socket->state()));
+
+    if (socket->thread() != QThread::currentThread()) {
+        QByteArray data((const char*)payload, (int)payloadLen);
+        QMetaObject::invokeMethod(this, [this, socket, type, data]() {
+            this->sendTcpPacket(socket, type, data.constData(), data.size());
+        }, Qt::QueuedConnection);
+        return true;
+    }
+
+    // 1. 状态数值有效性校验
+    int s = static_cast<int>(socket->state());
+    if (s < 0 || s > 6) {
+        LOG_ERROR(QString("❌ [TCP] 内存风险拦截: 检测到非法状态码 (%1)！指针可能已失效，放弃操作防止崩溃").arg(s));
         return false;
     }
 
-    // 1. 准备 Buffer
+    // 2. 业务连接状态校验
+    if (socket->state() != QAbstractSocket::ConnectedState) {
+        LOG_WARNING(QString("❌ [TCP] 发送失败: Socket 当前未连接 (当前状态: %1)").arg(s));
+        return false;
+    }
+
+    // 3. 准备数据 Buffer
     int totalSize = sizeof(PacketHeader) + payloadLen;
     QByteArray buffer;
     buffer.resize(totalSize);
 
-    // 2. 填充 Header
+    // 4. 填充 Header
     PacketHeader *header = reinterpret_cast<PacketHeader*>(buffer.data());
     header->magic = PROTOCOL_MAGIC;
     header->version = PROTOCOL_VERSION;
     header->command = static_cast<quint8>(type);
 
-    // 获取身份信息用于日志
-    quint32 sid = socket->property("sessionId").toUInt();
-    QString clientId = socket->property("clientId").toString();
+    QVariant sidProp = socket->property("sessionId");
+    QVariant cidProp = socket->property("clientId");
+    quint32 sid = sidProp.isValid() ? sidProp.toUInt() : 0;
+    QString clientId = cidProp.isValid() ? cidProp.toString() : "Unknown";
 
     header->sessionId = sid;
     header->seq = ++m_serverSeq;
@@ -598,39 +616,35 @@ bool NetManager::sendTcpPacket(QTcpSocket *socket, PacketType type, const void *
     header->checksum = 0;
     memset(header->signature, 0, 16);
 
-    // 3. 填充 Payload
+    // 5. 填充负载
     if (payloadLen > 0 && payload != nullptr) {
         memcpy(buffer.data() + sizeof(PacketHeader), payload, payloadLen);
     }
 
-    // 4. 计算 CRC
+    // 6. 计算校验
     header->checksum = calculateStandardCRC16(buffer);
-
-    // 5. 后计算安全签名
     QByteArray secret = getAppSecret();
-    QByteArray signSource = buffer + secret;
-    QByteArray signature = QCryptographicHash::hash(signSource, QCryptographicHash::Sha256);
+    QByteArray signature = QCryptographicHash::hash(buffer + secret, QCryptographicHash::Sha256);
     memcpy(header->signature, signature.constData(), 16);
 
-    // 6. 发送
+    // 7. 执行发送
+    QString peerInfo = QString("%1:%2").arg(socket->peerAddress().toString()).arg(socket->peerPort());
+
     qint64 sent = socket->write(buffer);
     socket->flush();
 
-    QString typeStr = packetTypeToString(type);
-    QString peerInfo = QString("%1:%2").arg(socket->peerAddress().toString()).arg(socket->peerPort());
-
-    // 5. 结果判断与日志
+    // 8. 结果判断
     if (sent == totalSize) {
-        LOG_INFO(QString("🚀 [TCP] %1 -> %2 (Session: %3 | Client: %4 | Len: %5)")
-                     .arg(typeStr, peerInfo).arg(sid)
-                     .arg(clientId.isEmpty() ? "" : clientId.left(8))
+        LOG_INFO(QString("🚀 [TCP] %1 -> %2 (SID: %3 | CID: %4 | Len: %5)")
+                     .arg(packetTypeToString(type), peerInfo)
+                     .arg(sid)
+                     .arg(clientId.left(8))
                      .arg(sent));
         return true;
     } else {
-        LOG_ERROR(QString("❌ [TCP] 发送不完整 -> %1 | Cmd: %2 | 计划: %3 / 实际: %4 | Error: %5")
-                      .arg(peerInfo, typeStr)
-                      .arg(totalSize).arg(sent)
-                      .arg(socket->errorString()));
+        LOG_ERROR(QString("❌ [TCP] 写入不完整 -> %1 | Cmd: %2 | 计划: %3 / 实际: %4")
+                      .arg(peerInfo, packetTypeToString(type))
+                      .arg(totalSize).arg(sent));
         return false;
     }
 }
@@ -1419,6 +1433,14 @@ void NetManager::handleTcpCommandMessage(QTcpSocket *socket)
                 // 查到了！
                 QString clientId = m_sessionIndex.value(pHeader->sessionId);
 
+                if (m_tcpClients.contains(clientId)) {
+                    QPointer<QTcpSocket> oldSocket = m_tcpClients.value(clientId);
+                    if (oldSocket && oldSocket != socket) {
+                        LOG_INFO(QString("🔄 [TCP] 发现重复连接，正在关闭旧通道: %1").arg(clientId.left(8)));
+                        oldSocket->disconnectFromHost();
+                    }
+                }
+
                 // 立即更新 Socket 属性和 Map
                 m_tcpClients.insert(clientId, socket);
                 socket->setProperty("clientId", clientId);
@@ -1556,7 +1578,14 @@ void NetManager::onNewTcpConnection()
 
 void NetManager::onTcpDisconnected() {
     QTcpSocket *socket = qobject_cast<QTcpSocket*>(sender());
-    if (socket) socket->deleteLater();
+    if (socket) {
+        QString clientId = socket->property("clientId").toString();
+        if (!clientId.isEmpty()) {
+            m_tcpClients.remove(clientId);
+            LOG_INFO(QString("🧹 已从控制列表移除断开的客户端: %1").arg(clientId.left(8)));
+        }
+        socket->deleteLater();
+    }
 }
 
 bool NetManager::sendEnterRoomCommand(const QString &clientId, quint64 port, bool isServerCmd)
@@ -1573,7 +1602,13 @@ bool NetManager::sendEnterRoomCommand(const QString &clientId, quint64 port, boo
         return false;
     }
 
-    QTcpSocket *socket = m_tcpClients[clientId];
+    QPointer<QTcpSocket> socket = m_tcpClients.value(clientId);
+
+    if (socket.isNull()) {
+        LOG_ERROR(QString("🛑 [指令发送失败] 目标 %1 已离线 (QPointer 为空)").arg(clientId.left(8)));
+        m_tcpClients.remove(clientId); // 清理失效键
+        return false;
+    }
 
     // 2. 检查 Socket 状态
     if (socket->state() != QAbstractSocket::ConnectedState) {
@@ -1707,36 +1742,37 @@ bool NetManager::sendToClient(const QString &clientId, const QByteArray &data)
 
 void NetManager::sendRoomPings(const QString &clientId, const QVariantMap &pings)
 {
-    QJsonDocument doc = QJsonDocument::fromVariant(pings);
-    QByteArray payload = doc.toJson(QJsonDocument::Compact);
+    QPointer<QTcpSocket> socket = m_tcpClients.value(clientId);
 
-    if (payload.isEmpty()) {
-        payload = "{}";
+    if (socket.isNull()) {
+        LOG_WARNING(QString("   ⚠️ [Ping下发中止] 客户端 %1 的 Socket 已经失效或已断开").arg(clientId.left(8)));
+        m_tcpClients.remove(clientId);
+        return;
     }
 
-    LOG_INFO(QString("📡 [控制通道] 下发房间实时 Ping 列表"));
-    LOG_INFO(QString("   ├─ 🎯 目标 ID: %1").arg(clientId.left(8)));
-    LOG_INFO(QString("   ├─ 📊 数据项:  %1").arg(pings.size()));
-    LOG_INFO(QString("   ├─ 📦 负载:    %1").arg(QString::fromUtf8(payload)));
-    LOG_INFO(QString("   └─ 🚀 协议类型: S_C_PING_LIST (TCP)"));
+    QJsonDocument doc = QJsonDocument::fromVariant(pings);
+    QByteArray payload = doc.toJson(QJsonDocument::Compact);
+    if (payload.isEmpty()) payload = "{}";
 
-    if (m_tcpClients.contains(clientId)) {
-        sendTcpPacket(m_tcpClients[clientId], PacketType::S_C_PING_LIST, payload.data(), payload.size());
-    } else {
-        LOG_ERROR(QString("   ⚠️ [下发失败] 找不到客户端 %1 的活跃 TCP 连接").arg(clientId.left(8)));
+    if (socket->state() == QAbstractSocket::ConnectedState) {
+        sendTcpPacket(socket.data(), PacketType::S_C_PING_LIST, payload.data(), payload.size());
     }
 }
 
 void NetManager::sendRoomReadyStates(const QString &clientId, const QVariantMap &readyStates)
 {
+    QPointer<QTcpSocket> socket = m_tcpClients.value(clientId);
+
+    if (socket.isNull()) {
+        LOG_ERROR(QString("   ⚠️ [准备状态下发失败] 客户端 %1 无活跃 TCP 连接").arg(clientId.left(8)));
+        return;
+    }
+
     QJsonDocument doc = QJsonDocument::fromVariant(readyStates);
     QByteArray payload = doc.toJson(QJsonDocument::Compact);
-
     if (payload.isEmpty()) payload = "{}";
 
-    if (m_tcpClients.contains(clientId)) {
-        sendTcpPacket(m_tcpClients[clientId], PacketType::S_C_READY_LIST, payload.data(), payload.size());
-
+    if (sendTcpPacket(socket.data(), PacketType::S_C_READY_LIST, payload.data(), payload.size())) {
         LOG_INFO(QString("🚀 [TCP 下发] 准备状态表 -> Client:%1").arg(clientId.left(8)));
     }
 }

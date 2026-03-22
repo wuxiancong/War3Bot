@@ -151,7 +151,7 @@ private:
     QTcpServer *m_tcpServer;
 
     // 数据
-    QMap<QString, QTcpSocket*> m_tcpClients;
+    QMap<QString, QPointer<QTcpSocket>> m_tcpClients;
     mutable QReadWriteLock m_registerInfosLock;
     QMap<QString, RegisterInfo> m_registerInfos;
     QMap<quint32, QString> m_sessionIndex;
