@@ -1061,66 +1061,92 @@ void NetManager::handleCheckMapCRC(const PacketHeader *header, const CSCheckMapC
 
 TcpConnType NetManager::identifyTcpProtocol(QTcpSocket *socket)
 {
-    if (socket->bytesAvailable() < 4) return Tcp_Unknown;
+    qint64 available = socket->bytesAvailable();
+
+    // 最小长度检查
+    if (available < 4) {
+        LOG_INFO(QString("   ├── ℹ️ 等待识别: 当前缓冲区数据过短 (%1 字节)").arg(available));
+        return Tcp_Unknown;
+    }
 
     QString peerInfo = QString("%1:%2").arg(socket->peerAddress().toString()).arg(socket->peerPort());
-    QByteArray head = socket->peek(sizeof(PacketHeader));
+    QByteArray head = socket->peek(8);
     const PacketHeader *pHeader = reinterpret_cast<const PacketHeader*>(head.constData());
 
     LOG_INFO("🔌 [TCP 协议识别阶段]");
+    LOG_INFO(QString("   ├── 👤 连接来源: %1").arg(peerInfo));
 
-    // 1. 检查是否为地图上传通道 (W3UP)
+    // 1. 检查是否为地图上传通道
     if (head.startsWith("W3UP")) {
         socket->setProperty("ConnType", Tcp_Upload);
-        LOG_INFO(QString("   ├─ 👤 来源: %1").arg(peerInfo));
-        // 修复点：显式将 QByteArray 转换为 QString，解决 arg 二义性
-        LOG_INFO(QString("   ├─ 🏷️ 标识: %1 (ASCII: W3UP)").arg(QString(head.left(4).toHex().toUpper())));
-        LOG_INFO("   └─ ✅ 判定: 文件上传通道 (UPLOAD)");
+        LOG_INFO(QString("   ├── 🏷️ 特征匹配: ASCII [W3UP]"));
+        LOG_INFO("   └── ✅ 判定结果: 文件上传通道 (UPLOAD)");
         return Tcp_Upload;
     }
-
-    // 2. 检查是否为控制指令通道 (Magic Match)
-    if (pHeader->magic == PROTOCOL_MAGIC) {
+    // 2. 检查是否为控制指令通道
+    else if (pHeader->magic == PROTOCOL_MAGIC) {
         socket->setProperty("ConnType", Tcp_Command);
-        LOG_INFO(QString("   ├─ 👤 来源: %1").arg(peerInfo));
-        LOG_INFO(QString("   ├─ 🏷️ 魔数: 0x%1").arg(QString::number(pHeader->magic, 16).toUpper()));
-        LOG_INFO("   └─ ✅ 判定: 控制指令通道 (COMMAND)");
+        LOG_INFO(QString("   ├── 🏷️ 特征匹配: 魔数 0x%1").arg(QString::number(pHeader->magic, 16).toUpper()));
+        LOG_INFO("   └── ✅ 判定结果: 控制指令通道 (COMMAND)");
         return Tcp_Command;
     }
+    // 3. 非法协议分支
+    else {
+        QString hexData = QString(head.toHex(' ').toUpper());
+        LOG_INFO("   ├── ❌ 协议识别失败: 头部数据不匹配任何已知模式");
+        LOG_INFO(QString("   ├── 📦 原始字节 (Peek): %1").arg(hexData));
+        LOG_ERROR("   └── 🛡️ 安全动作: 判定为非法连接，正在强制断开...");
 
-    // 3. 识别失败：非法协议
-    LOG_INFO("🛑 [TCP 识别失败]");
-    LOG_INFO(QString("   ├─ 👤 来源: %1").arg(peerInfo));
-    LOG_ERROR(QString("   ├─ ❌ 数据: %1...").arg(QString(head.left(8).toHex().toUpper())));
-    LOG_INFO("   └─ 🛡️ 动作: 强制断开连接");
-
-    socket->disconnectFromHost();
-    return Tcp_Unknown;
+        socket->disconnectFromHost();
+        return Tcp_Unknown;
+    }
 }
 
 void NetManager::onTcpReadyRead()
 {
     QTcpSocket *socket = qobject_cast<QTcpSocket*>(sender());
-    if (!socket) return;
+    if (!socket) {
+        LOG_ERROR("❌ [onTcpReadyRead] 异常：无法获取信号发送者 Socket");
+        return;
+    }
 
     // 获取当前连接类型
-    int connType = socket->property("ConnType").toInt();
+    QVariant typeProp = socket->property("ConnType");
+    int connType = typeProp.isValid() ? typeProp.toInt() : Tcp_Unknown;
+
+    LOG_DEBUG(QString("📥 [TCP 接收] 来源: %1:%2 | 当前通道类型: %3")
+                  .arg(socket->peerAddress().toString())
+                  .arg(socket->peerPort())
+                  .arg(connType == Tcp_Unknown ? "未知 (需识别)" : (connType == Tcp_Upload ? "文件上传" : "指令控制")));
 
     // 1. 如果类型未知，先进行协议识别
     if (connType == Tcp_Unknown) {
+        LOG_INFO("├── 🔍 检测到未知协议连接，启动识别程序...");
         connType = identifyTcpProtocol(socket);
-        if (connType == Tcp_Unknown) return; // 数据不足，继续等待
+
+        if (connType == Tcp_Unknown) {
+            LOG_INFO("└── ⏳ 识别结果: 数据仍不足以判断，等待后续报文...");
+            return;
+        } else {
+            LOG_INFO(QString("└── ✅ 识别成功: 已切换至 %1 模式")
+                         .arg(connType == Tcp_Upload ? "UPLOAD" : "COMMAND"));
+        }
     }
 
     // 2. 根据识别到的类型进行逻辑分发
     switch (static_cast<TcpConnType>(connType)) {
     case Tcp_Upload:
+        LOG_DEBUG("└── 🚀 分发数据至 handleTcpUploadMessage");
         handleTcpUploadMessage(socket);
         break;
+
     case Tcp_Command:
+        LOG_DEBUG("└── 🚀 分发数据至 handleTcpCommandMessage");
         handleTcpCommandMessage(socket);
         break;
+
     default:
+        LOG_WARNING(QString("└── ⚠️ 异常分支：未定义的 TcpConnType 枚举值: %1").arg(connType));
         break;
     }
 }
@@ -1387,7 +1413,31 @@ void NetManager::handleTcpCommandMessage(QTcpSocket *socket)
         }
 
         // 6. 处理具体指令
-        switch (static_cast<PacketType>(pHeader->command)) {
+        switch (static_cast<PacketType>(pHeader->command))
+        {
+        case PacketType::C_S_HEARTBEAT: {
+            updateSessionState(pHeader->sessionId, socket->peerAddress(), socket->peerPort(), nullptr);
+
+            // 回复 Pong
+            SCPongPacket pong;
+            pong.status = 2;
+            sendTcpPacket(socket, PacketType::S_C_PONG, &pong, sizeof(pong));
+
+            LOG_DEBUG(QString("💓 [TCP Heartbeat] Session: %1").arg(pHeader->sessionId));
+            break;
+        }
+
+        case PacketType::C_S_PING: {
+            updateSessionState(pHeader->sessionId, socket->peerAddress(), socket->peerPort(), nullptr);
+
+            SCPongPacket pong;
+            pong.status = 2;
+            sendTcpPacket(socket, PacketType::S_C_PONG, &pong, sizeof(pong));
+
+            LOG_DEBUG(QString("🏓 [TCP Ping] Session: %1").arg(pHeader->sessionId));
+            break;
+        }
+
         case PacketType::C_S_COMMAND:
             LOG_INFO("🚩 [命中] 正在进入 C_S_COMMAND 分支...");
             if (pHeader->payloadLen >= sizeof(CSCommandPacket)) {
