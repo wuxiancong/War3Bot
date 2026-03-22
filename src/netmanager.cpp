@@ -437,6 +437,12 @@ bool NetManager::startServer(quint64 port, const QString &configFile)
         cleanupResources();
         return false;
     }
+
+    LOG_INFO(QString("├── 🤝 TCP 服务监听中..."));
+    LOG_INFO(QString("│   ├── 绑定地址: %1").arg(m_tcpServer->serverAddress().toString()));
+    LOG_INFO(QString("│   ├── 绑定端口: %1").arg(m_tcpServer->serverPort()));
+    LOG_INFO(QString("│   └── 状态: 等待客户端连接..."));
+
     connect(m_tcpServer, &QTcpServer::newConnection, this, &NetManager::onNewTcpConnection);
     LOG_INFO("│   └── ✅ TCP 服务已在线");
 
@@ -1506,20 +1512,42 @@ void NetManager::handleTcpCommandMessage(QTcpSocket *socket)
 
 void NetManager::onNewTcpConnection()
 {
+    LOG_INFO("🌐 [TCP Server] 检测到新的挂起连接...");
+
     while (m_tcpServer->hasPendingConnections()) {
         QTcpSocket *socket = m_tcpServer->nextPendingConnection();
+        if (!socket) {
+            LOG_ERROR("   └── ❌ 异常: nextPendingConnection 返回空指针");
+            continue;
+        }
 
+        QString peerIp = socket->peerAddress().toString();
+        quint16 peerPort = socket->peerPort();
+        LOG_INFO(QString("   ├── 📥 握手请求: %1:%2").arg(peerIp).arg(peerPort));
+
+        // 1. 看门狗拦截检查
         if (!m_watchdog.checkTcpConnection(socket->peerAddress())) {
-            LOG_WARNING(QString("🛡️ 拒绝恶意 IP 连接请求: %1").arg(socket->peerAddress().toString()));
-            socket->close();
+            LOG_WARNING(QString("   ├── 🛡️ [安全拦截] 该 IP %1 触发频率限制，强制断开").arg(peerIp));
+            socket->abort();
             socket->deleteLater();
             continue;
         }
 
-        connect(socket, &QTcpSocket::readyRead, this, &NetManager::onTcpReadyRead);
-        connect(socket, &QTcpSocket::disconnected, this, &NetManager::onTcpDisconnected);
+        // 2. 绑定信号
+        auto c1 = connect(socket, &QTcpSocket::readyRead, this, &NetManager::onTcpReadyRead);
+        auto c2 = connect(socket, &QTcpSocket::disconnected, this, &NetManager::onTcpDisconnected);
+        auto c3 = connect(socket, QOverload<QAbstractSocket::SocketError>::of(&QAbstractSocket::errorOccurred),
+                          this, [ peerIp](QAbstractSocket::SocketError err){
+                              LOG_ERROR(QString("   └── ❗ [Socket错误] 源:%1 | Code:%2").arg(peerIp).arg(err));
+                          });
 
-        LOG_INFO(QString("📥 TCP 连接来自: %1:%2").arg(socket->peerAddress().toString()).arg(socket->peerPort()));
+        if (c1 && c2) {
+            LOG_INFO(QString("   ├── ✅ 信号绑定成功: readyRead & disconnected"));
+            LOG_INFO(QString("   └── 📝 状态: 连接已进入监听队列 (SocketID: %1)").arg(socket->socketDescriptor()));
+        } else {
+            LOG_CRITICAL("   └── ❌ [致命] 信号槽绑定失败！请检查函数签名。");
+            socket->deleteLater();
+        }
     }
 }
 
