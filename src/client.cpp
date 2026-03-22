@@ -1509,6 +1509,9 @@ void Client::onPlayerDisconnected() {
     if (pidToRemove != 0) {
         LOG_INFO(QString("🔌 [断开连接] 玩家离线: %1 (PID: %2)").arg(nameToRemove).arg(pidToRemove));
 
+        LOG_INFO(QString("   ├─ 🧹 状态清理: PID %1 已从准备名单移除").arg(pidToRemove));
+        syncReadyStates();
+
         // 记录被清理的槽位索引
         int oldHostSlotIndex = -1;
 
@@ -3643,17 +3646,18 @@ void Client::syncReadyStates()
 {
     QMap<quint8, QVariantMap> readyData;
 
-    for (auto it = m_players.begin(); it != m_players.end(); ++it) {
+    for (auto it = m_players.constBegin(); it != m_players.constEnd(); ++it) {
         if (it.key() == m_botPid) continue;
 
-        QVariantMap pStatus;
-        pStatus.insert("r", it.value().isReady);
-        pStatus.insert("c", it.value().readyCountdown);
-
-        readyData.insert(it.key(), pStatus);
+        QVariantMap pInfo;
+        pInfo["r"] = it.value().isReady;
+        pInfo["c"] = it.value().readyCountdown;
+        readyData.insert(it.key(), pInfo);
     }
 
     emit readyStateChanged(readyData);
+
+    LOG_INFO(QString("   └─ 📡 状态同步: 已下发最新准备列表 (在线人数: %1)").arg(readyData.size()));
 }
 
 void Client::setPlayerReadyByUuid(const QString &uuid, bool ready)
