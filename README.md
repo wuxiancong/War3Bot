@@ -616,3 +616,102 @@ sudo rm -rf /etc/War3Bot /var/log/War3Bot /opt/War3Bot
 sudo apt remove qtbase5-dev qt5-qmake libqt5core5a libqt5network5
 sudo apt autoremove
 ```
+
+---
+
+# 🛠️ Linux 系统文件监听与句柄限制解决方案
+
+## 1. 错误现象分析
+当你看到以下日志时：
+> `Failed to allocate directory watch: Too many open files`
+> `Insufficient watch descriptors available. Reverting to -n.`
+
+**根本原因：** 
+1. **Inotify 限制**：Linux 内核对每个用户能同时监听的文件/文件夹数量（`max_user_watches`）有默认上限。
+2. **文件句柄限制**：系统对单个进程或用户能同时打开的文件数量（`ulimit`）有默认限制。
+
+---
+
+## 2. 核心解决方案：增加 Inotify 监听限额
+
+这是解决 `Insufficient watch descriptors`（无法实时监控日志）的最直接办法。
+
+### 第一步：临时生效（无需重启）
+```bash
+sudo sysctl -w fs.inotify.max_user_watches=524288
+sudo sysctl -w fs.inotify.max_user_instances=512
+```
+
+### 第二步：永久生效
+1. 编辑系统配置文件：
+   ```bash
+   sudo nano /etc/sysctl.conf
+   ```
+2. 在文件末尾添加以下行：
+   ```text
+   fs.inotify.max_user_watches=524288
+   fs.inotify.max_user_instances=512
+   ```
+3. 应用配置：
+   ```bash
+   sudo sysctl -p
+   ```
+
+---
+
+## 3. 进阶解决方案：增加文件打开句柄上限
+
+如果你的 **War3Bot** 需要处理大量并发 TCP 连接或打开大量地图文件，默认的 `1024` 限制会导致程序崩溃。
+
+### 方案 A：针对 War3Bot 服务（推荐）
+如果你使用 `systemd` 运行服务，请直接修改服务文件：
+1. 编辑服务：`sudo nano /etc/systemd/system/war3bot.service`
+2. 在 `[Service]` 区块添加：
+   ```ini
+   [Service]
+   LimitNOFILE=65535
+   ```
+3. 重载并重启：
+   ```bash
+   sudo systemctl daemon-reload
+   sudo systemctl restart war3bot
+   ```
+
+### 方案 B：针对当前用户环境
+1. 编辑限制文件：
+   ```bash
+   sudo nano /etc/security/limits.conf
+   ```
+2. 在末尾添加（将 `your_user` 换成你的用户名，或用 `*` 代表所有用户）：
+   ```text
+   * soft nofile 65535
+   * hard nofile 65535
+   ```
+
+---
+
+## 4. 修正之前的错误设置
+
+建议将 `KillUserProcesses` 改回默认值，防止 SSH 断开导致 Bot 意外关闭。
+
+1. 编辑：`sudo nano /etc/systemd/logind.conf`
+2. 修改：`KillUserProcesses=no`
+3. 重启服务：`sudo systemctl restart systemd-logind`
+
+---
+
+## 5. 优化后的 `wlog` 别名建议
+
+为了更稳定地查看日志，建议优化你的别名：
+
+```bash
+# 优化版：强制清理旧进程，使用常规 journalctl 追踪，不带 timeout 防止自动中断
+alias wlog="sudo pkill -f 'journalctl -u war3bot'; journalctl -u war3bot -f"
+```
+
+## 📝 总结表
+| 资源类型 | 对应参数 | 建议值 | 解决的问题 |
+| :--- | :--- | :--- | :--- |
+| **文件监听** | `fs.inotify.max_user_watches` | `524288` | `journalctl -f` 报错、Vite/Webpack 无法热更新 |
+| **文件句柄** | `LimitNOFILE` (ulimit) | `65535` | `Too many open files`、TCP 并发连接受限 |
+| **进程保留** | `KillUserProcesses` | `no` | 退出 SSH 后后台 Bot 进程不被强杀 |
