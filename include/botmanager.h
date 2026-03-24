@@ -108,6 +108,7 @@ public:
     void stopAll();
     int loadMoreBots(int count);
     void removeGame(Bot *bot, bool disconnectFlag = false);
+    Bot *findBotByHostName(const QString &hostName);
     Bot *findBotByClientId(const QString &clientId);
 
     // --- 游戏创建与指令 ---
@@ -125,6 +126,7 @@ signals:
     void botStateChanged(int botId, QString username, BotState newState);
 
 private slots:
+    void onRoomPingReceived(const QHostAddress &addr, quint16 port, const QString &identifier, quint64 clientTime, PingSearchMode mode = ByHostName);
     void onBotReadyStateChanged(Bot *bot, const QMap<quint8, QVariantMap> &readyData);
     void onBotRoomPingsUpdated(Bot *bot, const QMap<quint8, quint32> &pings);
     void onBotGameCreateFail(Bot *bot, GameCreationStatus status);
@@ -179,6 +181,8 @@ private:
     QMap<QString, Bot*>                     m_activeGames;
     QMap<QString, qint64>                   m_lastHostTime;
     QMap<QString, CommandInfo>              m_commandInfos;
+    QHash<QString, Bot*>                    m_hostNameToBotMap;
+    QHash<QString, Bot*>                    m_clientIdToBotMap;
     QMap<QString, QMap<QString, qint64>>    m_commandCooldowns;
 };
 

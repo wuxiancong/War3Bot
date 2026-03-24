@@ -37,6 +37,11 @@ enum RegistrationState {
     Registered
 };
 
+enum PingSearchMode {
+    ByHostName,
+    ByClientId
+};
+
 struct RegisterInfo {
     QString clientId;
     QString hardwareId;
@@ -71,6 +76,7 @@ public:
     QString getUuidByPreJoinName(const QString &userName);
     bool isClientRegistered(const QString &clientId) const;
     bool sendMessageToClient(const QString &clientId, PacketType type, quint8 code, quint64 data = 0, bool isUdp = false);
+    void sendRoomPong(const QHostAddress &targetAddr, quint16 targetPort, quint64 clientTime, quint8 current, quint8 max);
     bool sendEnterRoomCommand(const QString &clientId, quint64 port, bool isServerCmd);
     void sendRoomReadyStates(const QString &clientId, const QVariantMap &readyStates);
     void sendRoomPings(const QString &clientId, const QVariantMap &pings);
@@ -80,6 +86,7 @@ signals:
     void serverStopped();
     void serverStarted(quint64 port);
     void commandReceived(const QString &userName, const QString &clientId, const QString &command, const QString &text);
+    void roomPingReceived(const QHostAddress &senderAddr, quint16 senderPort, const QString &targetClientId, quint64 clientTime, PingSearchMode mode);
 
 private slots:
     void onUDPReadyRead();
@@ -98,6 +105,7 @@ private:
     void handleUnregister(const PacketHeader *header);
     void handlePing(const PacketHeader *header, const QHostAddress &senderAddr, quint64 senderPort);
     void handleHeartbeat(const PacketHeader *header, const QHostAddress &senderAddr, quint64 senderPort);
+    void handleRoomPing(const PacketHeader *header, const char *payload, const QHostAddress &addr, quint16 port);
     void handleCommand(const PacketHeader *header, const CSCommandPacket *packet);
     void handleCheckMapCRC(const PacketHeader *header, const CSCheckMapCRCPacket *packet, const QHostAddress &senderAddr, quint64 senderPort);
 

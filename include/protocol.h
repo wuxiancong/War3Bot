@@ -27,7 +27,9 @@ enum PacketType : quint8 {
     S_C_UPLOADRESULT                = 0x10,
     S_C_PING_LIST                   = 0x11,
     S_C_READY_LIST                  = 0x12,
-    C_S_JOIN_ROOM_INFO              = 0x13
+    C_S_JOIN_ROOM_INFO              = 0x13,
+    C_S_ROOM_PING                   = 0x14,
+    S_C_ROOM_PONG                   = 0x15
 };
 
 // ==================== 错误码定义 ====================
@@ -152,6 +154,18 @@ struct CSJoinRoomInfoPacket {
     char roomName[32];
     char hostName[32];
     char clientId[64];
+};
+
+struct CSRoomPingPacket {
+    quint64 clientSendTime;
+    char    targetHostName[32];
+    char    targetClientId[64];
+};
+
+struct SCRoomPongPacket {
+    quint64 clientSendTime;
+    quint8  currentPlayers;
+    quint8  maxPlayers;
 };
 #pragma pack(pop)
 

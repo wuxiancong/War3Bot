@@ -585,7 +585,16 @@ void BotManager::removeGame(Bot *bot, bool disconnectFlag)
 {
     if (!bot) return;
 
-    // 1. 从全局活跃房间表中移除
+    // 1. 从 ClientId 映射表中移除
+    if (!bot->hostname.isEmpty()) {
+        m_hostNameToBotMap.remove(bot->hostname.toLower());
+    }
+
+    if (!bot->gameInfo.clientId.isEmpty()) {
+        m_clientIdToBotMap.remove(bot->gameInfo.clientId);
+    }
+
+    // 2. 从全局活跃房间表中移除
     QString lowerName = bot->gameInfo.gameName.toLower();
     if (!lowerName.isEmpty() && m_activeGames.contains(lowerName)) {
         if (m_activeGames.value(lowerName) == bot) {
@@ -594,15 +603,15 @@ void BotManager::removeGame(Bot *bot, bool disconnectFlag)
         }
     }
 
-    // 2. 通知 Client 层停止广播并断开玩家
+    // 3. 通知 Client 层停止广播并断开玩家
     if (bot->client) {
         bot->client->cancelGame();
     }
 
-    // 3. 重置 Bot 逻辑数据
+    // 4. 重置 Bot 逻辑数据
     bot->resetGameState();
 
-    // 4. 如果标记为断线，强制覆盖状态
+    // 5. 如果标记为断线，强制覆盖状态
     if (disconnectFlag) {
         bot->state = BotState::Disconnected;
     }
@@ -613,15 +622,28 @@ const QVector<Bot*>& BotManager::getAllBots() const
     return m_bots;
 }
 
+Bot *BotManager::findBotByHostName(const QString &hostName)
+{
+    if (hostName.isEmpty()) return nullptr;
+
+    Bot *bot = m_hostNameToBotMap.value(hostName.toLower(), nullptr);
+
+    if (bot && bot->state != BotState::Disconnected) {
+        return bot;
+    }
+
+    return nullptr;
+}
+
 Bot *BotManager::findBotByClientId(const QString &clientId)
 {
     if (clientId.isEmpty()) return nullptr;
 
-    for (Bot *bot : qAsConst(m_bots)) {
-        if (bot->state != BotState::Disconnected && bot->isOwner(clientId)) {
-            return bot;
-        }
+    Bot *bot = m_clientIdToBotMap.value(clientId, nullptr);
+    if (bot && bot->state != BotState::Disconnected) {
+        return bot;
     }
+
     return nullptr;
 }
 
@@ -904,6 +926,14 @@ void BotManager::onBotGameCreateSuccess(Bot *bot)
     bot->state = BotState::Reserved;
     bot->gameInfo.createTime = QDateTime::currentMSecsSinceEpoch();
 
+    if (!bot->hostname.isEmpty()) {
+        m_hostNameToBotMap.insert(bot->hostname.toLower(), bot);
+    }
+
+    if (!bot->gameInfo.clientId.isEmpty()) {
+        m_clientIdToBotMap.insert(bot->gameInfo.clientId, bot);
+    }
+
     QString lowerName = bot->gameInfo.gameName.toLower();
     if (!lowerName.isEmpty()) {
         m_activeGames.insert(lowerName, bot);
@@ -1002,6 +1032,8 @@ void BotManager::onBotVisualHostLeft(Bot *bot)
 {
     if (!bot || !bot->client) return;
 
+    QString oldHostName = bot->gameInfo.hostName;
+    QString oldUuid = bot->gameInfo.clientId;
     QString newUuid = "";
     QString newHostName = "";
     quint8 newHostPid = 0;
@@ -1022,6 +1054,12 @@ void BotManager::onBotVisualHostLeft(Bot *bot)
     if (!newUuid.isEmpty()) {
         LOG_INFO(QString("👑 [房主移交] 目标: %1 | 新房主: %2 (PID: %3)")
                      .arg(bot->gameInfo.gameName, newHostName).arg(newHostPid));
+
+        m_hostNameToBotMap.remove(oldHostName.toLower());
+        m_hostNameToBotMap.insert(newHostName.toLower(), bot);
+
+        m_clientIdToBotMap.remove(oldUuid);
+        m_clientIdToBotMap.insert(newUuid, bot);
 
         bot->gameInfo.clientId = newUuid;
         bot->gameInfo.hostName = newHostName;
@@ -1118,6 +1156,51 @@ void BotManager::onBotPendingTaskTimeout()
                 bot->client->cancelGame();
             }
         }
+    }
+}
+
+void BotManager::onRoomPingReceived(const QHostAddress &addr, quint16 port, const QString &identifier, quint64 clientTime, PingSearchMode mode)
+{
+    // 1. 根据模式查找 Bot 实例
+    Bot *bot = nullptr;
+    QString modeTag;
+
+    if (mode == ByClientId) {
+        bot = findBotByClientId(identifier);
+        modeTag = "UUID";
+    } else {
+        bot = findBotByHostName(identifier);
+        modeTag = "HostName";
+    }
+
+    quint8 current = 0;
+    quint8 max = 0;
+    bool isHit = (bot != nullptr);
+
+    if (isHit) {
+        current = static_cast<quint8>(bot->gameInfo.currentPlayerCount);
+        max     = static_cast<quint8>(bot->gameInfo.maxPlayers);
+    }
+
+    // 2. 打印增强型树状日志
+    LOG_DEBUG("📡 [RoomPing] 收到探测请求");
+    LOG_DEBUG(QString("   ├── 👤 来源: %1:%2").arg(addr.toString()).arg(port));
+    LOG_DEBUG(QString("   ├── 🔍 模式: %1").arg(modeTag));
+    LOG_DEBUG(QString("   ├── 🆔 目标: %1").arg(identifier));
+
+    if (isHit) {
+        LOG_DEBUG(QString("   ├── 🎯 命中: %1").arg(bot->gameInfo.gameName));
+        LOG_DEBUG(QString("   ├── 📊 状态: %1 / %2").arg(current).arg(max));
+    } else {
+        LOG_DEBUG("   ├── ⚠️  结果: 未命中的非法或过期目标");
+    }
+
+    // 3. 执行回包
+    if (m_netManager) {
+        m_netManager->sendRoomPong(addr, port, clientTime, current, max);
+        LOG_DEBUG("   └── 🚀 响应: 已回发 S_C_ROOM_PONG");
+    } else {
+        LOG_DEBUG("   └── ❌ 错误: NetManager 丢失，下发失败");
     }
 }
 

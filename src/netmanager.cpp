@@ -763,6 +763,10 @@ void NetManager::handleIncomingDatagram(const QNetworkDatagram &datagram)
         handleHeartbeat(header, datagram.senderAddress(), datagram.senderPort());
         break;
 
+    case PacketType::C_S_ROOM_PING:
+        handleRoomPing(header, payload, datagram.senderAddress(), datagram.senderPort());
+        break;
+
     case PacketType::C_S_CHECKMAPCRC:
         if (header->payloadLen >= sizeof(CSCheckMapCRCPacket)) {
             LOG_INFO("🔍 [UDP 接收] C_S_CHECKMAPCRC (地图校验检查)");
@@ -992,6 +996,40 @@ void NetManager::handleHeartbeat(const PacketHeader *header, const QHostAddress 
     } else {
         LOG_INFO(QString("🛑 [心跳拒绝] Session无效: %1").arg(header->sessionId));
     }
+}
+
+void NetManager::handleRoomPing(const PacketHeader *header, const char *payload, const QHostAddress &addr, quint16 port)
+{
+    // 1. 长度校验
+    if (header->payloadLen < sizeof(CSRoomPingPacket)) {
+        LOG_WARNING(QString("⚠️ [RoomPing] 负载长度不足 (%1 < %2)")
+                        .arg(header->payloadLen).arg(sizeof(CSRoomPingPacket)));
+        return;
+    }
+
+    const CSRoomPingPacket *ping = reinterpret_cast<const CSRoomPingPacket*>(payload);
+
+    // 2. 提取两个标识符并去除空格
+    QString hostName = QString::fromUtf8(ping->targetHostName, strnlen(ping->targetHostName, 32)).trimmed();
+    QString clientId = QString::fromUtf8(ping->targetClientId, strnlen(ping->targetClientId, 64)).trimmed();
+
+    QString finalIdentifier;
+    PingSearchMode mode;
+
+    // 3. 优先级决策逻辑
+    if (!hostName.isEmpty()) {
+        finalIdentifier = hostName;
+        mode = ByHostName;
+    } else if (!clientId.isEmpty()) {
+        finalIdentifier = clientId;
+        mode = ByClientId;
+    } else {
+        LOG_WARNING(QString("🚫 [RoomPing] 收到空探测包，来源: %1:%2").arg(addr.toString()).arg(port));
+        return;
+    }
+
+    // 4. 发射信号给 BotManager
+    emit roomPingReceived(addr, port, finalIdentifier, ping->clientSendTime, mode);
 }
 
 void NetManager::handleCommand(const PacketHeader *header, const CSCommandPacket *packet)
@@ -1738,6 +1776,16 @@ bool NetManager::sendToClient(const QString &clientId, const QByteArray &data)
 
     LOG_INFO(QString("🚀 TCP 发送 %1 字节 -> %2").arg(written).arg(clientId));
     return true;
+}
+
+void NetManager::sendRoomPong(const QHostAddress &targetAddr, quint16 targetPort, quint64 clientTime, quint8 current, quint8 max)
+{
+    SCRoomPongPacket resp;
+    resp.clientSendTime = clientTime;
+    resp.currentPlayers = current;
+    resp.maxPlayers     = max;
+
+    sendUdpPacket(targetAddr, targetPort, PacketType::S_C_ROOM_PONG, &resp, sizeof(resp));
 }
 
 void NetManager::sendRoomPings(const QString &clientId, const QVariantMap &pings)
