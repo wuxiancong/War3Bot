@@ -1813,6 +1813,10 @@ void Client::handleW3GSUdpPacket(const QByteArray &data, const QHostAddress &sen
 
     quint16 magic = qFromBigEndian<quint16>(reinterpret_cast<const uchar*>(data.data()));
     if (magic == PROTOCOL_MAGIC) {
+        LOG_INFO("🔌 [Bot-UDP] 捕获到平台自定义协议包 (F801)");
+        LOG_INFO(QString("   ├── 🌍 来源地址: %1:%2").arg(sender.toString()).arg(senderPort));
+        LOG_INFO(QString("   └── 🚀 执行动作: 进入 handlePlatformUdpPacket 处理器"));
+
         handlePlatformUdpPacket(data, sender, senderPort);
         return;
     }
@@ -1869,26 +1873,53 @@ void Client::handleW3GSUdpPacket(const QByteArray &data, const QHostAddress &sen
 
 void Client::handlePlatformUdpPacket(const QByteArray &data, const QHostAddress &sender, quint16 senderPort)
 {
-    if (data.size() < (int)sizeof(PacketHeader)) return;
+    // 1. 头部长度校验
+    if (data.size() < (int)sizeof(PacketHeader)) {
+        LOG_ERROR("   └── ❌ 协议错误: 数据包长度不足以解析 Header");
+        return;
+    }
 
     PacketHeader *header = (PacketHeader*)data.data();
     PacketType cmd = static_cast<PacketType>(header->command);
     const char* payload = data.data() + sizeof(PacketHeader);
 
+    // 2. 打印指令基础信息
+    LOG_INFO(QString("   ├── 🆔 指令编号: 0x%1").arg(QString::number(header->command, 16).toUpper()));
+
+    // 3. 针对不同指令的分发处理
     if (cmd == PacketType::C_S_ROOM_PING) {
+        LOG_INFO("   ├── 🎯 业务类型: C_S_ROOM_PING (直连探测)");
+
+        if (data.size() < (int)(sizeof(PacketHeader) + sizeof(CSRoomPingPacket))) {
+            LOG_ERROR("   └── ❌ 校验失败: 探测包 Payload 长度不匹配");
+            return;
+        }
+
         const CSRoomPingPacket *ping = reinterpret_cast<const CSRoomPingPacket*>(payload);
 
+        // 获取房间实时状态
+        quint8 current = static_cast<quint8>(getOccupiedSlots());
+        quint8 max     = static_cast<quint8>(getTotalSlots());
+
+        // 构造响应数据
         SCRoomPongPacket resp;
         resp.clientSendTime = ping->clientSendTime;
-        resp.currentPlayers = static_cast<quint8>(getOccupiedSlots());
-        resp.maxPlayers     = static_cast<quint8>(getTotalSlots());
+        resp.currentPlayers = current;
+        resp.maxPlayers     = max;
 
+        // 封包
         QByteArray response = createPlatformPacket(PacketType::S_C_ROOM_PONG, &resp, sizeof(resp));
 
+        // 原路返回数据包
         m_udpSocket->writeDatagram(response, sender, senderPort);
-        LOG_INFO("📡 [RoomPing] Bot 响应探测");
-        LOG_INFO(QString("   ├── 👤 来源: %1:%2").arg(sender.toString()).arg(senderPort));
-        LOG_INFO(QString("   └── ✅ 状态: 已回发 S_C_ROOM_PONG (%1 字节)").arg(response.size()));
+
+        // 4. 打印完成日志
+        LOG_INFO(QString("   ├── 📊 房间状态: %1 / %2 (实时同步)").arg(current).arg(max));
+        LOG_INFO(QString("   └── ✅ 响应成功: 已回发 S_C_ROOM_PONG (%1 字节)").arg(response.size()));
+    }
+    else {
+        LOG_INFO(QString("   └── ❓ 处理中止: 指令 0x%1 暂无 Bot 侧逻辑实现")
+                     .arg(QString::number(header->command, 16).toUpper()));
     }
 }
 

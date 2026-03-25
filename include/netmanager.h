@@ -42,6 +42,8 @@ enum PingSearchMode {
     ByClientId
 };
 
+Q_DECLARE_METATYPE(PingSearchMode)
+
 struct RegisterInfo {
     QString clientId;
     QString hardwareId;

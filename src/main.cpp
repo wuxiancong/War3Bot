@@ -696,6 +696,8 @@ int main(int argc, char *argv[]) {
         war3bot.stopServer();
     });
 
+    qRegisterMetaType<PingSearchMode>("PingSearchMode");
+
     int result = app.exec();
     Logger::destroyInstance();
     return result;

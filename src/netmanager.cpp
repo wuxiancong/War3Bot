@@ -1001,8 +1001,6 @@ void NetManager::handleHeartbeat(const PacketHeader *header, const QHostAddress 
 
 void NetManager::handleRoomPing(const PacketHeader *header, const char *payload, const QHostAddress &addr, quint16 port)
 {
-    LOG_INFO("📥 [UDP 接收] C_S_ROOM_PING (房间列表Ping)");
-
     // 1. 长度校验
     if (header->payloadLen < sizeof(CSRoomPingPacket)) {
         LOG_WARNING(QString("   └── ❌ 校验失败: 负载长度不足 (%1 < %2)")
