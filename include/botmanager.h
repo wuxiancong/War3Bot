@@ -119,14 +119,14 @@ public:
 
     // --- Getters / Setters ---
     const QVector<Bot*>& getAllBots() const;
-    void setNetManager(NetManager *netManager) { m_netManager = netManager; }
-    void setServerPort(quint16 port) { m_controlPort = port; }
+    void setServerPort(quint16 port);
+    void setNetManager(NetManager *netManager);
 
 signals:
     void botStateChanged(int botId, QString username, BotState newState);
 
 private slots:
-    void onRoomPingReceived(const QHostAddress &addr, quint16 port, const QString &identifier, quint64 clientTime, PingSearchMode mode = ByHostName);
+    void onBotRoomPingReceived(const QHostAddress &addr, quint16 port, const QString &identifier, quint64 clientTime, PingSearchMode mode = ByHostName);
     void onBotReadyStateChanged(Bot *bot, const QMap<quint8, QVariantMap> &readyData);
     void onBotRoomPingsUpdated(Bot *bot, const QMap<quint8, quint32> &pings);
     void onBotGameCreateFail(Bot *bot, GameCreationStatus status);

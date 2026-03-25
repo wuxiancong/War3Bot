@@ -622,6 +622,21 @@ const QVector<Bot*>& BotManager::getAllBots() const
     return m_bots;
 }
 
+void BotManager::setServerPort(quint16 port)
+{
+    m_controlPort = port;
+}
+
+void BotManager::setNetManager(NetManager *netManager)
+{
+    m_netManager = netManager;
+
+    if (m_netManager) {
+        connect(m_netManager, &NetManager::roomPingReceived, this, &BotManager::onBotRoomPingReceived);
+        LOG_INFO("🔗 [系统链路] NetManager -> BotManager::onBotRoomPingReceived 已就绪");
+    }
+}
+
 Bot *BotManager::findBotByHostName(const QString &hostName)
 {
     if (hostName.isEmpty()) return nullptr;
@@ -1159,7 +1174,7 @@ void BotManager::onBotPendingTaskTimeout()
     }
 }
 
-void BotManager::onRoomPingReceived(const QHostAddress &addr, quint16 port, const QString &identifier, quint64 clientTime, PingSearchMode mode)
+void BotManager::onBotRoomPingReceived(const QHostAddress &addr, quint16 port, const QString &identifier, quint64 clientTime, PingSearchMode mode)
 {
     // 1. 根据模式查找 Bot 实例
     Bot *bot = nullptr;
