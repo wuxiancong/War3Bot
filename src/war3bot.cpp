@@ -23,7 +23,7 @@ War3Bot::~War3Bot()
         m_client->deleteLater();
     }
     if (m_botManager) {
-        m_botManager->stopAll();
+        m_botManager->cleanup();
     }
 }
 

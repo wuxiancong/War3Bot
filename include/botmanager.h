@@ -105,7 +105,7 @@ public:
 
     // --- 机器人控制 ---
     void startAll();
-    void stopAll();
+    void cleanup();
     int loadMoreBots(int count);
     void removeGame(Bot *bot, bool disconnectFlag = false);
     Bot *findBotByHostName(const QString &hostName);

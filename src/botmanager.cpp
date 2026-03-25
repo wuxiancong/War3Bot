@@ -122,7 +122,7 @@ BotManager::BotManager(QObject *parent) : QObject(parent)
 
 BotManager::~BotManager()
 {
-    stopAll();
+    cleanup();
     qDeleteAll(m_bots);
     m_bots.clear();
 }
@@ -133,7 +133,7 @@ void BotManager::initializeBots(quint32 initialCount, const QString &configPath)
     LOG_INFO("🤖 [BotManager] 初始化序列启动");
 
     // 2. 清理旧数据
-    stopAll();
+    cleanup();
     qDeleteAll(m_bots);
     m_bots.clear();
     m_currentFileIndex = 0;
@@ -570,7 +570,7 @@ void BotManager::startAll()
     }
 }
 
-void BotManager::stopAll()
+void BotManager::cleanup()
 {
     LOG_INFO("[BotManager] 停止所有机器人...");
     for (Bot *bot : qAsConst(m_bots)) {
