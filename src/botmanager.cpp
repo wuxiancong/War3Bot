@@ -1224,42 +1224,56 @@ void BotManager::onBotRoomPingReceived(const QHostAddress &addr, quint16 port, c
 
 void BotManager::onBotRoomPingsUpdated(Bot *bot, const QMap<quint8, quint32> &pings)
 {
-    if (!bot || !m_netManager || !bot->client) {
+    if (!bot || !bot->client || !m_netManager) {
         return;
     }
 
-    // 1. 准备数据负载
     QVariantMap vMap;
-    QString detailLog;
+    QString summaryLog;
     for (auto it = pings.constBegin(); it != pings.constEnd(); ++it) {
         QString pidStr = QString::number(it.key());
         vMap.insert(pidStr, it.value());
-        if (!detailLog.isEmpty()) detailLog += " ";
-        detailLog += QString("[%1:%2ms]").arg(pidStr).arg(it.value());
+
+        if (!summaryLog.isEmpty()) summaryLog += ", ";
+        summaryLog += QString("P%1:%2ms").arg(pidStr).arg(it.value());
     }
 
-    LOG_INFO(QString("💓 [延迟同步] 房间: %1 | 活跃槽位: %2")
-                 .arg(bot->gameInfo.gameName)
-                 .arg(pings.size()));
+    LOG_INFO(QString("📡 [延迟广播] 开始同步房间数据"));
+    LOG_INFO(QString("   ├── 🏠 房间名称: %1").arg(bot->gameInfo.gameName));
+    LOG_INFO(QString("   ├── 📊 延迟概览: [%1]").arg(summaryLog.isEmpty() ? "无有效数据" : summaryLog));
 
-    // 2. 获取房间内所有玩家的列表
     const QMap<quint8, PlayerData> &roomPlayers = bot->client->getPlayers();
 
-    // 3. 遍历所有玩家并分发
-    int broadcastCount = 0;
+    int syncCount = 0;
+    int totalPlayers = roomPlayers.size();
+    int currentIndex = 0;
+
     for (const auto &player : roomPlayers) {
-        // 过滤掉机器人
+        currentIndex++;
         if (player.pid == 2) continue;
+        bool isHost = (player.clientUuid == bot->gameInfo.clientId);
+        QString icon = isHost ? "👑" : "👤";
+        QString role = isHost ? "(Host)" : "(Joiner)";
+        bool isLast = (currentIndex == totalPlayers);
+        QString branch = isLast ? "   └── " : "   ├── ";
 
         if (!player.clientUuid.isEmpty()) {
             m_netManager->sendRoomPings(player.clientUuid, vMap);
-            broadcastCount++;
+            syncCount++;
+
+            LOG_INFO(QString("%1%2 同步给: %3 %4 [UUID: %5...]")
+                         .arg(branch, icon, player.name, role, player.clientUuid));
+        } else {
+            LOG_WARNING(QString("%1⚠️ 跳过: 玩家 %2 尚未关联 UUID")
+                            .arg(branch, player.name));
         }
     }
 
-    LOG_INFO(QString("   └─ 📡 广播详情: 已同步给 %1 个客户端 | 数据: %2")
-                 .arg(broadcastCount)
-                 .arg(detailLog.isEmpty() ? "None" : detailLog));
+    if (syncCount == 0) {
+        LOG_INFO("   └── ⚠️ 状态: 房间内没有可同步的有效客户端");
+    } else {
+        LOG_INFO(QString("   ✨ 状态: 同步任务圆满完成，已下发 %1 个目标").arg(syncCount));
+    }
 }
 
 void BotManager::onBotReadyStateChanged(Bot *bot, const QMap<quint8, QVariantMap> &readyData)
