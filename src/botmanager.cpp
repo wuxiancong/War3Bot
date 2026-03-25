@@ -1224,27 +1224,42 @@ void BotManager::onBotRoomPingReceived(const QHostAddress &addr, quint16 port, c
 
 void BotManager::onBotRoomPingsUpdated(Bot *bot, const QMap<quint8, quint32> &pings)
 {
-    if (!bot || bot->gameInfo.clientId.isEmpty() || !m_netManager) {
+    if (!bot || !m_netManager || !bot->client) {
         return;
     }
 
+    // 1. 准备数据负载
     QVariantMap vMap;
     QString detailLog;
-
     for (auto it = pings.constBegin(); it != pings.constEnd(); ++it) {
         QString pidStr = QString::number(it.key());
         vMap.insert(pidStr, it.value());
         if (!detailLog.isEmpty()) detailLog += " ";
-        detailLog += QString("[%1: %2ms]").arg(pidStr).arg(it.value());
+        detailLog += QString("[%1:%2ms]").arg(pidStr).arg(it.value());
     }
 
-    LOG_INFO(QString("💓 [延迟上报] 来自 Bot-%1 (%2)").arg(bot->id).arg(bot->username));
-    LOG_INFO(QString("   ├─ 🏠 归属房间: %1").arg(bot->gameInfo.gameName));
-    LOG_INFO(QString("   ├─ 👥 活跃槽位: %1").arg(pings.size()));
-    LOG_INFO(QString("   ├─ 📈 详情汇总: %1").arg(detailLog.isEmpty() ? "None" : detailLog));
-    LOG_INFO(QString("   └─ 📡 转发指令: m_netManager->sendRoomPings"));
+    LOG_INFO(QString("💓 [延迟同步] 房间: %1 | 活跃槽位: %2")
+                 .arg(bot->gameInfo.gameName)
+                 .arg(pings.size()));
 
-    m_netManager->sendRoomPings(bot->gameInfo.clientId, vMap);
+    // 2. 获取房间内所有玩家的列表
+    const QMap<quint8, PlayerData> &roomPlayers = bot->client->getPlayers();
+
+    // 3. 遍历所有玩家并分发
+    int broadcastCount = 0;
+    for (const auto &player : roomPlayers) {
+        // 过滤掉机器人
+        if (player.pid == 2) continue;
+
+        if (!player.clientUuid.isEmpty()) {
+            m_netManager->sendRoomPings(player.clientUuid, vMap);
+            broadcastCount++;
+        }
+    }
+
+    LOG_INFO(QString("   └─ 📡 广播详情: 已同步给 %1 个客户端 | 数据: %2")
+                 .arg(broadcastCount)
+                 .arg(detailLog.isEmpty() ? "None" : detailLog));
 }
 
 void BotManager::onBotReadyStateChanged(Bot *bot, const QMap<quint8, QVariantMap> &readyData)
