@@ -764,6 +764,7 @@ void NetManager::handleIncomingDatagram(const QNetworkDatagram &datagram)
         break;
 
     case PacketType::C_S_ROOM_PING:
+        LOG_INFO("📥 [UDP 接收] C_S_ROOM_PING (房间列表Ping)");
         handleRoomPing(header, payload, datagram.senderAddress(), datagram.senderPort());
         break;
 
