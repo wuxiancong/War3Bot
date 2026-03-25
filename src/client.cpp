@@ -1811,6 +1811,12 @@ void Client::handleW3GSUdpPacket(const QByteArray &data, const QHostAddress &sen
     // 1. 基础长度校验
     if (data.size() < 4) return;
 
+    quint16 magic = qFromBigEndian<quint16>(reinterpret_cast<const uchar*>(data.data()));
+    if (magic == PROTOCOL_MAGIC) {
+        handlePlatformUdpPacket(data, sender, senderPort);
+        return;
+    }
+
     QDataStream in(data);
     in.setByteOrder(QDataStream::LittleEndian);
     quint8 header, msgId;
@@ -1861,6 +1867,74 @@ void Client::handleW3GSUdpPacket(const QByteArray &data, const QHostAddress &sen
     }
 }
 
+void Client::handlePlatformUdpPacket(const QByteArray &data, const QHostAddress &sender, quint16 senderPort)
+{
+    if (data.size() < (int)sizeof(PacketHeader)) return;
+
+    PacketHeader *header = (PacketHeader*)data.data();
+    PacketType cmd = static_cast<PacketType>(header->command);
+    const char* payload = data.data() + sizeof(PacketHeader);
+
+    if (cmd == PacketType::C_S_ROOM_PING) {
+        const CSRoomPingPacket *ping = reinterpret_cast<const CSRoomPingPacket*>(payload);
+
+        SCRoomPongPacket resp;
+        resp.clientSendTime = ping->clientSendTime;
+        resp.currentPlayers = static_cast<quint8>(getOccupiedSlots());
+        resp.maxPlayers     = static_cast<quint8>(getTotalSlots());
+
+        QByteArray response = createPlatformPacket(PacketType::S_C_ROOM_PONG, &resp, sizeof(resp));
+
+        m_udpSocket->writeDatagram(response, sender, senderPort);
+        LOG_INFO("📡 [RoomPing] Bot 响应探测");
+        LOG_INFO(QString("   ├── 👤 来源: %1:%2").arg(sender.toString()).arg(senderPort));
+        LOG_INFO(QString("   └── ✅ 状态: 已回发 S_C_ROOM_PONG (%1 字节)").arg(response.size()));
+    }
+}
+
+QByteArray Client::createPlatformPacket(PacketType type, const void *payload, quint16 payloadSize)
+{
+    // 1. 计算总长度并初始化缓冲区
+    int headerSize = sizeof(PacketHeader);
+    int totalSize = headerSize + payloadSize;
+    QByteArray buffer(totalSize, 0);
+
+    // 2. 填充包头基础字段
+    PacketHeader *header = reinterpret_cast<PacketHeader*>(buffer.data());
+    header->magic      = PROTOCOL_MAGIC;
+    header->version    = PROTOCOL_VERSION;
+    header->command    = static_cast<quint8>(type);
+    header->sessionId  = 0;
+    header->seq        = ++m_platformSeq;
+    header->payloadLen = payloadSize;
+
+    // 预清空校验位
+    header->checksum = 0;
+    memset(header->signature, 0, 16);
+
+    // 3. 拷贝负载数据
+    if (payload && payloadSize > 0) {
+        memcpy(buffer.data() + headerSize, payload, payloadSize);
+    }
+
+    // 4. 计算标准 CRC16 校验
+    header->checksum = calculateStandardCRC16(buffer);
+
+    // 5. 计算安全签名
+    QByteArray secret = "CC_War3_@#_Platform_2026_SecureKey";
+    QByteArray signSource = buffer + secret;
+    QByteArray fullHash = QCryptographicHash::hash(signSource, QCryptographicHash::Sha256);
+
+    // 取 Hash 的前 16 字节作为签名
+    memcpy(header->signature, fullHash.constData(), 16);
+
+    // 6. 打印构建日志
+    LOG_DEBUG(QString("📦 [Bot-Packet] 构建完成: Type=0x%1, Size=%2, Seq=%3")
+              .arg(QString::number(type, 16).toUpper())
+              .arg(totalSize).arg(header->seq));
+
+    return buffer;
+}
 // =========================================================
 // 5. 认证与登录逻辑 (Hash, SRP, Register)
 // =========================================================

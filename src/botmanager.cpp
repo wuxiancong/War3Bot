@@ -630,13 +630,15 @@ void BotManager::setServerPort(quint16 port)
 void BotManager::setNetManager(NetManager *netManager)
 {
     m_netManager = netManager;
-
     if (m_netManager) {
-        connect(m_netManager, &NetManager::roomPingReceived, this, &BotManager::onBotRoomPingReceived);
-        LOG_INFO("🔗 [系统链路] NetManager -> BotManager::onBotRoomPingReceived 已就绪");
-    } else {
-        LOG_ERROR("🔗 [系统链路] 注入失败：NetManager 指针为空");
-        LOG_ERROR("   └── ❌ 导致后果: 无法监听 roomPingReceived 信号，房间探测功能(UDP)将无法工作");
+        bool ok = connect(m_netManager, &NetManager::roomPingReceived,
+                          this, &BotManager::onBotRoomPingReceived);
+
+        if (ok) {
+            LOG_INFO("🔗 [链路配置] 信号 roomPingReceived -> 槽 onBotRoomPingReceived 连接成功");
+        } else {
+            LOG_CRITICAL("❌ [链路配置] 信号连接失败！请检查函数签名和 Q_OBJECT 宏");
+        }
     }
 }
 
@@ -1179,16 +1181,16 @@ void BotManager::onBotPendingTaskTimeout()
 
 void BotManager::onBotRoomPingReceived(const QHostAddress &addr, quint16 port, const QString &identifier, quint64 clientTime, PingSearchMode mode)
 {
+    LOG_INFO("📩 [BotManager] 链路追踪: 已接收到来自 NetManager 的 roomPingReceived 信号");
+
     // 1. 根据模式查找 Bot 实例
     Bot *bot = nullptr;
-    QString modeTag;
+    QString modeTag = (mode == ByClientId) ? "UUID" : "HostName";
 
     if (mode == ByClientId) {
         bot = findBotByClientId(identifier);
-        modeTag = "UUID";
     } else {
         bot = findBotByHostName(identifier);
-        modeTag = "HostName";
     }
 
     quint8 current = 0;
@@ -1200,25 +1202,25 @@ void BotManager::onBotRoomPingReceived(const QHostAddress &addr, quint16 port, c
         max     = static_cast<quint8>(bot->gameInfo.maxPlayers);
     }
 
-    // 2. 打印增强型树状日志
-    LOG_DEBUG("📡 [RoomPing] 收到探测请求");
-    LOG_DEBUG(QString("   ├── 👤 来源: %1:%2").arg(addr.toString()).arg(port));
-    LOG_DEBUG(QString("   ├── 🔍 模式: %1").arg(modeTag));
-    LOG_DEBUG(QString("   ├── 🆔 目标: %1").arg(identifier));
+    // 2. 打印详细树状日志
+    LOG_DEBUG("📡 [RoomPing] 探测任务处理中...");
+    LOG_DEBUG(QString("   ├── 👤 来源地址: %1:%2").arg(addr.toString()).arg(port));
+    LOG_DEBUG(QString("   ├── 🔍 匹配模式: %1").arg(modeTag));
+    LOG_DEBUG(QString("   ├── 🆔 搜索标识: %1").arg(identifier));
 
     if (isHit) {
-        LOG_DEBUG(QString("   ├── 🎯 命中: %1").arg(bot->gameInfo.gameName));
-        LOG_DEBUG(QString("   ├── 📊 状态: %1 / %2").arg(current).arg(max));
+        LOG_DEBUG(QString("   ├── 🎯 命中目标: %1").arg(bot->gameInfo.gameName));
+        LOG_DEBUG(QString("   ├── 📊 房间状态: %1 / %2").arg(current).arg(max));
     } else {
-        LOG_DEBUG("   ├── ⚠️  结果: 未命中的非法或过期目标");
+        LOG_DEBUG("   ├── ⚠️  查找结果: 未找到匹配的活跃机器人实例");
     }
 
     // 3. 执行回包
     if (m_netManager) {
         m_netManager->sendRoomPong(addr, port, clientTime, current, max);
-        LOG_DEBUG("   └── 🚀 响应: 已回发 S_C_ROOM_PONG");
+        LOG_DEBUG("   └── ✅ 动作执行: 已调用 sendRoomPong");
     } else {
-        LOG_DEBUG("   └── ❌ 错误: NetManager 丢失，下发失败");
+        LOG_ERROR("   └── ❌ 系统异常: m_netManager 为空，无法发送响应");
     }
 }
 

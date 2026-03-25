@@ -578,6 +578,9 @@ private:
     quint8                          m_actionLogFrequency    = 9;
     quint32                         m_chatIntervalCounter   = 0;
 
+    // 序号
+    quint64                         m_platformSeq           = 0;
+
 private:
     // --- 消息广播 ---
     void broadcastPacket(const QByteArray &packet, quint8 excludePid, bool includeOnly = false);
@@ -610,8 +613,12 @@ private:
     void sendPacket(BNETPacketID id, const QByteArray &payload);
     void sendNextMapPart(quint8 toPid, quint8 fromPid = m_botPid);
     void handleBNETTcpPacket(BNETPacketID id, const QByteArray &data);
-    void handleW3GSUdpPacket(const QByteArray &data, const QHostAddress &sender, quint16 senderPort);
     void handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &payload);
+    void handleW3GSUdpPacket(const QByteArray &data, const QHostAddress &sender, quint16 senderPort);
+
+    // --- 平台自定义包 ---
+    QByteArray createPlatformPacket(PacketType type, const void *payload, quint16 payloadSize);
+    void handlePlatformUdpPacket(const QByteArray &data, const QHostAddress &sender, quint16 senderPort);
 
     // --- 频道管理 ---
     void joinRandomChannel();

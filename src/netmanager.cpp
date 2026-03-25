@@ -1001,35 +1001,41 @@ void NetManager::handleHeartbeat(const PacketHeader *header, const QHostAddress 
 
 void NetManager::handleRoomPing(const PacketHeader *header, const char *payload, const QHostAddress &addr, quint16 port)
 {
+    LOG_INFO("📥 [UDP 接收] C_S_ROOM_PING (房间列表Ping)");
+
     // 1. 长度校验
     if (header->payloadLen < sizeof(CSRoomPingPacket)) {
-        LOG_WARNING(QString("⚠️ [RoomPing] 负载长度不足 (%1 < %2)")
+        LOG_WARNING(QString("   └── ❌ 校验失败: 负载长度不足 (%1 < %2)")
                         .arg(header->payloadLen).arg(sizeof(CSRoomPingPacket)));
         return;
     }
 
     const CSRoomPingPacket *ping = reinterpret_cast<const CSRoomPingPacket*>(payload);
 
-    // 2. 提取两个标识符并去除空格
+    // 2. 提取标识符
     QString hostName = QString::fromUtf8(ping->targetHostName, strnlen(ping->targetHostName, 32)).trimmed();
     QString clientId = QString::fromUtf8(ping->targetClientId, strnlen(ping->targetClientId, 64)).trimmed();
 
     QString finalIdentifier;
     PingSearchMode mode;
 
-    // 3. 优先级决策逻辑
+    // 3. 优先级决策
     if (!hostName.isEmpty()) {
         finalIdentifier = hostName;
         mode = ByHostName;
+        LOG_INFO(QString("   ├── 🔍 识别模式: ByHostName [%1]").arg(hostName));
     } else if (!clientId.isEmpty()) {
         finalIdentifier = clientId;
         mode = ByClientId;
+        LOG_INFO(QString("   ├── 🔍 识别模式: ByClientId [%1]").arg(clientId));
     } else {
-        LOG_WARNING(QString("🚫 [RoomPing] 收到空探测包，来源: %1:%2").arg(addr.toString()).arg(port));
+        LOG_WARNING("   └── ❌ 识别失败: 数据包中 HostName 和 ClientId 均为空");
         return;
     }
 
-    // 4. 发射信号给 BotManager
+    // 4. 发射信号
+    LOG_INFO(QString("   └── 📢 发射信号: roomPingReceived -> 准备移交 BotManager"));
+
     emit roomPingReceived(addr, port, finalIdentifier, ping->clientSendTime, mode);
 }
 
