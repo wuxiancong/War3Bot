@@ -1788,14 +1788,14 @@ void NetManager::sendRoomPong(const QHostAddress &targetAddr, quint16 targetPort
     sendUdpPacket(targetAddr, targetPort, PacketType::S_C_ROOM_PONG, &resp, sizeof(resp));
 }
 
-void NetManager::sendRoomPings(const QString &clientId, const QVariantMap &pings)
+bool NetManager::sendRoomPings(const QString &clientId, const QVariantMap &pings)
 {
     QPointer<QTcpSocket> socket = m_tcpClients.value(clientId);
 
     if (socket.isNull()) {
-        LOG_WARNING(QString("   ⚠️ [Ping下发中止] 客户端 %1 的 Socket 已经失效或已断开").arg(clientId.left(8)));
+        LOG_WARNING(QString("   ⚠️ [Ping下发中止] 客户端 %1 已断开").arg(clientId.left(8)));
         m_tcpClients.remove(clientId);
-        return;
+        return false;
     }
 
     QJsonDocument doc = QJsonDocument::fromVariant(pings);
@@ -1803,8 +1803,10 @@ void NetManager::sendRoomPings(const QString &clientId, const QVariantMap &pings
     if (payload.isEmpty()) payload = "{}";
 
     if (socket->state() == QAbstractSocket::ConnectedState) {
-        sendTcpPacket(socket.data(), PacketType::S_C_PING_LIST, payload.data(), payload.size());
+        return sendTcpPacket(socket.data(), PacketType::S_C_PING_LIST, payload.data(), payload.size());
     }
+
+    return false;
 }
 
 void NetManager::sendRoomReadyStates(const QString &clientId, const QVariantMap &readyStates)
