@@ -752,8 +752,8 @@ void NetManager::handleIncomingDatagram(const QNetworkDatagram &datagram)
 
     switch (cmd) {
     case PacketType::C_S_REGISTER:
-        qDebug() << "└── [处理] 注册请求 (REGISTER)";
         if (header->payloadLen >= sizeof(CSRegisterPacket)) {
+            LOG_INFO("📥 [UDP 接收] C_S_REGISTER (注册请求)");
             handleRegister(header, reinterpret_cast<CSRegisterPacket*>(payload), datagram.senderAddress(), datagram.senderPort());
         }
         break;
@@ -769,7 +769,7 @@ void NetManager::handleIncomingDatagram(const QNetworkDatagram &datagram)
 
     case PacketType::C_S_CHECKMAPCRC:
         if (header->payloadLen >= sizeof(CSCheckMapCRCPacket)) {
-            LOG_INFO("🔍 [UDP 接收] C_S_CHECKMAPCRC (地图校验检查)");
+            LOG_INFO("📥 [UDP 接收] C_S_CHECKMAPCRC (地图校验检查)");
             handleCheckMapCRC(header, reinterpret_cast<CSCheckMapCRCPacket*>(payload),
                               datagram.senderAddress(), datagram.senderPort());
         }
@@ -794,8 +794,8 @@ void NetManager::handleIncomingDatagram(const QNetworkDatagram &datagram)
         break;
 
     case PacketType::C_S_COMMAND:
-        qDebug() << "└── [处理] 业务指令 (COMMAND)";
         if (header->payloadLen >= sizeof(CSCommandPacket)) {
+            LOG_INFO("📥 [UDP 接收] C_S_COMMAND (业务指令)");
             handleCommand(header, reinterpret_cast<CSCommandPacket*>(payload));
         }
         break;

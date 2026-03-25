@@ -634,6 +634,9 @@ void BotManager::setNetManager(NetManager *netManager)
     if (m_netManager) {
         connect(m_netManager, &NetManager::roomPingReceived, this, &BotManager::onBotRoomPingReceived);
         LOG_INFO("🔗 [系统链路] NetManager -> BotManager::onBotRoomPingReceived 已就绪");
+    } else {
+        LOG_ERROR("🔗 [系统链路] 注入失败：NetManager 指针为空");
+        LOG_ERROR("   └── ❌ 导致后果: 无法监听 roomPingReceived 信号，房间探测功能(UDP)将无法工作");
     }
 }
 
