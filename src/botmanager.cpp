@@ -1184,14 +1184,27 @@ void BotManager::onBotRoomPingReceived(const QHostAddress &addr, quint16 port, c
     LOG_INFO("📩 [BotManager] 接收到 roomPingReceived 信号");
 
     Bot *bot = nullptr;
-    QString modeTag = (mode == PingSearchMode::ByClientId) ? "UUID" : "HostName";
+    QString modeTag;
 
-    if (mode == PingSearchMode::ByClientId) {
+    // 1. 根据模式执行查找逻辑
+    switch (mode) {
+    case ByClientId:
         bot = findBotByClientId(identifier);
-    } else {
+        modeTag = "UUID Only";
+        break;
+    case ByBoth:
+        bot = findBotByClientId(identifier);
+        if (!bot) bot = findBotByHostName(identifier);
+        modeTag = "Both (Name & UUID)";
+        break;
+    case ByHostName:
+    default:
         bot = findBotByHostName(identifier);
+        modeTag = "HostName Only";
+        break;
     }
 
+    // 2. 提取房间状态
     quint8 current = 0;
     quint8 max = 0;
     bool isHit = (bot != nullptr);
@@ -1201,6 +1214,7 @@ void BotManager::onBotRoomPingReceived(const QHostAddress &addr, quint16 port, c
         max     = static_cast<quint8>(bot->gameInfo.maxPlayers);
     }
 
+    // 3. 树状日志记录
     LOG_INFO(QString("   ├── 👤 来源地址: %1:%2").arg(addr.toString()).arg(port));
     LOG_INFO(QString("   ├── 🔍 匹配模式: %1").arg(modeTag));
     LOG_INFO(QString("   ├── 🆔 搜索标识: %1").arg(identifier));
@@ -1212,9 +1226,29 @@ void BotManager::onBotRoomPingReceived(const QHostAddress &addr, quint16 port, c
         LOG_INFO("   ├── ⚠️  查找结果: 未找到匹配的活跃 Bot");
     }
 
+    // 4. 根据模式准备发送给客户端的参数
     if (m_netManager) {
-        m_netManager->sendRoomPong(addr, port, clientTime, current, max);
-        LOG_INFO("   └── ✅ 动作执行: 已通过 NetManager 回发 Pong");
+        QString outHost = "";
+        QString outUuid = "";
+
+        if (isHit) {
+            switch (mode) {
+            case ByHostName:
+                outHost = bot->hostname;
+                break;
+            case ByClientId:
+                outUuid = bot->gameInfo.clientId;
+                break;
+            case ByBoth:
+                outHost = bot->hostname;
+                outUuid = bot->gameInfo.clientId;
+                break;
+            }
+        }
+
+        m_netManager->sendRoomPong(addr, port, clientTime, current, max, outHost, outUuid);
+
+        LOG_INFO(QString("   └── ✅ 动作执行: 已根据 %1 模式回发 Pong").arg(modeTag));
     }
 }
 

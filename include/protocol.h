@@ -166,6 +166,8 @@ struct SCRoomPongPacket {
     quint64 clientSendTime;
     quint8  currentPlayers;
     quint8  maxPlayers;
+    char    targetHostName[32];
+    char    targetClientId[64];
 };
 #pragma pack(pop)
 

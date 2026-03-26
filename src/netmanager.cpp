@@ -1783,12 +1783,29 @@ bool NetManager::sendToClient(const QString &clientId, const QByteArray &data)
     return true;
 }
 
-void NetManager::sendRoomPong(const QHostAddress &targetAddr, quint16 targetPort, quint64 clientTime, quint8 current, quint8 max)
+void NetManager::sendRoomPong(const QHostAddress &targetAddr, quint16 targetPort, quint64 clientTime, quint8 current, quint8 max,
+                              const QString &hostName, const QString &clientId)
 {
     SCRoomPongPacket resp;
+    memset(&resp, 0, sizeof(resp));
+
     resp.clientSendTime = clientTime;
     resp.currentPlayers = current;
     resp.maxPlayers     = max;
+
+    // 填充房主名
+    QByteArray nameBytes = hostName.toUtf8();
+    memcpy(resp.targetHostName, nameBytes.constData(), qMin(nameBytes.size(), 31));
+
+    // 填充 UUID
+    QByteArray idBytes = clientId.toUtf8();
+    memcpy(resp.targetClientId, idBytes.constData(), qMin(idBytes.size(), 63));
+
+    LOG_INFO("📤 [UDP] 下发 RoomPong 响应包");
+    LOG_INFO(QString("   ├── 📍 目标: %1:%2").arg(targetAddr.toString()).arg(targetPort));
+    LOG_INFO(QString("   ├── 👤 房主: %1").arg(hostName.isEmpty() ? "N/A" : hostName));
+    LOG_INFO(QString("   ├── 🆔 UUID: %1").arg(clientId.isEmpty() ? "N/A" : clientId));
+    LOG_INFO(QString("   └── 📊 状态: %1 / %2").arg(current).arg(max));
 
     sendUdpPacket(targetAddr, targetPort, PacketType::S_C_ROOM_PONG, &resp, sizeof(resp));
 }
