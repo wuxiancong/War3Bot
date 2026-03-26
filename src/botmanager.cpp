@@ -1181,13 +1181,12 @@ void BotManager::onBotPendingTaskTimeout()
 
 void BotManager::onBotRoomPingReceived(const QHostAddress &addr, quint16 port, const QString &identifier, quint64 clientTime, PingSearchMode mode)
 {
-    LOG_INFO("📩 [BotManager] 链路追踪: 已接收到来自 NetManager 的 roomPingReceived 信号");
+    LOG_INFO("📩 [BotManager] 接收到 roomPingReceived 信号");
 
-    // 1. 根据模式查找 Bot 实例
     Bot *bot = nullptr;
-    QString modeTag = (mode == ByClientId) ? "UUID" : "HostName";
+    QString modeTag = (mode == PingSearchMode::ByClientId) ? "UUID" : "HostName";
 
-    if (mode == ByClientId) {
+    if (mode == PingSearchMode::ByClientId) {
         bot = findBotByClientId(identifier);
     } else {
         bot = findBotByHostName(identifier);
@@ -1202,25 +1201,20 @@ void BotManager::onBotRoomPingReceived(const QHostAddress &addr, quint16 port, c
         max     = static_cast<quint8>(bot->gameInfo.maxPlayers);
     }
 
-    // 2. 打印详细树状日志
-    LOG_DEBUG("📡 [RoomPing] 探测任务处理中...");
-    LOG_DEBUG(QString("   ├── 👤 来源地址: %1:%2").arg(addr.toString()).arg(port));
-    LOG_DEBUG(QString("   ├── 🔍 匹配模式: %1").arg(modeTag));
-    LOG_DEBUG(QString("   ├── 🆔 搜索标识: %1").arg(identifier));
+    LOG_INFO(QString("   ├── 👤 来源地址: %1:%2").arg(addr.toString()).arg(port));
+    LOG_INFO(QString("   ├── 🔍 匹配模式: %1").arg(modeTag));
+    LOG_INFO(QString("   ├── 🆔 搜索标识: %1").arg(identifier));
 
     if (isHit) {
-        LOG_DEBUG(QString("   ├── 🎯 命中目标: %1").arg(bot->gameInfo.gameName));
-        LOG_DEBUG(QString("   ├── 📊 房间状态: %1 / %2").arg(current).arg(max));
+        LOG_INFO(QString("   ├── 🎯 命中目标: %1").arg(bot->gameInfo.gameName));
+        LOG_INFO(QString("   ├── 📊 房间状态: %1 / %2").arg(current).arg(max));
     } else {
-        LOG_DEBUG("   ├── ⚠️  查找结果: 未找到匹配的活跃机器人实例");
+        LOG_INFO("   ├── ⚠️  查找结果: 未找到匹配的活跃 Bot");
     }
 
-    // 3. 执行回包
     if (m_netManager) {
         m_netManager->sendRoomPong(addr, port, clientTime, current, max);
-        LOG_DEBUG("   └── ✅ 动作执行: 已调用 sendRoomPong");
-    } else {
-        LOG_ERROR("   └── ❌ 系统异常: m_netManager 为空，无法发送响应");
+        LOG_INFO("   └── ✅ 动作执行: 已通过 NetManager 回发 Pong");
     }
 }
 
