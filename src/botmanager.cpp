@@ -941,9 +941,13 @@ void BotManager::onCommandReceived(const QString &userName, const QString &clien
 
 void BotManager::onBotPlayerCountChanged(Bot *bot, int count)
 {
-    if (!bot) return;
+    if (!bot || !bot->client) return;
 
+    // 1. 更新 BotManager 自己的计数器
     bot->gameInfo.currentPlayerCount = count;
+
+    // 2. 让 Client 拆解并重组房名
+    bot->client->refreshGameNameWithCount(count);
 
     LOG_INFO(QString("📊 [状态同步] 接收到 Bot-%1 的人数更新").arg(bot->id));
     LOG_INFO(QString("   ├── 🏠 房间: %1").arg(bot->gameInfo.gameName));

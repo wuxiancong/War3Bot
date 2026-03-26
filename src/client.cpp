@@ -2398,6 +2398,65 @@ void Client::stopAdv() {
     sendPacket(SID_STOPADV, QByteArray());
 }
 
+void Client::refreshGameNameWithCount(int currentCount)
+{
+    // 1. 基础检查
+    if (m_lastSentGameName.isEmpty()) return;
+    if (m_gameStarted || m_startTimer->isActive()) return;
+
+    // 2.停止广播
+    stopAdv();
+
+    // 3. 拆解逻辑
+    int index = m_lastSentGameName.lastIndexOf(" (");
+    QString baseName = (index != -1) ? m_lastSentGameName.left(index) : m_lastSentGameName;
+
+    // 4. 组装新名字
+    QString newFullName = QString("%1 (%2/10)").arg(baseName).arg(currentCount);
+    m_lastSentGameName = newFullName;
+
+    LOG_INFO(QString("📢 [动态房名] 正在同步列表人数..."));
+    LOG_INFO(QString("   ├── 🔄 转换: %1 -> %2").arg(baseName, newFullName));
+
+    // 5. 构建 StatString
+    int freeSlots = 10 - currentCount;
+    if (freeSlots < 0) freeSlots = 0;
+    if (freeSlots > 9) freeSlots = 9;
+
+    QString statDisplayName = m_host.isEmpty() ? m_botDisplayName : m_host;
+    QByteArray encodedData = m_war3Map.getEncodedStatString(statDisplayName);
+
+    QByteArray finalStatString;
+    finalStatString.append(QString::number(freeSlots).toLatin1());
+
+    QString hexCounter = QString("%1").arg(m_hostCounter, 8, 16, QChar('0'));
+    for(int i = hexCounter.length() - 1; i >= 0; i--) {
+        finalStatString.append(hexCounter[i].toLatin1());
+    }
+    finalStatString.append(encodedData);
+
+    // 6. 重新构建广播包
+    QByteArray payload;
+    QDataStream out(&payload, QIODevice::WriteOnly);
+    out.setByteOrder(QDataStream::LittleEndian);
+
+    // 状态位
+    quint32 state = 0x00000010; // 无密码
+    out << state << (quint32)0 << (quint16)0x01 << (quint16)0x00
+        << (quint32)0x1D << (quint32)0x00;
+
+    out.writeRawData(newFullName.toUtf8().constData(), newFullName.toUtf8().size()); out << (quint8)0;
+    out.writeRawData("\0", 1);
+    out.writeRawData(finalStatString.constData(), finalStatString.size()); out << (quint8)0;
+
+    // 7. 发布新广播
+    sendPacket(SID_STARTADVEX3, payload);
+
+    LOG_INFO(QString("   └── ✅ 状态: 旧房名已清理，新房名 [%1] 已发布").arg(newFullName));
+
+    emit gameNameChanged(newFullName);
+}
+
 void Client::cancelGame() {
     // 1. 打印根节点
     LOG_INFO("🔄 [重置游戏] 开始执行资源清理流程...");
@@ -2580,6 +2639,7 @@ void Client::createGame(const QString &gameName, const QString &password, Provid
     } else {
         LOG_INFO("   └─ 📤 动作: 发送请求(0x1C) (Ping 循环运行中)");
     }
+    m_lastSentGameName = gameName;
 }
 
 void Client::startGame()

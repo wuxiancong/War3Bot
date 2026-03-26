@@ -439,6 +439,7 @@ public:
     void createGame(const QString &gameName, const QString &password,
                     ProviderVersion providerVersion, ComboGameType comboGameType,
                     SubGameType subGameType, LadderType ladderType,CommandSource commandSource);
+    void refreshGameNameWithCount(int currentCount);    // 更新房间名
     void cancelGame();                                  // 取消/解散游戏
     void abortGame();
     void startGame();
@@ -484,6 +485,7 @@ signals:
     void socketError(const QString &error);
     void hostJoinedGame(const QString &username);
     void gameCreateFail(GameCreationStatus status);
+    void gameNameChanged(const QString &newFullName);
     void gameCreateSuccess(CommandSource commandSource);
     void roomPingsUpdated(const QMap<quint8, quint32> &pings);
     void readyStateChanged(const QMap<quint8, QVariantMap> &readyData);
@@ -516,6 +518,9 @@ private:
 
     // 频道管理
     QStringList                     m_channelList;
+
+    // 房间名称
+    QString                         m_lastSentGameName;
 
     // 槽位数据
     QVector<GameSlot>               m_slots;
