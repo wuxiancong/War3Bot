@@ -885,6 +885,9 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         m_players.insert(newPid, playerData);
 
         LOG_INFO(QString("   ├─ 💾 玩家注册: PID %1 (Slot %2)").arg(newPid).arg(slotIndex));
+        int humanCount = qMax(0, m_players.size() - 1);
+        emit playerCountChanged(humanCount);
+        LOG_INFO(QString("   ├─ 👥 状态更新: 房间真人数量变动为 %1，已发射同步信号").arg(humanCount));
 
         // 3. 构建握手响应
         QByteArray finalPacket;
@@ -1496,6 +1499,10 @@ void Client::onPlayerDisconnected() {
             wasVisualHost = it.value().isVisualHost;
 
             it = m_players.erase(it);
+            int humanCount = qMax(0, m_players.size() - 1);
+            emit playerCountChanged(humanCount);
+
+            LOG_INFO(QString("   ├── 🧹 状态清理: 玩家已移除，当前真人数量: %1").arg(humanCount));
             break;
         } else {
             ++it;

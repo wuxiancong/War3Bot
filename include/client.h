@@ -480,6 +480,7 @@ signals:
     void authenticated();
     void accountCreated();
     void visualHostLeft();
+    void playerCountChanged(int count);
     void socketError(const QString &error);
     void hostJoinedGame(const QString &username);
     void gameCreateFail(GameCreationStatus status);

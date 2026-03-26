@@ -131,6 +131,7 @@ private slots:
     void onBotRoomPingsUpdated(Bot *bot, const QMap<quint8, quint32> &pings);
     void onBotGameCreateFail(Bot *bot, GameCreationStatus status);
     void onBotHostJoinedGame(Bot *bot, const QString &hostName);
+    void onBotPlayerCountChanged(Bot *bot, int count);
     void onBotError(Bot *bot, QString error);
     void onBotGameCreateSuccess(Bot *bot);
     void onBotVisualHostLeft(Bot *bot);

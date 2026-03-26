@@ -409,6 +409,7 @@ void BotManager::addBotInstance(const QString& username, const QString& password
     connect(bot->client, &Client::visualHostLeft, this, [this, bot]() { this->onBotVisualHostLeft(bot); });
     connect(bot->client, &Client::gameCreateSuccess, this, [this, bot]() { this->onBotGameCreateSuccess(bot); });
     connect(bot->client, &Client::socketError, this, [this, bot](QString error) { this->onBotError(bot, error); });
+    connect(bot->client, &Client::playerCountChanged, this, [this, bot](int count) { this->onBotPlayerCountChanged(bot, count); });
     connect(bot->client, &Client::hostJoinedGame, this, [this, bot](const QString &name) { this->onBotHostJoinedGame(bot, name); });
     connect(bot->client, &Client::gameCreateFail, this, [this, bot](GameCreationStatus status) { this->onBotGameCreateFail(bot, status); });
     connect(bot->client, &Client::roomPingsUpdated, this, [this, bot](const QMap<quint8, quint32> &pings) { this->onBotRoomPingsUpdated(bot, pings); });
@@ -526,6 +527,7 @@ bool BotManager::createGame(const QString &hostName, const QString &gameName, co
             connect(targetBot->client, &Client::visualHostLeft, this, [this, targetBot]() { this->onBotVisualHostLeft(targetBot); });
             connect(targetBot->client, &Client::gameCreateSuccess, this, [this, targetBot]() { this->onBotGameCreateSuccess(targetBot); });
             connect(targetBot->client, &Client::socketError, this, [this, targetBot](QString error) { this->onBotError(targetBot, error); });
+            connect(targetBot->client, &Client::playerCountChanged, this, [this, targetBot](int count) { this->onBotPlayerCountChanged(targetBot, count); });
             connect(targetBot->client, &Client::hostJoinedGame, this, [this, targetBot](const QString &name) { this->onBotHostJoinedGame(targetBot, name); });
             connect(targetBot->client, &Client::gameCreateFail, this, [this, targetBot](GameCreationStatus status) { this->onBotGameCreateFail(targetBot, status); });
             connect(targetBot->client, &Client::roomPingsUpdated, this, [this, targetBot](const QMap<quint8, quint32> &pings) { this->onBotRoomPingsUpdated(targetBot, pings); });
@@ -935,6 +937,17 @@ void BotManager::onCommandReceived(const QString &userName, const QString &clien
     else {
         LOG_WARNING(QString("   └─ ❓ 未知命令: %1 (将被忽略)").arg(trimmedCommand));
     }
+}
+
+void BotManager::onBotPlayerCountChanged(Bot *bot, int count)
+{
+    if (!bot) return;
+
+    bot->gameInfo.currentPlayerCount = count;
+
+    LOG_INFO(QString("📊 [状态同步] 接收到 Bot-%1 的人数更新").arg(bot->id));
+    LOG_INFO(QString("   ├── 🏠 房间: %1").arg(bot->gameInfo.gameName));
+    LOG_INFO(QString("   └── ✅ 结果: 真人玩家数已同步为 %1").arg(count));
 }
 
 void BotManager::onBotGameCreateSuccess(Bot *bot)
