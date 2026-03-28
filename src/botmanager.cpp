@@ -429,7 +429,7 @@ bool BotManager::createGame(const QString &hostName, const QString &gameName, co
     LOG_INFO(QString("   ├─ 👤 虚拟房主: %1").arg(hostName));
     LOG_INFO(QString("   ├─ 📝 游戏名称: %1").arg(gameName));
     LOG_INFO(QString("   ├─ 📝 游戏模式: %1").arg(gameMode));
-    LOG_INFO(QString("   ├─ 🆔 命令来源: %1 (%2)").arg(sourceStr, clientId.left(8)));
+    LOG_INFO(QString("   ├─ 🆔 命令来源: %1 (%2)").arg(sourceStr, clientId));
 
     Bot *targetBot = nullptr;
     bool needConnect = false;
@@ -713,7 +713,7 @@ bool BotManager::checkCooldown(const QString &clientId, const QString &command, 
             m_netManager->sendMessageToClient(clientId, S_C_ERROR, ERR_COOLDOWN, remaining);
 
             LOG_WARNING(QString("⏳ [频率限制] UUID: %1 | 指令: %2 | 剩余: %3ms")
-                            .arg(clientId.left(8), command).arg(remaining));
+                            .arg(clientId, command).arg(remaining));
             return false;
         }
     }
@@ -858,7 +858,7 @@ void BotManager::onBotClientExpired(const QString &clientId)
 {
     Bot *bot = findBotByClientId(clientId);
     if (bot) {
-        LOG_INFO(QString("🧹 [系统自动回收] 检测到 UUID %1 会话已过期，正在强制解散房间").arg(clientId.left(8)));
+        LOG_INFO(QString("🧹 [系统自动回收] 检测到 UUID %1 会话已过期，正在强制解散房间").arg(clientId));
         removeGame(bot, true);
     }
 }
@@ -1072,7 +1072,7 @@ void BotManager::onBotGameCreateFail(Bot *bot, GameCreationStatus status)
 
     // 2. 打印详细的树状日志
     LOG_ERROR(QString("❌ [创建失败] Bot-%1 (%2)").arg(bot->id).arg(bot->username));
-    LOG_INFO(QString("   ├─ 👤 归属用户: %1").arg(bot->gameInfo.clientId.left(8)));
+    LOG_INFO(QString("   ├─ 👤 归属用户: %1").arg(bot->gameInfo.clientId));
     LOG_INFO(QString("   ├─ 🏠 目标房间: %1").arg(bot->gameInfo.gameName));
     LOG_INFO(QString("   └─ 📝 失败原因: %1 (Raw Status: 0x%2)").arg(reasonStr).arg(status, 0, 16));
 
@@ -1184,7 +1184,7 @@ void BotManager::onBotPendingTaskTimeout()
                 // 3. 通知用户
                 if (!bot->pendingTask.clientId.isEmpty()) {
                     m_netManager->sendMessageToClient(bot->pendingTask.clientId, S_C_ERROR, ERR_TASK_TIMEOUT);
-                    LOG_INFO(QString("   ├─ 👤 通知用户: %1 (Reason: 1-Timeout)").arg(bot->pendingTask.clientId.left(8)));
+                    LOG_INFO(QString("   ├─ 👤 通知用户: %1 (Reason: 1-Timeout)").arg(bot->pendingTask.clientId));
                 }
 
                 // 4. 强制断线

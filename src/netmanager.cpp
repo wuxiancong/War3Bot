@@ -638,7 +638,7 @@ bool NetManager::sendTcpPacket(QTcpSocket *socket, PacketType type, const void *
         LOG_INFO(QString("🚀 [TCP] %1 -> %2 (SID: %3 | CID: %4 | Len: %5)")
                      .arg(packetTypeToString(type), peerInfo)
                      .arg(sid)
-                     .arg(clientId.left(8))
+                     .arg(clientId)
                      .arg(sent));
         return true;
     } else {
@@ -839,7 +839,7 @@ void NetManager::handleRegister(const PacketHeader *header, const CSRegisterPack
 
         // c. 打印截断的原始数据快照
         LOG_WARNING(QString("├── 原始快照: User(%1) | UID(%2)...")
-                        .arg(username.isEmpty() ? "EMPTY" : username, clientId.isEmpty() ? "EMPTY" : clientId.left(8)));
+                        .arg(username.isEmpty() ? "EMPTY" : username, clientId.isEmpty() ? "EMPTY" : clientId));
 
         LOG_WARNING(QString("└── 动作执行: 丢弃该非法数据包"));
         return;
@@ -883,7 +883,7 @@ void NetManager::handleRegister(const PacketHeader *header, const CSRegisterPack
     // 4. 打印简洁树状日志
     LOG_INFO(QString("┌── [用户注册] 来自: %1:%2").arg(actualPublicIp).arg(senderPort));
     LOG_INFO(QString("├── 身份: %1 (SID: %2)").arg(username).arg(newSessionId));
-    LOG_INFO(QString("├── 设备: UUID: %1 | HWID: %2").arg(clientId.left(8), hardwareId.left(8)));
+    LOG_INFO(QString("├── 设备: UUID: %1 | HWID: %2").arg(clientId, hardwareId.left(8)));
     LOG_INFO(QString("├── 本地: %1:%2").arg(localIp).arg(packet->localPort));
 
     // 对比汇报与实际
@@ -1145,43 +1145,58 @@ TcpConnType NetManager::identifyTcpProtocol(QTcpSocket *socket)
 {
     qint64 available = socket->bytesAvailable();
 
-    // 最小长度检查
+    // 1. 最小长度检查
     if (available < 4) {
-        LOG_INFO(QString("   ├── ℹ️ 等待识别: 当前缓冲区数据过短 (%1 字节)").arg(available));
+        LOG_INFO(QString("   ├── ⏳ 等待识别: 缓冲区数据过短 (%1 字节)").arg(available));
         return Tcp_Unknown;
     }
 
     QString peerInfo = QString("%1:%2").arg(socket->peerAddress().toString()).arg(socket->peerPort());
+
+    // 2. 预览头部数据
     QByteArray head = socket->peek(8);
     const PacketHeader *pHeader = reinterpret_cast<const PacketHeader*>(head.constData());
 
     LOG_INFO("🔌 [TCP 协议识别阶段]");
     LOG_INFO(QString("   ├── 👤 连接来源: %1").arg(peerInfo));
 
-    // 1. 检查是否为地图上传通道
+    // --- 识别分支 ---
+
+    // 分支 A: 检查是否为地图上传通道
     if (head.startsWith("W3UP")) {
         socket->setProperty("ConnType", Tcp_Upload);
-        LOG_INFO(QString("   ├── 🏷️ 特征匹配: ASCII [W3UP]"));
+        LOG_INFO("   ├── 🏷️  特征匹配: ASCII [W3UP]");
         LOG_INFO("   └── ✅ 判定结果: 文件上传通道 (UPLOAD)");
         return Tcp_Upload;
     }
-    // 2. 检查是否为控制指令通道
-    else if (pHeader->magic == PROTOCOL_MAGIC) {
-        socket->setProperty("ConnType", Tcp_Command);
-        LOG_INFO(QString("   ├── 🏷️ 特征匹配: 魔数 0x%1").arg(QString::number(pHeader->magic, 16).toUpper()));
-        LOG_INFO("   └── ✅ 判定结果: 控制指令通道 (COMMAND)");
-        return Tcp_Command;
+
+    // 分支 B: 检查是否为控制指令通道
+    if (pHeader->magic == PROTOCOL_MAGIC) {
+        socket->setProperty("ConnType", Tcp_Custom);
+        LOG_INFO(QString("   ├── 🏷️  特征匹配: 指令魔数 0x%1").arg(QString::number(PROTOCOL_MAGIC, 16).toUpper()));
+        LOG_INFO("   └── ✅ 判定结果: 控制指令通道 (COMMAND/UI)");
+        return Tcp_Custom;
     }
-    // 3. 非法协议分支
-    else {
-        QString hexData = QString(head.toHex(' ').toUpper());
+
+    // 分支 C: 检查是否为魔兽争霸3 原始游戏连接
+    if (static_cast<unsigned char>(head[0]) == 0xF7) {
+        socket->setProperty("ConnType", Tcp_W3GS);
+        LOG_INFO("   ├── 🏷️  特征匹配: W3GS 引导符 0xF7");
+        LOG_INFO("   └── ✅ 判定结果: 魔兽游戏连接 (W3GS)");
+        return Tcp_W3GS;
+    }
+
+    // 分支 D: 非法协议或垃圾数据
+    if (available >= 8) {
+        QString hexData = head.toHex(' ').toUpper();
         LOG_INFO("   ├── ❌ 协议识别失败: 头部数据不匹配任何已知模式");
-        LOG_INFO(QString("   ├── 📦 原始字节 (Peek): %1").arg(hexData));
+        LOG_INFO(QString("   └──  📦 原始字节 (Peek): %1").arg(hexData));
         LOG_ERROR("   └── 🛡️ 安全动作: 判定为非法连接，正在强制断开...");
 
         socket->disconnectFromHost();
-        return Tcp_Unknown;
     }
+
+    return Tcp_Unknown;
 }
 
 void NetManager::onTcpReadyRead()
@@ -1222,9 +1237,9 @@ void NetManager::onTcpReadyRead()
         handleTcpUploadMessage(socket);
         break;
 
-    case Tcp_Command:
-        LOG_DEBUG("└── 🚀 分发数据至 handleTcpCommandMessage");
-        handleTcpCommandMessage(socket);
+    case Tcp_Custom:
+        LOG_DEBUG("└── 🚀 分发数据至 handleTcpCustomMessage");
+        handleTcpCustomMessage(socket);
         break;
 
     default:
@@ -1428,8 +1443,15 @@ void NetManager::handleTcpUploadMessage(QTcpSocket *socket)
     }
 }
 
-void NetManager::handleTcpCommandMessage(QTcpSocket *socket)
+void NetManager::handleTcpCustomMessage(QTcpSocket *socket)
 {
+    // 安全过滤：只有标记为 Tcp_Custom 的连接才允许进入此解析器
+    int connType = socket->property("ConnType").toInt();
+    if (connType != Tcp_Custom) {
+        LOG_ERROR(QString("🛡️ [安全拦截] handleTcpCustomMessage 拒绝处理非指令类型连接 (Type: %1)").arg(connType));
+        return;
+    }
+
     // 循环读取，处理粘包
     while (socket->bytesAvailable() > 0) {
 
@@ -1479,7 +1501,7 @@ void NetManager::handleTcpCommandMessage(QTcpSocket *socket)
                 if (m_tcpClients.contains(clientId)) {
                     QPointer<QTcpSocket> oldSocket = m_tcpClients.value(clientId);
                     if (oldSocket && oldSocket != socket) {
-                        LOG_INFO(QString("🔄 [TCP] 发现重复连接，正在关闭旧通道: %1").arg(clientId.left(8)));
+                        LOG_INFO(QString("🔄 [TCP] 发现重复连接，正在关闭旧通道: %1").arg(clientId));
                         oldSocket->disconnectFromHost();
                     }
                 }
@@ -1561,7 +1583,7 @@ void NetManager::handleTcpCommandMessage(QTcpSocket *socket)
                     m_preJoins.insert(userName.toLower(), clientId);
 
                     LOG_INFO(QString("   ├─ 👤 玩家: %1").arg(userName));
-                    LOG_INFO(QString("   ├─ 🆔 UUID: %1").arg(clientId.left(8)));
+                    LOG_INFO(QString("   ├─ 🆔 UUID: %1").arg(clientId));
                     LOG_INFO("   └─ ✅ 状态: 意向记录成功");
                 } else {
                     LOG_ERROR("   └─ ❌ 状态: 字段缺失");
@@ -1625,7 +1647,7 @@ void NetManager::onTcpDisconnected() {
         QString clientId = socket->property("clientId").toString();
         if (!clientId.isEmpty()) {
             m_tcpClients.remove(clientId);
-            LOG_INFO(QString("🧹 已从控制列表移除断开的客户端: %1").arg(clientId.left(8)));
+            LOG_INFO(QString("🧹 已从控制列表移除断开的客户端: %1").arg(clientId));
         }
         socket->deleteLater();
     }
@@ -1648,7 +1670,7 @@ bool NetManager::sendEnterRoomCommand(const QString &clientId, quint64 port, boo
     QPointer<QTcpSocket> socket = m_tcpClients.value(clientId);
 
     if (socket.isNull()) {
-        LOG_ERROR(QString("🛑 [指令发送失败] 目标 %1 已离线 (QPointer 为空)").arg(clientId.left(8)));
+        LOG_ERROR(QString("🛑 [指令发送失败] 目标 %1 已离线 (QPointer 为空)").arg(clientId));
         m_tcpClients.remove(clientId); // 清理失效键
         return false;
     }
@@ -1732,15 +1754,15 @@ bool NetManager::sendMessageToClient(const QString &clientId, PacketType type, q
                 bool ok = sendTcpPacket(socket, type, &pkt, sizeof(pkt));
 
                 if (ok) {
-                    LOG_INFO(QString("🚫 [TCP Error] -> %1 | Code: %2").arg(clientId.left(8)).arg(code));
+                    LOG_INFO(QString("🚫 [TCP Error] -> %1 | Code: %2").arg(clientId).arg(code));
                     return true;
                 } else {
-                    LOG_WARNING(QString("⚠️ [TCP Error] 发送失败 -> %1 (Socket错误), 尝试回退到 UDP").arg(clientId.left(8)));
+                    LOG_WARNING(QString("⚠️ [TCP Error] 发送失败 -> %1 (Socket错误), 尝试回退到 UDP").arg(clientId));
                     // 发送失败，向下穿透到 UDP 逻辑
                 }
             }
         } else {
-            LOG_DEBUG(QString("ℹ️ [TCP Error] 目标无TCP连接 -> %1, 尝试回退到 UDP").arg(clientId.left(8)));
+            LOG_DEBUG(QString("ℹ️ [TCP Error] 目标无TCP连接 -> %1, 尝试回退到 UDP").arg(clientId));
         }
     }
 
@@ -1819,7 +1841,7 @@ bool NetManager::sendRoomPings(const QString &clientId, const QVariantMap &pings
     QPointer<QTcpSocket> socket = m_tcpClients.value(clientId);
 
     if (socket.isNull()) {
-        LOG_WARNING(QString("   ⚠️ [Ping下发中止] 客户端 %1 已断开").arg(clientId.left(8)));
+        LOG_WARNING(QString("   ⚠️ [Ping下发中止] 客户端 %1 已断开").arg(clientId));
         m_tcpClients.remove(clientId);
         return false;
     }
@@ -1837,19 +1859,30 @@ bool NetManager::sendRoomPings(const QString &clientId, const QVariantMap &pings
 
 void NetManager::sendRoomReadyStates(const QString &clientId, const QVariantMap &readyStates)
 {
+    // 1. 获取对应的 Socket
     QPointer<QTcpSocket> socket = m_tcpClients.value(clientId);
 
     if (socket.isNull()) {
-        LOG_ERROR(QString("   ⚠️ [准备状态下发失败] 客户端 %1 无活跃 TCP 连接").arg(clientId.left(8)));
+        LOG_ERROR(QString("   ⚠️ [准备状态下发中止] 客户端 %1 映射不存在或已离线").arg(clientId));
         return;
     }
 
+    // 2.检查 Socket 类型标签
+    int connType = socket->property("ConnType").toInt();
+    if (connType != Tcp_Custom) {
+        LOG_CRITICAL(QString("🛡️ [安全拦截] 企图向非控制通道 (%1) 发送 JSON 状态包！已拦截防止掉线。").arg(clientId));
+        return;
+    }
+
+    // 3. 构建 JSON 数据流
     QJsonDocument doc = QJsonDocument::fromVariant(readyStates);
     QByteArray payload = doc.toJson(QJsonDocument::Compact);
     if (payload.isEmpty()) payload = "{}";
 
+    // 4. 发送 TCP 数据包
     if (sendTcpPacket(socket.data(), PacketType::S_C_READY_LIST, payload.data(), payload.size())) {
-        LOG_INFO(QString("🚀 [TCP 下发] 准备状态表 -> Client:%1").arg(clientId));
+        LOG_INFO(QString("🚀 [TCP 下发] 准备状态表 -> Client:%1 (Len: %2)")
+                     .arg(clientId).arg(payload.size()));
     }
 }
 

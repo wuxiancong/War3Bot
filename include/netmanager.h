@@ -120,7 +120,7 @@ private:
 
     // --- TCP 处理 ---
     void handleTcpUploadMessage(QTcpSocket *socket);
-    void handleTcpCommandMessage(QTcpSocket *socket);
+    void handleTcpCustomMessage(QTcpSocket *socket);
     TcpConnType identifyTcpProtocol(QTcpSocket *socket);
 
     // --- 内部管理 ---

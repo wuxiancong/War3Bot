@@ -899,7 +899,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
         for (auto it = m_players.begin(); it != m_players.end(); ++it) {
             const PlayerData &p = it.value();
-            if (p.pid == m_botPid || p.pid == newPid) continue;
+            if (p.pid == m_botPid) continue;
             finalPacket.append(createPlayerInfoPacket(p.pid, p.name, p.extIp, p.extPort, p.intIp, p.intPort, p.isVisualHost, p.isReady));
         }
 
