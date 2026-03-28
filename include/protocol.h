@@ -27,7 +27,7 @@ enum PacketType : quint8 {
     S_C_UPLOADRESULT                = 0x10,
     S_C_PING_LIST                   = 0x11,
     S_C_READY_LIST                  = 0x12,
-    C_S_JOIN_ROOM_INFO              = 0x13,
+    C_S_PREJOINROOM              = 0x13,
     C_S_ROOM_PING                   = 0x14,
     S_C_ROOM_PONG                   = 0x15
 };
@@ -149,7 +149,7 @@ struct SCUploadResultPacket {
     quint8 reason;
 };
 
-struct CSJoinRoomInfoPacket {
+struct CSPreJoinRoomPacket {
     char userName[32];
     char roomName[32];
     char hostName[32];

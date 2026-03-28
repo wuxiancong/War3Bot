@@ -170,7 +170,7 @@ private:
     QString m_crcRootPath;
 
     // 房间加入
-    QMap<QString, QString> m_preJoinMap;
+    QMap<QString, QString> m_preJoins;
     mutable QReadWriteLock m_preJoinLock;
 
     // 上传安全

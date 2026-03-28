@@ -776,16 +776,16 @@ void NetManager::handleIncomingDatagram(const QNetworkDatagram &datagram)
         }
         break;
 
-    case PacketType::C_S_JOIN_ROOM_INFO:
-        if (header->payloadLen >= sizeof(CSJoinRoomInfoPacket)) {
-            const CSJoinRoomInfoPacket *info = reinterpret_cast<const CSJoinRoomInfoPacket*>(payload);
+    case PacketType::C_S_PREJOINROOM:
+        if (header->payloadLen >= sizeof(CSPreJoinRoomPacket)) {
+            const CSPreJoinRoomPacket *info = reinterpret_cast<const CSPreJoinRoomPacket*>(payload);
             QString userName = QString::fromUtf8(info->userName).trimmed();
             QString clientId = QString::fromUtf8(info->clientId).trimmed();
 
-            LOG_INFO("📥 [UDP 接收] C_S_JOIN_ROOM_INFO (加入意向申报)");
+            LOG_INFO("📥 [UDP 接收] C_S_PREJOINROOM (加入意向申报)");
             if (!userName.isEmpty() && !clientId.isEmpty()) {
                 QWriteLocker locker(&m_preJoinLock);
-                m_preJoinMap.insert(userName.toLower(), clientId);
+                m_preJoins.insert(userName.toLower(), clientId);
                 LOG_INFO(QString("   ├── 👤 玩家: %1").arg(userName));
                 LOG_INFO(QString("   └── ✅ 状态: 映射记录成功"));
             } else {
@@ -1548,17 +1548,17 @@ void NetManager::handleTcpCommandMessage(QTcpSocket *socket)
             }
             break;
 
-        case PacketType::C_S_JOIN_ROOM_INFO: {
-            LOG_INFO("🚩 [命中] 正在进入 TCP C_S_JOIN_ROOM_INFO 分支...");
-            if (pHeader->payloadLen >= sizeof(CSJoinRoomInfoPacket)) {
-                const CSJoinRoomInfoPacket *info = reinterpret_cast<const CSJoinRoomInfoPacket*>(payload);
+        case PacketType::C_S_PREJOINROOM: {
+            LOG_INFO("🚩 [命中] 正在进入 TCP C_S_PREJOINROOM 分支...");
+            if (pHeader->payloadLen >= sizeof(CSPreJoinRoomPacket)) {
+                const CSPreJoinRoomPacket *info = reinterpret_cast<const CSPreJoinRoomPacket*>(payload);
                 QString userName = QString::fromUtf8(info->userName).trimmed();
                 QString clientId = QString::fromUtf8(info->clientId).trimmed();
 
-                LOG_INFO("📥 [TCP 接收] C_S_JOIN_ROOM_INFO (加入申报)");
+                LOG_INFO("📥 [TCP 接收] C_S_PREJOINROOM (加入申报)");
                 if (!userName.isEmpty() && !clientId.isEmpty()) {
                     QWriteLocker locker(&m_preJoinLock);
-                    m_preJoinMap.insert(userName.toLower(), clientId);
+                    m_preJoins.insert(userName.toLower(), clientId);
 
                     LOG_INFO(QString("   ├─ 👤 玩家: %1").arg(userName));
                     LOG_INFO(QString("   ├─ 🆔 UUID: %1").arg(clientId.left(8)));
@@ -1849,7 +1849,7 @@ void NetManager::sendRoomReadyStates(const QString &clientId, const QVariantMap 
     if (payload.isEmpty()) payload = "{}";
 
     if (sendTcpPacket(socket.data(), PacketType::S_C_READY_LIST, payload.data(), payload.size())) {
-        LOG_INFO(QString("🚀 [TCP 下发] 准备状态表 -> Client:%1").arg(clientId.left(8)));
+        LOG_INFO(QString("🚀 [TCP 下发] 准备状态表 -> Client:%1").arg(clientId));
     }
 }
 
@@ -2126,8 +2126,8 @@ QString NetManager::getUuidByPreJoinName(const QString &pName)
     QString lowerName = pName.toLower();
     QWriteLocker locker(&m_preJoinLock);
 
-    if (m_preJoinMap.contains(lowerName)) {
-        QString uuid = m_preJoinMap.take(lowerName);
+    if (m_preJoins.contains(lowerName)) {
+        QString uuid = m_preJoins.take(lowerName);
         LOG_INFO(QString("🎯 [UUID 匹配成功] 玩家: %1 -> UUID: %2")
                      .arg(pName, uuid.left(8)));
         return uuid;
@@ -2211,7 +2211,7 @@ QString NetManager::packetTypeToString(PacketType type)
     case PacketType::S_C_UPLOADRESULT:      return "S_C_UPLOADRESULT";
     case PacketType::S_C_PING_LIST:         return "S_C_PING_LIST";
     case PacketType::S_C_READY_LIST:        return "S_C_READY_LIST";
-    case PacketType::C_S_JOIN_ROOM_INFO:    return "C_S_JOIN_ROOM_INFO";
+    case PacketType::C_S_PREJOINROOM:    return "C_S_PREJOINROOM";
     case PacketType::C_S_ROOM_PING:         return "C_S_ROOM_PING";
     case PacketType::S_C_ROOM_PONG:         return "S_C_ROOM_PONG";
     default: return QString("UNKNOWN(0x%1)").arg(static_cast<int>(type), 2, 16, QChar('0')).toUpper();
