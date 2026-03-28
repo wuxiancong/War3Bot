@@ -587,38 +587,54 @@ void BotManager::removeGame(Bot *bot, bool disconnectFlag)
 {
     if (!bot) return;
 
-    // 1. 移除 UUID 映射
+    LOG_INFO(QString("🧹 [清理任务] 准备回收机器人资源: Bot-%1").arg(bot->id));
+
+    // 🚀 步骤 1：获取当前的 Key 并删除
     QString cid = bot->gameInfo.clientId;
     if (!cid.isEmpty()) {
-        m_clientIdToBotMap.remove(cid);
-        LOG_INFO(QString("   ├─ 🧹 彻底移除 UUID 映射: %1").arg(cid.left(8)));
+        // 在重置数据之前执行删除！
+        bool removed = m_clientIdToBotMap.remove(cid) > 0;
+        LOG_INFO(QString("   ├── 🆔 尝试移除 UUID 映射: %1 -> %2")
+                     .arg(cid.left(8), removed ? "✅ 成功" : "⚠️ 未在表中 (可能已清理)"));
     }
 
-    // 2. 移除房主名映射
+    // 🚀 步骤 2：防范性全局扫描
+    QMutableHashIterator<QString, Bot*> it(m_clientIdToBotMap);
+    while (it.hasNext()) {
+        it.next();
+        if (it.value() == bot) {
+            LOG_WARNING(QString("   ├── 🛡️ [补丁] 发现残留映射: Key[%1] -> 已强制抹除").arg(it.key().left(8)));
+            it.remove();
+        }
+    }
+
+    // 🚀 步骤 3：清理房主名映射
     if (!bot->hostname.isEmpty()) {
         m_hostNameToBotMap.remove(bot->hostname.toLower());
     }
 
-    // 3. 释放房间名锁定
+    // 🚀 步骤 4：释放房间名锁定
     QString lowerName = bot->gameInfo.gameName.toLower();
-    if (!lowerName.isEmpty() && m_activeGames.contains(lowerName)) {
+    if (!lowerName.isEmpty()) {
         if (m_activeGames.value(lowerName) == bot) {
             m_activeGames.remove(lowerName);
-            LOG_INFO(QString("   ├─ 🔓 释放房间名锁定: %1").arg(lowerName));
+            LOG_INFO(QString("   ├── 🔓 释放房间名锁定: %1").arg(lowerName));
         }
     }
 
-    // 4. 通知 Client 层停止广播并断开玩家
+    // 🚀 步骤 5：执行底层清理
     if (bot->client) {
         bot->client->cancelGame();
     }
 
-    // 5. 重置 Bot 状态
+    // 🚀 步骤 6：重置所有变量
     bot->resetGameState();
 
     if (disconnectFlag) {
         bot->state = BotState::Disconnected;
     }
+
+    LOG_INFO("   └── ✨ 机器人状态已归位 (Idle)");
 }
 
 const QVector<Bot*>& BotManager::getAllBots() const
