@@ -233,6 +233,13 @@ void Client::onNewConnection()
         // 使用成员函数而非 Lambda
         connect(socket, &QTcpSocket::readyRead, this, &Client::onPlayerReadyRead);
         connect(socket, &QTcpSocket::disconnected, this, &Client::onPlayerDisconnected);
+        connect(socket, &QAbstractSocket::errorOccurred, this, [socket](QAbstractSocket::SocketError socketError){
+            LOG_ERROR(QString("❗ [Socket 实时错误] 来自 %1:%2 | 错误码: %3 | 信息: %4")
+                          .arg(socket->peerAddress().toString())
+                          .arg(socket->peerPort())
+                          .arg(socketError)
+                          .arg(socket->errorString()));
+        });
     }
 }
 
@@ -874,7 +881,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
             if (!playerData.clientUuid.isEmpty()) {
                 LOG_INFO(QString("🔗 [关联成功] 玩家: %1 <-> UUID: %2")
-                             .arg(clientPlayerName, playerData.clientUuid.left(8)));
+                             .arg(clientPlayerName, playerData.clientUuid));
             } else {
                 LOG_WARNING(QString("⚠️ [关联失败] 玩家 %1 没报备 UUID (可能是房主或旧版客户端)").arg(clientPlayerName));
             }
@@ -1485,6 +1492,94 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 void Client::onPlayerDisconnected() {
     QTcpSocket *socket = qobject_cast<QTcpSocket*>(sender());
     if (!socket) return;
+
+    QString reason;
+    QAbstractSocket::SocketError err = socket->error();
+    QString errString = socket->errorString();
+    qintptr socketId = socket->socketDescriptor();
+    QString socketStr = (socketId == -1) ? "已失效(-1)" : QString::number(socketId);
+
+    switch (err) {
+    case QAbstractSocket::RemoteHostClosedError:
+        reason = "玩家客户端主动关闭了连接 (Normal Exit or Alt+F4)";
+        break;
+    case QAbstractSocket::NetworkError:
+        reason = "底层网络错误";
+        break;
+    case QAbstractSocket::SocketTimeoutError:
+        reason = "连接超时";
+        break;
+    case QAbstractSocket::ConnectionRefusedError:
+        reason = "连接被拒绝";
+        break;
+    case QAbstractSocket::SocketResourceError:
+        reason = "本地资源不足";
+        break;
+    case QAbstractSocket::SocketAccessError:
+        reason = "访问权限不足";
+        break;
+    case QAbstractSocket::DatagramTooLargeError:
+        reason = "数据包过大";
+        break;
+    case QAbstractSocket::AddressInUseError:
+        reason = "地址已被占用";
+        break;
+    case QAbstractSocket::HostNotFoundError:
+        reason = "未找到主机";
+        break;
+    case QAbstractSocket::UnsupportedSocketOperationError:
+        reason = "不支持的操作";
+        break;
+    case QAbstractSocket::ProxyAuthenticationRequiredError:
+        reason = "代理需要认证";
+        break;
+    case QAbstractSocket::SslHandshakeFailedError:
+        reason = "SSL握手失败";
+        break;
+    case QAbstractSocket::UnfinishedSocketOperationError:
+        reason = "操作未完成";
+        break;
+    case QAbstractSocket::ProxyConnectionRefusedError:
+        reason = "代理拒绝连接";
+        break;
+    case QAbstractSocket::ProxyConnectionClosedError:
+        reason = "代理连接关闭";
+        break;
+    case QAbstractSocket::ProxyConnectionTimeoutError:
+        reason = "代理连接超时";
+        break;
+    case QAbstractSocket::ProxyNotFoundError:
+        reason = "未找到代理";
+        break;
+    case QAbstractSocket::ProxyProtocolError:
+        reason = "代理协议错误";
+        break;
+    case QAbstractSocket::OperationError:
+        reason = "操作错误 (可能是 Socket 已被强制销毁)";
+        break;
+    case QAbstractSocket::SslInternalError:
+        reason = "SSL内部错误";
+        break;
+    case QAbstractSocket::SslInvalidUserDataError:
+        reason = "SSL无效用户数据";
+        break;
+    case QAbstractSocket::TemporaryError:
+        reason = "临时性错误";
+        break;
+    case QAbstractSocket::UnknownSocketError:
+    default:
+        if (errString.contains("Unknown error", Qt::CaseInsensitive) || errString.isEmpty()) {
+            reason = "正常断开 / 服务器主动断开 (No active error)";
+        } else {
+            reason = QString("其他错误 (Code: %1): %2").arg(err).arg(errString);
+        }
+        break;
+    }
+
+    LOG_INFO(QString("🔌 [断开诊断] Socket ID: %1 | 来源: %2:%3 | 原因: %4")
+                 .arg(socketStr, socket->peerAddress().toString())
+                 .arg(socket->peerPort())
+                 .arg(reason));
 
     quint8 pidToRemove = 0;
     QString nameToRemove = "";
@@ -3049,7 +3144,7 @@ QByteArray Client::createW3GSMapCheckPacket()
 
     QString sha1Hex = sha1.toHex().toUpper();
     LOG_INFO(QString("   ├─ 📊 参数: Size=%1 | CRC=0x%2").arg(fileSize).arg(QString::number(fileCRC, 16).toUpper()));
-    LOG_INFO(QString("   └─ 🔐 SHA1: %1...").arg(sha1Hex.left(20)));
+    LOG_INFO(QString("   └─ 🔐 SHA1: %1...").arg(sha1Hex));
 
     return packet;
 }

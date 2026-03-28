@@ -1827,8 +1827,7 @@ void NetManager::sendRoomPong(const QHostAddress &targetAddr, quint16 targetPort
     LOG_INFO("📤 [UDP] 下发 RoomPong 响应包");
     LOG_INFO(QString("   ├── 📍 目标: %1:%2").arg(targetAddr.toString()).arg(targetPort));
     LOG_INFO(QString("   ├── 👤 房主: %1").arg(hostName.isEmpty() ? "N/A" : hostName));
-    LOG_INFO(QString("   ├── 🆔 UUID: %1").arg(clientId.isEmpty() ? "N/A" : clientId.left(12) + "..."));
-
+    LOG_INFO(QString("   ├── 🆔 UUID: %1").arg(clientId.isEmpty() ? "N/A" : clientId));
     LOG_INFO(QString("   ├── ⏱️ 原始时间戳: %1").arg(clientTime));
     LOG_INFO(QString("   ├── 👥 当前人数:   %1").arg(current));
     LOG_INFO(QString("   └── 📏 最大人数:   %1").arg(max));
@@ -2083,7 +2082,7 @@ void NetManager::cleanupExpiredClients()
 
         // 打印详情：显示用户名、UUID前8位、沉默秒数
         LOG_INFO(QString("%1🚫 移除: %2 (UUID: %3...) | 已沉默: %4s")
-                     .arg(prefix, client.username, client.uuid.left(8))
+                     .arg(prefix, client.username, client.uuid)
                      .arg(client.silenceDuration / 1000.0, 0, 'f', 1));
 
         // 执行移除
@@ -2162,7 +2161,7 @@ QString NetManager::getUuidByPreJoinName(const QString &pName)
     if (m_preJoins.contains(lowerName)) {
         QString uuid = m_preJoins.take(lowerName);
         LOG_INFO(QString("🎯 [UUID 匹配成功] 玩家: %1 -> UUID: %2")
-                     .arg(pName, uuid.left(8)));
+                     .arg(pName, uuid));
         return uuid;
     }
 
