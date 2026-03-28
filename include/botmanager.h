@@ -124,15 +124,17 @@ public:
 signals:
     void botStateChanged(int botId, QString username, BotState newState);
 
+public slots:
+    void onBotCommandReceived(const QString &userName, const QString &clientUuid, const QString &command, const QString &text);
+    void onBotClientExpired(const QString &clientId);
+
 private slots:
     void onBotRoomPingReceived(const QHostAddress &addr, quint16 port, const QString &identifier, quint64 clientTime, PingSearchMode mode = ByHostName);
-    void onBotCommandReceived(const QString &userName, const QString &clientUuid, const QString &command, const QString &text);
     void onBotReadyStateChanged(Bot *bot, const QMap<quint8, QVariantMap> &readyData);
     void onBotRoomPingsUpdated(Bot *bot, const QMap<quint8, quint32> &pings);
     void onBotGameCreateFail(Bot *bot, GameCreationStatus status);
     void onBotHostJoinedGame(Bot *bot, const QString &hostName);
     void onBotPlayerCountChanged(Bot *bot, int count);
-    void onBotClientExpired(const QString &clientId);
     void onBotError(Bot *bot, QString error);
     void onBotGameCreateSuccess(Bot *bot);
     void onBotVisualHostLeft(Bot *bot);
