@@ -2055,6 +2055,7 @@ void NetManager::cleanupExpiredClients()
 
         // 执行移除
         removeClientInternal(client.uuid);
+        emit clientExpired(client.uuid);
     }
 }
 

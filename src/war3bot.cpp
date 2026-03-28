@@ -78,7 +78,8 @@ bool War3Bot::startServer(quint16 port, const QString &configFile)
         // 关键依赖注入
         if (m_client) m_client->setNetManager(m_netManager);
 
-        connect(m_netManager, &NetManager::commandReceived, m_botManager, &BotManager::onCommandReceived);
+        connect(m_netManager, &NetManager::clientExpired, m_botManager, &BotManager::onBotClientExpired);
+        connect(m_netManager, &NetManager::commandReceived, m_botManager, &BotManager::onBotCommandReceived);
         LOG_INFO("│   ├── NetManager: 已实例化");
         LOG_INFO("│   └── 🔗 指令链路: NetManager -> BotManager [已绑定]");
     }

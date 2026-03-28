@@ -587,33 +587,35 @@ void BotManager::removeGame(Bot *bot, bool disconnectFlag)
 {
     if (!bot) return;
 
-    // 1. 从 ClientId 映射表中移除
+    // 1. 移除 UUID 映射
+    QString cid = bot->gameInfo.clientId;
+    if (!cid.isEmpty()) {
+        m_clientIdToBotMap.remove(cid);
+        LOG_INFO(QString("   ├─ 🧹 彻底移除 UUID 映射: %1").arg(cid.left(8)));
+    }
+
+    // 2. 移除房主名映射
     if (!bot->hostname.isEmpty()) {
         m_hostNameToBotMap.remove(bot->hostname.toLower());
     }
 
-    if (!bot->gameInfo.clientId.isEmpty()) {
-        m_clientIdToBotMap.remove(bot->gameInfo.clientId);
-    }
-
-    // 2. 从全局活跃房间表中移除
+    // 3. 释放房间名锁定
     QString lowerName = bot->gameInfo.gameName.toLower();
     if (!lowerName.isEmpty() && m_activeGames.contains(lowerName)) {
         if (m_activeGames.value(lowerName) == bot) {
             m_activeGames.remove(lowerName);
-            LOG_INFO(QString("🔓 释放房间名锁定: %1").arg(lowerName));
+            LOG_INFO(QString("   ├─ 🔓 释放房间名锁定: %1").arg(lowerName));
         }
     }
 
-    // 3. 通知 Client 层停止广播并断开玩家
+    // 4. 通知 Client 层停止广播并断开玩家
     if (bot->client) {
         bot->client->cancelGame();
     }
 
-    // 4. 重置 Bot 逻辑数据
+    // 5. 重置 Bot 状态
     bot->resetGameState();
 
-    // 5. 如果标记为断线，强制覆盖状态
     if (disconnectFlag) {
         bot->state = BotState::Disconnected;
     }
@@ -744,10 +746,9 @@ void BotManager::handleHostCommand(const QString &userName, const QString &clien
     QString baseName = inputGameName.trimmed();
     if (baseName.isEmpty()) baseName = QString("%1's Game").arg(userName);
 
-    QString suffix = QString(" (%1/%2)").arg(1).arg(10);
     QString prefix = QString("[%1] ").arg(displayMode);
     const int MAX_BYTES = 31;
-    int availableBytes = MAX_BYTES - suffix.toUtf8().size() - prefix.toUtf8().size();
+    int availableBytes = MAX_BYTES - prefix.toUtf8().size();
 
     QByteArray nameBytes = baseName.toUtf8();
     if (nameBytes.size() > availableBytes) {
@@ -760,7 +761,7 @@ void BotManager::handleHostCommand(const QString &userName, const QString &clien
         LOG_INFO(QString("   ├─ ✂️ 房名过长，已执行 UTF-8 安全截断"));
     }
 
-    QString finalGameName = prefix + QString::fromUtf8(nameBytes) + suffix;
+    QString finalGameName = prefix + QString::fromUtf8(nameBytes);
 
     // 5. 重名检查
     if (m_activeGames.contains(finalGameName.toLower())) {
@@ -837,7 +838,16 @@ void BotManager::onBotAccountCreated(Bot *bot)
     LOG_INFO(QString("   └─ 🆕 [%1] 账号注册成功，正在尝试登录...").arg(bot->username));
 }
 
-void BotManager::onCommandReceived(const QString &userName, const QString &clientId, const QString &command, const QString &text)
+void BotManager::onBotClientExpired(const QString &clientId)
+{
+    Bot *bot = findBotByClientId(clientId);
+    if (bot) {
+        LOG_INFO(QString("🧹 [系统自动回收] 检测到 UUID %1 会话已过期，正在强制解散房间").arg(clientId.left(8)));
+        removeGame(bot, true);
+    }
+}
+
+void BotManager::onBotCommandReceived(const QString &userName, const QString &clientId, const QString &command, const QString &text)
 {
     const QString trimmedCommand = command.trimmed().toLower();
     qint64 now = QDateTime::currentMSecsSinceEpoch();
@@ -941,13 +951,9 @@ void BotManager::onCommandReceived(const QString &userName, const QString &clien
 
 void BotManager::onBotPlayerCountChanged(Bot *bot, int count)
 {
-    if (!bot || !bot->client) return;
+    if (!bot) return;
 
-    // 1. 更新 BotManager 自己的计数器
     bot->gameInfo.currentPlayerCount = count;
-
-    // 2. 让 Client 拆解并重组房名
-    bot->client->refreshGameNameWithCount(count);
 
     LOG_INFO(QString("📊 [状态同步] 接收到 Bot-%1 的人数更新").arg(bot->id));
     LOG_INFO(QString("   ├── 🏠 房间: %1").arg(bot->gameInfo.gameName));

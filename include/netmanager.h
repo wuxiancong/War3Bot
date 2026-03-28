@@ -87,6 +87,7 @@ public:
 signals:
     void serverStopped();
     void serverStarted(quint64 port);
+    void clientExpired(const QString &uuid);
     void commandReceived(const QString &userName, const QString &clientId, const QString &command, const QString &text);
     void roomPingReceived(const QHostAddress &senderAddr, quint16 senderPort, const QString &targetClientId, quint64 clientTime, PingSearchMode mode);
 

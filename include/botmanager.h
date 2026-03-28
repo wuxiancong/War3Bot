@@ -114,7 +114,6 @@ public:
     // --- 游戏创建与指令 ---
     bool checkCooldown(const QString &clientId, const QString &command, qint64 now);
     void handleHostCommand(const QString &userName, const QString &clientId, const QString &text);
-    void onCommandReceived(const QString &userName, const QString &clientUuid, const QString &command, const QString &text);
     bool createGame(const QString& hostName, const QString &gameName, const QString &gameMode, CommandSource commandSource, const QString &clientUuid);
 
     // --- Getters / Setters ---
@@ -127,11 +126,13 @@ signals:
 
 private slots:
     void onBotRoomPingReceived(const QHostAddress &addr, quint16 port, const QString &identifier, quint64 clientTime, PingSearchMode mode = ByHostName);
+    void onBotCommandReceived(const QString &userName, const QString &clientUuid, const QString &command, const QString &text);
     void onBotReadyStateChanged(Bot *bot, const QMap<quint8, QVariantMap> &readyData);
     void onBotRoomPingsUpdated(Bot *bot, const QMap<quint8, quint32> &pings);
     void onBotGameCreateFail(Bot *bot, GameCreationStatus status);
     void onBotHostJoinedGame(Bot *bot, const QString &hostName);
     void onBotPlayerCountChanged(Bot *bot, int count);
+    void onBotClientExpired(const QString &clientId);
     void onBotError(Bot *bot, QString error);
     void onBotGameCreateSuccess(Bot *bot);
     void onBotVisualHostLeft(Bot *bot);
