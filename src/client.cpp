@@ -867,7 +867,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         playerData.lastDownloadTime = now;
         playerData.isVisualHost = nameMatch;
         playerData.readyCountdown = 10;
-        playerData.isReady = false;
+        playerData.isReady = nameMatch;
         playerData.lastResponseTime = QDateTime::currentMSecsSinceEpoch();
         if (m_netManager) {
             playerData.clientUuid = m_netManager->getUuidByPreJoinName(clientPlayerName);
