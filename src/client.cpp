@@ -902,12 +902,12 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         quint16 hostPort = m_udpSocket->localPort();
 
         finalPacket.append(createW3GSSlotInfoJoinPacket(newPid, hostIp, hostPort)); // 0x04
-        finalPacket.append(createPlayerInfoPacket(m_botPid, m_botDisplayName, QHostAddress("0.0.0.0"), 0, QHostAddress("0.0.0.0"), 0, true, true)); // 0x06 (Bot)
+        finalPacket.append(createPlayerInfoPacket(m_botPid, m_botDisplayName, QHostAddress("0.0.0.0"), 0, QHostAddress("0.0.0.0"), 0)); // 0x06 (Bot)
 
         for (auto it = m_players.begin(); it != m_players.end(); ++it) {
             const PlayerData &p = it.value();
-            if (p.pid == m_botPid) continue;
-            finalPacket.append(createPlayerInfoPacket(p.pid, p.name, p.extIp, p.extPort, p.intIp, p.intPort, p.isVisualHost, p.isReady));
+            if (p.pid == newPid || p.pid == m_botPid) continue;
+            finalPacket.append(createPlayerInfoPacket(p.pid, p.name, p.extIp, p.extPort, p.intIp, p.intPort));
         }
 
         finalPacket.append(createW3GSMapCheckPacket()); // 0x3D
@@ -920,7 +920,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
         // 4. 广播
         QByteArray newPlayerInfoPacket = createPlayerInfoPacket(
-            playerData.pid, playerData.name, playerData.extIp, playerData.extPort, playerData.intIp, playerData.intPort, playerData.isVisualHost, playerData.isReady);
+            playerData.pid, playerData.name, playerData.extIp, playerData.extPort, playerData.intIp, playerData.intPort);
         broadcastPacket(newPlayerInfoPacket, newPid);
         broadcastSlotInfo();
         syncReadyStates();
@@ -1132,17 +1132,46 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
                 QString msg = codec->toUnicode(rawMsg);
                 LOG_INFO(QString("   └─ 💬 内容: %1").arg(msg));
 
-                // A. 指令处理
-                if (msg.startsWith("/")) {
-                    LOG_INFO(QString("      └─ ⚡ [指令] 检测到命令，转交处理器..."));
-                    // handleChatCommand(senderPid, msg);
+                if (msg.compare("/ready", Qt::CaseInsensitive) == 0) {
+                    if (!m_players[senderPid].isReady) {
+                        m_players[senderPid].isReady = true;
+                        m_players[senderPid].readyCountdown = 10;
+
+                        MultiLangMsg rdy;
+                        rdy.add("CN", QString("✅ [%1] 已准备。").arg(senderName))
+                            .add("EN", QString("✅ [%1] is ready.").arg(senderName));
+                        broadcastChatMessage(rdy);
+
+                        syncReadyStates();
+                    }
+                    return;
                 }
-                // B. 普通聊天转发
-                else {
-                    MultiLangMsg chatMsg;
-                    chatMsg.add("CN", QString("%1: %2").arg(senderName, msg));
-                    chatMsg.add("EN", QString("%1: %2").arg(senderName, msg));
-                    broadcastChatMessage(chatMsg, senderPid);
+                else if (msg.compare("/unready", Qt::CaseInsensitive) == 0) {
+                    if (m_players[senderPid].isReady && !m_players[senderPid].isVisualHost) {
+                        m_players[senderPid].isReady = false;
+                        m_players[senderPid].readyCountdown = 10;
+
+                        MultiLangMsg unrdy;
+                        unrdy.add("CN", QString("🔄 [%1] 取消了准备，请在10秒内重新准备。").arg(senderName))
+                            .add("EN", QString("🔄 [%1] is no longer ready. 10s remaining.").arg(senderName));
+                        broadcastChatMessage(unrdy);
+
+                        syncReadyStates();
+                    }
+                    return;
+                } else {
+                    // A. 指令处理
+                    if (msg.startsWith("/")) {
+                        LOG_INFO(QString("      └─ ⚡ [指令] 检测到命令，转交处理器..."));
+                        // handleChatCommand(senderPid, msg);
+                    }
+                    // B. 普通聊天转发
+                    else {
+                        MultiLangMsg chatMsg;
+                        chatMsg.add("CN", QString("%1: %2").arg(senderName, msg));
+                        chatMsg.add("EN", QString("%1: %2").arg(senderName, msg));
+                        broadcastChatMessage(chatMsg, senderPid);
+                    }
                 }
             }
         }
@@ -2861,8 +2890,7 @@ QByteArray Client::createW3GSRejectJoinPacket(RejectReason reason)
 
 QByteArray Client::createPlayerInfoPacket(quint8 pid, const QString& name,
                                           const QHostAddress& externalIp, quint16 externalPort,
-                                          const QHostAddress& internalIp, quint16 internalPort,
-                                          bool isVisualHost, bool isReady)
+                                          const QHostAddress& internalIp, quint16 internalPort)
 {
     QByteArray packet;
     QDataStream out(&packet, QIODevice::WriteOnly);
@@ -2875,27 +2903,14 @@ QByteArray Client::createPlayerInfoPacket(quint8 pid, const QString& name,
     out << (quint32)2;  // Internal ID / P2P Key
     out << (quint8)pid;
 
-    // 3. 颜色逻辑处理
-    QString coloredName;
-    if (isVisualHost) {
-        // 房主：蓝色 (|cff0042ff)
-        coloredName = QString("|cff0042ff%1|r").arg(name);
-    } else if (isReady) {
-        // 已准备：绿色 (|cff20c000)
-        coloredName = QString("|cff20c000%1|r").arg(name);
-    } else {
-        // 未准备：红色 (|cffef3939)
-        coloredName = QString("|cffef3939%1|r").arg(name);
-    }
-
     // 3. 写入玩家名字
-    QByteArray nameBytes = coloredName.toUtf8();
+    QByteArray nameBytes = name.toUtf8();
     out.writeRawData(nameBytes.data(), nameBytes.length());
     out << (quint8)0;   // Null terminator
 
     out << (quint16)1;  // Unknown
 
-    // 5. 写入网络配置
+    // 4. 写入网络配置
     out << (quint16)2;
     out << (quint16)qToBigEndian(externalPort);
     writeIpToStreamWithLog(out, externalIp);
@@ -2906,7 +2921,7 @@ QByteArray Client::createPlayerInfoPacket(quint8 pid, const QString& name,
     writeIpToStreamWithLog(out, internalIp);
     out << (quint32)0 << (quint32)0;
 
-    // 6. 回填包总长度
+    // 5. 回填包总长度
     QDataStream lenStream(&packet, QIODevice::ReadWrite);
     lenStream.setByteOrder(QDataStream::LittleEndian);
     lenStream.skipRawData(2);
@@ -3836,12 +3851,33 @@ void Client::updateCountdowns()
     for (auto it = m_players.begin(); it != m_players.end(); ++it) {
         PlayerData &p = it.value();
 
+        // 机器人和房主不需要准备
         if (it.key() == m_botPid || p.isVisualHost) continue;
 
         if (!p.isReady) {
             if (p.readyCountdown > 0) {
                 p.readyCountdown--;
                 needSync = true;
+
+                // 仅在 10秒 和 5秒 时提醒，避免刷屏
+                if (p.readyCountdown == 9 || p.readyCountdown == 4) {
+                    MultiLangMsg msg;
+                    int seconds = p.readyCountdown + 1; // 补偿显示的秒数
+
+                    msg.add("CN", QString("玩家 [%1] 请在 %2 秒内输入 /ready 准备，否则将被踢出。")
+                                      .arg(p.name).arg(seconds))
+                        .add("EN", QString("Player [%1], please type /ready within %2s or you will be kicked.")
+                                       .arg(p.name).arg(seconds));
+
+                    broadcastChatMessage(msg);
+
+                    if (p.readyCountdown == 9) {
+                        MultiLangMsg helpMsg;
+                        helpMsg.add("CN", "指令：输入 /ready 准备，/unready 取消。")
+                            .add("EN", "Commands: Type /ready to ready up, /unready to cancel.");
+                        broadcastChatMessage(helpMsg);
+                    }
+                }
             } else {
                 pidsToKick.append(it.key());
             }
@@ -3852,10 +3888,16 @@ void Client::updateCountdowns()
         syncReadyStates();
     }
 
+    // 踢出逻辑
     for (quint8 pid : pidsToKick) {
         if (m_players.contains(pid)) {
             PlayerData &p = m_players[pid];
-            LOG_INFO(QString("👢 [准备超时] 踢出玩家: %1").arg(p.name));
+
+            MultiLangMsg kickMsg;
+            kickMsg.add("CN", QString("❌ 玩家 [%1] 因未准备被移除。").arg(p.name))
+                .add("EN", QString("❌ Player [%1] was kicked for not being ready.").arg(p.name));
+            broadcastChatMessage(kickMsg);
+
             if (p.socket) {
                 p.socket->disconnectFromHost();
             }

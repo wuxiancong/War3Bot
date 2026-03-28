@@ -855,7 +855,7 @@ void NetManager::handleRegister(const PacketHeader *header, const CSRegisterPack
     for (const auto &peer : qAsConst(m_registerInfos)) {
         if (peer.hardwareId == hardwareId && peer.username != username) {
             LOG_WARNING(QString("┌─ [注册拦截] 拒绝多开"));
-            LOG_WARNING(QString("└─ 机器 %1 已有账号 %2 在线，当前请求: %3").arg(hardwareId.left(8), peer.username, username));
+            LOG_WARNING(QString("└─ 机器 %1 已有账号 %2 在线，当前请求: %3").arg(hardwareId, peer.username, username));
             return;
         }
     }
@@ -883,7 +883,7 @@ void NetManager::handleRegister(const PacketHeader *header, const CSRegisterPack
     // 4. 打印简洁树状日志
     LOG_INFO(QString("┌── [用户注册] 来自: %1:%2").arg(actualPublicIp).arg(senderPort));
     LOG_INFO(QString("├── 身份: %1 (SID: %2)").arg(username).arg(newSessionId));
-    LOG_INFO(QString("├── 设备: UUID: %1 | HWID: %2").arg(clientId, hardwareId.left(8)));
+    LOG_INFO(QString("├── 设备: UUID: %1 | HWID: %2").arg(clientId, hardwareId));
     LOG_INFO(QString("├── 本地: %1:%2").arg(localIp).arg(packet->localPort));
 
     // 对比汇报与实际
@@ -1108,7 +1108,7 @@ void NetManager::hardwareBan(const QString &targetUser, const QString &reason, u
 
     kickUserIfOnline(targetUser);
 
-    LOG_INFO(QString("🚫 管理员已封禁用户: %1 (机器码: %2)").arg(targetUser, hwid.left(8)));
+    LOG_INFO(QString("🚫 管理员已封禁用户: %1 (机器码: %2)").arg(targetUser, hwid));
 }
 
 void NetManager::handleCheckMapCRC(const PacketHeader *header, const CSCheckMapCRCPacket *packet, const QHostAddress &senderAddr, quint64 senderPort)
@@ -1495,32 +1495,36 @@ void NetManager::handleTcpCustomMessage(QTcpSocket *socket)
         if (currentClientId.isEmpty() && pHeader->sessionId != 0) {
             QWriteLocker locker(&m_registerInfosLock);
             if (m_sessionIndex.contains(pHeader->sessionId)) {
-                // 查到了！
                 QString clientId = m_sessionIndex.value(pHeader->sessionId);
 
-                if (m_tcpClients.contains(clientId)) {
-                    QPointer<QTcpSocket> oldSocket = m_tcpClients.value(clientId);
-                    if (oldSocket && oldSocket != socket) {
-                        LOG_INFO(QString("🔄 [TCP] 发现重复连接，正在关闭旧通道: %1").arg(clientId));
-                        oldSocket->disconnectFromHost();
+                int connType = socket->property("ConnType").toInt();
+
+                if (connType == Tcp_Custom) {
+                    if (m_tcpClients.contains(clientId)) {
+                        QPointer<QTcpSocket> oldSocket = m_tcpClients.value(clientId);
+                        if (oldSocket && oldSocket != socket) {
+                            LOG_INFO(QString("🔄 [TCP] 发现重复的控制台连接，替换旧通道: %1").arg(clientId));
+                            oldSocket->disconnectFromHost();
+                        }
                     }
+
+                    m_tcpClients.insert(clientId, socket);
+                    socket->setProperty("clientId", clientId);
+                    socket->setProperty("sessionId", pHeader->sessionId);
+                    currentClientId = clientId;
+
+                    LOG_INFO(QString("🔗 [TCP 控制通道绑定] UUID: %1 | 状态: 绑定成功").arg(clientId));
                 }
+                else if (connType == Tcp_W3GS) {
+                    socket->setProperty("clientId", clientId);
+                    socket->setProperty("sessionId", pHeader->sessionId);
+                    currentClientId = clientId;
 
-                // 立即更新 Socket 属性和 Map
-                m_tcpClients.insert(clientId, socket);
-                socket->setProperty("clientId", clientId);
-                socket->setProperty("sessionId", pHeader->sessionId);
-
-                currentClientId = clientId;
-
-                LOG_INFO("🔗 [TCP 控制通道绑定]");
-                LOG_INFO(QString("   ├─ 🆔 Session: %1").arg(pHeader->sessionId));
-                LOG_INFO(QString("   ├─ 👤 用户ID:  %1").arg(clientId));
-                LOG_INFO("   └─ ✅ 状态:    绑定成功");
+                    LOG_INFO(QString("🎮 [TCP 游戏通道识别] 玩家: %1 (UID:%2) 已识别为 W3GS 连接")
+                                 .arg(m_registerInfos[clientId].username, clientId));
+                }
             } else {
-                LOG_INFO("⚠️ [TCP 绑定失败]");
-                LOG_INFO(QString("   ├─ 🆔 Session: %1").arg(pHeader->sessionId));
-                LOG_ERROR("   └─ ❌ 原因:    无效的会话 ID");
+                LOG_ERROR(QString("⚠️ [TCP 绑定失败] 无效的 Session: %1").arg(pHeader->sessionId));
             }
         }
 
@@ -2134,7 +2138,7 @@ QString NetManager::getHwidByUsername(const QString &username)
         QReadLocker locker(&m_registerInfosLock);
         for (const auto &info : qAsConst(m_registerInfos)) {
             if (info.username == username) {
-                LOG_INFO(QString("🔍 [在线匹配] 找到用户 %1 的 HWID: %2").arg(username, info.hardwareId.left(8)));
+                LOG_INFO(QString("🔍 [在线匹配] 找到用户 %1 的 HWID: %2").arg(username, info.hardwareId));
                 return info.hardwareId;
             }
         }
@@ -2143,7 +2147,7 @@ QString NetManager::getHwidByUsername(const QString &username)
     QString hwid = DbManager::instance().getHwidFromHistory(username);
 
     if (!hwid.isEmpty()) {
-        LOG_INFO(QString("🔍 [数据库匹配] 找到离线用户 %1 的历史 HWID: %2").arg(username, hwid.left(8)));
+        LOG_INFO(QString("🔍 [数据库匹配] 找到离线用户 %1 的历史 HWID: %2").arg(username, hwid));
     } else {
         LOG_WARNING(QString("❌ [匹配失败] 找不到用户 %1 的任何记录").arg(username));
     }
