@@ -608,7 +608,7 @@ private:
     QByteArray createW3GSSlotInfoJoinPacket(quint8 playerID, const QHostAddress& externalIp, quint16 localPort);
     QByteArray createW3GSMapPartPacket(quint8 toPid, quint8 fromPid, quint32 offset, const QByteArray& chunkData);
     QByteArray createW3GSChatFromHostPacket(const QByteArray &rawBytes, quint8 senderPid = m_botPid, quint8 toPid = 255, ChatFlag flag = Message, quint32 extraData = 0);
-    QByteArray createPlayerInfoPacket(quint8 pid, const QString& name, const QHostAddress& externalIp, quint16 externalPort, const QHostAddress& internalIp, quint16 internalPort);
+    QByteArray createPlayerInfoPacket(quint8 pid, const QString& name, const QHostAddress& externalIp, quint16 externalPort, const QHostAddress& internalIp, quint16 internalPort, bool isVisualHost, bool isReady);
 
     // --- 内部网络处理 ---
     void sendPacket(BNETPacketID id, const QByteArray &payload);

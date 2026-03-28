@@ -895,12 +895,12 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         quint16 hostPort = m_udpSocket->localPort();
 
         finalPacket.append(createW3GSSlotInfoJoinPacket(newPid, hostIp, hostPort)); // 0x04
-        finalPacket.append(createPlayerInfoPacket(m_botPid, m_botDisplayName, QHostAddress("0.0.0.0"), 0, QHostAddress("0.0.0.0"), 0)); // 0x06 (Bot)
+        finalPacket.append(createPlayerInfoPacket(m_botPid, m_botDisplayName, QHostAddress("0.0.0.0"), 0, QHostAddress("0.0.0.0"), 0, true, true)); // 0x06 (Bot)
 
         for (auto it = m_players.begin(); it != m_players.end(); ++it) {
             const PlayerData &p = it.value();
             if (p.pid == newPid || p.pid == m_botPid) continue;
-            finalPacket.append(createPlayerInfoPacket(p.pid, p.name, p.extIp, p.extPort, p.intIp, p.intPort));
+            finalPacket.append(createPlayerInfoPacket(p.pid, p.name, p.extIp, p.extPort, p.intIp, p.intPort, p.isVisualHost, p.isReady));
         }
 
         finalPacket.append(createW3GSMapCheckPacket()); // 0x3D
@@ -913,7 +913,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
         // 4. 广播
         QByteArray newPlayerInfoPacket = createPlayerInfoPacket(
-            playerData.pid, playerData.name, playerData.extIp, playerData.extPort, playerData.intIp, playerData.intPort);
+            playerData.pid, playerData.name, playerData.extIp, playerData.extPort, playerData.intIp, playerData.intPort, playerData.isVisualHost, playerData.isReady);
         broadcastPacket(newPlayerInfoPacket, newPid);
         broadcastSlotInfo();
         syncReadyStates();
@@ -1968,8 +1968,8 @@ QByteArray Client::createPlatformPacket(PacketType type, const void *payload, qu
 
     // 6. 打印构建日志
     LOG_DEBUG(QString("📦 [Bot-Packet] 构建完成: Type=0x%1, Size=%2, Seq=%3")
-              .arg(QString::number(type, 16).toUpper())
-              .arg(totalSize).arg(header->seq));
+                  .arg(QString::number(type, 16).toUpper())
+                  .arg(totalSize).arg(header->seq));
 
     return buffer;
 }
@@ -2766,7 +2766,8 @@ QByteArray Client::createW3GSRejectJoinPacket(RejectReason reason)
 
 QByteArray Client::createPlayerInfoPacket(quint8 pid, const QString& name,
                                           const QHostAddress& externalIp, quint16 externalPort,
-                                          const QHostAddress& internalIp, quint16 internalPort)
+                                          const QHostAddress& internalIp, quint16 internalPort,
+                                          bool isVisualHost, bool isReady)
 {
     QByteArray packet;
     QDataStream out(&packet, QIODevice::WriteOnly);
@@ -2779,8 +2780,21 @@ QByteArray Client::createPlayerInfoPacket(quint8 pid, const QString& name,
     out << (quint32)2;  // Internal ID / P2P Key
     out << (quint8)pid;
 
+    // 3. 颜色逻辑处理
+    QString coloredName;
+    if (isVisualHost) {
+        // 房主：蓝色 (|cff0042ff)
+        coloredName = QString("|cff0042ff%1|r").arg(name);
+    } else if (isReady) {
+        // 已准备：绿色 (|cff20c000)
+        coloredName = QString("|cff20c000%1|r").arg(name);
+    } else {
+        // 未准备：红色 (|cffef3939)
+        coloredName = QString("|cffef3939%1|r").arg(name);
+    }
+
     // 3. 写入玩家名字
-    QByteArray nameBytes = name.toUtf8();
+    QByteArray nameBytes = coloredName.toUtf8();
     out.writeRawData(nameBytes.data(), nameBytes.length());
     out << (quint8)0;   // Null terminator
 
