@@ -1133,30 +1133,73 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
                 LOG_INFO(QString("   └─ 💬 内容: %1").arg(msg));
 
                 if (msg.compare("/ready", Qt::CaseInsensitive) == 0) {
-                    if (!m_players[senderPid].isReady) {
-                        m_players[senderPid].isReady = true;
-                        m_players[senderPid].readyCountdown = 10;
+                    LOG_INFO(QString("🎯 [指令匹配] 检测到 /ready | 发送者: %1 (PID: %2)").arg(senderName).arg(senderPid));
 
+                    // 获取玩家引用
+                    PlayerData &p = m_players[senderPid];
+
+                    // 打印当前状态快照
+                    LOG_INFO(QString("   ├─ 🔍 当前状态: Ready=%1 | Countdown=%2")
+                                 .arg(p.isReady ? "Yes" : "No")
+                                 .arg(p.readyCountdown));
+
+                    if (!p.isReady) {
+                        // 1. 更新逻辑状态
+                        p.isReady = true;
+                        p.readyCountdown = 10;
+
+                        LOG_INFO("   ├─ ⚙️ 状态更新: 已设置为 [准备就绪] | 倒计时停止");
+
+                        // 2. 构造多语言消息
                         MultiLangMsg rdy;
                         rdy.add("CN", QString("✅ [%1] 已准备。").arg(senderName))
                             .add("EN", QString("✅ [%1] is ready.").arg(senderName));
+
+                        // 3. 执行广播
+                        LOG_INFO("   ├─ 📢 动作: 正在发起全服广播...");
                         broadcastChatMessage(rdy);
 
+                        // 4. 同步 UI 数据
                         syncReadyStates();
+                        LOG_INFO("   └─ ✅ 处理完成: 状态已同步至全服");
+                    }
+                    else {
+                        LOG_INFO("   └─ ℹ️ [跳过] 玩家已经是准备状态，无需重复处理");
                     }
                     return;
                 }
                 else if (msg.compare("/unready", Qt::CaseInsensitive) == 0) {
-                    if (m_players[senderPid].isReady && !m_players[senderPid].isVisualHost) {
-                        m_players[senderPid].isReady = false;
-                        m_players[senderPid].readyCountdown = 10;
+                    LOG_INFO(QString("🎯 [指令匹配] 检测到 /unready | 发送者: %1 (PID: %2)").arg(senderName).arg(senderPid));
 
+                    PlayerData &p = m_players[senderPid];
+
+                    // 打印当前状态快照
+                    LOG_INFO(QString("   ├─ 🔍 当前状态: Ready=%1 | isVisualHost=%2")
+                                 .arg(p.isReady ? "Yes" : "No", p.isVisualHost ? "Yes" : "No"));
+
+                    if (p.isReady && !p.isVisualHost) {
+                        // 执行状态重置
+                        p.isReady = false;
+                        p.readyCountdown = 10;
+
+                        LOG_INFO("   ├─ ⚙️ 状态更新: 已设置为 [未准备] | 倒计时重置为 10s");
+
+                        // 构造消息
                         MultiLangMsg unrdy;
-                        unrdy.add("CN", QString("🔄 [%1] 取消了准备，请在10秒内重新准备。").arg(senderName))
+                        unrdy.add("CN", QString("🔄 [%1] 取消了准备，请在 10 秒内重新准备。").arg(senderName))
                             .add("EN", QString("🔄 [%1] is no longer ready. 10s remaining.").arg(senderName));
+
+                        // 调用广播
+                        LOG_INFO("   ├─ 📢 动作: 正在发起全服广播...");
                         broadcastChatMessage(unrdy);
 
+                        // 同步 UI 状态
                         syncReadyStates();
+                        LOG_INFO("   └─ ✅ 处理完成: 状态已同步");
+                    }
+                    else {
+                        QString reason = !p.isReady ? "玩家本来就处于未准备状态" : "房主不可执行此操作";
+                        LOG_INFO(QString("   └─ ⚠️ [跳过] 逻辑未触发 | 原因: %1").arg(reason));
                     }
                     return;
                 } else {
