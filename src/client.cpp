@@ -913,12 +913,12 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         quint16 hostPort = m_udpSocket->localPort();
 
         finalPacket.append(createW3GSSlotInfoJoinPacket(newPid, hostIp, hostPort)); // 0x04
-        finalPacket.append(createPlayerInfoPacket(m_botPid, m_botDisplayName, QHostAddress("0.0.0.0"), 0, QHostAddress("0.0.0.0"), 0)); // 0x06 (Bot)
+        finalPacket.append(createPlayerInfoPacket(m_botPid, m_botDisplayName, QHostAddress("0.0.0.0"), 0, QHostAddress("0.0.0.0"), 0, true, true)); // 0x06 (Bot)
 
         for (auto it = m_players.begin(); it != m_players.end(); ++it) {
             const PlayerData &p = it.value();
             if (p.pid == newPid || p.pid == m_botPid) continue;
-            finalPacket.append(createPlayerInfoPacket(p.pid, p.name, p.extIp, p.extPort, p.intIp, p.intPort));
+            finalPacket.append(createPlayerInfoPacket(p.pid, p.name, p.extIp, p.extPort, p.intIp, p.intPort, p.isVisualHost, p.isReady));
         }
 
         finalPacket.append(createW3GSMapCheckPacket()); // 0x3D
@@ -931,7 +931,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
         // 4. 广播
         QByteArray newPlayerInfoPacket = createPlayerInfoPacket(
-            playerData.pid, playerData.name, playerData.extIp, playerData.extPort, playerData.intIp, playerData.intPort);
+            playerData.pid, playerData.name, playerData.extIp, playerData.extPort, playerData.intIp, playerData.intPort, playerData.isVisualHost, playerData.isReady);
         broadcastPacket(newPlayerInfoPacket, newPid);
         broadcastSlotInfo();
         syncReadyStates();
@@ -1160,50 +1160,43 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
                 // B. 普通聊天转发
                 else {
                     QString receiverStrCN, receiverStrEN;
+                    bool isToAll = (numReceivers == 0 || receiverPids.contains(m_botPid));
 
-                    if (numReceivers == 0) {
-                        // 情况 1: 目标是所有人
+                    // 获取发送者的状态数据
+                    if (!m_players.contains(senderPid)) return;
+                    PlayerData &senderData = m_players[senderPid];
+
+                    // 1. 获取发送者彩色名字
+                    QString coloredSender = getColoredTextByState(senderData, senderData.name, true);
+
+                    // 2. 获取彩色消息内容
+                    QString coloredMsg = getColoredTextByState(senderData, msg, false);
+
+                    if (isToAll) {
                         receiverStrCN = "所有人";
                         receiverStrEN = "Everyone";
                     }
                     else {
-                        // 情况 2: 目标是一个或多个玩家，列出所有人的彩色名字
                         QStringList coloredNames;
                         for (quint8 rpid : receiverPids) {
-                            // 排除机器人自己，或者无效 PID
                             if (m_players.contains(rpid)) {
-                                coloredNames.append(getColoredName(rpid));
+                                coloredNames.append(getColoredTextByState(m_players[rpid], m_players[rpid].name, true));
                             }
                         }
-
-                        // 用逗号分隔名字: "玩家A, 玩家B"
-                        QString joinedNames = coloredNames.join(", ");
-
-                        if (joinedNames.isEmpty()) {
-                            receiverStrCN = "";
-                            receiverStrEN = "";
-                        } else {
-                            receiverStrCN = receiverStrEN = joinedNames;
-                        }
+                        receiverStrCN = receiverStrEN = coloredNames.join(", ");
                     }
 
-                    // 获取发送者的彩色名字
-                    QString coloredSender = getColoredName(senderPid);
                     LOG_INFO(QString("      └─ 💬 [%1] 对 [%2] 说: %3")
-                                 .arg(senderName, (numReceivers == 0 ? "所有人" : receiverStrCN.remove(QRegExp("\\|c[0-9a-fA-F]{8}|\\|r"))), msg));
+                                 .arg(senderName, isToAll ? "所有人" : "指定玩家", msg));
 
+                    // 3. 构建并广播消息
                     if (!coloredSender.isEmpty() && !receiverStrCN.isEmpty() && !msg.isEmpty())
                     {
-                        // 构建多语言消息
                         MultiLangMsg chatMsg;
-                        chatMsg.add("zh_CN", QString("%1 对 %2 说: %3").arg(coloredSender, receiverStrCN, msg));
-                        chatMsg.add("en", QString("%1 to %2 says: %3").arg(coloredSender, receiverStrEN, msg));
+                        chatMsg.add("zh_CN", QString("%1 对 %2 说: %3").arg(coloredSender, receiverStrCN, coloredMsg));
+                        chatMsg.add("en", QString("%1 to %2 says: %3").arg(coloredSender, receiverStrEN, coloredMsg));
 
-                        // 广播
                         broadcastChatMessage(chatMsg, senderPid);
-                    } else {
-                        LOG_WARNING(QString("⚠️ [Chat] 转发拦截: 数据不完整 (Sender:%1, Receiver:%2, Msg:%3)")
-                                        .arg(coloredSender.isEmpty() ? "空" : "有效", receiverStrCN.isEmpty() ? "空" : "有效", msg.isEmpty() ? "空" : "有效"));
                     }
                 }
             }
@@ -3006,21 +2999,36 @@ QByteArray Client::createW3GSRejectJoinPacket(RejectReason reason)
 
 QByteArray Client::createPlayerInfoPacket(quint8 pid, const QString& name,
                                           const QHostAddress& externalIp, quint16 externalPort,
-                                          const QHostAddress& internalIp, quint16 internalPort)
+                                          const QHostAddress& internalIp, quint16 internalPort,
+                                          bool isHost, bool isReady)
 {
     QByteArray packet;
     QDataStream out(&packet, QIODevice::WriteOnly);
     out.setByteOrder(QDataStream::LittleEndian);
 
+    QString finalName = name;
+
+    // 检查玩家ID长度是否达到15
+    if (name.length() >= 15) {
+        // 超过限制，不加颜色并记录日志
+        LOG_WARNING(QString("⚠️ [Colorizer] 玩家名 '%1' 长度(%2) >= 15，跳过着色处理")
+                        .arg(name).arg(name.length()));
+    } else {
+        // 房主默认为绿色，已准备为绿色，未准备为红色
+        // 颜色代码: |cff00ff00 (绿), |cffff0000 (红)
+        QString colorCode = (isHost || isReady) ? "|cff00ff00" : "|cffff0000";
+        finalName = QString("%1%2|r").arg(colorCode, name);
+    }
+
     // 1. 写入 Header (长度稍后回填)
     out << (quint8)0xF7 << (quint8)0x06 << (quint16)0;
 
     // 2. 写入 Id
-    out << (quint32)2;  // Internal ID / P2P Key
+    out << (quint32)2;
     out << (quint8)pid;
 
-    // 3. 写入玩家名字
-    QByteArray nameBytes = name.toUtf8();
+    // 3. 写入玩家名字 (使用处理后的 finalName)
+    QByteArray nameBytes = finalName.toUtf8();
     out.writeRawData(nameBytes.data(), nameBytes.length());
     out << (quint8)0;   // Null terminator
 
@@ -3737,13 +3745,14 @@ void Client::initBotPlayerData()
     bot.socket              = nullptr;
     bot.isFinishedLoading   = true;
     bot.isDownloadStart     = false;
+    bot.isReady             = true;
     bot.language            = "en";
     bot.extIp               = QHostAddress("0.0.0.0");
     bot.intIp               = QHostAddress("0.0.0.0");
 
     m_players.insert(bot.pid, bot);
 
-    LOG_INFO("🤖 Host Bot 注册完成 (PID: 2)");
+    LOG_INFO(QString("🤖 Host Bot 注册完成 (PID: 2) | 状态: 自动就绪 | 显示名: %1").arg(m_botDisplayName));
 }
 
 void Client::checkAllPlayersLoaded()
@@ -4218,33 +4227,28 @@ QString Client::getCodecNameByLanguage(const QString &lang)
     return "Windows-1252";
 }
 
-QString Client::getColoredName(quint8 pid, const QString &customColor)
+QString Client::getColoredTextByState(const PlayerData &p, const QString &text, bool isPlayerName)
 {
-    if (m_players.contains(pid)) {
-        return getColoredName(m_players[pid], customColor);
+    // 1. 如果是处理玩家名字，且长度超过15，则完全不加颜色代码
+    if (isPlayerName && text.length() >= 15) {
+        return text;
     }
-    return QString();
+
+    // 2. 根据玩家状态判定颜色代码
+    // 房主或已准备：绿色 (|cff00ff00)，未准备：红色 (|cffff0000)
+    QString colorCode = (p.isVisualHost || p.isReady) ? "|cff00ff00" : "|cffff0000";
+
+    // 3. 返回着色文本
+    return QString("%1%2|r").arg(colorCode, text);
 }
 
-QString Client::getColoredName(const PlayerData &p, const QString &customColor)
+QString Client::getColoredTextByState(quint8 pid, const QString &text, bool isPlayerName)
 {
-    // 1. 长度安全检查
-    if (p.name.length() >= 15) {
-        LOG_WARNING(QString("⚠️ [Colorizer] 玩家名 '%1' 过长，放弃自定义/状态着色").arg(p.name));
-        return p.name;
+    if (m_players.contains(pid)) {
+        return getColoredTextByState(m_players[pid], text, isPlayerName);
     }
-
-    QString finalColor;
-
-    // 2. 判定使用的颜色代码
-    if (!customColor.isEmpty()) {
-        finalColor = customColor;
-    } else {
-        finalColor = (p.isVisualHost || p.isReady) ? "|cff00ff00" : "|cffff0000";
-    }
-
-    // 3. 组装最终带颜色和恢复符的字符串
-    return QString("%1%2|r").arg(finalColor, p.name);
+    // 如果找不到玩家，默认不着色
+    return text;
 }
 
 quint32 Client::ipToUint32(const QHostAddress &address) { return address.toIPv4Address(); }

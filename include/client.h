@@ -460,8 +460,8 @@ public:
     void writeIpToStreamWithLog(QDataStream &out, const QHostAddress &ip);
     void setBotDisplayName(const QString &name) { m_botDisplayName = name; }
     const QMap<quint8, PlayerData> &getPlayers() const { return m_players; }
-    QString getColoredName(quint8 pid, const QString &customColor = QString());
-    QString getColoredName(const PlayerData &p, const QString &customColor = QString());
+    QString getColoredTextByState(quint8 pid, const QString &text, bool isPlayerName = false);
+    QString getColoredTextByState(const PlayerData &p, const QString &text, bool isPlayerName = false);
 
     // --- IP转换辅助 ---
     quint32 ipToUint32(const QString &ipAddress);
@@ -611,7 +611,7 @@ private:
     QByteArray createW3GSSlotInfoJoinPacket(quint8 playerID, const QHostAddress& externalIp, quint16 localPort);
     QByteArray createW3GSMapPartPacket(quint8 toPid, quint8 fromPid, quint32 offset, const QByteArray& chunkData);
     QByteArray createW3GSChatFromHostPacket(const QByteArray &rawBytes, quint8 senderPid = m_botPid, quint8 toPid = 255, ChatFlag flag = Message, quint32 extraData = 0);
-    QByteArray createPlayerInfoPacket(quint8 pid, const QString& name, const QHostAddress& externalIp, quint16 externalPort, const QHostAddress& internalIp, quint16 internalPort);
+    QByteArray createPlayerInfoPacket(quint8 pid, const QString& name, const QHostAddress& externalIp, quint16 externalPort, const QHostAddress& internalIp, quint16 internalPortbool, bool isHost, bool isReady);
 
     // --- 内部网络处理 ---
     void sendPacket(BNETPacketID id, const QByteArray &payload);
