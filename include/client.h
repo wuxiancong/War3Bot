@@ -455,6 +455,7 @@ public:
     quint32 getMapCRC() const;                          // 获取地图CRC
     bool isBlackListedPort(quint16 port);               // 检查端口黑名单
     QString getBnetPacketName(BNETPacketID id);         // 获取对应的包名
+    QString getCodecNameByLanguage(const QString &lang);// 获取对应的编码
     void dumpPacket(const QByteArray &bytes);
     void writeIpToStreamWithLog(QDataStream &out, const QHostAddress &ip);
     void setBotDisplayName(const QString &name) { m_botDisplayName = name; }
@@ -613,6 +614,7 @@ private:
     // --- 内部网络处理 ---
     void sendPacket(BNETPacketID id, const QByteArray &payload);
     void sendNextMapPart(quint8 toPid, quint8 fromPid = m_botPid);
+    void handleChatCommand(quint8 senderPid, const QString &fullMsg);
     void handleBNETTcpPacket(BNETPacketID id, const QByteArray &data);
     void handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &payload);
     void handleW3GSUdpPacket(const QByteArray &data, const QHostAddress &sender, quint16 senderPort);

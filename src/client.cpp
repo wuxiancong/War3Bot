@@ -485,6 +485,17 @@ void Client::handleBNETTcpPacket(BNETPacketID id, const QByteArray &data)
     }
     break;
 
+    case SID_CHATCOMMAND: // 0x0E
+    {
+        QString cmdText = QString::fromUtf8(data).trimmed();
+        QString hexData = data.toHex(' ').toUpper();
+        LOG_INFO("💬 [BNET] 捕获到聊天/指令包 (SID_CHATCOMMAND - 0x0E)");
+        LOG_INFO(QString("   ├─ 📦 原始 Hex: %1").arg(hexData));
+        LOG_INFO(QString("   ├─ 📝 文本内容: %1").arg(cmdText.isEmpty() ? "<空>" : cmdText));
+        LOG_INFO("   └─ ℹ️ 状态: 仅记录日志，跳过逻辑处理");
+    }
+    break;
+
     case SID_CHATEVENT:
     {
         if (data.size() < 24) return;
@@ -868,7 +879,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         playerData.extPort = socket->peerPort();
         playerData.intIp = QHostAddress(qToBigEndian(clientInternalIP));
         playerData.intPort = clientInternalPort;
-        playerData.language = "EN";
+        playerData.language = "en";
         playerData.codec = QTextCodec::codecForName("Windows-1252");
         playerData.lastResponseTime = now;
         playerData.lastDownloadTime = now;
@@ -1131,90 +1142,18 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
                 QString msg = codec->toUnicode(rawMsg);
                 LOG_INFO(QString("   └─ 💬 内容: %1").arg(msg));
-
-                if (msg.compare("/ready", Qt::CaseInsensitive) == 0) {
-                    LOG_INFO(QString("🎯 [指令匹配] 检测到 /ready | 发送者: %1 (PID: %2)").arg(senderName).arg(senderPid));
-
-                    // 获取玩家引用
-                    PlayerData &p = m_players[senderPid];
-
-                    // 打印当前状态快照
-                    LOG_INFO(QString("   ├─ 🔍 当前状态: Ready=%1 | Countdown=%2")
-                                 .arg(p.isReady ? "Yes" : "No")
-                                 .arg(p.readyCountdown));
-
-                    if (!p.isReady) {
-                        // 1. 更新逻辑状态
-                        p.isReady = true;
-                        p.readyCountdown = 10;
-
-                        LOG_INFO("   ├─ ⚙️ 状态更新: 已设置为 [准备就绪] | 倒计时停止");
-
-                        // 2. 构造多语言消息
-                        MultiLangMsg rdy;
-                        rdy.add("CN", QString("✅ [%1] 已准备。").arg(senderName))
-                            .add("EN", QString("✅ [%1] is ready.").arg(senderName));
-
-                        // 3. 执行广播
-                        LOG_INFO("   ├─ 📢 动作: 正在发起全服广播...");
-                        broadcastChatMessage(rdy);
-
-                        // 4. 同步 UI 数据
-                        syncReadyStates();
-                        LOG_INFO("   └─ ✅ 处理完成: 状态已同步至全服");
-                    }
-                    else {
-                        LOG_INFO("   └─ ℹ️ [跳过] 玩家已经是准备状态，无需重复处理");
-                    }
-                    return;
+                // A. 指令处理
+                if (msg.startsWith("/")) {
+                    LOG_INFO(QString("      └─ ⚡ [指令] 检测到命令，转交机器人处理..."));
+                    handleChatCommand(senderPid, msg);
                 }
-                else if (msg.compare("/unready", Qt::CaseInsensitive) == 0) {
-                    LOG_INFO(QString("🎯 [指令匹配] 检测到 /unready | 发送者: %1 (PID: %2)").arg(senderName).arg(senderPid));
-
-                    PlayerData &p = m_players[senderPid];
-
-                    // 打印当前状态快照
-                    LOG_INFO(QString("   ├─ 🔍 当前状态: Ready=%1 | isVisualHost=%2")
-                                 .arg(p.isReady ? "Yes" : "No", p.isVisualHost ? "Yes" : "No"));
-
-                    if (p.isReady && !p.isVisualHost) {
-                        // 执行状态重置
-                        p.isReady = false;
-                        p.readyCountdown = 10;
-
-                        LOG_INFO("   ├─ ⚙️ 状态更新: 已设置为 [未准备] | 倒计时重置为 10s");
-
-                        // 构造消息
-                        MultiLangMsg unrdy;
-                        unrdy.add("CN", QString("🔄 [%1] 取消了准备，请在 10 秒内重新准备。").arg(senderName))
-                            .add("EN", QString("🔄 [%1] is no longer ready. 10s remaining.").arg(senderName));
-
-                        // 调用广播
-                        LOG_INFO("   ├─ 📢 动作: 正在发起全服广播...");
-                        broadcastChatMessage(unrdy);
-
-                        // 同步 UI 状态
-                        syncReadyStates();
-                        LOG_INFO("   └─ ✅ 处理完成: 状态已同步");
-                    }
-                    else {
-                        QString reason = !p.isReady ? "玩家本来就处于未准备状态" : "房主不可执行此操作";
-                        LOG_INFO(QString("   └─ ⚠️ [跳过] 逻辑未触发 | 原因: %1").arg(reason));
-                    }
-                    return;
-                } else {
-                    // A. 指令处理
-                    if (msg.startsWith("/")) {
-                        LOG_INFO(QString("      └─ ⚡ [指令] 检测到命令，转交处理器..."));
-                        // handleChatCommand(senderPid, msg);
-                    }
-                    // B. 普通聊天转发
-                    else {
-                        MultiLangMsg chatMsg;
-                        chatMsg.add("CN", QString("%1: %2").arg(senderName, msg));
-                        chatMsg.add("EN", QString("%1: %2").arg(senderName, msg));
-                        broadcastChatMessage(chatMsg, senderPid);
-                    }
+                // B. 普通聊天转发
+                else {
+                    LOG_INFO(QString("      └─ 💬 [消息] 检测到消息，转交机器人处理..."));
+                    MultiLangMsg chatMsg;
+                    chatMsg.add("zh_CN", QString("%1: %2").arg(senderName, msg));
+                    chatMsg.add("en", QString("%1: %2").arg(senderName, msg));
+                    broadcastChatMessage(chatMsg, senderPid);
                 }
             }
         }
@@ -1561,6 +1500,89 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
     }
 }
 
+void Client::handleChatCommand(quint8 senderPid, const QString &fullMsg)
+{
+    if (!m_players.contains(senderPid)) return;
+    PlayerData &sender = m_players[senderPid];
+
+    // 1. 解析指令和参数
+    QString trimmed = fullMsg.trimmed();
+    QStringList parts = trimmed.split(" ", Qt::SkipEmptyParts);
+    if (parts.isEmpty()) return;
+
+    QString cmd = parts[0].toLower();
+    QString args = trimmed.mid(parts[0].length()).trimmed();
+
+    LOG_INFO(QString("⚡ [指令处理器] 来源: %1 | 指令: %2 | 参数: %3")
+                 .arg(sender.name, cmd, args));
+
+    // --- 分支 1: /ready ---
+    if (cmd == "/ready") {
+        if (!sender.isReady) {
+            sender.isReady = true;
+            sender.readyCountdown = 10;
+            LOG_INFO(QString("   └─ ✅ 玩家 [%1] 已准备").arg(sender.name));
+
+            MultiLangMsg msg;
+            msg.add("zh_CN", QString("[%1] 已准备。").arg(sender.name))
+                .add("en", QString("[%1] is ready.").arg(sender.name));
+            broadcastChatMessage(msg);
+            syncReadyStates();
+        }
+        return;
+    }
+
+    // --- 分支 2: /unready ---
+    else if (cmd == "/unready") {
+        if (sender.isReady && !sender.isVisualHost) {
+            sender.isReady = false;
+            sender.readyCountdown = 10;
+            LOG_INFO(QString("   └─ 🔄 玩家 [%1] 取消准备").arg(sender.name));
+
+            MultiLangMsg msg;
+            msg.add("zh_CN", QString("[%1] 取消了准备，请在 10 秒内重新准备。").arg(sender.name))
+                .add("en", QString("[%1] is no longer ready. 10s remaining.").arg(sender.name));
+            broadcastChatMessage(msg);
+            syncReadyStates();
+        } else if (sender.isVisualHost) {
+            LOG_INFO("   └─ ⚠️ 房主无需取消准备");
+        }
+        return;
+    }
+
+    // --- 分支 3: /w 或 /whisper (房间内私聊转发) ---
+    else if (cmd == "/w" || cmd == "/whisper") {
+        if (parts.size() < 3) {
+            LOG_INFO("   └─ ❌ 私聊格式错误。用法: /w <玩家名> <内容>");
+            return;
+        }
+
+        QString targetName = parts[1];
+        QString content = trimmed.mid(trimmed.indexOf(targetName) + targetName.length()).trimmed();
+
+        // 在房间内查找目标 PID
+        quint8 targetPid = 0;
+        for (auto it = m_players.begin(); it != m_players.end(); ++it) {
+            if (it.value().name.compare(targetName, Qt::CaseInsensitive) == 0) {
+                targetPid = it.key();
+                break;
+            }
+        }
+
+        if (targetPid != 0 && m_players[targetPid].socket) {
+            LOG_INFO(QString("   └─ 🔒 私聊转发: %1 -> %2").arg(sender.name, targetName));
+
+            QByteArray msgBytes = content.toUtf8();
+            QByteArray pkt = createW3GSChatFromHostPacket(msgBytes, senderPid, targetPid, ChatFlag::Message);
+            m_players[targetPid].socket->write(pkt);
+            m_players[targetPid].socket->flush();
+        } else {
+            LOG_INFO(QString("   └─ ❌ 找不到目标玩家: %1").arg(targetName));
+        }
+        return;
+    }
+}
+
 void Client::onPlayerDisconnected() {
     QTcpSocket *socket = qobject_cast<QTcpSocket*>(sender());
     if (!socket) return;
@@ -1798,8 +1820,8 @@ void Client::onPlayerDisconnected() {
 
                     // 3. 广播移交通知
                     MultiLangMsg transferMsg;
-                    transferMsg.add("CN", QString("系统: 房主已离开，[%1] 成为新房主。").arg(heirName))
-                        .add("EN", QString("System: Host left. [%1] is the new host.").arg(heirName));
+                    transferMsg.add("zh_CN", QString("房主已离开，[%1] 成为新房主。").arg(heirName))
+                        .add("en", QString("Host left. [%1] is the new host.").arg(heirName));
                     broadcastChatMessage(transferMsg, 0);
                 }
             }
@@ -1813,8 +1835,8 @@ void Client::onPlayerDisconnected() {
             broadcastPacket(leftPacket, 0);
 
             MultiLangMsg leaveMsg;
-            leaveMsg.add("CN", QString("玩家 [%1] 离开了游戏。").arg(nameToRemove))
-                .add("EN", QString("Player [%1] has left the game.").arg(nameToRemove));
+            leaveMsg.add("zh_CN", QString("玩家 [%1] 离开了游戏。").arg(nameToRemove))
+                .add("en", QString("Player [%1] has left the game.").arg(nameToRemove));
             broadcastChatMessage(leaveMsg, pidToRemove);
 
             if (!m_gameStarted) {
@@ -2768,8 +2790,8 @@ void Client::startGame()
 
     // 2. 发送最后一条大厅消息
     MultiLangMsg msg;
-    msg.add("CN", "游戏将于 5 秒后开始...")
-        .add("EN", "Game starts in 5 seconds...");
+    msg.add("zh_CN", "游戏将于 5 秒后开始...")
+        .add("en", "Game starts in 5 seconds...");
 
     broadcastChatMessage(msg);
 
@@ -2787,8 +2809,8 @@ void Client::abortGame()
     if (m_startTimer->isActive()) {
         m_startTimer->stop();
         MultiLangMsg msg;
-        msg.add("CN", "倒计时已取消。")
-            .add("EN", "Countdown aborted.");
+        msg.add("zh_CN", "倒计时已取消。")
+            .add("en", "Countdown aborted.");
         broadcastChatMessage(msg);
 
         // 3. 恢复 Ping 循环
@@ -3153,15 +3175,11 @@ QByteArray Client::createW3GSChatFromHostPacket(const QByteArray &rawBytes, quin
 
     // 格式化 Hex 用于日志
     QString hexPreview = QString(rawBytes.toHex().toUpper());
-    if (hexPreview.length() > 30) hexPreview = hexPreview.left(27) + "...";
 
-    // 只有在 flag 不是普通消息时，才打印构建日志，防止刷屏
-    if (flag != ChatFlag::Message) {
-        LOG_INFO(QString("📦 [构建包] 聊天/控制 (0x0F)"));
-        LOG_INFO(QString("   ├─ 🎯 目标: %1 -> %2").arg(senderPid).arg(toPid));
-        LOG_INFO(QString("   ├─ 🚩 类型: 0x%1 (Extra: %2)").arg(QString::number((int)flag, 16)).arg(extraData));
-        LOG_INFO(QString("   └─ 📝 数据: %1").arg(hexPreview));
-    }
+    LOG_INFO(QString("📦 [构建包] 聊天/控制 (0x0F)"));
+    LOG_INFO(QString("   ├─ 🎯 目标: %1 -> %2").arg(senderPid).arg(toPid));
+    LOG_INFO(QString("   ├─ 🚩 类型: 0x%1 (Extra: %2)").arg(QString::number((int)flag, 16)).arg(extraData));
+    LOG_INFO(QString("   └─ 📝 数据: %1").arg(hexPreview));
 
     return packet;
 }
@@ -3271,7 +3289,7 @@ QByteArray Client::createW3GSMapPartPacket(quint8 toPid, quint8 fromPid, quint32
 void Client::broadcastChatMessage(const MultiLangMsg& msg, quint8 excludePid)
 {
     if (m_gameStarted || m_startTimer->isActive()) {
-        qDebug() << "🛑 [拦截] 试图在游戏/倒计时期间发送大厅消息，已阻止：" << msg.get("EN");
+        qDebug() << "🛑 [拦截] 试图在游戏/倒计时期间发送大厅消息，已阻止：" << msg.get("en");
         return;
     }
 
@@ -3286,7 +3304,7 @@ void Client::broadcastChatMessage(const MultiLangMsg& msg, quint8 excludePid)
 
         if (!socket || socket->state() != QAbstractSocket::ConnectedState) continue;
 
-        // 1. 根据玩家的语言标记 (CN/EN/RU...) 获取对应文本
+        // 1. 根据玩家的语言标记 (cn/en/ru...) 获取对应文本
         QString textToSend = msg.get(playerData.language);
 
         // 2. 转码 (根据玩家特定的 Codec)
@@ -3668,7 +3686,7 @@ void Client::initBotPlayerData()
     bot.socket              = nullptr;
     bot.isFinishedLoading   = true;
     bot.isDownloadStart     = false;
-    bot.language            = "EN";
+    bot.language            = "en";
     bot.extIp               = QHostAddress("0.0.0.0");
     bot.intIp               = QHostAddress("0.0.0.0");
 
@@ -3847,15 +3865,15 @@ void Client::sendPingLoop()
     MultiLangMsg waitMsg;
 
     m_chatIntervalCounter++;
-    if (m_chatIntervalCounter >= 3) {
+    if (m_chatIntervalCounter >= 10) {
         int realPlayerCount = 0;
         for(auto it = m_players.begin(); it != m_players.end(); ++it) {
             if (it.key() != m_botPid) realPlayerCount++;
         }
 
         // 填充多语言内容
-        waitMsg.add("CN", QString("请耐心等待，当前已有 %1 个玩家...").arg(realPlayerCount))
-            .add("EN", QString("Please wait, %1 players present...").arg(realPlayerCount));
+        waitMsg.add("zh_CN", QString("请耐心等待，当前已有 %1 个玩家...").arg(realPlayerCount))
+            .add("en", QString("Please wait, %1 players present...").arg(realPlayerCount));
 
         shouldSendChat = true;
         m_chatIntervalCounter = 0;
@@ -3907,17 +3925,17 @@ void Client::updateCountdowns()
                     MultiLangMsg msg;
                     int seconds = p.readyCountdown + 1; // 补偿显示的秒数
 
-                    msg.add("CN", QString("玩家 [%1] 请在 %2 秒内输入 /ready 准备，否则将被踢出。")
-                                      .arg(p.name).arg(seconds))
-                        .add("EN", QString("Player [%1], please type /ready within %2s or you will be kicked.")
+                    msg.add("zh_CN", QString("玩家 [%1] 请在 %2 秒内输入 /ready 准备，否则将被踢出。")
+                                         .arg(p.name).arg(seconds))
+                        .add("en", QString("Player [%1], please type /ready within %2s or you will be kicked.")
                                        .arg(p.name).arg(seconds));
 
                     broadcastChatMessage(msg);
 
                     if (p.readyCountdown == 9) {
                         MultiLangMsg helpMsg;
-                        helpMsg.add("CN", "指令：输入 /ready 准备，/unready 取消。")
-                            .add("EN", "Commands: Type /ready to ready up, /unready to cancel.");
+                        helpMsg.add("zh_CN", "指令：输入 /ready 准备，/unready 取消。")
+                            .add("en", "Commands: Type /ready to ready up, /unready to cancel.");
                         broadcastChatMessage(helpMsg);
                     }
                 }
@@ -3937,8 +3955,8 @@ void Client::updateCountdowns()
             PlayerData &p = m_players[pid];
 
             MultiLangMsg kickMsg;
-            kickMsg.add("CN", QString("❌ 玩家 [%1] 因未准备被移除。").arg(p.name))
-                .add("EN", QString("❌ Player [%1] was kicked for not being ready.").arg(p.name));
+            kickMsg.add("zh_CN", QString("玩家 [%1] 因未准备被移除。").arg(p.name))
+                .add("en", QString("Player [%1] was kicked for not being ready.").arg(p.name));
             broadcastChatMessage(kickMsg);
 
             if (p.socket) {
@@ -4110,6 +4128,43 @@ QString Client::getBnetPacketName(BNETPacketID id)
     case SID_AUTH_ACCOUNTLOGONPROOF: return "SID_AUTH_ACCOUNTLOGONPROOF (SRP登录验证)";
     default:                         return QString("UNKNOWN (0x%1)").arg(QString::number((int)id, 16).toUpper());
     }
+}
+
+QString Client::getCodecNameByLanguage(const QString &lang)
+{
+    // 简体中文
+    if (lang == "zh_CN") return "GBK";
+
+    // 繁体中文
+    if (lang == "zh_TW") return "Big5";
+
+    // 俄语、乌克兰语、保加利亚语 (西里尔字母)
+    if (lang == "ru" || lang == "uk" || lang == "bg") return "Windows-1251";
+
+    // 日语
+    if (lang == "ja") return "Shift-JIS";
+
+    // 韩语
+    if (lang == "ko") return "CP949";
+
+    // 中欧语言 (波兰、捷克、匈牙利、斯洛伐克)
+    if (lang == "pl" || lang == "cs" || lang == "hu" || lang == "sk") return "Windows-1250";
+
+    // 土耳其语
+    if (lang == "tr") return "Windows-1254";
+
+    // 阿拉伯语
+    if (lang == "ar") return "Windows-1256";
+
+    // 希伯来语
+    if (lang == "he") return "Windows-1255";
+
+    // 波罗的海语言 (拉脱维亚)
+    if (lang == "lv") return "Windows-1257";
+
+    // 西欧语言 (英语、西班牙、德语、法语、意大利、葡萄牙、丹麦、芬兰等)
+    // 这是魔兽默认的 Latin-1 编码
+    return "Windows-1252";
 }
 
 quint32 Client::ipToUint32(const QHostAddress &address) { return address.toIPv4Address(); }
