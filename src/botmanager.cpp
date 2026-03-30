@@ -1339,7 +1339,7 @@ void BotManager::onBotRoomPingsUpdated(Bot *bot, const QMap<quint8, quint32> &pi
         if (ok) {
             sentCount++;
             bool isRoomOwner = (uuid == bot->gameInfo.clientId);
-            LOG_INFO(QString("%1🚀 下发至 %2 [UUID: %3...]")
+            LOG_INFO(QString("%1🚀 下发至 %2 [UUID: %3]")
                          .arg(branch, isRoomOwner ? "👑 房主" : "👤 玩家", uuid));
         } else {
             LOG_WARNING(QString("%1❌ 失败: 客户端 %2 已断开控制链路").arg(branch, uuid));
