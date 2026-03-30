@@ -460,6 +460,8 @@ public:
     void writeIpToStreamWithLog(QDataStream &out, const QHostAddress &ip);
     void setBotDisplayName(const QString &name) { m_botDisplayName = name; }
     const QMap<quint8, PlayerData> &getPlayers() const { return m_players; }
+    QString getColoredName(quint8 pid, const QString &customColor = QString());
+    QString getColoredName(const PlayerData &p, const QString &customColor = QString());
 
     // --- IP转换辅助 ---
     quint32 ipToUint32(const QString &ipAddress);

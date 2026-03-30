@@ -1089,8 +1089,12 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
             return;
         }
 
-        // 跳过接收者 PIDs
-        in.skipRawData(numReceivers);
+        QList<quint8> receiverPids;
+        for (int i = 0; i < numReceivers; ++i) {
+            quint8 rpid;
+            in >> rpid;
+            receiverPids.append(rpid);
+        }
 
         // 3. 解析来源与标志
         quint8 fromPid, flag;
@@ -1099,7 +1103,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         // 4. 查找发送者 (Socket -> PID/Name/Codec)
         quint8 senderPid = 0;
         QString senderName = "";
-        QTextCodec* codec = QTextCodec::codecForName("Windows-1252"); // 默认
+        QTextCodec *codec = QTextCodec::codecForName("Windows-1252"); // 默认
 
         for (auto it = m_players.begin(); it != m_players.end(); ++it) {
             if (it.value().socket == socket) {
@@ -1137,11 +1141,17 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         {
             if (currentOffset < payload.size()) {
                 QByteArray rawMsg = payload.mid(currentOffset);
-                // 移除末尾的 \0
+                // 1. 移除末尾的 \0
                 if (rawMsg.endsWith('\0')) rawMsg.chop(1);
 
-                QString msg = codec->toUnicode(rawMsg);
+                // 2. 转码并立即去除前后空格
+                QString msg = codec->toUnicode(rawMsg).trimmed();
+
+                // 3. 检查处理后是否为空
+                if (msg.isEmpty()) return;
+
                 LOG_INFO(QString("   └─ 💬 内容: %1").arg(msg));
+
                 // A. 指令处理
                 if (msg.startsWith("/")) {
                     LOG_INFO(QString("      └─ ⚡ [指令] 检测到命令，转交机器人处理..."));
@@ -1149,11 +1159,52 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
                 }
                 // B. 普通聊天转发
                 else {
-                    LOG_INFO(QString("      └─ 💬 [消息] 检测到消息，转交机器人处理..."));
-                    MultiLangMsg chatMsg;
-                    chatMsg.add("zh_CN", QString("%1: %2").arg(senderName, msg));
-                    chatMsg.add("en", QString("%1: %2").arg(senderName, msg));
-                    broadcastChatMessage(chatMsg, senderPid);
+                    QString receiverStrCN, receiverStrEN;
+
+                    if (numReceivers == 0) {
+                        // 情况 1: 目标是所有人
+                        receiverStrCN = "所有人";
+                        receiverStrEN = "Everyone";
+                    }
+                    else {
+                        // 情况 2: 目标是一个或多个玩家，列出所有人的彩色名字
+                        QStringList coloredNames;
+                        for (quint8 rpid : receiverPids) {
+                            // 排除机器人自己，或者无效 PID
+                            if (m_players.contains(rpid)) {
+                                coloredNames.append(getColoredName(rpid));
+                            }
+                        }
+
+                        // 用逗号分隔名字: "玩家A, 玩家B"
+                        QString joinedNames = coloredNames.join(", ");
+
+                        if (joinedNames.isEmpty()) {
+                            receiverStrCN = "";
+                            receiverStrEN = "";
+                        } else {
+                            receiverStrCN = receiverStrEN = joinedNames;
+                        }
+                    }
+
+                    // 获取发送者的彩色名字
+                    QString coloredSender = getColoredName(senderPid);
+                    LOG_INFO(QString("      └─ 💬 [%1] 对 [%2] 说: %3")
+                                 .arg(senderName, (numReceivers == 0 ? "所有人" : receiverStrCN.remove(QRegExp("\\|c[0-9a-fA-F]{8}|\\|r"))), msg));
+
+                    if (!coloredSender.isEmpty() && !receiverStrCN.isEmpty() && !msg.isEmpty())
+                    {
+                        // 构建多语言消息
+                        MultiLangMsg chatMsg;
+                        chatMsg.add("zh_CN", QString("%1 对 %2 说: %3").arg(coloredSender, receiverStrCN, msg));
+                        chatMsg.add("en", QString("%1 to %2 says: %3").arg(coloredSender, receiverStrEN, msg));
+
+                        // 广播
+                        broadcastChatMessage(chatMsg, senderPid);
+                    } else {
+                        LOG_WARNING(QString("⚠️ [Chat] 转发拦截: 数据不完整 (Sender:%1, Receiver:%2, Msg:%3)")
+                                        .arg(coloredSender.isEmpty() ? "空" : "有效", receiverStrCN.isEmpty() ? "空" : "有效", msg.isEmpty() ? "空" : "有效"));
+                    }
                 }
             }
         }
@@ -4165,6 +4216,35 @@ QString Client::getCodecNameByLanguage(const QString &lang)
     // 西欧语言 (英语、西班牙、德语、法语、意大利、葡萄牙、丹麦、芬兰等)
     // 这是魔兽默认的 Latin-1 编码
     return "Windows-1252";
+}
+
+QString Client::getColoredName(quint8 pid, const QString &customColor)
+{
+    if (m_players.contains(pid)) {
+        return getColoredName(m_players[pid], customColor);
+    }
+    return QString();
+}
+
+QString Client::getColoredName(const PlayerData &p, const QString &customColor)
+{
+    // 1. 长度安全检查
+    if (p.name.length() >= 15) {
+        LOG_WARNING(QString("⚠️ [Colorizer] 玩家名 '%1' 过长，放弃自定义/状态着色").arg(p.name));
+        return p.name;
+    }
+
+    QString finalColor;
+
+    // 2. 判定使用的颜色代码
+    if (!customColor.isEmpty()) {
+        finalColor = customColor;
+    } else {
+        finalColor = (p.isVisualHost || p.isReady) ? "|cff00ff00" : "|cffff0000";
+    }
+
+    // 3. 组装最终带颜色和恢复符的字符串
+    return QString("%1%2|r").arg(finalColor, p.name);
 }
 
 quint32 Client::ipToUint32(const QHostAddress &address) { return address.toIPv4Address(); }
