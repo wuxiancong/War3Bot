@@ -723,6 +723,7 @@ bool BotManager::checkCooldown(const QString &clientId, const QString &command, 
         cooldownRules.insert("/join", 500);
         cooldownRules.insert("/unhost", 1000);
         cooldownRules.insert("/swap", 500);
+        cooldownRules.insert("/swapself", 500);
     }
     const qint64 DEFAULT_COOLDOWN = 1000;
 
@@ -761,8 +762,7 @@ void BotManager::handleHostCommand(const QString &userName, const QString &clien
         QString interceptReason = (existingBotByName != nullptr) ? "该游戏名/账号" : "当前客户端/设备";
 
         LOG_WARNING(QString("   └─ ⚠️ 拦截: %1 已拥有活跃房间 (拦截目标: %2)")
-                        .arg(interceptReason)
-                        .arg(userName));
+                        .arg(interceptReason, userName));
         m_netManager->sendMessageToClient(clientId, S_C_ERROR, ERR_ALREADY_IN_GAME);
         return;
     }
@@ -920,12 +920,13 @@ void BotManager::onBotCommandReceived(const QString &userName, const QString &cl
     }
 
     // --- 3. 处理准备/取消准备 (所有玩家可用) ---
-    if (trimmedCommand == "/ready" || trimmedCommand == "/unready") {
-        bool isReady = (trimmedCommand == "/ready");
+    if (trimmedCommand == "/ready" || trimmedCommand == "/unready" || trimmedCommand == "/swapself") {
         Bot *targetBot = nullptr;
 
+        // 核心逻辑：全局遍历，寻找该玩家当前坐在哪个房间里 (哪怕他不是房主)
         for (Bot *bot : qAsConst(m_bots)) {
             if (!bot->client) continue;
+            // 如果他是房主，或者他在这个房间的玩家列表里
             if (bot->isOwner(clientId) || bot->client->hasPlayerByUuid(clientId)) {
                 targetBot = bot;
                 break;
@@ -933,13 +934,27 @@ void BotManager::onBotCommandReceived(const QString &userName, const QString &cl
         }
 
         if (targetBot && targetBot->client) {
-            targetBot->client->setPlayerReadyByUuid(clientId, isReady);
-            targetBot->client->syncReadyStates();
+            if (trimmedCommand == "/ready" || trimmedCommand == "/unready") {
+                bool isReady = (trimmedCommand == "/ready");
+                targetBot->client->setPlayerReadyByUuid(clientId, isReady);
+                targetBot->client->syncReadyStates();
 
-            LOG_INFO(QString("   └─ 🚀 执行动作: 玩家 %1 状态更新 -> %2 (已触发即时同步)")
-                         .arg(userName, isReady ? "已准备" : "已取消准备"));
+                LOG_INFO(QString("   └─ 🚀 执行动作: 玩家 %1 状态更新 -> %2 (已触发即时同步)")
+                             .arg(userName, isReady ? "已准备" : "已取消准备"));
+            }
+            else if (trimmedCommand == "/swapself") {
+                quint8 myPid = targetBot->client->getPidByUserName(userName);
+                int mySlotIndex = targetBot->client->getSlotIndexByPid(myPid);
+                if (myPid != 0 && mySlotIndex != -1) {
+                    LOG_INFO(QString("   └─ 🚀 执行动作: 玩家 %1 请求原位状态刷新 (槽位 %2 <-> %2)")
+                                 .arg(userName).arg(mySlotIndex));
+                    targetBot->client->swapSlots(mySlotIndex, mySlotIndex);
+                } else {
+                    LOG_WARNING(QString("   └─ ❌ 错误: 无法在房间内获取玩家 %1 的槽位信息").arg(userName));
+                }
+            }
         } else {
-            LOG_WARNING(QString("   └─ ❌ 拒绝: 玩家 %1 当前不在任何房间内").arg(userName));
+            LOG_WARNING(QString("   └─ ❌ 拒绝: 玩家 %1 当前不在任何房间内，无法执行 %2").arg(userName, trimmedCommand));
         }
         return;
     }
@@ -1386,7 +1401,7 @@ void BotManager::onBotRoomPingsUpdated(Bot *bot, const QMap<quint8, quint32> &pi
 
 void BotManager::onBotReadyStateChanged(Bot *bot, const QVariantMap &readyData)
 {
-    if (!bot || !m_netManager) return;
+    if (!bot || !bot->client || !m_netManager) return;
 
     LOG_INFO(QString("📡 [状态广播序列] 开始处理数据同步 (双索引模式)..."));
     LOG_INFO(QString("   ├─ 🏠 房间名称: %1").arg(bot->gameInfo.gameName));

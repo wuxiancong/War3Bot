@@ -3697,6 +3697,28 @@ quint8 Client::findFreePid() const
     return 0;
 }
 
+quint8 Client::getPidByUserName(const QString &userName) const
+{
+    for (auto it = m_players.constBegin(); it != m_players.constEnd(); ++it) {
+        if (it.value().name.compare(userName, Qt::CaseInsensitive) == 0) {
+            return it.key();
+        }
+    }
+    return 0;
+}
+
+int Client::getSlotIndexByPid(quint8 pid) const
+{
+    if (pid == 0) return -1;
+
+    for (int i = 0; i < m_slots.size(); ++i) {
+        if (m_slots[i].pid == pid) {
+            return i;
+        }
+    }
+    return -1;
+}
+
 QString Client::getSlotInfoString() const
 {
     // 格式化为 (占用/总数)

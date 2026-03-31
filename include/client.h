@@ -420,10 +420,10 @@ public:
     void setNetManager(NetManager* netManager) { m_netManager = netManager; }
 
     // --- 战网交互 ---
-    void createAccount();                               // 注册账号
-    void enterChat();                                   // 进入聊天
-    void queryChannelList();                            // 请求频道列表
-    void joinChannel(const QString &channelName);       // 加入频道
+    void createAccount();                                   // 注册账号
+    void enterChat();                                       // 进入聊天
+    void queryChannelList();                                // 请求频道列表
+    void joinChannel(const QString &channelName);           // 加入频道
 
     // --- 游戏主机管理 ---
     bool isHostJoined();
@@ -439,23 +439,23 @@ public:
     void createGame(const QString &gameName, const QString &password,
                     ProviderVersion providerVersion, ComboGameType comboGameType,
                     SubGameType subGameType, LadderType ladderType,CommandSource commandSource);
-    void cancelGame();                                  // 取消/解散游戏
+    void cancelGame();                                      // 取消/解散游戏
     void abortGame();
     void startGame();
-    void stopAdv();                                     // 停止广播
+    void stopAdv();                                         // 停止广播
 
     // --- 工具函数 ---
-    void sendPingLoop();                                // 定时发送Ping
-    void updateCountdowns();                            // 未准备倒计时
-    void syncPingsToLauncher();                         // 报告玩家Ping
-    void checkPlayerTimeout();                          // 检查玩家超时
-    QString getPrimaryIPv4();                           // 获取本机IPv4
-    bool bindToRandomPort();                            // 绑定随机UDP端口
-    quint16 getListenPort()const;                       // 获取监听端口
-    quint32 getMapCRC() const;                          // 获取地图CRC
-    bool isBlackListedPort(quint16 port);               // 检查端口黑名单
-    QString getBnetPacketName(BNETPacketID id);         // 获取对应的包名
-    QString getCodecNameByLanguage(const QString &lang);// 获取对应的编码
+    void sendPingLoop();                                    // 定时发送Ping
+    void updateCountdowns();                                // 未准备倒计时
+    void syncPingsToLauncher();                             // 报告玩家Ping
+    void checkPlayerTimeout();                              // 检查玩家超时
+    QString getPrimaryIPv4();                               // 获取本机IPv4
+    bool bindToRandomPort();                                // 绑定随机UDP端口
+    quint16 getListenPort()const;                           // 获取监听端口
+    quint32 getMapCRC() const;                              // 获取地图CRC
+    bool isBlackListedPort(quint16 port);                   // 检查端口黑名单
+    QString getBnetPacketName(BNETPacketID id);             // 获取对应的包名
+    QString getCodecNameByLanguage(const QString &lang);    // 获取对应的编码
     void dumpPacket(const QByteArray &bytes);
     void writeIpToStreamWithLog(QDataStream &out, const QHostAddress &ip);
     void setBotDisplayName(const QString &name) { m_botDisplayName = name; }
@@ -469,9 +469,11 @@ public:
 
     // --- 槽位信息辅助 ---
     quint8 findFreePid() const;
-    quint8 getTotalSlots() const;                       // 获取总槽位数
-    quint8 getOccupiedSlots() const;                    // 获取已占用槽位数 (包括Bot/Host)
-    QString getSlotInfoString() const;                  // 返回 "(1/10)" 格式字符串
+    quint8 getTotalSlots() const;                           // 获取总槽位数
+    quint8 getOccupiedSlots() const;                        // 获取已占用槽位数 (包括Bot/Host)
+    QString getSlotInfoString() const;                      // 返回 "(1/10)" 格式字符串
+    int getSlotIndexByPid(quint8 pid) const;
+    quint8 getPidByUserName(const QString &userName) const;
 
     // --- 设置机器人标志 ---
     void setBotFlag(bool isBot) { m_isBot = isBot; }
@@ -500,10 +502,10 @@ private slots:
     void onDisconnected();
     void onTcpReadyRead();
     void onUdpReadyRead();
-    void onNewConnection();                             // 新玩家连接TCP Server
-    void onPlayerReadyRead();                           // 玩家数据可读
+    void onNewConnection();                                 // 新玩家连接TCP Server
+    void onPlayerReadyRead();                               // 玩家数据可读
     void onStartLagFinished();
-    void onPlayerDisconnected();                        // 玩家断开连接
+    void onPlayerDisconnected();                            // 玩家断开连接
 
 private:
     // --- 成员变量 ---
