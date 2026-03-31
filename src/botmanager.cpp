@@ -723,7 +723,6 @@ bool BotManager::checkCooldown(const QString &clientId, const QString &command, 
         cooldownRules.insert("/join", 500);
         cooldownRules.insert("/unhost", 1000);
         cooldownRules.insert("/swap", 500);
-        cooldownRules.insert("/swapself", 500);
     }
     const qint64 DEFAULT_COOLDOWN = 1000;
 
