@@ -488,8 +488,8 @@ signals:
     void hostJoinedGame(const QString &username);
     void gameCreateFail(GameCreationStatus status);
     void gameCreateSuccess(CommandSource commandSource);
+    void readyStateChanged(const QVariantMap &readyData);
     void roomPingsUpdated(const QMap<quint8, quint32> &pings);
-    void readyStateChanged(const QMap<quint8, QVariantMap> &readyData);
     void requestCreateGame(const QString &username, const QString &gameName, CommandSource commandSource);
 
 private slots:

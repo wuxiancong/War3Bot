@@ -4013,20 +4013,32 @@ void Client::updateCountdowns()
 
 void Client::syncReadyStates()
 {
-    QMap<quint8, QVariantMap> readyData;
+    QVariantMap syncMap;
 
     for (auto it = m_players.constBegin(); it != m_players.constEnd(); ++it) {
         if (it.key() == m_botPid) continue;
 
+        const PlayerData &p = it.value();
+
         QVariantMap pInfo;
-        pInfo["r"] = it.value().isReady;
-        pInfo["c"] = it.value().readyCountdown;
-        readyData.insert(it.key(), pInfo);
+        pInfo["r"] = p.isReady;
+        pInfo["c"] = p.readyCountdown;
+        pInfo["pid"] = p.pid;
+        pInfo["name"] = p.name;
+
+        // 1. 添加 PID 为键
+        syncMap.insert(QString::number(p.pid), pInfo);
+
+        // 2. 添加 玩家名 为键
+        if (!p.name.isEmpty()) {
+            syncMap.insert(p.name, pInfo);
+        }
     }
 
-    emit readyStateChanged(readyData);
+    emit readyStateChanged(syncMap);
 
-    LOG_INFO(QString("   └─ 📡 状态同步: 已下发最新准备列表 (在线人数: %1)").arg(readyData.size()));
+    LOG_INFO(QString("   └─ 📡 状态同步: 已构建双索引准备列表 (玩家数: %1)")
+                 .arg(syncMap.size() / 2));
 }
 
 void Client::setPlayerReadyByUuid(const QString &uuid, bool ready)

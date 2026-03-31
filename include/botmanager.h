@@ -131,8 +131,8 @@ public slots:
 
 private slots:
     void onBotRoomPingReceived(const QHostAddress &addr, quint16 port, const QString &identifier, quint64 clientTime, PingSearchMode mode = ByHostName);
-    void onBotReadyStateChanged(Bot *bot, const QMap<quint8, QVariantMap> &readyData);
     void onBotRoomPingsUpdated(Bot *bot, const QMap<quint8, quint32> &pings);
+    void onBotReadyStateChanged(Bot *bot, const QVariantMap &readyData);
     void onBotGameCreateFail(Bot *bot, GameCreationStatus status);
     void onBotHostJoinedGame(Bot *bot, const QString &hostName);
     void onBotPlayerCountChanged(Bot *bot, int count);
