@@ -893,7 +893,6 @@ void BotManager::onBotClientExpired(const QString &clientId)
     if (bot) {
         LOG_INFO(QString("🧹 [系统自动回收] 检测到 UUID %1 会话已过期，正在强制解散房间").arg(clientId));
         removeGame(bot, true);
-        removeClientMapping(clientId);
     }
 }
 
