@@ -913,12 +913,12 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         quint16 hostPort = m_udpSocket->localPort();
 
         finalPacket.append(createW3GSSlotInfoJoinPacket(newPid, hostIp, hostPort)); // 0x04
-        finalPacket.append(createPlayerInfoPacket(m_botPid, m_botDisplayName, QHostAddress("0.0.0.0"), 0, QHostAddress("0.0.0.0"), 0, true, true)); // 0x06 (Bot)
+        finalPacket.append(createPlayerInfoPacket(m_botPid, m_botDisplayName, QHostAddress("0.0.0.0"), 0, QHostAddress("0.0.0.0"), 0)); // 0x06 (Bot)
 
         for (auto it = m_players.begin(); it != m_players.end(); ++it) {
             const PlayerData &p = it.value();
             if (p.pid == newPid || p.pid == m_botPid) continue;
-            finalPacket.append(createPlayerInfoPacket(p.pid, p.name, p.extIp, p.extPort, p.intIp, p.intPort, p.isVisualHost, p.isReady));
+            finalPacket.append(createPlayerInfoPacket(p.pid, p.name, p.extIp, p.extPort, p.intIp, p.intPort));
         }
 
         finalPacket.append(createW3GSMapCheckPacket()); // 0x3D
@@ -931,7 +931,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
         // 4. 广播
         QByteArray newPlayerInfoPacket = createPlayerInfoPacket(
-            playerData.pid, playerData.name, playerData.extIp, playerData.extPort, playerData.intIp, playerData.intPort, playerData.isVisualHost, playerData.isReady);
+            playerData.pid, playerData.name, playerData.extIp, playerData.extPort, playerData.intIp, playerData.intPort);
         broadcastPacket(newPlayerInfoPacket, newPid);
         broadcastSlotInfo();
         syncReadyStates();
@@ -2999,36 +2999,21 @@ QByteArray Client::createW3GSRejectJoinPacket(RejectReason reason)
 
 QByteArray Client::createPlayerInfoPacket(quint8 pid, const QString& name,
                                           const QHostAddress& externalIp, quint16 externalPort,
-                                          const QHostAddress& internalIp, quint16 internalPort,
-                                          bool isHost, bool isReady)
+                                          const QHostAddress& internalIp, quint16 internalPort)
 {
     QByteArray packet;
     QDataStream out(&packet, QIODevice::WriteOnly);
     out.setByteOrder(QDataStream::LittleEndian);
 
-    QString finalName = name;
-
-    // 检查玩家ID长度是否达到15
-    if (name.length() >= 15) {
-        // 超过限制，不加颜色并记录日志
-        LOG_WARNING(QString("⚠️ [Colorizer] 玩家名 '%1' 长度(%2) >= 15，跳过着色处理")
-                        .arg(name).arg(name.length()));
-    } else {
-        // 房主默认为绿色，已准备为绿色，未准备为红色
-        // 颜色代码: |cff00ff00 (绿), |cffff0000 (红)
-        QString colorCode = (isHost || isReady) ? "|cff00ff00" : "|cffff0000";
-        finalName = QString("%1%2|r").arg(colorCode, name);
-    }
-
     // 1. 写入 Header (长度稍后回填)
     out << (quint8)0xF7 << (quint8)0x06 << (quint16)0;
 
     // 2. 写入 Id
-    out << (quint32)2;
+    out << (quint32)2;  // Internal ID / P2P Key
     out << (quint8)pid;
 
-    // 3. 写入玩家名字 (使用处理后的 finalName)
-    QByteArray nameBytes = finalName.toUtf8();
+    // 3. 写入玩家名字
+    QByteArray nameBytes = name.toUtf8();
     out.writeRawData(nameBytes.data(), nameBytes.length());
     out << (quint8)0;   // Null terminator
 
