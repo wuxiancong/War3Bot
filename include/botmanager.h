@@ -107,9 +107,10 @@ public:
     void startAll();
     void cleanup();
     int loadMoreBots(int count);
-    void removeGame(Bot *bot, bool disconnectFlag = false);
     Bot *findBotByHostName(const QString &hostName);
     Bot *findBotByClientId(const QString &clientId);
+    void removeGame(Bot *bot, bool disconnectFlag = false);
+    void removeBotMappings(const QString &clientId, const QString &hostName);
 
     // --- 游戏创建与指令 ---
     bool checkCooldown(const QString &clientId, const QString &command, qint64 now);

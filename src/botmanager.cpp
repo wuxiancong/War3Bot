@@ -583,6 +583,30 @@ void BotManager::cleanup()
     }
 }
 
+void BotManager::removeBotMappings(const QString &clientId, const QString &hostName)
+{
+    // 🚀 1. 清理 ClientId 映射 (m_clientIdToBotMap)
+    if (!clientId.isEmpty()) {
+        bool removedCid = m_clientIdToBotMap.remove(clientId) > 0;
+        if (removedCid) {
+            LOG_INFO(QString("   ├── 🆔 移除 UUID 映射: %1 -> ✅ 成功").arg(clientId));
+        } else {
+            LOG_INFO(QString("   ├── 🆔 移除 UUID 映射: %1 -> ⚠️ 未在表中").arg(clientId));
+        }
+    }
+
+    // 🚀 2. 清理 房主名称 映射 (m_hostNameToBotMap)
+    if (!hostName.isEmpty()) {
+        QString lowerHostName = hostName.toLower();
+        bool removedHost = m_hostNameToBotMap.remove(lowerHostName) > 0;
+        if (removedHost) {
+            LOG_INFO(QString("   ├── 👤 移除 房主 映射: %1 -> ✅ 成功").arg(lowerHostName));
+        } else {
+            LOG_INFO(QString("   ├── 👤 移除 房主 映射: %1 -> ⚠️ 未在表中").arg(lowerHostName));
+        }
+    }
+}
+
 void BotManager::removeGame(Bot *bot, bool disconnectFlag)
 {
     if (!bot) return;
@@ -590,20 +614,17 @@ void BotManager::removeGame(Bot *bot, bool disconnectFlag)
     LOG_INFO(QString("🧹 [清理任务] 准备回收机器人资源: Bot-%1").arg(bot->id));
 
     // 🚀 步骤 1：获取当前的 Key 并删除
-    QString cid = bot->gameInfo.clientId;
-    if (!cid.isEmpty()) {
-        // 在重置数据之前执行删除！
-        bool removed = m_clientIdToBotMap.remove(cid) > 0;
-        LOG_INFO(QString("   ├── 🆔 尝试移除 UUID 映射: %1 -> %2")
-                     .arg(cid.left(8), removed ? "✅ 成功" : "⚠️ 未在表中 (可能已清理)"));
-    }
+    QString currentClientId = bot->gameInfo.clientId;
+    QString currentHostName = bot->hostname;
+
+    removeBotMappings(currentClientId, currentHostName);
 
     // 🚀 步骤 2：防范性全局扫描
     QMutableHashIterator<QString, Bot*> it(m_clientIdToBotMap);
     while (it.hasNext()) {
         it.next();
         if (it.value() == bot) {
-            LOG_WARNING(QString("   ├── 🛡️ [补丁] 发现残留映射: Key[%1] -> 已强制抹除").arg(it.key().left(8)));
+            LOG_WARNING(QString("   ├── 🛡️ [补丁] 发现残留映射: Key[%1] -> 已强制抹除").arg(it.key()));
             it.remove();
         }
     }
@@ -632,9 +653,14 @@ void BotManager::removeGame(Bot *bot, bool disconnectFlag)
 
     if (disconnectFlag) {
         bot->state = BotState::Disconnected;
+        LOG_INFO("   └─ ✅ Bot 状态已更新为 Disconnected");
+    } else {
+        bot->state = BotState::Idle;
+        LOG_INFO("   └─ ✅ Bot 状态已更新为 Idle");
     }
 
-    LOG_INFO("   └── ✨ 机器人状态已归位 (Idle)");
+    // 🚀 步骤 7. 通知上层应用
+    emit botStateChanged(bot->id, bot->username, bot->state);
 }
 
 const QVector<Bot*>& BotManager::getAllBots() const
@@ -728,8 +754,15 @@ void BotManager::handleHostCommand(const QString &userName, const QString &clien
     LOG_INFO("🎮 [创建房间流程]");
 
     // 1. 重复开房检查
-    if (findBotByClientId(clientId) != nullptr) {
-        LOG_WARNING(QString("   └─ ⚠️ 拦截: 用户 %1 已拥有活跃房间").arg(userName));
+    Bot *existingBotByCid = findBotByClientId(clientId);
+    Bot *existingBotByName = findBotByHostName(userName);
+
+    if (existingBotByCid != nullptr || existingBotByName != nullptr) {
+        QString interceptReason = (existingBotByName != nullptr) ? "该游戏名/账号" : "当前客户端/设备";
+
+        LOG_WARNING(QString("   └─ ⚠️ 拦截: %1 已拥有活跃房间 (拦截目标: %2)")
+                        .arg(interceptReason)
+                        .arg(userName));
         m_netManager->sendMessageToClient(clientId, S_C_ERROR, ERR_ALREADY_IN_GAME);
         return;
     }
@@ -860,6 +893,7 @@ void BotManager::onBotClientExpired(const QString &clientId)
     if (bot) {
         LOG_INFO(QString("🧹 [系统自动回收] 检测到 UUID %1 会话已过期，正在强制解散房间").arg(clientId));
         removeGame(bot, true);
+        removeClientMapping(clientId);
     }
 }
 
@@ -1430,12 +1464,12 @@ void BotManager::onBotError(Bot *bot, QString error)
     if (!ownerId.isEmpty()) {
         // 场景 A: 正在向魔兽引擎申请房间 (Creating) 或 已申请成功正等待房主 (Reserved)
         if (bot->state == BotState::Creating || bot->state == BotState::Reserved) {
-            LOG_INFO(QString("├── 通知: 用户 %1 (Code: ERR_CREATE_INTERRUPTED)").arg(ownerId.left(8)));
+            LOG_INFO(QString("├── 通知: 用户 %1 (Code: ERR_CREATE_INTERRUPTED)").arg(ownerId));
             m_netManager->sendMessageToClient(ownerId, S_C_ERROR, ERR_CREATE_INTERRUPTED);
         }
         // 场景 B: 房主已在大厅 (Waiting)
         else if (bot->state == BotState::Waiting) {
-            LOG_INFO(QString("├── 通知: 用户 %1 (Code: MSG_HOST_UNHOST_GAME)").arg(ownerId.left(8)));
+            LOG_INFO(QString("├── 通知: 用户 %1 (Code: MSG_HOST_UNHOST_GAME)").arg(ownerId));
             m_netManager->sendMessageToClient(ownerId, S_C_MESSAGE, MSG_HOST_UNHOST_GAME);
         }
         // 场景 C: 游戏内 (InGame)
@@ -1449,7 +1483,7 @@ void BotManager::onBotError(Bot *bot, QString error)
         QString taskOwner = bot->pendingTask.clientId;
         bot->pendingTask.hasTask = false;
         m_netManager->sendMessageToClient(taskOwner, S_C_ERROR, ERR_TASK_INTERRUPTED);
-        LOG_INFO(QString("├── 清理: 已取消用户 %1 的挂起任务: %2").arg(taskOwner.left(8), bot->pendingTask.gameName));
+        LOG_INFO(QString("├── 清理: 已取消用户 %1 的挂起任务: %2").arg(taskOwner, bot->pendingTask.gameName));
     }
 
     // 4. 执行资源回收与状态重置
@@ -1474,46 +1508,19 @@ void BotManager::onBotDisconnected(Bot *bot)
 {
     if (!bot) return;
 
-    // 1. 打印根节点
     LOG_INFO(QString("🔌 [断开连接] Bot-%1 (%2)").arg(bot->id).arg(bot->username));
 
-    // 2. 资源清理
     removeGame(bot, true);
 
-    // 3. 状态变更
-    emit botStateChanged(bot->id, bot->username, bot->state);
-
-    // 4. 闭环
-    LOG_INFO("   └─ 🧹 [清理完成] 状态已更新为 Disconnected");
 }
 
 void BotManager::onBotGameCanceled(Bot *bot)
 {
     if (!bot) return;
 
-    // 1. 防止重复处理
-    if (bot->state == BotState::Idle && bot->gameInfo.gameName.isEmpty()) {
-        return;
-    }
-
     LOG_INFO(QString("🔄 [状态同步] 收到 Client 取消信号: Bot-%1").arg(bot->id));
 
-    // 2. 从全局活跃游戏列表 (m_activeGames) 中移除
-    QString lowerName = bot->gameInfo.gameName.toLower();
-    if (!lowerName.isEmpty()) {
-        if (m_activeGames.value(lowerName) == bot) {
-            m_activeGames.remove(lowerName);
-            LOG_INFO(QString("   ├─ 🔓 释放房间名锁定: %1").arg(lowerName));
-        }
-    }
-
-    // 3. 重置 Bot
-    bot->resetGameState();
-
-    // 4. 通知上层应用
-    emit botStateChanged(bot->id, bot->username, bot->state);
-
-    LOG_INFO("   └─ ✅ Bot 状态已更新为 Idle");
+    removeGame(bot);
 }
 
 void BotManager::onBotGameStarted(Bot *bot)

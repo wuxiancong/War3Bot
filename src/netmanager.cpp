@@ -718,8 +718,8 @@ void NetManager::handleIncomingDatagram(const QNetworkDatagram &datagram)
     QByteArray expectedHash = hasher.result();
 
     if (memcmp(receivedSignature, expectedHash.constData(), 16) != 0) {
-        qDebug() << "│   │   ├── 收到签名:" << QByteArray(receivedSignature, 16).toHex().left(16).toUpper() << "...";
-        qDebug() << "│   │   ├── 期望签名:" << expectedHash.toHex().left(16).toUpper() << "...";
+        qDebug() << "│   │   ├── 收到签名:" << QByteArray(receivedSignature, 16).toHex().toUpper();
+        qDebug() << "│   │   ├── 期望签名:" << expectedHash.toHex().toUpper();
         qDebug() << "│   │   └── ❌ 结果: 签名验证失败 (密钥可能不一致)";
         return;
     }
