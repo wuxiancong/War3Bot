@@ -2534,7 +2534,10 @@ void Client::stopAdv() {
     sendPacket(SID_STOPADV, QByteArray());
 }
 
-void Client::cancelGame() {
+void Client::cancelGame()
+{
+    if (m_isCanceling) return;
+    m_isCanceling = true;
     // 1. 打印根节点
     LOG_INFO("🔄 [重置游戏] 开始执行资源清理流程...");
 
@@ -2608,6 +2611,7 @@ void Client::cancelGame() {
         LOG_INFO("   └─ ✅ [状态] 机器人已就绪 (Ping 循环未运行)");
     }
 
+    m_isCanceling = false;
     emit gameCanceled();
 }
 

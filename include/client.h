@@ -578,6 +578,7 @@ private:
 
     // 设置标志
     bool                            m_isBot                 = false;
+    bool                            m_isCanceling           = false;
     bool                            m_gameStarted           = false;
 
     // 登录选项

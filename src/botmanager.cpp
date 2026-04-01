@@ -667,7 +667,19 @@ void BotManager::removeGame(Bot *bot, bool disconnectFlag)
 {
     if (!isBotValid(bot, "RemoveGame")) return;
 
+    if (bot->state == BotState::Idle || bot->state == BotState::Disconnected) {
+        return;
+    }
+
     LOG_INFO(QString("🧹 [清理任务] 准备回收机器人资源: Bot-%1").arg(bot->id));
+
+    if (disconnectFlag) {
+        bot->state = BotState::Disconnected;
+        LOG_INFO("   └─ ✅ Bot 状态已更新为 Disconnected");
+    } else {
+        bot->state = BotState::Idle;
+        LOG_INFO("   └─ ✅ Bot 状态已更新为 Idle");
+    }
 
     // 🚀 步骤 1：获取当前的 Key 并删除
     QString currentClientId = bot->gameInfo.clientId;
@@ -701,19 +713,12 @@ void BotManager::removeGame(Bot *bot, bool disconnectFlag)
 
     // 🚀 步骤 5：执行底层清理
     if (bot->client) {
+        bot->client->disconnect(this);
         bot->client->cancelGame();
     }
 
     // 🚀 步骤 6：重置所有变量
     bot->resetGameState();
-
-    if (disconnectFlag) {
-        bot->state = BotState::Disconnected;
-        LOG_INFO("   └─ ✅ Bot 状态已更新为 Disconnected");
-    } else {
-        bot->state = BotState::Idle;
-        LOG_INFO("   └─ ✅ Bot 状态已更新为 Idle");
-    }
 
     // 🚀 步骤 7. 通知上层应用
     emit botStateChanged(bot->id, bot->username, bot->state);
