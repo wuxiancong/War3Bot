@@ -2611,8 +2611,8 @@ void Client::cancelGame()
         LOG_INFO("   └─ ✅ [状态] 机器人已就绪 (Ping 循环未运行)");
     }
 
-    m_isCanceling = false;
     emit gameCanceled();
+    m_isCanceling = false;
 }
 
 void Client::createGame(const QString &gameName, const QString &password, ProviderVersion providerVersion, ComboGameType comboGameType, SubGameType subGameType, LadderType ladderType, CommandSource commandSource)
