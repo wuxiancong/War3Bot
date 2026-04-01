@@ -779,18 +779,35 @@ void NetManager::handleIncomingDatagram(const QNetworkDatagram &datagram)
     case PacketType::C_S_PREJOINROOM:
         if (header->payloadLen >= sizeof(CSPreJoinRoomPacket)) {
             const CSPreJoinRoomPacket *info = reinterpret_cast<const CSPreJoinRoomPacket*>(payload);
+
             QString userName = QString::fromUtf8(info->userName).trimmed();
             QString clientId = QString::fromUtf8(info->clientId).trimmed();
 
             LOG_INFO("📥 [UDP 接收] C_S_PREJOINROOM (加入意向申报)");
-            if (!userName.isEmpty() && !clientId.isEmpty()) {
+
+            bool isUserEmpty = userName.isEmpty();
+            bool isClientEmpty = clientId.isEmpty();
+
+            if (isUserEmpty || isClientEmpty) {
+                if (isUserEmpty && isClientEmpty) {
+                    LOG_ERROR("   └── ❌ 错误: userName 和 clientId 同时为空，包数据可能异常");
+                } else if (isUserEmpty) {
+                    LOG_ERROR(QString("   └── ❌ 错误: userName 为空 (此时 clientId 为: %1)").arg(clientId));
+                } else {
+                    LOG_ERROR(QString("   └── ❌ 错误: clientId 为空 (此时 userName 为: %1)").arg(userName));
+                }
+            } else {
                 QWriteLocker locker(&m_preJoinLock);
                 m_preJoins.insert(userName.toLower(), clientId);
-                LOG_INFO(QString("   ├── 👤 玩家: %1").arg(userName));
-                LOG_INFO(QString("   └── ✅ 状态: 映射记录成功"));
-            } else {
-                LOG_ERROR("   └── ❌ 状态: 字段解析为空");
+
+                LOG_INFO(QString("   ├── 👤 玩家名称: %1").arg(userName));
+                LOG_INFO(QString("   ├── 🆔 客户端ID: %1").arg(clientId));
+                LOG_INFO(QString("   └── ✅ 状态: 预备加入映射记录成功"));
             }
+        } else {
+            LOG_ERROR(QString("   └── ❌ 错误: 包长度不足 (预期 %1, 实际 %2)")
+                          .arg(sizeof(CSPreJoinRoomPacket))
+                          .arg(header->payloadLen));
         }
         break;
 

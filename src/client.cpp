@@ -3689,6 +3689,12 @@ QTextCodec* Client::getCodecByPid(quint8 pid) const
     return defaultCodec;
 }
 
+bool Client::isSlotOccupied(int slotIndex) const {
+    int idx = slotIndex - 1;
+    if (idx < 0 || idx >= m_slots.size()) return false;
+    return m_slots[idx].slotStatus == Occupied;
+}
+
 QString Client::getSlotInfoString() const
 {
     // 格式化为 (占用/总数)

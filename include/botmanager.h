@@ -124,9 +124,11 @@ public:
 
 signals:
     void botStateChanged(int botId, QString username, BotState newState);
-
+    
 public slots:
-    void onBotCommandReceived(const QString &userName, const QString &clientUuid, const QString &command, const QString &text);
+    void extracted(int &s1, int &s2, bool &s1Occupied, bool &s2Occupied);
+    void onBotCommandReceived(const QString &userName, const QString &clientUuid,
+                              const QString &command, const QString &text);
     void onBotClientExpired(const QString &clientId);
 
 private slots:

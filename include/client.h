@@ -472,6 +472,7 @@ public:
     quint8 getTotalSlots() const;                           // 获取总槽位数
     quint8 getOccupiedSlots() const;                        // 获取已占用槽位数 (包括Bot/Host)
     QString getSlotInfoString() const;                      // 返回 "(1/10)" 格式字符串
+    bool isSlotOccupied(int slotIndex) const;
     int getSlotIndexByPid(quint8 pid) const;
     QString getPlayerNameByPid(quint8 pid) const;
     quint8 getPidBySocket(QTcpSocket *socket) const;
@@ -512,6 +513,9 @@ private slots:
     void onStartLagFinished();
     void onPlayerDisconnected();                            // 玩家断开连接
 
+public:
+    QString m_botDisplayName        = "CC.Dota.XXX";
+
 private:
     // --- 成员变量 ---
 
@@ -519,7 +523,6 @@ private:
     Command                         *m_command;
 
     // 玩家管理
-    QString                         m_botDisplayName        = "CC.Dota.XXX";
     QList<QTcpSocket*>              m_playerSockets;
     QMap<QTcpSocket*, QByteArray>   m_playerBuffers;
     QMap<quint8, PlayerData>        m_players;
