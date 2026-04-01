@@ -723,6 +723,9 @@ bool BotManager::checkCooldown(const QString &clientId, const QString &command, 
         cooldownRules.insert("/join", 500);
         cooldownRules.insert("/unhost", 1000);
         cooldownRules.insert("/swap", 500);
+        cooldownRules.insert("/ready", 1000);
+        cooldownRules.insert("/unready", 1000);
+        cooldownRules.insert("/swapself", 0);
     }
     const qint64 DEFAULT_COOLDOWN = 1000;
 
@@ -945,9 +948,10 @@ void BotManager::onBotCommandReceived(const QString &userName, const QString &cl
                 quint8 myPid = targetBot->client->getPidByUserName(userName);
                 int mySlotIndex = targetBot->client->getSlotIndexByPid(myPid);
                 if (myPid != 0 && mySlotIndex != -1) {
+                    int userFriendlyIndex = mySlotIndex + 1;
+                    targetBot->client->swapSlots(userFriendlyIndex, userFriendlyIndex);
                     LOG_INFO(QString("   └─ 🚀 执行动作: 玩家 %1 请求原位状态刷新 (槽位 %2 <-> %2)")
-                                 .arg(userName).arg(mySlotIndex));
-                    targetBot->client->swapSlots(mySlotIndex, mySlotIndex);
+                                 .arg(userName).arg(userFriendlyIndex));
                 } else {
                     LOG_WARNING(QString("   └─ ❌ 错误: 无法在房间内获取玩家 %1 的槽位信息").arg(userName));
                 }
