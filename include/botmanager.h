@@ -71,7 +71,7 @@ struct Bot {
     ~Bot() { if (client) client->deleteLater(); }
 
     bool isOwner(const QString &senderClientId) const {
-        return !gameInfo.clientId.isEmpty() & &gameInfo.clientId == senderClientId;
+        return !gameInfo.clientId.isEmpty() && (gameInfo.clientId == senderClientId);
     }
 
     void resetGameState() {
