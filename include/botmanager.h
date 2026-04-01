@@ -71,7 +71,7 @@ struct Bot {
     ~Bot() { if (client) client->deleteLater(); }
 
     bool isOwner(const QString &senderClientId) const {
-        return !gameInfo.clientId.isEmpty() && gameInfo.clientId == senderClientId;
+        return !gameInfo.clientId.isEmpty() & &gameInfo.clientId == senderClientId;
     }
 
     void resetGameState() {
@@ -115,10 +115,10 @@ public:
     // --- 游戏创建与指令 ---
     bool checkCooldown(const QString &clientId, const QString &command, qint64 now);
     void handleHostCommand(const QString &userName, const QString &clientId, const QString &text);
-    bool createGame(const QString& hostName, const QString &gameName, const QString &gameMode, CommandSource commandSource, const QString &clientUuid);
+    bool createGame(const QString &hostName, const QString &gameName, const QString &gameMode, CommandSource commandSource, const QString &clientUuid);
 
     // --- Getters / Setters ---
-    const QVector<Bot*>& getAllBots() const;
+    const QVector<Bot*> &getAllBots() const;
     void setServerPort(quint16 port);
     void setNetManager(NetManager *netManager);
 
@@ -151,7 +151,9 @@ private slots:
 
 private:
     // 内部辅助函数
-    void addBotInstance(const QString& username, const QString& password);
+    void addBotInstance(const QString &username, const QString &password);
+    bool isBotActive(Bot *bot, const char *context = nullptr);
+    bool isBotValid(Bot *bot, const char *context = nullptr);
     QChar randomCase(QChar c);
     QString generateUniqueUsername();
     QString toLeetSpeak(const QString &input);

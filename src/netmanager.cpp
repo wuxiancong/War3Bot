@@ -1648,6 +1648,14 @@ void NetManager::onNewTcpConnection()
 void NetManager::onTcpDisconnected() {
     QTcpSocket *socket = qobject_cast<QTcpSocket*>(sender());
     if (socket) {
+        QVariant fileVar = socket->property("FilePtr");
+        if (fileVar.isValid()) {
+            QFile *file = static_cast<QFile*>(fileVar.value<void*>());
+            if (file) {
+                if (file->isOpen()) file->close();
+                delete file;
+            }
+        }
         QString clientId = socket->property("clientId").toString();
         if (!clientId.isEmpty()) {
             m_tcpClients.remove(clientId);
@@ -2038,6 +2046,8 @@ void NetManager::cleanupResources()
 {
     if (m_cleanupTimer) m_cleanupTimer->deleteLater();
     if (m_broadcastTimer) m_broadcastTimer->deleteLater();
+    if (m_udpSocket) m_udpSocket->disconnect(this);
+    if (m_tcpServer) m_tcpServer->disconnect(this);
     if (m_udpSocket) m_udpSocket->deleteLater();
     if (m_tcpServer) m_tcpServer->deleteLater();
     if (m_settings) m_settings->deleteLater();

@@ -473,7 +473,12 @@ public:
     quint8 getOccupiedSlots() const;                        // 获取已占用槽位数 (包括Bot/Host)
     QString getSlotInfoString() const;                      // 返回 "(1/10)" 格式字符串
     int getSlotIndexByPid(quint8 pid) const;
-    quint8 getPidByUserName(const QString &userName) const;
+    QString getPlayerNameByPid(quint8 pid) const;
+    quint8 getPidBySocket(QTcpSocket *socket) const;
+    quint8 getPidByPlayerName(const QString &PlayerName) const;
+    QString getPlayerNameBySocket(QTcpSocket *socket) const;
+    QTextCodec *getCodecBySocket(QTcpSocket *socket) const;
+    QTextCodec *getCodecByPid(quint8 pid) const;
 
     // --- 设置机器人标志 ---
     void setBotFlag(bool isBot) { m_isBot = isBot; }

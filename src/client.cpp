@@ -220,25 +220,28 @@ void Client::onNewConnection()
 {
     while (m_tcpServer->hasPendingConnections()) {
         QTcpSocket *socket = m_tcpServer->nextPendingConnection();
+        if (!socket) continue;
 
-        // 树状日志
-        LOG_INFO("🎮 [玩家连接] 检测到新 TCP 请求");
-        LOG_INFO(QString("   └─ 🌍 来源: %1:%2")
-                     .arg(socket->peerAddress().toString())
-                     .arg(socket->peerPort()));
+        if (m_gameStarted || m_playerSockets.size() >= 15) {
+            socket->disconnectFromHost();
+            socket->deleteLater();
+            continue;
+        }
+
+        socket->setParent(this);
+
+        QString peerAddr = socket->peerAddress().toString();
+        quint16 peerPort = socket->peerPort();
+
+        LOG_INFO(QString("🎮 [玩家连接] 来源: %1:%2").arg(peerAddr).arg(peerPort));
 
         m_playerSockets.append(socket);
-        m_playerBuffers.insert(socket, QByteArray()); // 初始化缓冲区
+        m_playerBuffers.insert(socket, QByteArray());
 
-        // 使用成员函数而非 Lambda
         connect(socket, &QTcpSocket::readyRead, this, &Client::onPlayerReadyRead);
         connect(socket, &QTcpSocket::disconnected, this, &Client::onPlayerDisconnected);
-        connect(socket, &QAbstractSocket::errorOccurred, this, [socket](QAbstractSocket::SocketError socketError){
-            LOG_ERROR(QString("❗ [Socket 实时错误] 来自 %1:%2 | 错误码: %3 | 信息: %4")
-                          .arg(socket->peerAddress().toString())
-                          .arg(socket->peerPort())
-                          .arg(socketError)
-                          .arg(socket->errorString()));
+        connect(socket, &QAbstractSocket::errorOccurred, this, [peerAddr, peerPort](QAbstractSocket::SocketError err){
+            LOG_ERROR(QString("❗ [Socket错误] %1:%2 | 错误码: %3").arg(peerAddr).arg(peerPort).arg(err));
         });
     }
 }
@@ -669,59 +672,58 @@ void Client::handleBNETTcpPacket(BNETPacketID id, const QByteArray &data)
 
 void Client::onPlayerReadyRead()
 {
-    QTcpSocket* socket = qobject_cast<QTcpSocket*>(sender());
+    QTcpSocket *socket = qobject_cast<QTcpSocket*>(sender());
     if (!socket) return;
 
-    // 1. 确保缓冲区存在
     if (!m_playerBuffers.contains(socket)) {
         m_playerBuffers.insert(socket, QByteArray());
     }
 
-    // 2. 追加新数据
-    m_playerBuffers[socket].append(socket->readAll());
+    QByteArray &buffer = m_playerBuffers[socket];
+    buffer.append(socket->readAll());
 
-    // 3. 循环处理包
+    // --- 缓冲区大小限制，防止内存攻击 ---
+    if (buffer.size() > 1024 * 1024) {
+        LOG_ERROR("❌ 缓冲区溢出，强制断开");
+        socket->disconnectFromHost();
+        return;
+    }
+
     while (true) {
-        // 每次循环开始前，确认该 socket 的缓冲区还存在
-        if (!m_playerBuffers.contains(socket)) {
+        if (!m_playerBuffers.contains(socket)) return;
+
+        if (buffer.size() < 4) break;
+
+        // --- 发现非法协议头必须立即断开并清理 ---
+        if ((quint8)buffer[0] != 0xF7) {
+            LOG_ERROR("❌ 非法协议头，强制清理并断开");
+            m_playerBuffers.remove(socket); // 清理内存
+            socket->disconnectFromHost();   // 断开连接
             return;
         }
 
-        QByteArray &buffer = m_playerBuffers[socket];
-
-        if (buffer.size() < 4) {
-            break; // 数据不足，等待下一次 readyRead
-        }
-
-        quint8 header = (quint8)buffer[0];
-        if (header != 0xF7) {
-            LOG_ERROR("❌ 非法协议头，断开连接");
-            return; // 立即返回，防止后续访问
-        }
-
-        // 解析长度 (Little Endian)
         quint16 length = (quint8)buffer[2] | ((quint8)buffer[3] << 8);
 
-        // 数据不足一个完整包，停止处理
-        if (buffer.size() < length) {
-            break;
+        // --- 长度校验，W3GS 协议包头+ID+长度 至少 4 字节 ---
+        if (length < 4) {
+            LOG_ERROR("❌ 收到非法包长度，断开连接");
+            socket->disconnectFromHost();
+            return;
         }
 
-        // 提取完整包
-        QByteArray packet = buffer.mid(0, length);
+        if (buffer.size() < length) break;
 
-        // 先从缓冲区移除数据
+        QByteArray packet = buffer.mid(0, length);
         buffer.remove(0, length);
 
-        // 准备函数参数
         quint8 msgId = (quint8)packet[1];
         QByteArray payload = packet.mid(4);
 
-        // 调用处理函数
         handleW3GSPacket(socket, msgId, payload);
 
-        if (!m_playerBuffers.contains(socket)) {
-            return; // 玩家已断开，立即停止处理
+        // 处理完一个包后，如果 socket 已断开，直接退出
+        if (socket->state() == QAbstractSocket::UnconnectedState) {
+            return;
         }
     }
 }
@@ -732,6 +734,10 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
     if (id != 0x42 && id != 0x44 && id != 0x46) {
         LOG_INFO(QString("📥 [W3GS] 收到数据包: 0x%1").arg(QString::number(id, 16).toUpper()));
     }
+
+    quint8 currentPid = getPidBySocket(socket);
+    if (id != W3GS_REQJOIN && currentPid == 0) return;
+    QString playerName = getPlayerNameByPid(currentPid);
 
     switch (id) {
     case W3GS_REQJOIN: //  [0x1E] 客户端请求加入游戏
@@ -752,9 +758,14 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
         if (payload.size() >= 15) {
             in >> clientHostCounter >> clientEntryKey >> clientUnknown8 >> clientListenPort >> clientPeerKey;
+            if (in.status() != QDataStream::Ok) {
+                LOG_ERROR("❌ 协议解析失败：数据流损坏");
+                return;
+            }
             QByteArray nameBytes;
+            int safetyCounter = 0;
             char c;
-            while (!in.atEnd()) {
+            while (!in.atEnd() && safetyCounter++ < 32) {
                 in.readRawData(&c, 1);
                 if (c == 0) break;
                 nameBytes.append(c);
@@ -949,13 +960,6 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
     case W3GS_GAMELOADED_SELF: // [0x23] 客户端发送加载完成信号
     {
-        quint8 currentPid = 0;
-        for (auto it = m_players.begin(); it != m_players.end(); ++it) {
-            if (it.value().socket == socket) { currentPid = it.key(); break; }
-        }
-        if (currentPid == 0) return;
-
-        // 仅仅标记，不发包
         m_players[currentPid].isFinishedLoading = true;
         m_players[currentPid].lastResponseTime = QDateTime::currentMSecsSinceEpoch();
 
@@ -973,21 +977,6 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
             return;
         }
 
-        // 1. 查找发送者
-        quint8 currentPid = 0;
-        QString playerName = "";
-
-        for (auto it = m_players.begin(); it != m_players.end(); ++it) {
-            if (it.value().socket == socket) {
-                currentPid = it.key();
-                playerName = it.value().name;
-                break;
-            }
-        }
-
-        if (currentPid == 0) return;
-
-        // 2. 提取数据
         QByteArray crcData = payload.left(4);
         QDataStream crcStream(crcData);
         quint32 crcValue;
@@ -997,12 +986,10 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
         QByteArray actionData = payload.mid(4);
 
-        // 3. 逻辑处理
         if (!actionData.isEmpty()) {
             m_actionQueue.append({currentPid, actionData});
             m_players[currentPid].lastResponseTime = QDateTime::currentMSecsSinceEpoch();
 
-            // 4. 日志记录
             static int logCount = 0;
             bool shouldLog = (logCount == 0 || logCount % m_actionLogFrequency < m_actionLogShowLines);
 
@@ -1027,13 +1014,11 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
     case W3GS_OUTGOING_KEEPALIVE: // [0x27] 客户端发送的保持连接包
     {
-        // 1. 长度校验
         if (payload.size() < 5) {
             LOG_INFO(QString("   └─ ⚠️ [警告] KeepAlive 包长度异常: %1 (期望 >= 5)").arg(payload.size()));
             return;
         }
 
-        // 2. 解析数据
         QDataStream in(payload);
         in.setByteOrder(QDataStream::LittleEndian);
 
@@ -1041,49 +1026,27 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         quint32 checkSum;
         in >> unknownByte >> checkSum;
 
-        // 3. 查找发送者
-        quint8 currentPid = 0;
-        QString senderName = "";
+        qint64 now = QDateTime::currentMSecsSinceEpoch();
+        m_players[currentPid].lastResponseTime = now;
 
-        for (auto it = m_players.begin(); it != m_players.end(); ++it) {
-            if (it.value().socket == socket) {
-                currentPid = it.key();
-                senderName = it.value().name;
-                break;
-            }
-        }
-
-        if (currentPid != 0) {
-            // 4. 逻辑处理
-            qint64 now = QDateTime::currentMSecsSinceEpoch();
-            m_players[currentPid].lastResponseTime = now;
-
-            // 5. 日志记录
-            LOG_INFO(QString("💓 [保持连接] 收到心跳包 (0x27)"));
-            LOG_INFO(QString("   ├─ 👤 来源: %1 (PID: %2)").arg(senderName).arg(currentPid));
-            LOG_INFO(QString("   ├─ ❓ 标志: 0x%1").arg(QString::number(unknownByte, 16).toUpper().rightJustified(2, '0')));
-            LOG_INFO(QString("   ├─ 🛡️ 校验: 0x%1 (CheckSum)").arg(QString::number(checkSum, 16).toUpper().rightJustified(8, '0')));
-            LOG_INFO(QString("   └─ ⏱️ 动作: 刷新活跃时间戳 -> %1").arg(now));
-        }
-        else {
-            LOG_INFO("   └─ ⚠️ [异常] 收到来自未知 Socket 的 KeepAlive");
-        }
+        LOG_INFO(QString("💓 [保持连接] 收到心跳包 (0x27)"));
+        LOG_INFO(QString("   ├─ 👤 来源: %1 (PID: %2)").arg(playerName).arg(currentPid));
+        LOG_INFO(QString("   ├─ ❓ 标志: 0x%1").arg(QString::number(unknownByte, 16).toUpper().rightJustified(2, '0')));
+        LOG_INFO(QString("   ├─ 🛡️ 校验: 0x%1 (CheckSum)").arg(QString::number(checkSum, 16).toUpper().rightJustified(8, '0')));
+        LOG_INFO(QString("   └─ ⏱️ 动作: 刷新活跃时间戳 -> %1").arg(now));
     }
     break;
 
     case W3GS_CHAT_TO_HOST: // [0x28] 客户端发送聊天/大厅指令
     {
-        // 1. 基础长度校验 (Count(1) + From(1) + Flag(1) = 3)
         if (payload.size() < 3) return;
 
         QDataStream in(payload);
         in.setByteOrder(QDataStream::LittleEndian);
 
-        // 2. 解析接收者列表
         quint8 numReceivers;
         in >> numReceivers;
 
-        // 再次校验长度：确保 payload 包含所有接收者PID + FromPID + Flag
         if (payload.size() < 1 + numReceivers + 2) {
             LOG_ERROR(QString("   └─ ❌ [错误] 包长度不足 (Receivers: %1)").arg(numReceivers));
             return;
@@ -1096,30 +1059,11 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
             receiverPids.append(rpid);
         }
 
-        // 3. 解析来源与标志
         quint8 fromPid, flag;
         in >> fromPid >> flag;
 
-        // 4. 查找发送者 (Socket -> PID/Name/Codec)
-        quint8 senderPid = 0;
-        QString senderName = "";
-        QTextCodec *codec = QTextCodec::codecForName("Windows-1252"); // 默认
+        QTextCodec *codec  = getCodecByPid(currentPid);
 
-        for (auto it = m_players.begin(); it != m_players.end(); ++it) {
-            if (it.value().socket == socket) {
-                senderPid = it.key();
-                senderName = it.value().name;
-                codec = it.value().codec;
-                break;
-            }
-        }
-
-        if (senderPid == 0) {
-            LOG_INFO("   └─ ⚠️ [警告] 无法识别发送者 Socket，忽略请求");
-            return;
-        }
-
-        // 打印通用头部日志
         QString typeStr;
         switch(flag) {
         case 0x10: typeStr = "消息 (Message)"; break;
@@ -1131,10 +1075,9 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         default:   typeStr = QString("未知 (0x%1)").arg(QString::number(flag, 16)); break;
         }
 
-        LOG_INFO(QString("   ├─ 👤 发送者: %1 (PID: %2)").arg(senderName).arg(senderPid));
+        LOG_INFO(QString("   ├─ 👤 发送者: %1 (PID: %2)").arg(playerName).arg(currentPid));
         LOG_INFO(QString("   ├─ 🚩 类型: %1").arg(typeStr));
 
-        // 5. 根据 Flag 分流处理
         int currentOffset = 1 + numReceivers + 2; // 当前解析到的字节位置
 
         if (flag == 0x10) // [16] 聊天消息
@@ -1155,7 +1098,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
                 // A. 指令处理
                 if (msg.startsWith("/")) {
                     LOG_INFO(QString("      └─ ⚡ [指令] 检测到命令，转交机器人处理..."));
-                    handleChatCommand(senderPid, msg);
+                    handleChatCommand(currentPid, msg);
                 }
                 // B. 普通聊天转发
                 else {
@@ -1163,8 +1106,8 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
                     bool isToAll = (numReceivers == 0 || receiverPids.contains(m_botPid));
 
                     // 获取发送者的状态数据
-                    if (!m_players.contains(senderPid)) return;
-                    PlayerData &senderData = m_players[senderPid];
+                    if (!m_players.contains(currentPid)) return;
+                    PlayerData &senderData = m_players[currentPid];
 
                     // 1. 获取发送者彩色名字
                     QString coloredSender = getColoredTextByState(senderData, senderData.name, true);
@@ -1187,7 +1130,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
                     }
 
                     LOG_INFO(QString("      └─ 💬 [%1] 对 [%2] 说: %3")
-                                 .arg(senderName, isToAll ? "所有人" : "指定玩家", msg));
+                                 .arg(playerName, isToAll ? "所有人" : "指定玩家", msg));
 
                     // 3. 构建并广播消息
                     if (!coloredSender.isEmpty() && !receiverStrCN.isEmpty() && !msg.isEmpty())
@@ -1196,7 +1139,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
                         chatMsg.add("zh_CN", QString("%1 对 %2 说: %3").arg(coloredSender, receiverStrCN, coloredMsg));
                         chatMsg.add("en", QString("%1 to %2 says: %3").arg(coloredSender, receiverStrEN, coloredMsg));
 
-                        broadcastChatMessage(chatMsg, senderPid);
+                        broadcastChatMessage(chatMsg, currentPid);
                     }
                 }
             }
@@ -1262,25 +1205,16 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
     case W3GS_STARTDOWNLOAD: // [0x3F] 客户端主动请求开始下载
     {
-        // 1. 查找玩家
-        quint8 currentPid = 0;
-        for (auto it = m_players.begin(); it != m_players.end(); ++it) {
-            if (it.value().socket == socket) { currentPid = it.key(); break; }
-        }
-        if (currentPid == 0) return;
-
         PlayerData &playerData = m_players[currentPid];
 
         LOG_INFO(QString("📥 [W3GS] 收到请求: 0x3F (StartDownload)"));
         LOG_INFO(QString("   └─ 👤 玩家: %1 (PID: %2)").arg(playerData.name).arg(currentPid));
 
-        // 2. 防重复检查
         if (playerData.isDownloadStart) {
             LOG_INFO("   └─ ⚠️ 忽略: 已经在下载进程中");
             return;
         }
 
-        // 3. 查找槽位并触发下载
         bool validSlot = false;
         for (int i = 0; i < m_slots.size(); ++i) {
             if (m_slots[i].pid == currentPid) {
@@ -1308,18 +1242,6 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         quint32 unknown; quint8 sizeFlag; quint32 clientMapSize;
         in >> unknown >> sizeFlag >> clientMapSize;
 
-        // 1. 查找玩家
-        quint8 currentPid = 0;
-        QString playerName = "";
-        for (auto it = m_players.begin(); it != m_players.end(); ++it) {
-            if (it.value().socket == socket) {
-                currentPid = it.key();
-                playerName = it.value().name;
-                break;
-            }
-        }
-        if (currentPid == 0) return;
-
         quint32 hostMapSize = m_war3Map.getMapSize();
         PlayerData &playerData = m_players[currentPid];
         playerData.lastResponseTime = QDateTime::currentMSecsSinceEpoch();
@@ -1328,11 +1250,9 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
             LOG_INFO(QString("⚠️ [W3GS] 收到罕见 Flag: %1 (Size: %2)").arg(sizeFlag).arg(clientMapSize));
         }
 
-        // 状态判断
         bool isMapMatched = (clientMapSize == hostMapSize && sizeFlag == 1);
         bool isDownloadFinished = (clientMapSize == hostMapSize);
 
-        // 2. 核心逻辑
         bool slotUpdated = false;
         for (int i = 0; i < m_slots.size(); ++i) {
             if (m_slots[i].pid == currentPid) {
@@ -1392,11 +1312,6 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         quint8 fromPid, toPid; quint32 unknownFlag, clientOffset;
         in >> fromPid >> toPid >> unknownFlag >> clientOffset;
 
-        quint8 currentPid = 0;
-        for (auto it = m_players.begin(); it != m_players.end(); ++it) {
-            if (it.value().socket == socket) { currentPid = it.key(); break; }
-        }
-        if (currentPid == 0) return;
         if (m_mapSize == 0) return;
 
         if (m_players.contains(currentPid)) {
@@ -1475,7 +1390,6 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
     case W3GS_MAPPARTNOTOK: // [0x45] 客户端报告失败
     {
-        // 1. 尝试解析 Unknown 字段 (通常是 4 字节)
         quint32 unknownValue = 0;
         QString rawHex = payload.toHex().toUpper();
 
@@ -1485,13 +1399,6 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
             in >> unknownValue;
         }
 
-        // 2. 查找玩家 PID
-        quint8 currentPid = 0;
-        for (auto it = m_players.begin(); it != m_players.end(); ++it) {
-            if (it.value().socket == socket) { currentPid = it.key(); break; }
-        }
-
-        // 3. 打印详细日志
         LOG_INFO(QString("🚀 下载错误 (C>S 0x45 W3GS_MAPPARTNOTOK) [pID: %1]").arg(currentPid));
         LOG_INFO(QString("   ├─ ❓ [Unknown] Value: %1 (0x%2)")
                      .arg(unknownValue)
@@ -1513,28 +1420,21 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         in.setByteOrder(QDataStream::LittleEndian);
         quint32 sentTick; in >> sentTick;
 
-        quint8 currentPid = 0;
+        qint64 now = QDateTime::currentMSecsSinceEpoch();
+        quint32 nowTick = static_cast<quint32>(QDateTime::currentMSecsSinceEpoch() & 0xFFFFFFFF);
+        PlayerData &p = m_players[currentPid];
+        p.currentLatency = nowTick - sentTick;
+        p.lastResponseTime = now;
+
+        LOG_DEBUG(QString("💓 Pong [PID:%1]: %2 ms").arg(currentPid).arg(p.currentLatency));
+
+        QMap<quint8, quint32> pingMap;
         for (auto it = m_players.begin(); it != m_players.end(); ++it) {
-            if (it.value().socket == socket) { currentPid = it.key(); break; }
+            if (it.key() == m_botPid) continue;
+            pingMap.insert(it.key(), it.value().currentLatency);
         }
 
-        if (currentPid != 0) {
-            qint64 now = QDateTime::currentMSecsSinceEpoch();
-            quint32 nowTick = static_cast<quint32>(QDateTime::currentMSecsSinceEpoch() & 0xFFFFFFFF);
-            PlayerData &p = m_players[currentPid];
-            p.currentLatency = nowTick - sentTick;
-            p.lastResponseTime = now;
-
-            LOG_DEBUG(QString("💓 Pong [PID:%1]: %2 ms").arg(currentPid).arg(p.currentLatency));
-
-            QMap<quint8, quint32> pingMap;
-            for (auto it = m_players.begin(); it != m_players.end(); ++it) {
-                if (it.key() == m_botPid) continue;
-                pingMap.insert(it.key(), it.value().currentLatency);
-            }
-
-            emit roomPingsUpdated(pingMap);
-        }
+        emit roomPingsUpdated(pingMap);
     }
     break;
 
@@ -1613,7 +1513,9 @@ void Client::handleChatCommand(quint8 senderPid, const QString &fullMsg)
             }
         }
 
-        if (targetPid != 0 && m_players[targetPid].socket) {
+        if (targetPid == 0 || !m_players.contains(targetPid)) return;
+
+        if (m_players[targetPid].socket) {
             LOG_INFO(QString("   └─ 🔒 私聊转发: %1 -> %2").arg(sender.name, targetName));
 
             QByteArray msgBytes = content.toUtf8();
@@ -1819,6 +1721,7 @@ void Client::onPlayerDisconnected() {
                     return; // 结束
                 } else {
                     // 情况 2: 还有其他人，移交房主
+                    if (!m_players.contains(heirPid)) return;
 
                     // 1. 更新玩家标志
                     m_players[heirPid].isVisualHost = true;
@@ -2658,6 +2561,7 @@ void Client::cancelGame() {
     // 4. 清理容器
     m_playerSockets.clear();
     m_playerBuffers.clear();
+    m_actionQueue.clear();
     m_players.clear();
 
     // 5. 重置槽位
@@ -3672,6 +3576,18 @@ void Client::swapSlots(int slot1, int slot2)
     broadcastSlotInfo();
 }
 
+int Client::getSlotIndexByPid(quint8 pid) const
+{
+    if (pid == 0) return -1;
+
+    for (int i = 0; i < m_slots.size(); ++i) {
+        if (m_slots[i].pid == pid) {
+            return i;
+        }
+    }
+    return -1;
+}
+
 quint8 Client::findFreePid() const
 {
     bool pid1_taken = m_players.contains(1);
@@ -3697,26 +3613,76 @@ quint8 Client::findFreePid() const
     return 0;
 }
 
-quint8 Client::getPidByUserName(const QString &userName) const
+quint8 Client::getPidBySocket(QTcpSocket *socket) const
+{
+    if (!socket) return 0;
+
+    for (auto it = m_players.constBegin(); it != m_players.constEnd(); ++it) {
+        if (it.value().socket == socket) {
+            return it.key();
+        }
+    }
+
+    return 0;
+}
+
+quint8 Client::getPidByPlayerName(const QString &PlayerName) const
 {
     for (auto it = m_players.constBegin(); it != m_players.constEnd(); ++it) {
-        if (it.value().name.compare(userName, Qt::CaseInsensitive) == 0) {
+        if (it.value().name.compare(PlayerName, Qt::CaseInsensitive) == 0) {
             return it.key();
         }
     }
     return 0;
 }
 
-int Client::getSlotIndexByPid(quint8 pid) const
+QString Client::getPlayerNameBySocket(QTcpSocket *socket) const
 {
-    if (pid == 0) return -1;
+    if (!socket) return QString();
 
-    for (int i = 0; i < m_slots.size(); ++i) {
-        if (m_slots[i].pid == pid) {
-            return i;
+    for (auto it = m_players.constBegin(); it != m_players.constEnd(); ++it) {
+        if (it.value().socket == socket) {
+            return it.value().name;
         }
     }
-    return -1;
+    return QString();
+}
+
+QString Client::getPlayerNameByPid(quint8 pid) const
+{
+    if (pid == 0) return QString("");
+    auto it = m_players.constFind(pid);
+    if (it != m_players.constEnd()) {
+        return it.value().name;
+    }
+    return QString("");
+}
+
+QTextCodec* Client::getCodecBySocket(QTcpSocket *socket) const
+{
+    QTextCodec *defaultCodec = QTextCodec::codecForName("Windows-1252");
+
+    if (!socket) return defaultCodec;
+
+    for (auto it = m_players.constBegin(); it != m_players.constEnd(); ++it) {
+        if (it.value().socket == socket) {
+            return it.value().codec ? it.value().codec : defaultCodec;
+        }
+    }
+
+    return defaultCodec;
+}
+
+QTextCodec* Client::getCodecByPid(quint8 pid) const
+{
+    QTextCodec *defaultCodec = QTextCodec::codecForName("Windows-1252");
+
+    if (m_players.contains(pid)) {
+        QTextCodec *pCodec = m_players.value(pid).codec;
+        return pCodec ? pCodec : defaultCodec;
+    }
+
+    return defaultCodec;
 }
 
 QString Client::getSlotInfoString() const

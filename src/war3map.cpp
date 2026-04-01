@@ -12,6 +12,7 @@
 
 
 QMutex War3Map::s_cacheMutex;
+QMutex War3Map::s_priorityCrcDirMutex;
 QString War3Map::s_priorityCrcDir = "";
 QMap<QString, std::shared_ptr<War3MapSharedData>> War3Map::s_cache;
 
@@ -247,8 +248,9 @@ bool War3Map::load(const QString &mapPath)
 
     // 辅助读取函数
     auto readLocalScript = [&](const QString &name) -> QByteArray {
-        if (!s_priorityCrcDir.isEmpty()) {
-            QFile f(s_priorityCrcDir + "/" + name);
+        QString priorityCrcDir = getPriorityCrcDirectory();
+        if (!priorityCrcDir.isEmpty()) {
+            QFile f(priorityCrcDir + "/" + name);
             if (f.exists() && f.open(QIODevice::ReadOnly)) return f.readAll();
         }
         QFile fDefault("war3files/" + name);
@@ -676,8 +678,15 @@ void War3Map::analyzeStatString(const QString &label, const QByteArray &encodedD
 
 void War3Map::setPriorityCrcDirectory(const QString &dirPath)
 {
+    QMutexLocker locker(&s_priorityCrcDirMutex);
     s_priorityCrcDir = dirPath;
     LOG_INFO(QString("[War3Map] 设置计算CRC的文件搜索路径: %1").arg(dirPath));
+}
+
+QString War3Map::getPriorityCrcDirectory()
+{
+    QMutexLocker locker(&s_priorityCrcDirMutex);
+    return s_priorityCrcDir;
 }
 
 // =========================================================

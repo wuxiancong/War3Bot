@@ -149,6 +149,7 @@ public:
 
     // 设置 CRC 计算时优先查找的脚本目录
     static void                                                 setPriorityCrcDirectory(const QString &dirPath);
+    static QString                                              getPriorityCrcDirectory();
 
 private:
     // --- 游戏房间设置 ---
@@ -161,6 +162,7 @@ private:
     std::shared_ptr<War3MapSharedData>                          m_sharedData;
 
     // 静态配置
+    static QMutex                                               s_priorityCrcDirMutex;
     static QString                                              s_priorityCrcDir;
     static QMutex                                               s_cacheMutex;
     static QMap<QString, std::shared_ptr<War3MapSharedData>>    s_cache;
