@@ -996,7 +996,7 @@ void BotManager::onBotCommandReceived(const QString &userName,
 
     // --- 3. 处理准备/取消准备 (所有玩家可用) ---
     if (trimmedCommand == "/ready" || trimmedCommand == "/unready" ||
-        trimmedCommand == "/swapself") {
+        trimmedCommand == "/swapself" || trimmedCommand == "/swap") {
         LOG_INFO(QString("[指令处理] 收到玩家 %1 (UUID: %2) 的指令: %3")
                      .arg(userName, clientId, trimmedCommand));
 
