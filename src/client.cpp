@@ -1760,6 +1760,8 @@ void Client::onPlayerDisconnected() {
 
                             LOG_INFO(QString("   │  ├─ 🔄 位置调整: 继承人从 Slot %1 移至 Slot %2 (Host位)")
                                          .arg(heirSlotIndex).arg(oldHostSlotIndex));
+                            // 发送信号给 BotManager 让其发送消息
+                            emit roomHostChanged(heirPid);
                         }
                     }
 

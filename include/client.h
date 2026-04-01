@@ -493,6 +493,7 @@ signals:
     void visualHostLeft();
     void playerCountChanged(int count);
     void socketError(const QString &error);
+    void roomHostChanged(const quint8 heirPid);
     void hostJoinedGame(const QString &username);
     void gameCreateFail(GameCreationStatus status);
     void gameCreateSuccess(CommandSource commandSource);

@@ -466,6 +466,7 @@ void BotManager::addBotInstance(const QString& username, const QString& password
     connect(bot->client, &Client::socketError, this, [this, bot](QString error) { this->onBotError(bot, error); });
     connect(bot->client, &Client::playerCountChanged, this, [this, bot](int count) { this->onBotPlayerCountChanged(bot, count); });
     connect(bot->client, &Client::hostJoinedGame, this, [this, bot](const QString &name) { this->onBotHostJoinedGame(bot, name); });
+    connect(bot->client, &Client::roomHostChanged, this, [this, bot](const quint8 heirPid) { this->onBotRoomHostChanged(bot, heirPid); });
     connect(bot->client, &Client::gameCreateFail, this, [this, bot](GameCreationStatus status) { this->onBotGameCreateFail(bot, status); });
     connect(bot->client, &Client::roomPingsUpdated, this, [this, bot](const QMap<quint8, quint32> &pings) { this->onBotRoomPingsUpdated(bot, pings); });
     connect(bot->client, &Client::readyStateChanged, this, [this, bot](const QVariantMap &readyData) { this->onBotReadyStateChanged(bot, readyData); });
@@ -584,6 +585,7 @@ bool BotManager::createGame(const QString &hostName, const QString &gameName, co
             connect(targetBot->client, &Client::socketError, this, [this, targetBot](QString error) { this->onBotError(targetBot, error); });
             connect(targetBot->client, &Client::playerCountChanged, this, [this, targetBot](int count) { this->onBotPlayerCountChanged(targetBot, count); });
             connect(targetBot->client, &Client::hostJoinedGame, this, [this, targetBot](const QString &name) { this->onBotHostJoinedGame(targetBot, name); });
+            connect(targetBot->client, &Client::roomHostChanged, this, [this, targetBot](const quint8 heirPid) { this->onBotRoomHostChanged(targetBot, heirPid); });
             connect(targetBot->client, &Client::gameCreateFail, this, [this, targetBot](GameCreationStatus status) { this->onBotGameCreateFail(targetBot, status); });
             connect(targetBot->client, &Client::roomPingsUpdated, this, [this, targetBot](const QMap<quint8, quint32> &pings) { this->onBotRoomPingsUpdated(targetBot, pings); });
             connect(targetBot->client, &Client::readyStateChanged, this, [this, targetBot](const QVariantMap &readyData) { this->onBotReadyStateChanged(targetBot, readyData); });
@@ -801,7 +803,7 @@ bool BotManager::checkCooldown(const QString &clientId, const QString &command, 
             m_netManager->sendMessageToClient(clientId, S_C_ERROR, ERR_COOLDOWN, remaining);
 
             LOG_INFO(QString("⏳ [频率限制] UUID: %1 | 指令: %2 | 剩余: %3ms")
-                            .arg(clientId, command).arg(remaining));
+                         .arg(clientId, command).arg(remaining));
             return false;
         }
     }
@@ -1031,7 +1033,7 @@ void BotManager::onBotCommandReceived(const QString &userName,
 
         if (!targetBot) {
             LOG_INFO(QString("   └─ ❌ 失败: 玩家 %1 不在任何活跃房间中，指令无效")
-                            .arg(userName));
+                         .arg(userName));
             return;
         }
 
@@ -1152,7 +1154,7 @@ void BotManager::onBotCommandReceived(const QString &userName,
     Bot *myBot = findBotByClientId(clientId);
     if (!isBotActive(myBot, "CommandReceived")) {
         LOG_INFO(QString("   └─ ❌ 拒绝: 用户名下当前没有活跃房间，无法执行 %1")
-                        .arg(trimmedCommand));
+                     .arg(trimmedCommand));
         m_netManager->sendMessageToClient(clientId, S_C_ERROR,
                                           ERR_PERMISSION_DENIED);
         return;
@@ -1260,6 +1262,26 @@ void BotManager::onBotGameCreateSuccess(Bot *bot)
     emit botStateChanged(bot->id, bot->username, bot->state);
 }
 
+void BotManager::onBotRoomHostChanged(Bot *bot, const quint8 heirPid)
+{
+    if (!isBotActive(bot, "RoomHostChanged")) return;
+
+    const auto &players = bot->client->getPlayers();
+    if (!players.contains(heirPid)) return;
+
+    LOG_INFO(QString("🔑 [权限下发] 正在通知新房主 %1 (PID: %2)")
+                 .arg(players[heirPid].name).arg(heirPid));
+
+    for (auto it = players.begin(); it != players.end(); ++it) {
+        if (it.key() == 2) continue;
+
+        m_netManager->sendMessageToClient(it.value().clientUuid,
+                                          S_C_MESSAGE,
+                                          MSG_ROOM_HOST_CHANGE,
+                                          heirPid);
+    }
+}
+
 void BotManager::onBotGameCreateFail(Bot *bot, GameCreationStatus status)
 {
     if (!isBotValid(bot, "CreateFail")) return;
@@ -1316,7 +1338,7 @@ void BotManager::onBotVisualHostLeft(Bot *bot)
 
     const QMap<quint8, PlayerData> &players = bot->client->getPlayers();
 
-    // 1. 寻找继承人
+    // 1. 寻找 Client 内部已经确立的新房主 (isVisualHost 为 true 的人)
     for (auto it = players.begin(); it != players.end(); ++it) {
         if (it.key() != 2 && it.value().isVisualHost) {
             newUuid = it.value().clientUuid;
@@ -1326,10 +1348,9 @@ void BotManager::onBotVisualHostLeft(Bot *bot)
         }
     }
 
-    // 2. 执行所有权交接逻辑
+    // 2. 执行映射交接
     if (!newUuid.isEmpty()) {
-        LOG_INFO(QString("👑 [房主移交] 目标: %1 | 新房主: %2 (PID: %3)")
-                     .arg(bot->gameInfo.gameName, newHostName).arg(newHostPid));
+        LOG_INFO(QString("👑 [权限移交] 房主: %1 -> %2").arg(oldHostName, newHostName));
 
         m_hostNameToBotMap.remove(oldHostName.toLower());
         m_hostNameToBotMap.insert(newHostName.toLower(), bot);
@@ -1341,15 +1362,15 @@ void BotManager::onBotVisualHostLeft(Bot *bot)
         bot->gameInfo.hostName = newHostName;
         bot->hostname = newHostName;
 
-        // 3. 向全房间广播通知
+        // 3. 向全房间广播消息
         for (const auto &p : players) {
             if (p.pid != 2 && !p.clientUuid.isEmpty()) {
-                m_netManager->sendMessageToClient(p.clientUuid, PacketType::S_C_MESSAGE, MSG_HOST_LEAVE_GAME, newHostPid);
+                m_netManager->sendMessageToClient(p.clientUuid, S_C_MESSAGE, MSG_HOST_LEAVE_GAME, newHostPid);
             }
         }
     }
     else {
-        LOG_INFO(QString("🚫 [房间关闭] 房主离开且无继承人"));
+        LOG_INFO(QString("🚫 [房间关闭] 无继承人，执行清理"));
         removeGame(bot, false);
     }
 }
