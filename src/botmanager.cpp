@@ -1138,15 +1138,29 @@ void BotManager::onBotCommandReceived(const QString &userName,
 
     // --- 4. 特殊处理 /unhost (仅房主) ---
     if (trimmedCommand == "/unhost") {
+        LOG_INFO(QString("🧹 [解散房间请求] 收到解散指令 | 发送者: %1 (UUID: %2)").arg(userName, clientId));
+
         Bot *myBot = findBotByClientId(clientId);
+        QString matchMethod = "UUID";
+
+        if (!myBot) {
+            myBot = findBotByHostName(userName);
+            matchMethod = "用户名";
+        }
+
         if (myBot) {
-            LOG_INFO("   └─ 🚀 执行动作: 解散房间");
+            LOG_INFO(QString("   └─ 🚀 执行动作: 通过 [%1] 匹配成功，正在移除房间 [%2]")
+                         .arg(matchMethod, myBot->gameInfo.gameName));
+
             removeGame(myBot, false);
         } else {
-            LOG_INFO("   └─ ℹ️ 房间已在断开时自动清理，指令仅做同步确认");
+            LOG_WARNING(QString("   └─ ℹ️ 检索失败: 该用户 (UUID:%1 / Name:%2) 名下没有活跃房间，可能已被自动清理")
+                            .arg(clientId, userName));
         }
-        m_netManager->sendMessageToClient(clientId, S_C_MESSAGE,
-                                          MSG_HOST_UNHOST_GAME);
+
+        m_netManager->sendMessageToClient(clientId, S_C_MESSAGE, MSG_HOST_UNHOST_GAME);
+
+        LOG_INFO("   └── ✅ 已向客户端下发 MSG_HOST_UNHOST_GAME 确认回执");
         return;
     }
 
