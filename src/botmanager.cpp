@@ -927,7 +927,7 @@ void BotManager::onBotCommandReceived(const QString &userName, const QString &cl
 
         // 核心逻辑：全局遍历，寻找该玩家当前坐在哪个房间里 (哪怕他不是房主)
         for (Bot *bot : qAsConst(m_bots)) {
-            if (!bot->client) continue;
+            if (!bot || !bot->client) continue;
             // 如果他是房主，或者他在这个房间的玩家列表里
             if (bot->isOwner(clientId) || bot->client->hasPlayerByUuid(clientId)) {
                 targetBot = bot;
