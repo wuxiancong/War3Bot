@@ -1262,26 +1262,6 @@ void BotManager::onBotGameCreateSuccess(Bot *bot)
     emit botStateChanged(bot->id, bot->username, bot->state);
 }
 
-void BotManager::onBotRoomHostChanged(Bot *bot, const quint8 heirPid)
-{
-    if (!isBotActive(bot, "RoomHostChanged")) return;
-
-    const auto &players = bot->client->getPlayers();
-    if (!players.contains(heirPid)) return;
-
-    LOG_INFO(QString("🔑 [权限下发] 正在通知新房主 %1 (PID: %2)")
-                 .arg(players[heirPid].name).arg(heirPid));
-
-    for (auto it = players.begin(); it != players.end(); ++it) {
-        if (it.key() == 2) continue;
-
-        m_netManager->sendMessageToClient(it.value().clientUuid,
-                                          S_C_MESSAGE,
-                                          MSG_ROOM_HOST_CHANGE,
-                                          heirPid);
-    }
-}
-
 void BotManager::onBotGameCreateFail(Bot *bot, GameCreationStatus status)
 {
     if (!isBotValid(bot, "CreateFail")) return;
@@ -1324,6 +1304,26 @@ void BotManager::onBotGameCreateFail(Bot *bot, GameCreationStatus status)
     removeGame(bot);
 
     LOG_INFO("   └─ 🔄 [状态重置] 游戏信息已清除，Bot 已归还池中");
+}
+
+void BotManager::onBotRoomHostChanged(Bot *bot, const quint8 heirPid)
+{
+    if (!isBotActive(bot, "RoomHostChanged")) return;
+
+    const auto &players = bot->client->getPlayers();
+    if (!players.contains(heirPid)) return;
+
+    LOG_INFO(QString("🔑 [权限下发] 正在通知新房主 %1 (PID: %2)")
+                 .arg(players[heirPid].name).arg(heirPid));
+
+    for (auto it = players.begin(); it != players.end(); ++it) {
+        if (it.key() == 2) continue;
+
+        m_netManager->sendMessageToClient(it.value().clientUuid,
+                                          S_C_MESSAGE,
+                                          MSG_ROOM_HOST_CHANGE,
+                                          heirPid);
+    }
 }
 
 void BotManager::onBotVisualHostLeft(Bot *bot)
@@ -1509,23 +1509,14 @@ void BotManager::onBotRoomPingReceived(const QHostAddress &addr, quint16 port, c
         QString outUuid = "";
 
         if (isHit) {
-            switch (mode) {
-            case ByHostName:
-                outHost = bot->hostname;
-                break;
-            case ByClientId:
-                outUuid = bot->gameInfo.clientId;
-                break;
-            case ByBoth:
-                outHost = bot->hostname;
-                outUuid = bot->gameInfo.clientId;
-                break;
-            }
+            outHost = bot->hostname;
+            outUuid = bot->gameInfo.clientId;
         }
 
         m_netManager->sendRoomPong(addr, port, clientTime, current, max, outHost, outUuid);
 
-        LOG_INFO(QString("   └── ✅ 动作执行: 已根据 %1 模式回发 Pong").arg(modeTag));
+        LOG_INFO(QString("   └── ✅ 动作执行: 已回发 Pong (Host:%1 | UUID:%2)")
+                     .arg(outHost.isEmpty() ? "N/A" : outHost, outUuid.isEmpty() ? "N/A" : outUuid));
     }
 }
 
