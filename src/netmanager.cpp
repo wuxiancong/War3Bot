@@ -668,8 +668,11 @@ void NetManager::handleIncomingDatagram(const QNetworkDatagram &datagram)
     qDebug() << "┌── [收到数据包] 来自:" << senderInfo;
     qDebug() << "│   ├── 原始大小:" << data.size() << "字节";
 
+    PacketHeader *header = reinterpret_cast<PacketHeader*>(data.data());
+    PacketType packetType = static_cast<PacketType>(header->command);
+
     // 看门狗检查
-    if (!m_watchdog.checkUdpPacket(datagram.senderAddress(), data.size())) {
+    if (!m_watchdog.checkUdpPacket(datagram.senderAddress(), data.size(), packetType, header->sessionId)) {
         qDebug() << "│   └── ❌ [拒绝] 未通过看门狗流量检查";
         return;
     }
@@ -679,8 +682,6 @@ void NetManager::handleIncomingDatagram(const QNetworkDatagram &datagram)
         qDebug() << "│   └── ❌ [错误] 数据长度小于包头最小长度";
         return;
     }
-
-    PacketHeader *header = reinterpret_cast<PacketHeader*>(data.data());
 
     // --- 2. 基础协议校验 ---
     qDebug() << "│   ├── [1. 协议头校验]";
@@ -740,9 +741,8 @@ void NetManager::handleIncomingDatagram(const QNetworkDatagram &datagram)
 
     // --- 5. 指令分发 ---
     char *payload = data.data() + sizeof(PacketHeader);
-    PacketType cmd = static_cast<PacketType>(header->command);
 
-    qDebug() << "│   └── [4. 指令分发] 命令ID:" << (int)cmd << "序列号:" << header->seq;
+    qDebug() << "│   └── [4. 指令分发] 命令ID:" << packetType << "序列号:" << header->seq;
 
     QString currentClientId;
     {
@@ -750,7 +750,7 @@ void NetManager::handleIncomingDatagram(const QNetworkDatagram &datagram)
         currentClientId = m_sessionIndex.value(header->sessionId);
     }
 
-    switch (cmd) {
+    switch (packetType) {
     case PacketType::C_S_REGISTER:
         if (header->payloadLen >= sizeof(CSRegisterPacket)) {
             LOG_INFO("📥 [UDP 接收] C_S_REGISTER (注册请求)");
@@ -821,8 +821,8 @@ void NetManager::handleIncomingDatagram(const QNetworkDatagram &datagram)
     default:
         LOG_INFO("❓ [UDP 未知指令]");
         LOG_INFO(QString("   └─ 🔢 Command: %1 (0x%2)")
-                     .arg(static_cast<int>(cmd))
-                     .arg(QString::number(static_cast<int>(cmd), 16).toUpper()));
+                     .arg(packetType)
+                     .arg(QString::number(packetType, 16).toUpper()));
         break;
     }
 }
@@ -894,6 +894,8 @@ void NetManager::handleRegister(const PacketHeader *header, const CSRegisterPack
     info.isRegistered = true; info.natType = packet->natType; info.lastSeq = header->seq;
 
     m_registerInfos[clientId] = info;
+    m_watchdog.markSessionActive(senderAddr, newSessionId);
+
     m_sessionIndex[newSessionId] = clientId;
     DbManager::instance().updateUserHwid(username, hardwareId);
 
@@ -949,6 +951,8 @@ void NetManager::handleUnregister(const PacketHeader *header)
 quint8 NetManager::updateSessionState(quint32 sessionId, const QHostAddress &addr, quint64 port, bool *outIpChanged)
 {
     if (sessionId == 0) return Unregistered;
+
+    m_watchdog.markSessionActive(addr, sessionId);
 
     QWriteLocker locker(&m_registerInfosLock);
 
@@ -2122,9 +2126,12 @@ void NetManager::cleanupExpiredClients()
     }
 }
 
-void NetManager::removeClientInternal(const QString& uuid)
+void NetManager::removeClientInternal(const QString &uuid)
 {
     if (!m_registerInfos.contains(uuid)) return;
+
+    RegisterInfo info = m_registerInfos[uuid];
+    m_watchdog.markSessionInactive(QHostAddress(info.publicIp), info.sessionId);
 
     // 1. 获取 SessionID
     quint32 sid = m_registerInfos[uuid].sessionId;
