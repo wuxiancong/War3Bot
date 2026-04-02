@@ -10,6 +10,8 @@
 #include "client.h"
 #include "netmanager.h"
 
+class BotManager;
+
 // === 1. 机器人状态枚举 ===
 enum class BotState {
     Disconnected,
@@ -44,16 +46,18 @@ struct GameInfo {
 
 // === 3. 机器人结构体 ===
 struct Bot {
+    BotManager *manager;
     quint32 id;
     Client *client;
     BotState state;
-    QString hostname;
     QString username;
     QString password;
+    QString hostname;
     GameInfo gameInfo;
     bool hostJoined = false;
 
-    // 任务挂起数据
+    CommandSource commandSource = From_Server;
+
     struct Task {
         bool hasTask = false;
         qint64 requestTime = 0;
@@ -63,24 +67,17 @@ struct Bot {
         CommandSource commandSource;
     } pendingTask;
 
-    CommandSource commandSource = From_Server;
+    void resetGameState();
+    bool isOwner(const QString &senderClientId) const;
 
-    Bot(quint32 _id, QString _user, QString _pass)
-        : id(_id), client(nullptr), state(BotState::Disconnected), username(_user), password(_pass) {}
+    int activeOperations = 0;
+    bool pendingRemoval = false;
+    bool pendingDisconnectFlag = false;
+    void enterCriticalOperation();
+    void leaveCriticalOperation();
 
-    ~Bot() { if (client) client->deleteLater(); }
-
-    bool isOwner(const QString &senderClientId) const {
-        return !gameInfo.clientId.isEmpty() && (gameInfo.clientId == senderClientId);
-    }
-
-    void resetGameState() {
-        gameInfo = GameInfo();
-        pendingTask = Task();
-        commandSource = From_Server;
-        state = BotState::Idle;
-        hostJoined = false;
-    }
+    Bot(BotManager *botManager, quint32 botId, QString botUsername, QString botPassword);
+    ~Bot();
 };
 
 // === 4. 指令信息结构体 ===

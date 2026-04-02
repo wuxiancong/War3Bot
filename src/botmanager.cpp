@@ -113,6 +113,45 @@ static const QStringList s_prefixes = {
     "Captain", "Carry", "Support", "Mid", "Jungle", "Best", "Top", "Only"
 };
 
+Bot::Bot(BotManager *botManager, quint32 botId, QString botUsername, QString botPassword)
+    : manager(botManager), id(botId), client(nullptr), state(BotState::Disconnected),
+    username(botUsername), password(botPassword)
+{
+
+}
+
+Bot::~Bot() {
+    if (client) client->deleteLater();
+}
+
+void Bot::resetGameState() {
+    gameInfo = GameInfo();
+    pendingTask = Task();
+    commandSource = From_Server;
+    state = BotState::Idle;
+    hostJoined = false;
+    pendingRemoval = false;
+    pendingDisconnectFlag = false;
+    activeOperations = 0;
+}
+
+bool Bot::isOwner(const QString &senderClientId) const {
+    return !gameInfo.clientId.isEmpty() && (gameInfo.clientId == senderClientId);
+}
+
+void Bot::enterCriticalOperation() {
+    activeOperations++;
+}
+
+void Bot::leaveCriticalOperation() {
+    activeOperations--;
+    if (activeOperations <= 0 && pendingRemoval) {
+        QMetaObject::invokeMethod(manager, [this]() {
+            manager->removeGame(this, this->pendingDisconnectFlag);
+        }, Qt::QueuedConnection);
+    }
+}
+
 BotManager::BotManager(QObject *parent) : QObject(parent)
 {
     QTimer *timer = new QTimer(this);
@@ -438,7 +477,7 @@ bool BotManager::isBotActive(Bot *bot, const char* context)
 
 void BotManager::addBotInstance(const QString& username, const QString& password)
 {
-    Bot *bot = new Bot(m_globalBotIdCounter++, username, password);
+    Bot *bot = new Bot(this, m_globalBotIdCounter++, username, password);
 
     bot->username = username;
     bot->password = password;
@@ -673,6 +712,14 @@ void BotManager::removeBotMappings(const QString &clientId, const QString &hostN
 void BotManager::removeGame(Bot *bot, bool disconnectFlag)
 {
     if (!isBotValid(bot, "RemoveGame")) return;
+
+    if (bot->activeOperations > 0) {
+        LOG_INFO(QString("⏳ 房间 [%1] 正在执行房主移交操作，销毁请求已排队").arg(bot->gameInfo.gameName));
+        bot->pendingRemoval = true;
+        bot->pendingDisconnectFlag = disconnectFlag;
+        return;
+    }
+
     if (bot->state == BotState::Idle || bot->state == BotState::Disconnected) return;
 
     QString keyGameName = bot->gameInfo.gameName.toLower();
@@ -1330,8 +1377,13 @@ void BotManager::onBotRoomHostChanged(Bot *bot, const quint8 heirPid)
 {
     if (!isBotActive(bot, "RoomHostChanged")) return;
 
+    bot->enterCriticalOperation();
+
     const auto &players = bot->client->getPlayers();
-    if (!players.contains(heirPid)) return;
+    if (!players.contains(heirPid)) {
+        bot->leaveCriticalOperation();
+        return;
+    }
 
     QString newHostName = players[heirPid].name;
     QString newUuid = players[heirPid].clientUuid;
@@ -1353,11 +1405,14 @@ void BotManager::onBotRoomHostChanged(Bot *bot, const quint8 heirPid)
                                           MSG_ROOM_HOST_CHANGE,
                                           heirPid);
     }
+    bot->leaveCriticalOperation();
 }
 
 void BotManager::onBotVisualHostLeft(Bot *bot)
 {
     if (!isBotActive(bot, "VisualHostLeft")) return;
+
+    bot->enterCriticalOperation();
 
     QString oldHostName = bot->gameInfo.hostName;
     QString oldUuid = bot->gameInfo.clientId;
@@ -1403,6 +1458,7 @@ void BotManager::onBotVisualHostLeft(Bot *bot)
         LOG_INFO(QString("🚫 [房间关闭] 房主离开且无继承人"));
         removeGame(bot, false);
     }
+    bot->leaveCriticalOperation();
 }
 
 void BotManager::onBotHostJoinedGame(Bot *bot, const QString &hostName)
