@@ -68,8 +68,8 @@ private slots:
     void cleanupStaleRecords();
 
 private:
-    bool isIpBanned(quint32 ipInt, const QString& ipStr, IpStats &stats, qint64 now);
-    void triggerBan(quint32 ipInt, const QString& ipStr, IpStats &stats, const QString &reason);
+    bool isIpBanned(quint32 ipInt, const QString &ipStr, IpStats &stats, qint64 now);
+    void triggerBan(quint32 ipInt, const QString &ipStr, IpStats &stats, const QString &reason);
     quint32 parseIpToInt(const QHostAddress &addr) const;
 
     // 获取动态阈值

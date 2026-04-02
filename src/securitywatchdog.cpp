@@ -170,7 +170,7 @@ int SecurityWatchdog::getDynamicTcpLimit(const IpStats &stats) const {
     return MAX_TCP_PER_MIN_BASE + (stats.activeSessions.size() * EXTRA_TCP_PER_SESSION);
 }
 
-bool SecurityWatchdog::isIpBanned(quint32 ipInt, const QString& ipStr, IpStats &stats, qint64 now)
+bool SecurityWatchdog::isIpBanned(quint32 ipInt, const QString &ipStr, IpStats &stats, qint64 now)
 {
     if (!stats.isBanned) return false;
     if (now < stats.banExpireTime) return true;
@@ -181,7 +181,7 @@ bool SecurityWatchdog::isIpBanned(quint32 ipInt, const QString& ipStr, IpStats &
     return false;
 }
 
-void SecurityWatchdog::triggerBan(quint32 ipInt, const QString& ipStr, IpStats &stats, const QString &reason)
+void SecurityWatchdog::triggerBan(quint32 ipInt, const QString &ipStr, IpStats &stats, const QString &reason)
 {
     if (stats.isBanned) return;
 
