@@ -111,6 +111,7 @@ enum LeaveReason {
 
 // 拒绝加入原因
 enum RejectReason {
+    GAME_NOT_FOUND              = 0x01, // 游戏未找到
     BAD_GAME                    = 0x05, // 指定的游戏不存在
     GAME_CLOSED                 = 0x06, // 游戏已关闭
     FULL_OLD                    = 0x07, // 房间已满(旧)
@@ -119,8 +120,10 @@ enum RejectReason {
     TOURNAMENT_REQ              = 0x0B, // 需要进入锦标赛模式
     TOO_POOR                    = 0x0D, // 指积分不足
     SOLO_REQ                    = 0x0E, // 需要单人模式
+    CHANNEL_RESTRICTED          = 0x0F, // 频道限制
     STARTED                     = 0x10, // 游戏已开始
     GENERIC_ERROR               = 0x1B, // 版本不匹配、地图不匹配或被主机拉黑
+    MAP_AUTH_FAILED             = 0x1D, // 地图验证失败
     WRONGPASS                   = 0x27  // 密码错误
 };
 
@@ -356,9 +359,14 @@ struct PlayerData {
     qint64          lastCountdownTick       = 0;
 };
 
+struct PlayerRejoin {
+    qint64          leaveTime;
+    bool            isVisualHost;
+};
+
 struct PlayerAction {
-    quint8 pid;
-    QByteArray data;
+    quint8          pid;
+    QByteArray      data;
 };
 
 // =========================================================
@@ -499,6 +507,7 @@ signals:
     void gameCreateSuccess(CommandSource commandSource);
     void readyStateChanged(const QVariantMap &readyData);
     void roomPingsUpdated(const QMap<quint8, quint32> &pings);
+    void rejoinRejected(const QString &clientId, quint32 remainingMs);
     void requestCreateGame(const QString &username, const QString &gameName, CommandSource commandSource);
 
 private slots:
@@ -527,6 +536,7 @@ private:
     QList<QTcpSocket*>              m_playerSockets;
     QMap<QTcpSocket*, QByteArray>   m_playerBuffers;
     QMap<quint8, PlayerData>        m_players;
+    QMap<QString, PlayerRejoin>     m_rejoinCooldowns;
 
     // 频道管理
     QStringList                     m_channelList;

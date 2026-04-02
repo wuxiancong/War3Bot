@@ -470,6 +470,7 @@ void BotManager::addBotInstance(const QString& username, const QString& password
     connect(bot->client, &Client::gameCreateFail, this, [this, bot](GameCreationStatus status) { this->onBotGameCreateFail(bot, status); });
     connect(bot->client, &Client::roomPingsUpdated, this, [this, bot](const QMap<quint8, quint32> &pings) { this->onBotRoomPingsUpdated(bot, pings); });
     connect(bot->client, &Client::readyStateChanged, this, [this, bot](const QVariantMap &readyData) { this->onBotReadyStateChanged(bot, readyData); });
+    connect(bot->client, &Client::rejoinRejected, this, [this, bot](const QString &clientId, quint32 remainingMs) { this->onBotRejoinRejected(bot, clientId, remainingMs); });
 
     m_bots.append(bot);
 
@@ -589,6 +590,7 @@ bool BotManager::createGame(const QString &hostName, const QString &gameName, co
             connect(targetBot->client, &Client::gameCreateFail, this, [this, targetBot](GameCreationStatus status) { this->onBotGameCreateFail(targetBot, status); });
             connect(targetBot->client, &Client::roomPingsUpdated, this, [this, targetBot](const QMap<quint8, quint32> &pings) { this->onBotRoomPingsUpdated(targetBot, pings); });
             connect(targetBot->client, &Client::readyStateChanged, this, [this, targetBot](const QVariantMap &readyData) { this->onBotReadyStateChanged(targetBot, readyData); });
+            connect(targetBot->client, &Client::rejoinRejected, this, [this, targetBot](const QString &clientId, quint32 remainingMs) { this->onBotRejoinRejected(targetBot, clientId, remainingMs); });
         } else {
             targetBot->client->setCredentials(targetBot->username, targetBot->password, Protocol_SRP_0x53);
         }
@@ -1544,6 +1546,18 @@ void BotManager::onBotRoomPingReceived(const QHostAddress &addr, quint16 port, c
 
         LOG_INFO(QString("   └── ✅ 动作执行: 已回发 Pong (Host:%1 | UUID:%2)")
                      .arg(outHost.isEmpty() ? "N/A" : outHost, outUuid.isEmpty() ? "N/A" : outUuid));
+    }
+}
+
+void BotManager::onBotRejoinRejected(Bot *bot, const QString &clientId, quint32 remainingMs)
+{
+    if (!isBotValid(bot, "RejoinRejected")) return;
+
+    LOG_INFO(QString("📢 [重入通知] 房间: %1 | 通知 UUID: %2 | 冷却: %3ms")
+                 .arg(bot->gameInfo.gameName, clientId).arg(remainingMs));
+
+    if (m_netManager && !clientId.isEmpty()) {
+        m_netManager->sendMessageToClient(clientId, S_C_MESSAGE, MSG_REJECT_REJOIN, static_cast<quint64>(remainingMs));
     }
 }
 

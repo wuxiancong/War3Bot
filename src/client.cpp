@@ -781,10 +781,36 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
         QHostAddress iAddr(qToBigEndian(clientInternalIP));
 
-        // 打印解析详情
         LOG_INFO(QString("   ├─ 👤 玩家名: %1").arg(clientPlayerName));
         LOG_INFO(QString("   ├─ 🌍 内网IP: %1:%2").arg(iAddr.toString()).arg(clientInternalPort));
         LOG_INFO(QString("   ├─ 🔧 监听端口: %1").arg(clientListenPort));
+
+        QString currentUuid = (m_netManager) ? m_netManager->getUuidByPreJoinName(clientPlayerName) : "";
+        QString identifier = currentUuid.isEmpty() ? clientPlayerName : currentUuid;
+
+        if (!identifier.isEmpty() && m_rejoinCooldowns.contains(identifier)) {
+            PlayerRejoin playerRejoin = m_rejoinCooldowns.value(identifier);
+            qint64 now = QDateTime::currentMSecsSinceEpoch();
+            qint64 elapsed = now - playerRejoin.leaveTime;
+
+            // 房主限制 1500ms，普通玩家 500ms
+            int cooldownLimit = playerRejoin.isVisualHost ? 1500 : 500;
+
+            if (elapsed < cooldownLimit) {
+                quint32 remaining = static_cast<quint32>(cooldownLimit - elapsed);
+                LOG_INFO(QString("🛑 [重入拦截] 玩家 %1 离场不足 %2ms (当前: %3ms)，拒绝加入房间")
+                             .arg(clientPlayerName)
+                             .arg(cooldownLimit)
+                             .arg(elapsed));
+                emit rejoinRejected(currentUuid, remaining);
+                socket->write(createW3GSRejectJoinPacket(BAD_GAME));
+                socket->flush();
+                socket->disconnectFromHost();
+                return;
+            } else {
+                m_rejoinCooldowns.remove(identifier);
+            }
+        }
 
         // 1.1 房主校验
         bool nameMatch = (!m_host.isEmpty() && m_host.compare(clientPlayerName, Qt::CaseInsensitive) == 0);
@@ -1623,7 +1649,8 @@ void Client::onPlayerDisconnected() {
 
     quint8 pidToRemove = 0;
     QString nameToRemove = "";
-    bool wasVisualHost = false;
+    QString uuidToRemove = "";
+    bool isVisualHost = false;
 
     // 1. 查找玩家并移除 Map 记录
     auto it = m_players.begin();
@@ -1631,8 +1658,22 @@ void Client::onPlayerDisconnected() {
         if (it.value().socket == socket) {
             pidToRemove = it.key();
             nameToRemove = it.value().name;
-            wasVisualHost = it.value().isVisualHost;
+            uuidToRemove = it.value().clientUuid;
+            isVisualHost = it.value().isVisualHost;
 
+            // 记录重入冷却逻辑
+            QString identifier = uuidToRemove.isEmpty() ? nameToRemove : uuidToRemove;
+            if (!identifier.isEmpty()) {
+                PlayerRejoin playerRejoin;
+                playerRejoin.leaveTime = QDateTime::currentMSecsSinceEpoch();
+                playerRejoin.isVisualHost = isVisualHost;
+                m_rejoinCooldowns.insert(identifier, playerRejoin);
+
+                LOG_INFO(QString("⏳ [冷却启动] 玩家 %1 离开，记录限制 (房主: %2)")
+                             .arg(nameToRemove, isVisualHost ? "是" : "否"));
+            }
+
+            // 执行移除逻辑
             it = m_players.erase(it);
             int humanCount = qMax(0, m_players.size() - 1);
             emit playerCountChanged(humanCount);
@@ -1660,7 +1701,7 @@ void Client::onPlayerDisconnected() {
         // 2. 释放槽位逻辑
         for (int i = 0; i < m_slots.size(); ++i) {
             if (m_slots[i].pid == pidToRemove) {
-                if (wasVisualHost) {
+                if (isVisualHost) {
                     oldHostSlotIndex = i;
                 }
 
@@ -1697,7 +1738,7 @@ void Client::onPlayerDisconnected() {
         LOG_INFO("   ├─ 🧹 资源清理: Socket 移除 & 槽位重置");
 
         // 3. 房主离开处理逻辑
-        if (wasVisualHost) {
+        if (isVisualHost) {
             if(!m_gameStarted) {
                 LOG_INFO("   ├─ 👑 [房主交接] 检测到房主离开...");
 

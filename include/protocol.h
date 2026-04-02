@@ -72,7 +72,8 @@ enum MessageCode : quint8 {
     MSG_CHECK_MAP_CRC               = 2,
     MSG_HOST_LEAVE_GAME             = 3,
     MSG_HOST_UNHOST_GAME            = 4,
-    MSG_ROOM_HOST_CHANGE            = 5
+    MSG_ROOM_HOST_CHANGE            = 5,
+    MSG_REJECT_REJOIN               = 6
 };
 
 enum TcpConnType {
