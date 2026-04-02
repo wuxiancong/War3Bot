@@ -1391,6 +1391,7 @@ void BotManager::onBotRoomHostChanged(Bot *bot, const quint8 heirPid)
                                           MSG_ROOM_HOST_CHANGE,
                                           heirPid);
     }
+    bot->pendingRemoval = false;
     bot->leaveCriticalOperation();
 }
 
@@ -1398,6 +1399,7 @@ void BotManager::onBotVisualHostLeft(Bot *bot)
 {
     if (!isBotActive(bot, "VisualHostLeft")) return;
 
+    // 进入关键操作保护区
     bot->enterCriticalOperation();
 
     QString oldHostName = bot->gameInfo.hostName;
@@ -1408,7 +1410,7 @@ void BotManager::onBotVisualHostLeft(Bot *bot)
 
     const QMap<quint8, PlayerData> &players = bot->client->getPlayers();
 
-    // 1. 寻找继承人
+    // 1. 寻找继承人 (在 Client 侧已经处理过 isVisualHost 标记)
     for (auto it = players.begin(); it != players.end(); ++it) {
         if (it.key() != 2 && it.value().isVisualHost) {
             newUuid = it.value().clientUuid;
@@ -1420,15 +1422,19 @@ void BotManager::onBotVisualHostLeft(Bot *bot)
 
     // 2. 执行所有权交接逻辑
     if (!newUuid.isEmpty()) {
-        LOG_INFO(QString("👑 [房主移交] 目标: %1 | 新房主: %2 (PID: %3)")
+        LOG_INFO(QString("👑 [房主移交成功] 目标: %1 | 新房主: %2 (PID: %3)")
                      .arg(bot->gameInfo.gameName, newHostName).arg(newHostPid));
 
+        bot->pendingRemoval = false;
+
+        // 更新映射表：先移除旧的，再插入新的
         m_hostNameToBotMap.remove(oldHostName.toLower());
         m_hostNameToBotMap.insert(newHostName.toLower(), bot);
 
         m_clientIdToBotMap.remove(oldUuid);
         m_clientIdToBotMap.insert(newUuid, bot);
 
+        // 更新 Bot 内部信息
         bot->gameInfo.clientId = newUuid;
         bot->gameInfo.hostName = newHostName;
         bot->hostname = newHostName;
@@ -1439,11 +1445,14 @@ void BotManager::onBotVisualHostLeft(Bot *bot)
                 m_netManager->sendMessageToClient(p.clientUuid, PacketType::S_C_MESSAGE, MSG_HOST_LEAVE_GAME, newHostPid);
             }
         }
+
+        LOG_INFO(QString("   └─ ✅ 房间 [%1] 已由玩家 %2 成功接管，所有映射已同步").arg(bot->gameInfo.gameName, newHostName));
     }
     else {
-        LOG_INFO(QString("🚫 [房间关闭] 房主离开且无继承人"));
+        LOG_INFO(QString("🚫 [房间关闭] 房主 %1 离开且无继承人，正在解散房间: %2").arg(oldHostName, bot->gameInfo.gameName));
         removeGame(bot, false);
     }
+
     bot->leaveCriticalOperation();
 }
 
