@@ -466,7 +466,6 @@ int main(int argc, char *argv[]) {
                 bool isTarget = targetUser.isEmpty() || (bot->username.compare(targetUser, Qt::CaseInsensitive) == 0);
 
                 if (isTarget && bot->state != BotState::Idle && bot->state != BotState::Disconnected) {
-                    bot->client->cancelGame();
                     botManager->removeGame(bot);
                     count++;
                     LOG_INFO(QString("✅ 已重置: Bot-%1 (%2) 的房间").arg(bot->id).arg(bot->username));

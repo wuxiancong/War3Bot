@@ -671,37 +671,23 @@ void BotManager::removeBotMappings(const QString &clientId, const QString &hostN
 void BotManager::removeGame(Bot *bot, bool disconnectFlag)
 {
     if (!isBotValid(bot, "RemoveGame")) return;
+    if (bot->state == BotState::Idle || bot->state == BotState::Disconnected) return;
 
-    if (bot->state == BotState::Idle || bot->state == BotState::Disconnected) {
-        return;
-    }
+    QString keyGameName = bot->gameInfo.gameName.toLower();
+    if (!keyGameName.isEmpty()) m_activeGames.remove(keyGameName);
 
-    LOG_INFO(QString("🧹 [清理任务] 准备回收机器人资源: Bot-%1").arg(bot->id));
+    QString keyHostName = bot->hostname.toLower();
+    QString keyClientId = bot->gameInfo.clientId;
+    removeBotMappings(keyClientId, keyHostName);
 
-    QString lowerGameName = bot->gameInfo.gameName.toLower();
+    LOG_INFO(QString("🧹 [清理] 正在移除房间: [%1] (Host: %2)").arg(keyGameName, keyHostName));
 
-    if (!lowerGameName.isEmpty()) {
-        m_activeGames.remove(lowerGameName);
-    }
+    if (bot->client) bot->client->cancelGame();
 
-    QString currentClientId = bot->gameInfo.clientId;
-    QString currentHostName = bot->hostname;
-
-    removeBotMappings(currentClientId, currentHostName);
-
-    bot->client->cancelGame();
     bot->resetGameState();
 
-    if (disconnectFlag) {
-        bot->client->disconnectFromHost();
-        bot->state = BotState::Disconnected;
-    } else {
-        bot->state = BotState::Idle;
-    }
-
-    LOG_INFO(QString("   └─ ✅ Bot-%1 状态已重置为: %2")
-                 .arg(bot->id)
-                 .arg(disconnectFlag ? "Disconnected" : "Idle"));
+    bot->state = disconnectFlag ? BotState::Disconnected : BotState::Idle;
+    if (disconnectFlag && bot->client) bot->client->disconnectFromHost();
 
     emit botStateChanged(bot->id, bot->username, bot->state);
 }
@@ -737,15 +723,13 @@ Bot *BotManager::findBotByHostName(const QString &hostName)
     QString lowerName = hostName.toLower();
 
     // 1. 快速轨道：查映射表
-    Bot *mapBot = m_hostNameToBotMap.value(lowerName, nullptr);
-    if (mapBot && mapBot->state != BotState::Disconnected) {
-        return mapBot;
+    if (m_hostNameToBotMap.contains(lowerName)) {
+        return m_hostNameToBotMap.value(lowerName);
     }
 
     // 2. 补偿轨道：遍历总表
     for (Bot *bot : qAsConst(m_bots)) {
-        if (bot && bot->state != BotState::Disconnected &&
-            bot->hostname.toLower() == lowerName) {
+        if (bot && bot->hostname.toLower() == lowerName) {
             return bot;
         }
     }
@@ -758,15 +742,13 @@ Bot *BotManager::findBotByClientId(const QString &clientId)
     if (clientId.isEmpty()) return nullptr;
 
     // 1. 快速轨道：查映射表
-    Bot *mapBot = m_clientIdToBotMap.value(clientId, nullptr);
-    if (mapBot && mapBot->state != BotState::Disconnected) {
-        return mapBot;
+    if (m_clientIdToBotMap.contains(clientId)) {
+        return m_clientIdToBotMap.value(clientId);
     }
 
     // 2. 补偿轨道：遍历总表
     for (Bot *bot : qAsConst(m_bots)) {
-        if (bot && bot->state != BotState::Disconnected &&
-            bot->gameInfo.clientId == clientId) {
+        if (bot && bot->gameInfo.clientId == clientId) {
             return bot;
         }
     }
@@ -821,11 +803,44 @@ void BotManager::handleHostCommand(const QString &userName, const QString &clien
     Bot *existingBotByCid = findBotByClientId(clientId);
     Bot *existingBotByName = findBotByHostName(userName);
 
-    if (existingBotByCid != nullptr || existingBotByName != nullptr) {
-        QString interceptReason = (existingBotByName != nullptr) ? "该游戏名/账号" : "当前客户端/设备";
+    auto isGhostBot = [](Bot* bot) {
+        return bot && (bot->gameInfo.gameName.isEmpty() || bot->state == BotState::Idle || bot->state == BotState::Disconnected);
+    };
 
-        LOG_WARNING(QString("   └─ ⚠️ 拦截: %1 已拥有活跃房间 (拦截目标: %2)")
-                        .arg(interceptReason, userName));
+    if (isGhostBot(existingBotByCid)) {
+        LOG_WARNING(QString("   🧹 发现设备残留幽灵 Bot (ID:%1)，正在强制清除映射...").arg(existingBotByCid->id));
+        m_clientIdToBotMap.remove(clientId);
+        existingBotByCid = nullptr;
+    }
+
+    if (isGhostBot(existingBotByName)) {
+        LOG_WARNING(QString("   🧹 发现账号残留幽灵 Bot (ID:%1)，正在强制清除映射...").arg(existingBotByName->id));
+        m_hostNameToBotMap.remove(userName.toLower());
+        existingBotByName = nullptr;
+    }
+
+    if (existingBotByCid != nullptr || existingBotByName != nullptr) {
+        LOG_WARNING("   ├── 🛡️ [重复开房拦截] 系统检测到活跃冲突");
+
+        // 1. 检查基于设备/UUID的映射
+        if (existingBotByCid) {
+            LOG_INFO(QString("   │   ├─ 📱 来源: 设备匹配 (UUID: %1)").arg(clientId));
+            LOG_INFO(QString("   │   ├─ 🏠 所在房间: [%1]").arg(existingBotByCid->gameInfo.gameName));
+            LOG_INFO(QString("   │   └─ 👤 房间主人: %1").arg(existingBotByCid->hostname));
+        }
+
+        // 2. 检查基于账号/用户名的映射
+        if (existingBotByName) {
+            bool isDifferentBot = (existingBotByCid != existingBotByName);
+
+            LOG_INFO(QString("   │   ├─ 👤 来源: 账号匹配 (用户名: %1)").arg(userName));
+            LOG_INFO(QString("   │   ├─ 🏠 所在房间: [%1]").arg(existingBotByName->gameInfo.gameName));
+            LOG_INFO(QString("   │   └─ 🆔 绑定UUID: %1 %2")
+                            .arg(existingBotByName->gameInfo.clientId, isDifferentBot ? "[⚠️ 与当前请求ID不符]" : ""));
+        }
+
+        LOG_WARNING(QString("   └── 🚫 动作: 拒绝创建请求，已向客户端 %1 发送 ERR_ALREADY_IN_GAME").arg(userName));
+
         m_netManager->sendMessageToClient(clientId, S_C_ERROR, ERR_ALREADY_IN_GAME);
         return;
     }
@@ -1138,29 +1153,18 @@ void BotManager::onBotCommandReceived(const QString &userName,
 
     // --- 4. 特殊处理 /unhost (仅房主) ---
     if (trimmedCommand == "/unhost") {
-        LOG_INFO(QString("🧹 [解散房间请求] 收到解散指令 | 发送者: %1 (UUID: %2)").arg(userName, clientId));
+        LOG_INFO(QString("🧹 [指令] 玩家 %1 请求解散房间").arg(userName));
 
         Bot *myBot = findBotByClientId(clientId);
-        QString matchMethod = "UUID";
-
-        if (!myBot) {
-            myBot = findBotByHostName(userName);
-            matchMethod = "用户名";
-        }
+        if (!myBot) myBot = findBotByHostName(userName);
 
         if (myBot) {
-            LOG_INFO(QString("   └─ 🚀 执行动作: 通过 [%1] 匹配成功，正在移除房间 [%2]")
-                         .arg(matchMethod, myBot->gameInfo.gameName));
-
             removeGame(myBot, false);
         } else {
-            LOG_WARNING(QString("   └─ ℹ️ 检索失败: 该用户 (UUID:%1 / Name:%2) 名下没有活跃房间，可能已被自动清理")
-                            .arg(clientId, userName));
+            LOG_WARNING("   └─ ℹ️ 房间可能已不存在");
         }
 
         m_netManager->sendMessageToClient(clientId, S_C_MESSAGE, MSG_HOST_UNHOST_GAME);
-
-        LOG_INFO("   └── ✅ 已向客户端下发 MSG_HOST_UNHOST_GAME 确认回执");
         return;
     }
 
@@ -1327,8 +1331,17 @@ void BotManager::onBotRoomHostChanged(Bot *bot, const quint8 heirPid)
     const auto &players = bot->client->getPlayers();
     if (!players.contains(heirPid)) return;
 
-    LOG_INFO(QString("🔑 [权限下发] 正在通知新房主 %1 (PID: %2)")
-                 .arg(players[heirPid].name).arg(heirPid));
+    QString newHostName = players[heirPid].name;
+    QString newUuid = players[heirPid].clientUuid;
+
+    bot->hostname = newHostName;
+    bot->gameInfo.hostName = newHostName;
+    bot->gameInfo.clientId = newUuid;
+    bot->hostJoined = true;
+
+
+    LOG_INFO(QString("👑 [房主转让完成] Bot-%1: 新房主 %2 (UUID: %3)")
+                 .arg(bot->id).arg(newHostName, newUuid));
 
     for (auto it = players.begin(); it != players.end(); ++it) {
         if (it.key() == 2) continue;
@@ -1352,7 +1365,7 @@ void BotManager::onBotVisualHostLeft(Bot *bot)
 
     const QMap<quint8, PlayerData> &players = bot->client->getPlayers();
 
-    // 1. 寻找 Client 内部已经确立的新房主 (isVisualHost 为 true 的人)
+    // 1. 寻找继承人
     for (auto it = players.begin(); it != players.end(); ++it) {
         if (it.key() != 2 && it.value().isVisualHost) {
             newUuid = it.value().clientUuid;
@@ -1362,9 +1375,10 @@ void BotManager::onBotVisualHostLeft(Bot *bot)
         }
     }
 
-    // 2. 执行映射交接
+    // 2. 执行所有权交接逻辑
     if (!newUuid.isEmpty()) {
-        LOG_INFO(QString("👑 [权限移交] 房主: %1 -> %2").arg(oldHostName, newHostName));
+        LOG_INFO(QString("👑 [房主移交] 目标: %1 | 新房主: %2 (PID: %3)")
+                     .arg(bot->gameInfo.gameName, newHostName).arg(newHostPid));
 
         m_hostNameToBotMap.remove(oldHostName.toLower());
         m_hostNameToBotMap.insert(newHostName.toLower(), bot);
@@ -1376,15 +1390,15 @@ void BotManager::onBotVisualHostLeft(Bot *bot)
         bot->gameInfo.hostName = newHostName;
         bot->hostname = newHostName;
 
-        // 3. 向全房间广播消息
+        // 3. 向全房间广播通知
         for (const auto &p : players) {
             if (p.pid != 2 && !p.clientUuid.isEmpty()) {
-                m_netManager->sendMessageToClient(p.clientUuid, S_C_MESSAGE, MSG_HOST_LEAVE_GAME, newHostPid);
+                m_netManager->sendMessageToClient(p.clientUuid, PacketType::S_C_MESSAGE, MSG_HOST_LEAVE_GAME, newHostPid);
             }
         }
     }
     else {
-        LOG_INFO(QString("🚫 [房间关闭] 无继承人，执行清理"));
+        LOG_INFO(QString("🚫 [房间关闭] 房主离开且无继承人"));
         removeGame(bot, false);
     }
 }
@@ -1464,7 +1478,6 @@ void BotManager::onBotPendingTaskTimeout()
 
                 // 3. 取消游戏
                 removeGame(bot, false);
-                bot->client->cancelGame();
             }
         }
     }
@@ -1709,7 +1722,6 @@ void BotManager::onBotError(Bot *bot, QString error)
 
     // 4. 执行资源回收与状态重置
     removeGame(bot, true);
-    emit botStateChanged(bot->id, bot->username, bot->state);
 
     // 5. 自动重连计划
     if (!bot->client->isConnected()) {
