@@ -435,15 +435,16 @@ public:
 
     // --- 游戏主机管理 ---
     bool isHostJoined();
-    void syncReadyStates();
+    void syncPlayerReadyStates();
     void initBotPlayerData();
     void swapSlots(int slot1, int slot2);
     void setGameTickInterval(quint16 interval = 50);
     bool hasPlayerByUuid(const QString &uuid) const;
-    void setPlayerReadyByUuid(const QString &uuid, bool ready);
+    bool hasPlayerByUserName(const QString &userName) const;
     void setHost(QString creatorName) { m_host = creatorName; };
     quint16 getGameTickInterval() const { return m_gameTickInterval; }
     void setMaxDownloadSpeed(quint32 kbps) { m_maxDownloadSpeed = kbps; }
+    void setPlayerReadyStates(const QString &uuid, const QString &name, bool ready);
     void createGame(const QString &gameName, const QString &password,
                     ProviderVersion providerVersion, ComboGameType comboGameType,
                     SubGameType subGameType, LadderType ladderType,CommandSource commandSource);

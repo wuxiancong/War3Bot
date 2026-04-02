@@ -1067,37 +1067,23 @@ void BotManager::onBotCommandReceived(const QString &userName,
                      .arg(userName, clientId, trimmedCommand));
 
         Bot *targetBot = nullptr;
-        QString identity = "未知";
 
         for (Bot *bot : qAsConst(m_bots)) {
-            if (!bot || !bot->client)
-                continue;
+            if (!isBotActive(bot, "CommandReceived Continue")) continue;
 
-            if (!isBotActive(bot, "CommandReceived Continue"))
-                continue;
+            bool isHost = bot->isOwner(clientId) || (bot->hostname.compare(userName, Qt::CaseInsensitive) == 0);
 
-            if (bot->isOwner(clientId)) {
+            bool isMember = bot->client->hasPlayerByUuid(clientId) || bot->client->hasPlayerByUserName(userName);
+
+            if (isHost || isMember) {
                 targetBot = bot;
-                identity = "房主(Owner)";
-                LOG_INFO(QString("   └─ 📍 匹配成功: 玩家是机器人 [%1] 的房主")
-                             .arg(bot->username));
-                break;
-            }
-
-            if (bot->client->hasPlayerByUuid(clientId)) {
-                targetBot = bot;
-                identity = "普通成员(Member)";
-                LOG_INFO(
-                    QString(
-                        "   └─ 📍 匹配成功: 玩家在机器人 [%1] 的房间内 (当前人数: %2)")
-                        .arg(bot->username, bot->client->getSlotInfoString()));
+                LOG_INFO(QString("   └─ 📍 匹配成功: 玩家 %1 属于机器人 [%2] 的房间").arg(userName, bot->username));
                 break;
             }
         }
 
         if (!targetBot) {
-            LOG_INFO(QString("   └─ ❌ 失败: 玩家 %1 不在任何活跃房间中，指令无效")
-                         .arg(userName));
+            LOG_WARNING(QString("   └─ ❌ 失败: 玩家 %1 不在任何活跃房间中").arg(userName));
             return;
         }
 
@@ -1109,8 +1095,8 @@ void BotManager::onBotCommandReceived(const QString &userName,
                 LOG_DEBUG(QString("   └─ ⚙️ 执行状态变更: [%1] -> %2")
                               .arg(userName, isReady ? "READY" : "UNREADY"));
 
-                client->setPlayerReadyByUuid(clientId, isReady);
-                client->syncReadyStates();
+                client->setPlayerReadyStates(clientId, userName, isReady);
+                client->syncPlayerReadyStates();
 
                 LOG_INFO(QString("   └─ ✅ 执行成功: 玩家 %1 状态已同步为 [%2]")
                              .arg(userName, isReady ? "已准备" : "已取消准备"));

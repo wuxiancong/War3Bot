@@ -971,7 +971,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
             playerData.pid, playerData.name, playerData.extIp, playerData.extPort, playerData.intIp, playerData.intPort);
         broadcastPacket(newPlayerInfoPacket, newPid);
         broadcastSlotInfo();
-        syncReadyStates();
+        syncPlayerReadyStates();
 
         LOG_INFO("   └─ 📢 广播状态: 同步新玩家信息 & 刷新槽位");
     }
@@ -1497,7 +1497,7 @@ void Client::handleChatCommand(quint8 senderPid, const QString &fullMsg)
             msg.add("zh_CN", QString("[%1] 已准备。").arg(sender.name))
                 .add("en", QString("[%1] is ready.").arg(sender.name));
             broadcastChatMessage(msg);
-            syncReadyStates();
+            syncPlayerReadyStates();
         }
         return;
     }
@@ -1513,7 +1513,7 @@ void Client::handleChatCommand(quint8 senderPid, const QString &fullMsg)
             msg.add("zh_CN", QString("[%1] 取消了准备，请在 10 秒内重新准备。").arg(sender.name))
                 .add("en", QString("[%1] is no longer ready. 10s remaining.").arg(sender.name));
             broadcastChatMessage(msg);
-            syncReadyStates();
+            syncPlayerReadyStates();
         } else if (sender.isVisualHost) {
             LOG_INFO("   └─ ⚠️ 房主无需取消准备");
         }
@@ -1693,7 +1693,7 @@ void Client::onPlayerDisconnected() {
         LOG_INFO(QString("🔌 [断开连接] 玩家离线: %1 (PID: %2)").arg(nameToRemove).arg(pidToRemove));
 
         LOG_INFO(QString("   ├─ 🧹 状态清理: PID %1 已从准备名单移除").arg(pidToRemove));
-        syncReadyStates();
+        syncPlayerReadyStates();
 
         // 记录被清理的槽位索引
         int oldHostSlotIndex = -1;
@@ -4032,7 +4032,7 @@ void Client::updateCountdowns()
     }
 
     if (needSync) {
-        syncReadyStates();
+        syncPlayerReadyStates();
     }
 
     // 踢出逻辑
@@ -4052,7 +4052,7 @@ void Client::updateCountdowns()
     }
 }
 
-void Client::syncReadyStates()
+void Client::syncPlayerReadyStates()
 {
     QVariantMap syncMap;
 
@@ -4082,23 +4082,50 @@ void Client::syncReadyStates()
                  .arg(syncMap.size() / 2));
 }
 
-void Client::setPlayerReadyByUuid(const QString &uuid, bool ready)
+void Client::setPlayerReadyStates(const QString &uuid, const QString &name, bool ready)
 {
+    bool found = false;
     for (auto it = m_players.begin(); it != m_players.end(); ++it) {
-        if (it.value().clientUuid == uuid) {
-            it.value().isReady = ready;
+        PlayerData &p = it.value();
+
+        bool uuidMatch = (!uuid.isEmpty() && p.clientUuid == uuid);
+        bool nameMatch = (!name.isEmpty() && p.name.compare(name, Qt::CaseInsensitive) == 0);
+
+        if (uuidMatch || nameMatch) {
+            p.isReady = ready;
             if (!ready) {
-                it.value().readyCountdown = 10;
+                p.readyCountdown = 10;
             }
-            syncReadyStates();
-            return;
+
+            if (p.clientUuid.isEmpty() && !uuid.isEmpty()) {
+                p.clientUuid = uuid;
+                LOG_INFO(QString("🔗 [UUID补全] 已为玩家 %1 关联 UUID: %2").arg(p.name, uuid));
+            }
+            found = true;
+            break;
         }
+    }
+
+    if (!found) {
+        LOG_WARNING(QString("⚠️ [准备失败] 房间内找不到玩家: %1 (UUID: %2)").arg(name, uuid));
     }
 }
 
 bool Client::hasPlayerByUuid(const QString &uuid) const {
     for (const auto &p : m_players) {
         if (p.clientUuid == uuid) return true;
+    }
+    return false;
+}
+
+bool Client::hasPlayerByUserName(const QString &userName) const
+{
+    if (userName.isEmpty()) return false;
+
+    for (auto it = m_players.constBegin(); it != m_players.constEnd(); ++it) {
+        if (it.value().name.compare(userName, Qt::CaseInsensitive) == 0) {
+            return true;
+        }
     }
     return false;
 }
