@@ -495,7 +495,7 @@ public:
 signals:
     void connected();
     void gameStarted();
-    void gameCanceled();
+    void gameCancelled();
     void disconnected();
     void authenticated();
     void accountCreated();

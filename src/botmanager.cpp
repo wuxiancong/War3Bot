@@ -145,9 +145,22 @@ void Bot::enterCriticalOperation() {
 
 void Bot::leaveCriticalOperation() {
     activeOperations--;
-    if (activeOperations <= 0 && pendingRemoval) {
-        QMetaObject::invokeMethod(manager, [this]() {
-            manager->removeGame(this, this->pendingDisconnectFlag);
+
+    if (activeOperations > 0) return;
+    if (pendingRemoval) {
+        QString finalReason = QString("关键操作结束，履行排队指令 (原始原因: %1)")
+                                  .arg(pendingRemovalReason.isEmpty() ? "未知" : pendingRemovalReason);
+
+        LOG_INFO("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        LOG_INFO(QString("⏳ [清理履约] 机器人: %1 (ID:%2)").arg(username).arg(id));
+        LOG_INFO(QString("   ├── 🏠 关联房间: [%1]").arg(gameInfo.gameName));
+        LOG_INFO(QString("   ├── ℹ️  当前状态: 关键序列已全部结束，保护锁已释放"));
+        LOG_INFO(QString("   ├── 📋 排队任务: 正在履行之前的 [销毁房间] 请求"));
+        LOG_INFO(QString("   └── 🔍 溯源原因: %1").arg(pendingRemovalReason));
+        LOG_INFO("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+
+        QMetaObject::invokeMethod(manager, [this, finalReason]() {
+            manager->removeGame(this, this->pendingDisconnectFlag, finalReason);
         }, Qt::QueuedConnection);
     }
 }
@@ -496,7 +509,7 @@ void BotManager::addBotInstance(const QString& username, const QString& password
 
     // 基础状态信号
     connect(bot->client, &Client::gameStarted, this, [this, bot]() { this->onBotGameStarted(bot); });
-    connect(bot->client, &Client::gameCanceled, this, [this, bot]() { this->onBotGameCanceled(bot); });
+    connect(bot->client, &Client::gameCancelled, this, [this, bot]() { this->onBotGameCancelled(bot); });
     connect(bot->client, &Client::disconnected, this, [this, bot]() { this->onBotDisconnected(bot); });
     connect(bot->client, &Client::authenticated, this, [this, bot]() { this->onBotAuthenticated(bot); });
     connect(bot->client, &Client::accountCreated, this, [this, bot]() { this->onBotAccountCreated(bot); });
@@ -616,7 +629,7 @@ bool BotManager::createGame(const QString &hostName, const QString &gameName, co
 
             // 绑定信号
             connect(targetBot->client, &Client::gameStarted, this, [this, targetBot]() { this->onBotGameStarted(targetBot); });
-            connect(targetBot->client, &Client::gameCanceled, this, [this, targetBot]() { this->onBotGameCanceled(targetBot); });
+            connect(targetBot->client, &Client::gameCancelled, this, [this, targetBot]() { this->onBotGameCancelled(targetBot); });
             connect(targetBot->client, &Client::disconnected, this, [this, targetBot]() { this->onBotDisconnected(targetBot); });
             connect(targetBot->client, &Client::authenticated, this, [this, targetBot]() { this->onBotAuthenticated(targetBot); });
             connect(targetBot->client, &Client::accountCreated, this, [this, targetBot]() { this->onBotAccountCreated(targetBot); });
@@ -709,34 +722,56 @@ void BotManager::removeBotMappings(const QString &clientId, const QString &hostN
     }
 }
 
-void BotManager::removeGame(Bot *bot, bool disconnectFlag)
+void BotManager::removeGame(Bot *bot, bool disconnectFlag, const QString &reason)
 {
     if (!isBotValid(bot, "RemoveGame")) return;
 
+    // 1. 打印移除请求的初始信息
+    LOG_INFO(QString("🧹 [移除请求] 房间: [%1] | 原因: %2")
+                 .arg(bot->gameInfo.gameName.isEmpty() ? "N/A" : bot->gameInfo.gameName, reason));
+
+    // 2. 检查保护锁
     if (bot->activeOperations > 0) {
-        LOG_INFO(QString("⏳ 房间 [%1] 正在执行房主移交操作，销毁请求已排队").arg(bot->gameInfo.gameName));
+        LOG_INFO(QString("⏳ 房间 [%1] 正在执行关键操作，移除请求已排队。移除原因: %2")
+                     .arg(bot->gameInfo.gameName, reason));
         bot->pendingRemoval = true;
         bot->pendingDisconnectFlag = disconnectFlag;
+        bot->pendingRemovalReason = reason;
         return;
     }
 
-    if (bot->state == BotState::Idle || bot->state == BotState::Disconnected) return;
+    // 3. 过滤无效状态
+    if (bot->state == BotState::Idle || bot->state == BotState::Disconnected) {
+        LOG_INFO("   └── ⚠️ [忽略] 机器人当前已处于空闲/断开状态");
+        return;
+    }
 
+    // 4. 执行清理逻辑
     QString keyGameName = bot->gameInfo.gameName.toLower();
-    if (!keyGameName.isEmpty()) m_activeGames.remove(keyGameName);
-
     QString keyHostName = bot->hostname.toLower();
     QString keyClientId = bot->gameInfo.clientId;
+
+    if (!keyGameName.isEmpty()) m_activeGames.remove(keyGameName);
     removeBotMappings(keyClientId, keyHostName);
 
-    LOG_INFO(QString("🧹 [清理] 正在移除房间: [%1] (Host: %2)").arg(keyGameName, keyHostName));
+    LOG_INFO(QString("   ├── 🗑️ 清理映射: Host=%1 | UUID=%2").arg(keyHostName, keyClientId));
 
-    if (bot->client) bot->client->cancelGame();
+    if (bot->client) {
+        LOG_INFO("   ├── 📡 指令下发: 发送 cancelGame (W3GS 关闭)");
+        bot->client->cancelGame();
+    }
 
+    // 状态重置
     bot->resetGameState();
-
     bot->state = disconnectFlag ? BotState::Disconnected : BotState::Idle;
-    if (disconnectFlag && bot->client) bot->client->disconnectFromHost();
+
+    if (disconnectFlag && bot->client) {
+        LOG_INFO("   ├── 🔌 动作执行: 强制断开战网 TCP 连接");
+        bot->client->disconnectFromHost();
+    }
+
+    LOG_INFO(QString("   └── ✅ [清理完成] Bot-%1 已归还池中 (状态: %2)")
+                 .arg(bot->id).arg(disconnectFlag ? "Disconnected" : "Idle"));
 
     emit botStateChanged(bot->id, bot->username, bot->state);
 }
@@ -1021,7 +1056,7 @@ void BotManager::onBotClientExpired(const QString &clientId)
     Bot *bot = findBotByClientId(clientId);
     if (bot) {
         LOG_INFO(QString("🧹 [系统自动回收] 检测到 UUID %1 会话已过期，正在强制解散房间").arg(clientId));
-        removeGame(bot, true);
+        removeGame(bot, true, "Session Expired");
     }
 }
 
@@ -1194,7 +1229,7 @@ void BotManager::onBotCommandReceived(const QString &userName,
         if (!myBot) myBot = findBotByHostName(userName);
 
         if (myBot) {
-            removeGame(myBot, false);
+            removeGame(myBot, false, "User /unhost Command");
         } else {
             LOG_WARNING("   └─ ℹ️ 房间可能已不存在");
         }
@@ -1354,7 +1389,7 @@ void BotManager::onBotGameCreateFail(Bot *bot, GameCreationStatus status)
     }
 
     // 4. 清理资源并重置状态
-    removeGame(bot);
+    removeGame(bot, false, "Game Creation Failed");
 
     LOG_INFO("   └─ 🔄 [状态重置] 游戏信息已清除，Bot 已归还池中");
 }
@@ -1374,10 +1409,11 @@ void BotManager::onBotRoomHostChanged(Bot *bot, const quint8 heirPid)
     QString newHostName = players[heirPid].name;
     QString newUuid = players[heirPid].clientUuid;
 
-    bot->hostname = newHostName;
-    bot->gameInfo.hostName = newHostName;
-    bot->gameInfo.clientId = newUuid;
     bot->hostJoined = true;
+    bot->pendingRemoval = false;
+    bot->hostname = newHostName;
+    bot->gameInfo.clientId = newUuid;
+    bot->gameInfo.hostName = newHostName;
 
 
     LOG_INFO(QString("👑 [房主转让完成] Bot-%1: 新房主 %2 (UUID: %3)")
@@ -1391,7 +1427,6 @@ void BotManager::onBotRoomHostChanged(Bot *bot, const quint8 heirPid)
                                           MSG_ROOM_HOST_CHANGE,
                                           heirPid);
     }
-    bot->pendingRemoval = false;
     bot->leaveCriticalOperation();
 }
 
@@ -1450,7 +1485,7 @@ void BotManager::onBotVisualHostLeft(Bot *bot)
     }
     else {
         LOG_INFO(QString("🚫 [房间关闭] 房主 %1 离开且无继承人，正在解散房间: %2").arg(oldHostName, bot->gameInfo.gameName));
-        removeGame(bot, false);
+        removeGame(bot, false, "VisualHostLeft: No Heir");
     }
 
     bot->leaveCriticalOperation();
@@ -1530,7 +1565,7 @@ void BotManager::onBotPendingTaskTimeout()
                 }
 
                 // 3. 取消游戏
-                removeGame(bot, false);
+                removeGame(bot, false, "Pending Task Timeout");
             }
         }
     }
@@ -1786,7 +1821,7 @@ void BotManager::onBotError(Bot *bot, QString error)
     }
 
     // 4. 执行资源回收与状态重置
-    removeGame(bot, true);
+    removeGame(bot, true, "Bot Error Interruption");
 
     // 5. 自动重连计划
     if (!bot->client->isConnected()) {
@@ -1808,17 +1843,17 @@ void BotManager::onBotDisconnected(Bot *bot)
 
     LOG_INFO(QString("🔌 [断开连接] Bot-%1 (%2)").arg(bot->id).arg(bot->username));
 
-    removeGame(bot, true);
+    removeGame(bot, true, "Network Disconnected");
 
 }
 
-void BotManager::onBotGameCanceled(Bot *bot)
+void BotManager::onBotGameCancelled(Bot *bot)
 {
-    if (!isBotValid(bot, "GameCanceled")) return;
+    if (!isBotValid(bot, "GameCancelled")) return;
 
     LOG_INFO(QString("🔄 [状态同步] 收到 Client 取消信号: Bot-%1").arg(bot->id));
 
-    removeGame(bot);
+    removeGame(bot, true, "Game Cancelled");
 }
 
 void BotManager::onBotGameStarted(Bot *bot)

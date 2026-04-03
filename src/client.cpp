@@ -2654,7 +2654,7 @@ void Client::cancelGame()
         LOG_INFO("   └─ ✅ [状态] 机器人已就绪 (Ping 循环未运行)");
     }
 
-    emit gameCanceled();
+    emit gameCancelled();
     m_isCanceling = false;
 }
 

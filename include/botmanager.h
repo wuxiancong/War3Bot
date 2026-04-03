@@ -73,6 +73,7 @@ struct Bot {
     int activeOperations = 0;
     bool pendingRemoval = false;
     bool pendingDisconnectFlag = false;
+    QString pendingRemovalReason;
     void enterCriticalOperation();
     void leaveCriticalOperation();
 
@@ -106,8 +107,8 @@ public:
     int loadMoreBots(int count);
     Bot *findBotByHostName(const QString &hostName);
     Bot *findBotByClientId(const QString &clientId);
-    void removeGame(Bot *bot, bool disconnectFlag = false);
     void removeBotMappings(const QString &clientId, const QString &hostName);
+    void removeGame(Bot *bot, bool disconnectFlag = false, const QString &reason = "Unspecified");
 
     // --- 游戏创建与指令 ---
     bool checkCooldown(const QString &clientId, const QString &command, qint64 now);
@@ -143,7 +144,7 @@ private slots:
     void onBotAccountCreated(Bot *bot);
     void onBotAuthenticated(Bot *bot);
     void onBotDisconnected(Bot *bot);
-    void onBotGameCanceled(Bot *bot);
+    void onBotGameCancelled(Bot *bot);
     void onBotGameStarted(Bot *bot);
     void onBotPendingTaskTimeout();
 
