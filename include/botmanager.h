@@ -18,25 +18,22 @@ public:
     explicit BotManager(QObject *parent = nullptr);
     ~BotManager();
 
-    void initializeBots(quint32 initialCount, const QString &configPath);
-    bool createBotAccountFilesIfNotExist(bool allowAutoGenerate, int targetListNumber);
-
-    void startAll();
     void cleanup();
+    void startAllBots();
     int loadMoreBots(int count);
+    void processNextRegistration();
+    void setServerPort(quint16 port);
+    const QVector<Bot*> &getAllBots() const;
+    void setNetManager(NetManager *netManager);
     Bot *findBotByHostName(const QString &hostName);
     Bot *findBotByClientId(const QString &clientId);
+    void initializeBots(quint32 initialCount, const QString &configPath);
     void removeBotMappings(const QString &clientId, const QString &hostName);
-    void removeGame(Bot *bot, bool disconnectFlag = false, const QString &reason = "Unspecified");
-
-    void extracted(int &s1, int &s2, bool &s1Occupied, bool &s2Occupied);
     bool checkCooldown(const QString &clientId, const QString &command, qint64 now);
+    bool createBotAccountFilesIfNotExist(bool allowAutoGenerate, int targetListNumber);
     void handleHostCommand(const QString &userName, const QString &clientId, const QString &text);
+    void removeGame(Bot *bot, bool disconnectFlag = false, const QString &reason = "Unspecified");
     bool createGame(const QString &hostName, const QString &gameName, const QString &gameMode, CommandSource commandSource, const QString &clientUuid);
-
-    const QVector<Bot*> &getAllBots() const;
-    void setServerPort(quint16 port);
-    void setNetManager(NetManager *netManager);
 
 signals:
     void botStateChanged(int botId, QString username, BotState newState);
@@ -59,11 +56,11 @@ private slots:
     void onBotVisualHostLeft(Bot *bot);
     void onBotAccountCreated(Bot *bot);
     void onBotAuthenticated(Bot *bot);
-    void onBotDisconnected(Bot *bot);
     void onBotGameCancelled(Bot *bot);
+    void onBotDisconnected(Bot *bot);
+    void onBotEnteredChat(Bot *bot);
     void onBotGameStarted(Bot *bot);
     void onBotPendingTaskTimeout();
-    void processNextRegistration();
 
 private:
     void addBotInstance(const QString &username, const QString &password);

@@ -15,6 +15,7 @@ enum class BotState {
     Connecting,
     InLobby,
     Unregistered,
+    Authenticated,
     Idle,
     Creating,
     Reserved,

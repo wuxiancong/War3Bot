@@ -443,6 +443,7 @@ void Client::handleBNETTcpPacket(BNETPacketID id, const QByteArray &data)
 
     case SID_ENTERCHAT:
         LOG_INFO("   └─ ✅ 状态: 已进入聊天环境 (Unique Name Assigned)");
+        emit enteredChat();
         queryChannelList();
         break;
 

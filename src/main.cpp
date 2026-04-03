@@ -392,7 +392,7 @@ int main(int argc, char *argv[]) {
             // 1. 如果没指定用户，全部上线
             if (user.isEmpty()) {
                 LOG_INFO("🤖 执行批量上线 (加载配置数量的机器人)...");
-                botManager->startAll();
+                botManager->startAllBots();
             }
             // 2. 指定用户上线
             else {
@@ -424,7 +424,7 @@ int main(int argc, char *argv[]) {
                     }
                 }
                 if (!found) {
-                    LOG_WARNING(QString("❌ 未找到指定的机器人: %1 (请检查是否已通过 startAll 加载)").arg(user));
+                    LOG_WARNING(QString("❌ 未找到指定的机器人: %1 (请检查是否已通过 startAllBots 加载)").arg(user));
                 }
             }
         }

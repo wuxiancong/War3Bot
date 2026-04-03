@@ -497,6 +497,7 @@ public:
     void setBotFlag(bool isBot) { m_isBot = isBot; }
 signals:
     void connected();
+    void enteredChat();
     void gameStarted();
     void gameCancelled();
     void disconnected();
