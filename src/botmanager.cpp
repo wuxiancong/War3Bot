@@ -806,16 +806,8 @@ Bot *BotManager::findBotByHostName(const QString &hostName)
     if (hostName.isEmpty()) return nullptr;
     QString lowerName = hostName.toLower();
 
-    // 1. 快速轨道：查映射表
     if (m_hostNameToBotMap.contains(lowerName)) {
         return m_hostNameToBotMap.value(lowerName);
-    }
-
-    // 2. 补偿轨道：遍历总表
-    for (Bot *bot : qAsConst(m_bots)) {
-        if (bot && bot->hostname.toLower() == lowerName) {
-            return bot;
-        }
     }
 
     return nullptr;
@@ -825,16 +817,8 @@ Bot *BotManager::findBotByClientId(const QString &clientId)
 {
     if (clientId.isEmpty()) return nullptr;
 
-    // 1. 快速轨道：查映射表
     if (m_clientIdToBotMap.contains(clientId)) {
         return m_clientIdToBotMap.value(clientId);
-    }
-
-    // 2. 补偿轨道：遍历总表
-    for (Bot *bot : qAsConst(m_bots)) {
-        if (bot && bot->gameInfo.clientId == clientId) {
-            return bot;
-        }
     }
 
     return nullptr;
@@ -1221,19 +1205,23 @@ void BotManager::onBotCommandReceived(const QString &userName,
         return;
     }
 
-    // --- 4. 特殊处理 /unhost (仅房主) ---
+    // --- 4. 特殊处理 /unhost (仅限当前真正的房主) ---
     if (trimmedCommand == "/unhost") {
-        LOG_INFO(QString("🧹 [指令] 玩家 %1 请求解散房间").arg(userName));
+        LOG_INFO(QString("🧹 [指令] 玩家 %1 (UUID: %2) 请求解散房间").arg(userName, clientId));
 
         Bot *myBot = findBotByClientId(clientId);
-        if (!myBot) myBot = findBotByHostName(userName);
 
-        if (myBot) {
-            removeGame(myBot, false, "User /unhost Command");
-        } else {
-            LOG_WARNING("   └─ ℹ️ 房间可能已不存在");
+        if (!myBot) {
+            LOG_WARNING(QString("   └── 🛑 [拒绝] 玩家 %1 并非当前活跃房主（UUID不匹配），忽略解散请求").arg(userName));
+            return;
         }
 
+        if (!myBot->isOwner(clientId)) {
+            LOG_WARNING(QString("   └── 🛑 [权限拦截] 房间已易主，旧房主 %1 的解散指令已被废弃").arg(userName));
+            return;
+        }
+
+        removeGame(myBot, false, "User /unhost Command");
         m_netManager->sendMessageToClient(clientId, S_C_MESSAGE, MSG_HOST_UNHOST_GAME);
         return;
     }
