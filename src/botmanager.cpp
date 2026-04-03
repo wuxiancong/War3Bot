@@ -448,6 +448,11 @@ bool BotManager::createGame(const QString &hostName, const QString &gameName, co
     return false;
 }
 
+const QVector<Bot*>& BotManager::getAllBots() const
+{
+    return m_bots;
+}
+
 void BotManager::startAll()
 {
     int delay = 0;
@@ -557,11 +562,6 @@ void BotManager::removeGame(Bot *bot, bool disconnectFlag, const QString &reason
                  .arg(bot->id).arg(disconnectFlag ? "Disconnected" : "Idle"));
 
     emit botStateChanged(bot->id, bot->username, bot->state);
-}
-
-const QVector<Bot*>& BotManager::getAllBots() const
-{
-    return m_bots;
 }
 
 void BotManager::setServerPort(quint16 port)
