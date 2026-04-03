@@ -7,89 +7,10 @@
 #include <QSettings>
 #include <QPair>
 
+#include "bot.h"
 #include "client.h"
 #include "netmanager.h"
 
-class BotManager;
-
-// === 1. 机器人状态枚举 ===
-enum class BotState {
-    Disconnected,
-    Connecting,
-    InLobby,
-    Unregistered,
-    Idle,
-    Creating,
-    Reserved,
-    Waiting,
-    Starting,
-    InGame,
-    Finishing
-};
-
-// === 2. 房间信息结构体 ===
-struct GameInfo {
-    QString gameName = "";
-    QString gameMode = "";
-    QString mapName = "";
-    QString mapPath = "";
-    QString hostName = "";
-    QString clientId = "";
-
-    int maxPlayers = 10;
-    int currentPlayerCount = 0;
-
-    qint64 createTime = 0;
-    qint64 gameStartTime = 0;
-    qint64 gameEndTime = 0;
-};
-
-// === 3. 机器人结构体 ===
-struct Bot {
-    BotManager *manager;
-    quint32 id;
-    Client *client;
-    BotState state;
-    QString username;
-    QString password;
-    QString hostname;
-    GameInfo gameInfo;
-    bool hostJoined = false;
-
-    CommandSource commandSource = From_Server;
-
-    struct Task {
-        bool hasTask = false;
-        qint64 requestTime = 0;
-        QString hostName;
-        QString clientId;
-        QString gameName;
-        CommandSource commandSource;
-    } pendingTask;
-
-    void resetGameState();
-    bool isOwner(const QString &senderClientId) const;
-
-    int activeOperations = 0;
-    bool pendingRemoval = false;
-    bool pendingDisconnectFlag = false;
-    QString pendingRemovalReason;
-    void enterCriticalOperation();
-    void leaveCriticalOperation();
-
-    Bot(BotManager *botManager, quint32 botId, QString botUsername, QString botPassword);
-    ~Bot();
-};
-
-// === 4. 指令信息结构体 ===
-struct CommandInfo {
-    QString text;
-    QString clientId;
-    quint32 botId;
-    qint64 timestamp;
-};
-
-// === 5. 机器人管理器 ===
 class BotManager : public QObject
 {
     Q_OBJECT
@@ -97,11 +18,9 @@ public:
     explicit BotManager(QObject *parent = nullptr);
     ~BotManager();
 
-    // --- 初始化与文件管理 ---
     void initializeBots(quint32 initialCount, const QString &configPath);
     bool createBotAccountFilesIfNotExist(bool allowAutoGenerate, int targetListNumber);
 
-    // --- 机器人控制 ---
     void startAll();
     void cleanup();
     int loadMoreBots(int count);
@@ -110,12 +29,11 @@ public:
     void removeBotMappings(const QString &clientId, const QString &hostName);
     void removeGame(Bot *bot, bool disconnectFlag = false, const QString &reason = "Unspecified");
 
-    // --- 游戏创建与指令 ---
+    void extracted(int &s1, int &s2, bool &s1Occupied, bool &s2Occupied);
     bool checkCooldown(const QString &clientId, const QString &command, qint64 now);
     void handleHostCommand(const QString &userName, const QString &clientId, const QString &text);
     bool createGame(const QString &hostName, const QString &gameName, const QString &gameMode, CommandSource commandSource, const QString &clientUuid);
 
-    // --- Getters / Setters ---
     const QVector<Bot*> &getAllBots() const;
     void setServerPort(quint16 port);
     void setNetManager(NetManager *netManager);
@@ -124,9 +42,7 @@ signals:
     void botStateChanged(int botId, QString username, BotState newState);
     
 public slots:
-    void extracted(int &s1, int &s2, bool &s1Occupied, bool &s2Occupied);
-    void onBotCommandReceived(const QString &userName, const QString &clientUuid,
-                              const QString &command, const QString &text);
+    void onBotCommandReceived(const QString &userName, const QString &clientUuid, const QString &command, const QString &text);
     void onBotClientExpired(const QString &clientId);
 
 private slots:
@@ -147,26 +63,22 @@ private slots:
     void onBotGameCancelled(Bot *bot);
     void onBotGameStarted(Bot *bot);
     void onBotPendingTaskTimeout();
-
-    // 内部处理注册队列
     void processNextRegistration();
 
 private:
-    // 内部辅助函数
     void addBotInstance(const QString &username, const QString &password);
     bool isBotActive(Bot *bot, const char *context = nullptr);
     bool isBotValid(Bot *bot, const char *context = nullptr);
-    QChar randomCase(QChar c);
-    QString generateUniqueUsername();
-    QString toLeetSpeak(const QString &input);
     QString generateRandomPassword(int length);
+    QString toLeetSpeak(const QString &input);
+    void setupBotConnections(Bot *bot);
+    QString generateUniqueUsername();
+    QChar randomCase(QChar c);
 
 private:
-    // 机器人容器
     QVector<Bot*>                           m_bots;
     QString                                 m_botDisplayName            = "CC.Dota.XXX";
 
-    // 动态加载与注册相关
     QStringList                             m_allAccountFilePaths;
     QStringList                             m_newAccountFilePaths;
     QQueue<QPair<QString, QString>>         m_registrationQueue;
@@ -179,14 +91,12 @@ private:
     quint32                                 m_globalBotIdCounter        = 1;
     bool                                    m_isMassRegistering         = false;
 
-    // 网络与配置
     QString                                 m_targetServer;
     QString                                 m_configPath;
     quint16                                 m_controlPort               = 0;
     quint16                                 m_targetPort                = 6112;
     NetManager                              *m_netManager               = nullptr;
 
-    // 状态缓存
     QMap<QString, Bot*>                     m_activeGames;
     QMap<QString, qint64>                   m_lastHostTime;
     QMap<QString, CommandInfo>              m_commandInfos;

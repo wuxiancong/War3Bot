@@ -466,6 +466,7 @@ public:
     QString getBnetPacketName(BNETPacketID id);             // 获取对应的包名
     QString getCodecNameByLanguage(const QString &lang);    // 获取对应的编码
     void dumpPacket(const QByteArray &bytes);
+    QString stripColorCodes(const QString &text);
     void writeIpToStreamWithLog(QDataStream &out, const QHostAddress &ip);
     void setBotDisplayName(const QString &name) { m_botDisplayName = name; }
     const QMap<quint8, PlayerData> &getPlayers() const { return m_players; }

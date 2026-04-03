@@ -16,6 +16,7 @@
 #include <QNetworkDatagram>
 #include <QNetworkInterface>
 #include <QCryptographicHash>
+#include <QRegularExpression>
 
 #include <zlib.h>
 
@@ -4092,29 +4093,74 @@ void Client::syncPlayerReadyStates()
 void Client::setPlayerReadyStates(const QString &uuid, const QString &name, bool ready)
 {
     bool found = false;
+    QString matchType = "None";
+    quint8 matchedPid = 0;
+
+    // 1. 入口日志：记录收到的原始指令参数
+    LOG_INFO(QString("⚙️ [准备状态变更] 收到指令请求:"));
+    LOG_INFO(QString("   ├─ 👤 申报名字: %1").arg(name.isEmpty() ? "(空)" : name));
+    LOG_INFO(QString("   ├─ 🆔 申报 UUID: %1").arg(uuid.isEmpty() ? "(空)" : uuid));
+    LOG_INFO(QString("   └─ 🚩 目标动作: %1").arg(ready ? "✅ READY" : "⏳ UNREADY"));
+
     for (auto it = m_players.begin(); it != m_players.end(); ++it) {
         PlayerData &p = it.value();
 
+        // 执行判定
         bool uuidMatch = (!uuid.isEmpty() && p.clientUuid == uuid);
         bool nameMatch = (!name.isEmpty() && p.name.compare(name, Qt::CaseInsensitive) == 0);
 
         if (uuidMatch || nameMatch) {
+            found = true;
+            matchedPid = it.key();
+            matchType = uuidMatch ? "UUID 匹配成功" : "名字匹配成功";
+
+            // 2. 命中日志
+            LOG_INFO(QString("   ├── ✅ 命中玩家: %1 (PID: %2)").arg(p.name).arg(matchedPid));
+            LOG_INFO(QString("   │   ├─ 🔍 匹配结果: %1").arg(matchType));
+
+            // 更新状态
             p.isReady = ready;
             if (!ready) {
                 p.readyCountdown = 10;
             }
 
+            // 3. UUID 补全逻辑日志
             if (p.clientUuid.isEmpty() && !uuid.isEmpty()) {
                 p.clientUuid = uuid;
-                LOG_INFO(QString("🔗 [UUID补全] 已为玩家 %1 关联 UUID: %2").arg(p.name, uuid));
+                LOG_INFO(QString("   │   └─ 🔗 [身份补全] 该玩家此前缺失 UUID，现已成功绑定: %1").arg(uuid));
+            } else {
+                LOG_INFO(QString("   │   └─ 🆔 身份校验: UUID 状态正常 (%1)")
+                             .arg(p.clientUuid.isEmpty() ? "仍为空" : "已存在"));
             }
-            found = true;
+
             break;
         }
     }
 
-    if (!found) {
-        LOG_WARNING(QString("⚠️ [准备失败] 房间内找不到玩家: %1 (UUID: %2)").arg(name, uuid));
+    // 4. 结果分支处理
+    if (found) {
+        LOG_INFO(QString("   └── 🚀 处理完成: 正在触发全房数据同步广播"));
+        this->syncPlayerReadyStates();
+    } else {
+        // 5. 失败详细分析日志
+        LOG_ERROR(QString("   └── ❌ [匹配失败] 房间内找不到该玩家！当前房间存量分析:"));
+
+        if (m_players.isEmpty()) {
+            LOG_INFO("       └─ ⚠️ 警告: 当前房间玩家列表竟然是空的 (m_players empty)");
+        } else {
+            int count = 0;
+            for (auto it = m_players.constBegin(); it != m_players.constEnd(); ++it) {
+                count++;
+                bool isLast = (count == m_players.size());
+                QString prefix = isLast ? "       └─ " : "       ├─ ";
+
+                LOG_INFO(QString("%1PID:%2 | Name:\"%3\" | UUID:\"%4\"")
+                             .arg(prefix)
+                             .arg(it.key())
+                             .arg(it.value().name)
+                             .arg(it.value().clientUuid.isEmpty() ? "MISSING" : it.value().clientUuid));
+            }
+        }
     }
 }
 
@@ -4321,6 +4367,19 @@ QString Client::getColoredTextByState(quint8 pid, const QString &text, bool isPl
     }
     // 如果找不到玩家，默认不着色
     return text;
+}
+
+QString Client::stripColorCodes(const QString &text)
+{
+    if (text.isEmpty()) return text;
+
+    // 正则表达式说明：
+    // \\|c[0-9a-fA-F]{8} : 匹配 |c 及其后 8 位十六进制颜色码 (例如 |cff00ff00)
+    // |                  : 或者
+    // \\|r               : 匹配结束符 |r
+    static QRegularExpression colorRegex("\\|c[0-9a-fA-F]{8}|\\|r", QRegularExpression::CaseInsensitiveOption);
+
+    return QString(text).remove(colorRegex);
 }
 
 quint32 Client::ipToUint32(const QHostAddress &address) { return address.toIPv4Address(); }
