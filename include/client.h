@@ -420,6 +420,7 @@ public:
 
     // --- 连接管理 ---
     bool isConnected() const;
+    bool isConnecting() const;
     void disconnectFromHost();
     void connectToHost(const QString &address, quint16 port);
     void setCredentials(const QString &user, const QString &pass, LoginProtocol protocol = Protocol_SRP_0x53);

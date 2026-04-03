@@ -187,17 +187,24 @@ void Client::connectToHost(const QString &address, quint16 port)
     m_tcpSocket->connectToHost(address, port);
 }
 
-void Client::disconnectFromHost() {
-    // 主动断开通常不需要太多日志，除非为了调试
+void Client::disconnectFromHost()
+{
     m_tcpSocket->disconnectFromHost();
 }
 
-bool Client::isConnected() const {
+bool Client::isConnected() const
+{
     return m_tcpSocket->state() == QAbstractSocket::ConnectedState;
 }
 
-void Client::onDisconnected() {
-    // 树状日志
+bool Client::isConnecting() const
+{
+    return m_tcpSocket->state() == QAbstractSocket::HostLookupState ||
+           m_tcpSocket->state() == QAbstractSocket::ConnectingState;
+}
+
+void Client::onDisconnected()
+{
     LOG_INFO("🔌 [网络状态] 战网连接断开");
     LOG_INFO("   └─ ⚠️ 状态: Disconnected");
 

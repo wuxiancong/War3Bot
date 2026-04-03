@@ -514,27 +514,27 @@ void BotManager::removeGame(Bot *bot, bool disconnectFlag, const QString &reason
 {
     if (!isBotValid(bot, "RemoveGame")) return;
 
-    // 1. 打印移除请求的初始信息
-    LOG_INFO(QString("🧹 [移除请求] 房间: [%1] | 原因: %2")
-                 .arg(bot->gameInfo.gameName.isEmpty() ? "N/A" : bot->gameInfo.gameName, reason));
+    if (bot->state == BotState::Connecting || bot->client->isConnecting()) {
+        LOG_INFO(QString("🛡️ [状态锁] Bot-%1 正在建立新连接，忽略来自旧链路的清理请求 (%2)").arg(bot->id).arg(reason));
+        return;
+    }
 
-    // 2. 检查保护锁
+    BotState prevState = bot->state;
+    bot->state = BotState::Finishing;
+
+    LOG_INFO(QString("🧹 [移除请求] 房间: [%1] | 状态: %2 -> Finishing | 原因: %3")
+                 .arg(bot->gameInfo.gameName.isEmpty() ? "N/A" : bot->gameInfo.gameName)
+                 .arg(static_cast<int>(prevState))
+                 .arg(reason));
+
     if (bot->activeOperations > 0) {
-        LOG_INFO(QString("⏳ 房间 [%1] 正在执行关键操作，移除请求已排队。移除原因: %2")
-                     .arg(bot->gameInfo.gameName, reason));
+        LOG_INFO(QString("⏳ 房间 [%1] 正在执行关键操作，清理任务排队中...").arg(bot->gameInfo.gameName));
         bot->pendingRemoval = true;
         bot->pendingDisconnectFlag = disconnectFlag;
         bot->pendingRemovalReason = reason;
         return;
     }
 
-    // 3. 过滤无效状态
-    if (bot->state == BotState::Idle || bot->state == BotState::Disconnected) {
-        LOG_INFO("   └── ⚠️ [忽略] 机器人当前已处于空闲/断开状态");
-        return;
-    }
-
-    // 4. 执行清理逻辑
     QString keyGameName = bot->gameInfo.gameName.toLower();
     QString keyHostName = bot->hostname.toLower();
     QString keyClientId = bot->gameInfo.clientId;
@@ -544,21 +544,20 @@ void BotManager::removeGame(Bot *bot, bool disconnectFlag, const QString &reason
 
     LOG_INFO(QString("   ├── 🗑️ 清理映射: Host=%1 | UUID=%2").arg(keyHostName, keyClientId));
 
-    if (bot->client) {
-        LOG_INFO("   ├── 📡 指令下发: 发送 cancelGame (W3GS 关闭)");
-        bot->client->cancelGame();
-    }
-
-    // 状态重置
     bot->resetGameState();
+
     bot->state = disconnectFlag ? BotState::Disconnected : BotState::Idle;
 
-    if (disconnectFlag && bot->client) {
-        LOG_INFO("   ├── 🔌 动作执行: 强制断开战网 TCP 连接");
-        bot->client->disconnectFromHost();
+    if (bot->client) {
+        if (disconnectFlag) {
+            LOG_INFO("   ├── 🔌 动作执行: 强制断开旧链路");
+            bot->client->disconnectFromHost();
+        } else {
+            bot->client->cancelGame();
+        }
     }
 
-    LOG_INFO(QString("   └── ✅ [清理完成] Bot-%1 已归还池中 (状态: %2)")
+    LOG_INFO(QString("   └── ✅ [清理完成] Bot-%1 现已真正空闲 (状态: %2)")
                  .arg(bot->id).arg(disconnectFlag ? "Disconnected" : "Idle"));
 
     emit botStateChanged(bot->id, bot->username, bot->state);
@@ -1607,10 +1606,13 @@ void BotManager::onBotDisconnected(Bot *bot)
 {
     if (!isBotValid(bot, "Disconnected")) return;
 
+    if (bot->state == BotState::Connecting || bot->state == BotState::Creating) {
+        LOG_INFO(QString("🛡️ [防御成功] 拦截了 Bot-%1 的旧链路断开信号，新生命周期未受影响").arg(bot->id));
+        return;
+    }
+
     LOG_INFO(QString("🔌 [断开连接] Bot-%1 (%2)").arg(bot->id).arg(bot->username));
-
-    removeGame(bot, true, "Network Disconnected");
-
+    removeGame(bot, true, "Network Socket Closed");
 }
 
 void BotManager::onBotGameCancelled(Bot *bot)
