@@ -1534,6 +1534,7 @@ void NetManager::handleTcpCustomMessage(QTcpSocket *socket)
                     socket->setProperty("sessionId", pHeader->sessionId);
                     currentClientId = clientId;
 
+                    emit controlLinkEstablished(clientId);
                     LOG_INFO(QString("🔗 [TCP 控制通道绑定] UUID: %1 | 状态: 绑定成功").arg(clientId));
                 }
                 else if (connType == Tcp_W3GS) {

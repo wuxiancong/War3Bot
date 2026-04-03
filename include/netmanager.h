@@ -87,7 +87,8 @@ public:
 signals:
     void serverStopped();
     void serverStarted(quint64 port);
-    void clientExpired(const QString &uuid);
+    void clientExpired(const QString &clientId);
+    void controlLinkEstablished(const QString clientId);
     void commandReceived(const QString &userName, const QString &clientId, const QString &command, const QString &text);
     void roomPingReceived(const QHostAddress &senderAddr, quint16 senderPort, const QString &targetClientId, quint64 clientTime, PingSearchMode mode);
 
@@ -163,8 +164,6 @@ private:
 
     // 数据
     QMap<QString, QPointer<QTcpSocket>> m_tcpClients;
-    mutable QReadWriteLock m_registerInfosLock;
-    QMap<QString, RegisterInfo> m_registerInfos;
     QMap<quint32, QString> m_sessionIndex;
     QMap<QString, int> m_crcCounts;
     QString m_crcRootPath;
@@ -187,6 +186,9 @@ private:
     // 硬件禁止
     QSet<QString> m_bannedHwids;
     QReadWriteLock m_bannedListLock;
+public:
+    mutable QReadWriteLock m_registerInfosLock;
+    QMap<QString, RegisterInfo> m_registerInfos;
 };
 
 #endif // NETMANAGER_H

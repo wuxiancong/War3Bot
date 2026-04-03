@@ -924,17 +924,12 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         playerData.readyCountdown = 10;
         playerData.isReady = nameMatch;
         playerData.lastResponseTime = QDateTime::currentMSecsSinceEpoch();
-        if (m_netManager) {
-            playerData.clientUuid = m_netManager->getUuidByPreJoinName(clientPlayerName);
-
-            if (!playerData.clientUuid.isEmpty()) {
-                LOG_INFO(QString("🔗 [关联成功] 玩家: %1 <-> UUID: %2")
-                             .arg(clientPlayerName, playerData.clientUuid));
-            } else {
-                LOG_WARNING(QString("⚠️ [关联失败] 玩家 %1 没报备 UUID (可能是房主或旧版客户端)").arg(clientPlayerName));
-            }
+        playerData.clientUuid = currentUuid;
+        if (!playerData.clientUuid.isEmpty()) {
+            LOG_INFO(QString("🔗 [关联成功] 玩家: %1 <-> UUID: %2")
+                         .arg(clientPlayerName, playerData.clientUuid));
         } else {
-            LOG_CRITICAL(QString("❌ [严重错误] Client 实例中的 m_netManager 指针为空！无法为玩家 %1 关联 UUID").arg(clientPlayerName));
+            LOG_WARNING(QString("⚠️ [关联失败] 玩家 %1 确实没有申报 UUID").arg(clientPlayerName));
         }
 
         m_players.insert(newPid, playerData);
@@ -3677,6 +3672,18 @@ quint8 Client::getPidByPlayerName(const QString &PlayerName) const
 {
     for (auto it = m_players.constBegin(); it != m_players.constEnd(); ++it) {
         if (it.value().name.compare(PlayerName, Qt::CaseInsensitive) == 0) {
+            return it.key();
+        }
+    }
+    return 0;
+}
+
+quint8 Client::getPidByUuid(const QString &uuid) const
+{
+    if (uuid.isEmpty()) return 0;
+
+    for (auto it = m_players.constBegin(); it != m_players.constEnd(); ++it) {
+        if (it.value().clientUuid == uuid) {
             return it.key();
         }
     }

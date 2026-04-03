@@ -1122,26 +1122,21 @@ void BotManager::onBotCommandReceived(const QString &userName,
 
             }
             else if (trimmedCommand == "/swapself") {
-                quint8 myPid = client->getPidByPlayerName(userName);
+                quint8 myPid = client->getPidByUuid(clientId);
+                if (myPid == 0) {
+                    myPid = client->getPidByPlayerName(userName);
+                }
+
+                if (myPid == 0) {
+                    LOG_DEBUG(QString("   └─ ℹ️ 忽略刷新: 玩家 %1 已离线").arg(userName));
+                    return;
+                }
+
                 int mySlotIndex = client->getSlotIndexByPid(myPid);
-
-                if (myPid != 0 && mySlotIndex != -1) {
+                if (mySlotIndex != -1) {
                     int userFriendlyIndex = mySlotIndex + 1;
-
-                    LOG_DEBUG(QString("   └─ ⚙️ 执行位置刷新: PID=%1, SlotIndex=%2")
-                                  .arg(myPid)
-                                  .arg(mySlotIndex));
-
                     client->swapSlots(userFriendlyIndex, userFriendlyIndex);
-
-                    LOG_INFO(
-                        QString("   └─ ✅ 执行成功: 玩家 %1 (位置:%2) 的状态已强制刷新")
-                            .arg(userName)
-                            .arg(userFriendlyIndex));
-                } else {
-                    LOG_INFO(
-                        QString("   └─ ❌ 刷新失败: 无法获取玩家 %1 的 PID 或槽位信息")
-                            .arg(userName));
+                    LOG_INFO(QString("   └─ ✅ 执行成功: 玩家 %1 (PID:%2) 状态已刷新").arg(userName).arg(myPid));
                 }
             }
             else if (trimmedCommand == "/swap") {

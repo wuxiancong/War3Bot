@@ -484,6 +484,7 @@ public:
     bool isSlotOccupied(int slotIndex) const;
     int getSlotIndexByPid(quint8 pid) const;
     QString getPlayerNameByPid(quint8 pid) const;
+    quint8 getPidByUuid(const QString &uuid) const;
     quint8 getPidBySocket(QTcpSocket *socket) const;
     quint8 getPidByPlayerName(const QString &PlayerName) const;
     QString getPlayerNameBySocket(QTcpSocket *socket) const;
