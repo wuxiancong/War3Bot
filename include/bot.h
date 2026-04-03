@@ -37,19 +37,20 @@ struct PendingTask {
 
 // === 3. 房间信息结构体 ===
 struct GameInfo {
-    QString gameName = "";
-    QString gameMode = "";
-    QString mapName = "";
-    QString mapPath = "";
-    QString hostName = "";
-    QString clientId = "";
+    QString gameName        = "";
+    QString gameMode        = "";
+    QString mapName         = "";
+    QString mapPath         = "";
+    QString hostName        = "";
+    QString clientId        = "";
 
-    int maxPlayers = 10;
-    int currentPlayerCount = 0;
+    quint16 port            = 0;
+    int maxPlayers          = 10;
+    int currentPlayerCount  = 0;
 
-    qint64 createTime = 0;
-    qint64 gameStartTime = 0;
-    qint64 gameEndTime = 0;
+    qint64 createTime       = 0;
+    qint64 gameStartTime    = 0;
+    qint64 gameEndTime      = 0;
 };
 
 // === 4. 指令信息结构体 ===
@@ -91,6 +92,24 @@ public:
     void setupClient(NetManager* netManager, const QString& displayName);
     void setupPendingTask(const QString &host, const QString &name, const QString &clientId, CommandSource source);
     void setupGameInfo(const QString &host, const QString &name, const QString &mode, CommandSource source, const QString &clientId);
+
+signals:
+    void enteredChat();
+    void gameStarted();
+    void disconnected();
+    void gameCancelled();
+    void authenticated();
+    void accountCreated();
+    void visualHostLeft();
+    void gameCreateSuccess();
+    void socketError(QString error);
+    void playerCountChanged(int count);
+    void hostJoinedGame(const QString &name);
+    void roomHostChanged(const quint8 heirPid);
+    void gameCreateFail(GameCreationStatus status);
+    void roomPingsUpdated(const QMap<quint8, quint32> &pings);
+    void readyStateChanged(const QVariantMap &readyData);
+    void rejoinRejected(const QString &clientId, quint32 remainingMs);
 
 private:
     BotManager *m_manager;

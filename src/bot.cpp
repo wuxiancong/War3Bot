@@ -79,14 +79,34 @@ void Bot::leaveCriticalOperation()
 
 void Bot::setupClient(NetManager *netManager, const QString &displayName)
 {
-    if (client) client->deleteLater();
+    if (client) {
+        client->disconnect();
+        client->disconnectFromHost();
+        client->deleteLater();
+        client = nullptr;
+    }
 
     client = new Client(this);
     client->setNetManager(netManager);
-    client->setBotFlag(true);
-    client->setGameTickInterval();
     client->setBotDisplayName(displayName);
     client->setCredentials(username, password, Protocol_SRP_0x53);
+
+    connect(client, &Client::authenticated,      this, &Bot::authenticated);
+    connect(client, &Client::gameCreateSuccess,  this, &Bot::gameCreateSuccess);
+    connect(client, &Client::gameCreateFail,     this, &Bot::gameCreateFail);
+    connect(client, &Client::disconnected,       this, &Bot::disconnected);
+    connect(client, &Client::socketError,        this, &Bot::socketError);
+    connect(client, &Client::enteredChat,        this, &Bot::enteredChat);
+    connect(client, &Client::gameStarted,        this, &Bot::gameStarted);
+    connect(client, &Client::gameCancelled,      this, &Bot::gameCancelled);
+    connect(client, &Client::playerCountChanged, this, &Bot::playerCountChanged);
+    connect(client, &Client::hostJoinedGame,     this, &Bot::hostJoinedGame);
+    connect(client, &Client::roomHostChanged,    this, &Bot::roomHostChanged);
+    connect(client, &Client::visualHostLeft,     this, &Bot::visualHostLeft);
+    connect(client, &Client::roomPingsUpdated,   this, &Bot::roomPingsUpdated);
+    connect(client, &Client::readyStateChanged,  this, &Bot::readyStateChanged);
+    connect(client, &Client::rejoinRejected,     this, &Bot::rejoinRejected);
+    connect(client, &Client::accountCreated,     this, &Bot::accountCreated);
 }
 
 void Bot::setupPendingTask(const QString &host, const QString &name, const QString &clientId, CommandSource source)
@@ -103,7 +123,6 @@ void Bot::setupGameInfo(const QString &host, const QString &name, const QString 
 {
     resetGameState();
 
-    this->hostJoined = false;
     this->hostname = host;
     this->commandSource = source;
 
@@ -112,4 +131,10 @@ void Bot::setupGameInfo(const QString &host, const QString &name, const QString 
     this->gameInfo.gameMode = mode;
     this->gameInfo.clientId = clientId;
     this->gameInfo.createTime = QDateTime::currentMSecsSinceEpoch();
+
+    if (client && client->getUdpSocket()) {
+        this->gameInfo.port = client->getUdpSocket()->localPort();
+    } else {
+        this->gameInfo.port = 0;
+    }
 }
