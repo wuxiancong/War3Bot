@@ -68,6 +68,7 @@ private:
     bool isBotValid(Bot *bot, const char *context = nullptr);
     QString generateRandomPassword(int length);
     QString toLeetSpeak(const QString &input);
+    QString botStateToString(BotState state);
     void setupBotConnections(Bot *bot);
     QString generateUniqueUsername();
     QChar randomCase(QChar c);

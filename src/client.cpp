@@ -4165,8 +4165,7 @@ void Client::setPlayerReadyStates(const QString &uuid, const QString &name, bool
                 LOG_INFO(QString("%1PID:%2 | Name:\"%3\" | UUID:\"%4\"")
                              .arg(prefix)
                              .arg(it.key())
-                             .arg(it.value().name)
-                             .arg(it.value().clientUuid.isEmpty() ? "MISSING" : it.value().clientUuid));
+                             .arg(it.value().name, it.value().clientUuid.isEmpty() ? "MISSING" : it.value().clientUuid));
             }
         }
     }

@@ -418,9 +418,6 @@ bool BotManager::createGame(const QString &hostName, const QString &gameName, co
     LOG_INFO(QString("   ├─ 📝 游戏模式: %1").arg(gameMode));
     LOG_INFO(QString("   ├─ 🆔 命令来源: %1 (%2)").arg(sourceStr, clientId));
 
-    Bot *targetBot = nullptr;
-    bool needConnect = false;
-
     if (m_bots.isEmpty()) {
         LOG_ERROR("┌── ❌ [创建失败] 核心服务未运行");
         LOG_ERROR("└── 原因: 机器人池为空，没有任何 Bot 进程连接到服务端");
@@ -428,48 +425,36 @@ bool BotManager::createGame(const QString &hostName, const QString &gameName, co
         return false;
     }
 
-    // --- 1. 第一优先级：在线且完全空闲的 ---
+    Bot *targetBot = nullptr;
+    bool needConnect = false;
+
+
+    // 优先级 1: 在线空闲 Bot
     for (Bot *bot : qAsConst(m_bots)) {
         if (bot->state == BotState::Idle && bot->client && bot->client->isConnected()) {
             targetBot = bot;
+            LOG_INFO(QString("   ├─ ✅ 资源指派: 选中在线空闲机器人 [%1]").arg(targetBot->username));
             break;
         }
     }
 
-    // --- 2. 第二优先级：正在连接/认证/已在大厅，但还没分配任务的 ---
+    // 优先级 2: 可用状态 Bot
     if (!targetBot) {
         for (Bot *bot : qAsConst(m_bots)) {
-            bool isProcessing = (bot->state == BotState::Connecting ||
-                                 bot->state == BotState::Unregistered ||
-                                 bot->state == BotState::Authenticated ||
-                                 bot->state == BotState::InLobby);
-
-            if (isProcessing && !bot->pendingTask.hasTask && bot->gameInfo.clientId.isEmpty()) {
+            // 只要不是正在游戏中(InGame)、正在倒计时(Starting)、正在清理(Finishing) 且没有挂起任务
+            if (bot->state != BotState::InGame && bot->state != BotState::Starting &&
+                bot->state != BotState::Finishing && !bot->pendingTask.hasTask) {
 
                 targetBot = bot;
-                needConnect = true;
-
-                LOG_INFO(QString("   ├─ 🎯 抢占资源: 捕获正在建立链路/在大厅中的机器人 [%1] (ID: %2)")
-                             .arg(targetBot->username).arg(targetBot->id));
-                LOG_INFO(QString("   │  └─ 📍 当前状态: %1").arg(static_cast<int>(bot->state)));
+                needConnect = true; // 即使在线，由于不是 Idle，我们也强制重连以确保链路新鲜
+                LOG_INFO(QString("   ├─ 🎯 资源抢占: 捕获 [%1] 机器人 [%2]")
+                             .arg(botStateToString(bot->state), targetBot->username));
                 break;
             }
         }
     }
 
-    // --- 3. 第三优先级：完全离线的 ---
-    if (!targetBot) {
-        for (Bot *bot : qAsConst(m_bots)) {
-            if (bot->state == BotState::Disconnected) {
-                targetBot = bot;
-                needConnect = true;
-                LOG_INFO(QString("   ├─ ♻️ 资源复用: 唤醒离线机器人 [%1] (ID: %2)").arg(targetBot->username).arg(targetBot->id));
-                break;
-            }
-        }
-    }
-
-    // --- 4. 最后的手段：动态扩容 ---
+    // 优先级 3: 动态扩容 Bot
     if (!targetBot) {
         LOG_WARNING("   ├─ ⚠️ 当前池中无可用 Bot，尝试从文件加载...");
         if (loadMoreBots(1) > 0) {
@@ -478,31 +463,31 @@ bool BotManager::createGame(const QString &hostName, const QString &gameName, co
             LOG_INFO(QString("   ├─ 📂 动态扩容成功: 从文件加载了 [%1]").arg(targetBot->username));
         } else {
             LOG_ERROR("   └─ ❌ 动态扩容失败: 所有账号文件已耗尽！");
+            m_netManager->sendMessageToClient(clientId, S_C_ERROR, ERR_NO_BOTS_AVAILABLE);
             return false;
         }
     }
 
-    // --- 5. 统一执行逻辑 ---
     if (targetBot) {
         targetBot->setupGameInfo(hostName, gameName, gameMode, commandSource, clientId);
 
         if (needConnect) {
             targetBot->setupPendingTask(hostName, gameName, clientId, commandSource);
-            if (targetBot->state == BotState::Disconnected) {
-                targetBot->setupClient(m_netManager, m_botDisplayName);
-                setupBotConnections(targetBot);
-                targetBot->state = BotState::Connecting;
-                targetBot->client->connectToHost(m_targetServer, m_targetPort);
-                LOG_INFO(QString("   └─ ⏳ 执行动作: 启动连接流程 [%1] (任务已挂起)").arg(targetBot->username));
-            } else {
-                LOG_INFO(QString("   └─ ⏳ 执行动作: 注入任务至当前链路 [%1] (等待认证完成)").arg(targetBot->username));
-            }
+
+            LOG_INFO(QString("   └─ 🔌 执行动作: 强制刷新链路并重新拨号 [%1]").arg(targetBot->username));
+
+            targetBot->setupClient(m_netManager, m_botDisplayName);
+            setupBotConnections(targetBot);
+
+            targetBot->state = BotState::Connecting;
+            targetBot->client->connectToHost(m_targetServer, m_targetPort);
         }
         else {
             targetBot->state = BotState::Creating;
             targetBot->client->setHost(hostName);
             targetBot->client->setBotDisplayName(m_botDisplayName);
             targetBot->client->createGame(gameName, "", Provider_TFT_New, Game_TFT_Custom, SubType_None, Ladder_None, commandSource);
+
             LOG_INFO("   └─ 🚀 执行动作: 立即发送 CreateGame 指令");
         }
         return true;
@@ -1284,55 +1269,46 @@ void BotManager::onBotHostJoinedGame(Bot *bot, const QString &hostName)
 void BotManager::onBotPendingTaskTimeout()
 {
     quint64 now = QDateTime::currentMSecsSinceEpoch();
-    const quint64 TIMEOUT_MS = 3000;
-    const quint64 HOST_JOIN_TIMEOUT_MS = 5000;
 
-    for (int i = 0; i < m_bots.size(); ++i) {
-        Bot *bot = m_bots[i];
-        if(!isBotActive(bot, "PendingTaskTimeout")) continue;
-        // 只检查有挂起任务的
+    const quint64 TASK_TIMEOUT_MS = 15000;
+    const quint64 HOST_JOIN_TIMEOUT_MS = 10000;
+
+    for (Bot *bot : qAsConst(m_bots)) {
+        if (!isBotActive(bot, "PendingTaskTimeout")) continue;
+
         if (bot->pendingTask.hasTask) {
+            quint64 elapsed = now - bot->pendingTask.requestTime;
 
-            if (now - bot->pendingTask.requestTime > TIMEOUT_MS) {
-                // 1. 打印根节点
+            if (elapsed > TASK_TIMEOUT_MS) {
                 LOG_INFO(QString("🚨 [任务超时] Bot-%1 (%2)").arg(bot->id).arg(bot->username));
-                LOG_INFO(QString("   ├─ ⏱️ 耗时: %1 ms (阈值: %2 ms)").arg(now - bot->pendingTask.requestTime).arg(TIMEOUT_MS));
+                LOG_INFO(QString("   ├─ ⏱️ 耗时: %1 ms (阈值: %2 ms)").arg(elapsed).arg(TASK_TIMEOUT_MS));
                 LOG_INFO(QString("   ├─ 📝 任务: %1").arg(bot->pendingTask.gameName));
 
-                // 2. 清除标记
-                bot->pendingTask.hasTask = false;
-
-                // 3. 通知用户
                 if (!bot->pendingTask.clientId.isEmpty()) {
                     m_netManager->sendMessageToClient(bot->pendingTask.clientId, S_C_ERROR, ERR_TASK_TIMEOUT);
                     LOG_INFO(QString("   ├─ 👤 通知用户: %1 (Reason: 1-Timeout)").arg(bot->pendingTask.clientId));
                 }
 
-                // 4. 强制断线
-                bot->state = BotState::Disconnected;
-                LOG_INFO("   └─ 🛡️ [强制动作] 标记为 Disconnected");
+                removeGame(bot, true, "Create Game Task Timeout");
+
+                continue;
             }
         }
 
-        // 检查房主加入超时
         if (bot->state == BotState::Reserved && !bot->hostJoined) {
-
-            const quint64 diff = now - bot->gameInfo.createTime;
+            quint64 diff = now - bot->gameInfo.createTime;
 
             if (diff > HOST_JOIN_TIMEOUT_MS) {
-                // 1. 打印日志
                 LOG_INFO(QString("🚨 [加入超时] Bot-%1 (%2)").arg(bot->id).arg(bot->username));
                 LOG_INFO(QString("   ├─ ⏱️ 耗时: %1 ms (阈值: %2 ms)").arg(diff).arg(HOST_JOIN_TIMEOUT_MS));
                 LOG_INFO(QString("   ├─ 🏠 房间: %1").arg(bot->gameInfo.gameName));
                 LOG_INFO(QString("   └─ 👤 等待房主: %1 (未出现)").arg(bot->gameInfo.hostName));
 
-                // 2. 通知客户端
                 if (!bot->gameInfo.clientId.isEmpty()) {
                     m_netManager->sendMessageToClient(bot->gameInfo.clientId, S_C_ERROR, ERR_WAIT_HOST_TIMEOUT);
                 }
 
-                // 3. 取消游戏
-                removeGame(bot, false, "Pending Task Timeout");
+                removeGame(bot, false, "Waiting Host Join Timeout");
             }
         }
     }
@@ -2093,4 +2069,23 @@ bool BotManager::createBotAccountFilesIfNotExist(bool allowAutoGenerate, int tar
     }
 
     return generatedAny;
+}
+
+QString BotManager::botStateToString(BotState state)
+{
+    switch (state) {
+    case BotState::Disconnected:  return "Disconnected (已断开)";
+    case BotState::Connecting:    return "Connecting (连接中)";
+    case BotState::Unregistered:  return "Unregistered (未注册)";
+    case BotState::Authenticated: return "Authenticated (已认证)";
+    case BotState::InLobby:       return "InLobby (大厅中)";
+    case BotState::Idle:          return "Idle (空闲待机)";
+    case BotState::Creating:      return "Creating (创建中)";
+    case BotState::Reserved:      return "Reserved (已预留)";
+    case BotState::Waiting:       return "Waiting (等待房主)";
+    case BotState::Starting:      return "Starting (启动中)";
+    case BotState::InGame:        return "InGame (游戏内)";
+    case BotState::Finishing:     return "Finishing (清理中)";
+    default:                      return QString("Unknown (%1)").arg(static_cast<int>(state));
+    }
 }
