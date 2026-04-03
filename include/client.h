@@ -419,24 +419,24 @@ public:
     ~Client();
 
     // --- 连接管理 ---
-    void connectToHost(const QString &address, quint16 port);
-    void disconnectFromHost();
     bool isConnected() const;
+    void disconnectFromHost();
+    void connectToHost(const QString &address, quint16 port);
     void setCredentials(const QString &user, const QString &pass, LoginProtocol protocol = Protocol_SRP_0x53);
 
     // 设置 NetManager 指针
     void setNetManager(NetManager* netManager) { m_netManager = netManager; }
 
     // --- 战网交互 ---
-    void createAccount();                                   // 注册账号
     void enterChat();                                       // 进入聊天
+    void createAccount();                                   // 注册账号
     void queryChannelList();                                // 请求频道列表
     void joinChannel(const QString &channelName);           // 加入频道
 
     // --- 游戏主机管理 ---
     bool isHostJoined();
-    void syncPlayerReadyStates();
     void initBotPlayerData();
+    void syncPlayerReadyStates();
     void swapSlots(int slot1, int slot2);
     void setGameTickInterval(quint16 interval = 50);
     bool hasPlayerByUuid(const QString &uuid) const;
@@ -526,11 +526,9 @@ private slots:
     void onStartLagFinished();
     void onPlayerDisconnected();                            // 玩家断开连接
 
-public:
-    QString m_botDisplayName        = "CC.Dota.XXX";
-
 private:
     // --- 成员变量 ---
+    QString m_botDisplayName        = "CC.Dota.XXX";
 
     // 控制命令
     Command                         *m_command;
