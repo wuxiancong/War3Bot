@@ -382,25 +382,16 @@ void BotManager::addBotInstance(const QString& username, const QString& password
 {
     LOG_INFO(QString("🔨 [Bot创建序列] 准备实例化 Bot-%1: %2").arg(m_globalBotIdCounter).arg(username));
 
-    // 1. 创建 Bot 对象
     Bot *bot = new Bot(this, m_globalBotIdCounter++, username, password);
 
-    // 2. 必须先 setupClient，因为 setupBotConnections 内部会检查 bot->client 是否存在
+    m_bots.append(bot);
+
     LOG_INFO(QString("   ├─ ⚙️ 步骤1: 执行 bot->setupClient..."));
     bot->setupClient(m_netManager, m_botDisplayName);
 
-    // 3. 检查 setupClient 是否真的创建了对象
-    if (bot->client) {
-        LOG_INFO(QString("   │  ✅ 底层 Client 对象已创建 (指针: %1)").arg(reinterpret_cast<quintptr>(bot->client), 0, 16));
-    } else {
-        LOG_ERROR(QString("   │  ❌ 严重错误: bot->setupClient 运行后 client 依然为空！"));
-    }
-
-    // 4. 绑定信号
     LOG_INFO(QString("   ├─ 🔗 步骤2: 执行 setupBotConnections..."));
     setupBotConnections(bot);
 
-    m_bots.append(bot);
     LOG_INFO(QString("   └─ 🎉 Bot-%1 (%2) 初始化序列完成").arg(bot->id).arg(username));
 }
 

@@ -317,9 +317,13 @@ void Logger::critical(const QString &message)
 
 void Logger::log(LogLevel level, const QString &message, int depth)
 {
-    if (level < m_logLevel) return;
+    if (level < m_logLevel || m_disabled) return;
 
     QMutexLocker locker(&m_mutex);
+
+    rotateLogFileIfNeeded();
+
+    if (!m_stream) return;
 
     // 1. 实现简单树状缩进
     QString indent = QString(depth * 4, ' ');

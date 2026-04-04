@@ -253,7 +253,7 @@ int main(int argc, char *argv[]) {
     QString configLogLevel = configSettings.value("log/level", "info").toString().toLower();
     bool enableConsole = configSettings.value("log/enable_console", true).toBool();
     QString logFilePath = configSettings.value("log/log_file", "/var/log/war3bot/war3bot.log").toString();
-    qint64 maxLogSize = configSettings.value("log/max_size", 10 * 1024 * 1024).toLongLong();
+    qint64 maxLogSize = configSettings.value("log/max_size", 20 * 1024 * 1024).toLongLong();
     int backupCount = configSettings.value("log/backup_count", 5).toInt();
 
     QFileInfo logFileInfo(logFilePath);
