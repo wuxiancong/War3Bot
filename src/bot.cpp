@@ -87,6 +87,8 @@ void Bot::setupClient(NetManager *netManager, const QString &displayName)
     }
 
     client = new Client(this);
+    client->setBotFlag(true);
+    client->setGameTickInterval(50);
     client->setNetManager(netManager);
     client->setBotDisplayName(displayName);
     client->setCredentials(username, password, Protocol_SRP_0x53);
