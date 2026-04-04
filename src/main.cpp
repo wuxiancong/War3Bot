@@ -237,7 +237,7 @@ int main(int argc, char *argv[]) {
         if (defaultConfig.open(QIODevice::WriteOnly | QIODevice::Text)) {
             QTextStream out(&defaultConfig);
             out << "[server]\nbroadcast_port=6112\nenable_broadcast=false\npeer_timeout=300000\ncleanup_interval=60000\nbroadcast_interval=30000\n";
-            out << "\n[log]\nlevel=info\nenable_console=true\nlog_file=/var/log/War3Bot/war3bot.log\nmax_size=10485760\nbackup_count=5\n";
+            out << "\n[log]\nlevel=info\nenable_console=true\nlog_file=/var/log/War3Bot/war3bot.log\nmax_size=20971520\nbackup_count=5\n";
             out << "\n[bnet]\nserver=127.0.0.1\nport=6112\npassword=wxc123\n";
             out << "\n[bots]\nlist_number=1\ninit_count=10\nauto_generate=false\ndisplay_name=CC.Dota.XXX\n";
             out << "\n[mysql]\nhost=127.0.0.1\nport=3306\nuser=pvpgn\npass=Wxc@2409154\n";
@@ -264,10 +264,10 @@ int main(int argc, char *argv[]) {
     }
 
     Logger::instance()->setLogLevel(Logger::logLevelFromString(configLogLevel));
-    Logger::instance()->enableConsoleOutput(enableConsole);
-    Logger::instance()->setLogFile(logFilePath);
     Logger::instance()->setMaxFileSize(maxLogSize);
+    Logger::instance()->enableConsoleOutput(enableConsole);
     Logger::instance()->setBackupCount(backupCount);
+    Logger::instance()->setLogFile(logFilePath);
 
     if (parser.isSet(logLevelOption)) {
         Logger::instance()->setLogLevel(Logger::logLevelFromString(parser.value(logLevelOption).toLower()));

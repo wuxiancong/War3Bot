@@ -110,6 +110,7 @@ void Logger::setLogFile(const QString &filename)
 {
     QMutexLocker locker(&m_mutex);
 
+    // 1. 清理现有资源
     if (m_stream) {
         m_stream->flush();
         delete m_stream;
@@ -121,36 +122,40 @@ void Logger::setLogFile(const QString &filename)
         m_logFile = nullptr;
     }
 
+    // 2. 更新路径信息
     m_logFileName = filename;
-
-    // 解析日志文件基础信息
     QFileInfo fileInfo(filename);
     m_logFileBaseName = fileInfo.completeBaseName();
     m_logFileDir = fileInfo.absolutePath();
 
-    // 确保目录存在
+    // 3. 确保目录存在
     QDir dir = fileInfo.dir();
-    if (!dir.exists()) {
-        if (!dir.mkpath(".")) {
-            consoleOutput("FATAL: 无法创建日志目录 (可能是权限不足): " + dir.absolutePath(), true);
-        }
+    if (!dir.exists() && !dir.mkpath(".")) {
+        consoleOutput("FATAL: 无法创建日志目录: " + dir.absolutePath(), true);
+        return;
     }
 
+    // 4. 检查现有文件是否已经超过大小限制
+    if (fileInfo.exists() && fileInfo.size() >= m_maxFileSize) {
+        performLogRotation();
+    }
+
+    // 5. 打开文件
     m_logFile = new QFile(filename);
     if (m_logFile->open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text)) {
         m_stream = new QTextStream(m_logFile);
         m_stream->setCodec("UTF-8");
-        m_stream->setGenerateByteOrderMark(true); // 生成 BOM 标记
+        m_stream->setGenerateByteOrderMark(true); // 保持 UTF-8 BOM
 
-        // 写入文件头信息
+        // 6. 写入本次启动的记录起始标识
         QString timestamp = QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss.zzz");
-        QString header = QString("[%1] [INFO] 日志文件已创建，编码: UTF-8").arg(timestamp);
-        *m_stream << header << "\n";
+        *m_stream << QString("[%1] [INFO] === 日志服务启动 (Size: %2 bytes) ===\n")
+                         .arg(timestamp).arg(m_logFile->size());
         m_stream->flush();
 
         consoleOutput("日志文件已设置: " + filename);
     } else {
-        consoleOutput("无法打开日志文件: " + filename, true);
+        consoleOutput("无法打开日志文件: " + filename + " 原因: " + m_logFile->errorString(), true);
         delete m_logFile;
         m_logFile = nullptr;
     }
@@ -317,15 +322,18 @@ void Logger::critical(const QString &message)
 
 void Logger::log(LogLevel level, const QString &message, int depth)
 {
+    // 1. 快速过滤
     if (level < m_logLevel || m_disabled) return;
 
     QMutexLocker locker(&m_mutex);
 
+    // 2. 检查并处理日志轮转
     rotateLogFileIfNeeded();
 
-    if (!m_stream) return;
+    // 如果没有设置日志文件且没有控制台输出，直接返回
+    if (!m_stream && !m_consoleOutput) return;
 
-    // 1. 实现简单树状缩进
+    // 3. 格式化消息内容
     QString indent = QString(depth * 4, ' ');
     QString treeMessage = (depth > 0 ? "└─ " : "") + message;
 
@@ -336,48 +344,24 @@ void Logger::log(LogLevel level, const QString &message, int depth)
     case LOG_WARNING:  levelStr = "WARNING"; break;
     case LOG_ERROR:    levelStr = "ERROR"; break;
     case LOG_CRITICAL: levelStr = "CRITICAL"; break;
+    default:           levelStr = "INFO"; break;
     }
 
     QString timestamp = QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss.zzz");
     QString logMessage = QString("[%1] [%2] %3%4").arg(timestamp, levelStr, indent, treeMessage);
 
+    // 4. 输出到控制台
     if (m_consoleOutput) {
         consoleOutput(level, logMessage);
     }
 
-    // 2. 文件输出逻辑及错误细化
-    if ((!m_stream || !m_logFile || !m_logFile->isOpen()) && !m_logFileName.isEmpty()) {
-        if (m_stream) { delete m_stream; m_stream = nullptr; }
-        if (m_logFile) { delete m_logFile; m_logFile = nullptr; }
-
-        QFileInfo fileInfo(m_logFileName);
-        QDir dir = fileInfo.dir();
-
-        if (!dir.exists()) {
-            if (!dir.mkpath(".")) {
-                QString errorReason = QString("严重错误: 无法创建日志目录 [%1]，请检查磁盘权限或路径有效性。").arg(dir.absolutePath());
-                if (m_consoleOutput) consoleOutput(LOG_CRITICAL, errorReason);
-                return;
-            }
-        }
-
-        m_logFile = new QFile(m_logFileName);
-        if (m_logFile->open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text)) {
-            m_stream = new QTextStream(m_logFile);
-            m_stream->setCodec("UTF-8");
-            m_stream->setGenerateByteOrderMark(true);
-        } else {
-            QString errorReason = QString("严重错误: 无法打开文件 [%1], 原因: %2")
-                                      .arg(m_logFileName, m_logFile->errorString());
-            if (m_consoleOutput) consoleOutput(LOG_CRITICAL, errorReason);
-            delete m_logFile;
-            m_logFile = nullptr;
-            return;
-        }
-    }
-
-    if (m_stream) {
+    // 5. 输出到文件
+    if (m_stream && m_logFile && m_logFile->isOpen()) {
         *m_stream << logMessage << "\n";
         m_stream->flush();
+
+        if (m_stream->status() != QTextStream::Ok) {
+            consoleOutput(LOG_CRITICAL, "日志写入失败，磁盘空间可能已满或文件被锁定。");
+        }
     }
 }

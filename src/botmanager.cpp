@@ -651,7 +651,16 @@ void BotManager::removeGame(Bot *bot, bool disconnectFlag, const QString &reason
 {
     if (!isBotValid(bot, "RemoveGame")) return;
 
-    if (bot->state == BotState::Connecting) return;
+    if (bot->state == BotState::Connecting ||
+        bot->state == BotState::Unregistered ||
+        bot->state == BotState::Authenticated ||
+        bot->state == BotState::Creating) {
+
+        LOG_INFO(QString("🛡️ [状态锁] 成功拦截旧链路信号: Bot-%1 当前正处于 %2 阶段，已拒绝来自 (%3) 的清理请求")
+                     .arg(bot->id)
+                     .arg(botStateToString(bot->state), reason));
+        return;
+    }
 
     // 2. 标记清理中
     bot->state = BotState::Finishing;
@@ -1698,13 +1707,15 @@ void BotManager::onBotDisconnected(Bot *bot)
 {
     if (!isBotValid(bot, "Disconnected")) return;
 
-    if (bot->state == BotState::Disconnected || bot->state == BotState::Connecting) {
+    if (bot->state == BotState::Connecting ||
+        bot->state == BotState::Creating ||
+        bot->state == BotState::Unregistered) {
+        LOG_INFO(QString("🛡️ [安全策略] 忽略旧 Socket 断开信号 (Bot-%1 正在重拨中)").arg(bot->id));
         return;
     }
 
     LOG_INFO(QString("🔌 [链路断开] Bot-%1 (%2)").arg(bot->id).arg(bot->username));
-
-    removeGame(bot, false, "Network Socket Closed Signal");
+    removeGame(bot, true, "Network Socket Closed");
 }
 
 void BotManager::onBotEnteredChat(Bot *bot)
