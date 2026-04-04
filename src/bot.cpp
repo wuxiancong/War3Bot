@@ -16,19 +16,32 @@ Bot::~Bot()
     }
 }
 
-void Bot::resetGameState()
+void Bot::resetGameState(bool disconnectFlag, const char *context)
 {
-    gameInfo = GameInfo();
-    pendingTask = PendingTask();
-    commandSource = From_Server;
-    state = BotState::Idle;
-    hostJoined = false;
-    pendingRemoval = false;
-    pendingDisconnectFlag = false;
-    activeOperations = 0;
-    pendingRemovalReason = "Unspecified";
-    m_triggerCounts.clear();
-    LOG_DEBUG(QString("🧹 [审计清零] Bot-%1 信号计数器已重置").arg(this->id));
+    LOG_INFO(QString("🧹 [状态重置] Bot-%1 | 来源: %2 | 物理断开: %3")
+                 .arg(this->id).arg(context, disconnectFlag ? "是" : "否"));
+
+    if (this->client) {
+        if (disconnectFlag) {
+            if (this->client->isConnected()) {
+                LOG_INFO(QString("   ├── 🔌 动作: 强制断开 Client-%1 战网连接").arg(this->id));
+                this->client->disconnectFromHost();
+            }
+        } else {
+            LOG_INFO(QString("   ├── 🔄 动作: 清理 Client-%1 房间缓存 (保留链路)").arg(this->id));
+            this->client->cancelGame();
+        }
+    }
+
+    this->gameInfo = GameInfo();
+    this->pendingTask = PendingTask();
+    this->m_triggerCounts.clear();
+
+    this->commandSource = From_Server;
+    this->hostJoined = false;
+    this->pendingRemoval = false;
+    this->activeOperations = 0;
+    this->pendingRemovalReason = "None";
 }
 
 bool Bot::isOwner(const QString &senderClientId) const
@@ -249,7 +262,7 @@ void Bot::setupGameInfo(const QString &host, const QString &name, const QString 
 {
     LOG_INFO(QString("📋 [元数据设置] Bot-%1: 正在初始化房间配置...").arg(this->id));
 
-    resetGameState();
+    resetGameState(false, "Setup New Game Task");
 
     this->hostname = host;
     this->commandSource = source;

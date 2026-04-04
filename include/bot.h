@@ -95,9 +95,9 @@ public:
     bool isOwner(const QString &senderClientId) const;
     void enterCriticalOperation();
     void leaveCriticalOperation();
-    void resetGameState();
     void resetAuditCounts();
 
+    void resetGameState(bool disconnectFlag, const char *context);
     void setupClient(NetManager* netManager, const QString& displayName);
     void setupPendingTask(const QString &host, const QString &name, const QString &clientId, CommandSource source);
     void setupGameInfo(const QString &host, const QString &name, const QString &mode, CommandSource source, const QString &clientId);

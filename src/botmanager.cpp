@@ -384,6 +384,7 @@ void BotManager::addBotInstance(const QString& username, const QString& password
 
     Bot *bot = new Bot(this, m_globalBotIdCounter++, username, password);
 
+    // 先添加机器人，否则无法创建游戏。
     m_bots.append(bot);
 
     LOG_INFO(QString("   ├─ ⚙️ 步骤1: 执行 bot->setupClient..."));
@@ -611,12 +612,13 @@ bool BotManager::createGame(const QString &hostName, const QString &gameName, co
     // --- 2. 任务执行 (Task Execution) ---
 
     if (targetBot) {
+        targetBot->state = BotState::Creating;
         targetBot->setupGameInfo(hostName, gameName, gameMode, commandSource, clientId);
         if (targetBot->client && targetBot->client->isConnected()) {
             if (targetBot->state == BotState::Authenticated ||
+                targetBot->state == BotState::Creating ||
                 targetBot->state == BotState::InLobby ||
                 targetBot->state == BotState::Idle) {
-                targetBot->state = BotState::Creating;
                 targetBot->client->setHost(hostName);
                 targetBot->client->setBotDisplayName(m_botDisplayName);
                 targetBot->client->createGame(gameName, "", Provider_TFT_New,
@@ -669,26 +671,14 @@ void BotManager::removeGame(Bot *bot, bool disconnectFlag, const QString &reason
 
     // 3. 清理内存映射
     removeBotMappings(bot->gameInfo.clientId, bot->hostname);
+
+    // 4. 清理房间映射
     if (!bot->gameInfo.gameName.isEmpty()) {
         m_activeGames.remove(bot->gameInfo.gameName.toLower());
     }
 
-    // 4. 重置状态
-    bot->resetGameState();
-
-    // 5. 链路处理
-    if (bot->client) {
-        if (disconnectFlag) {
-            if (bot->client->isConnected()) {
-                LOG_INFO("   ├── 🔌 动作: 主动断开连接");
-                bot->client->disconnectFromHost();
-            }
-        } else {
-            LOG_INFO("   ├── 🔄 动作: 取消房间广播 (保留链路)");
-            bot->client->cancelGame();
-        }
-    }
-
+    // 5. 重置状态
+    bot->resetGameState(disconnectFlag, reason.toUtf8().constData());
     bot->state = disconnectFlag ? BotState::Disconnected : BotState::Idle;
     emit botStateChanged(bot->id, bot->username, bot->state);
 }
@@ -1682,7 +1672,7 @@ void BotManager::onBotError(Bot *bot, QString error)
             LOG_INFO(QString("├── 清理: 已取消用户 %1 的挂起任务: %2").arg(taskOwner, bot->pendingTask.gameName));
         }
 
-        removeGame(bot, false, "Bot Error Interruption");
+        removeGame(bot, true, "Bot Error: " + error);
     }
 
     if (bot->state == BotState::Disconnected && (!bot->client || !bot->client->isConnected())) {
@@ -1707,14 +1697,20 @@ void BotManager::onBotDisconnected(Bot *bot)
 {
     if (!isBotValid(bot, "Disconnected")) return;
 
-    if (bot->state == BotState::Connecting ||
-        bot->state == BotState::Creating ||
-        bot->state == BotState::Unregistered) {
-        LOG_INFO(QString("🛡️ [安全策略] 忽略旧 Socket 断开信号 (Bot-%1 正在重拨中)").arg(bot->id));
+    if (bot->state == BotState::Creating ||
+        bot->state == BotState::Connecting ||
+        bot->state == BotState::Unregistered ||
+        bot->state == BotState::Authenticated
+        ) {
+
+        LOG_INFO(QString("🛡️ [安全策略] 拦截延迟断开信号: Bot-%1 正在执行新任务 (%2)")
+                     .arg(bot->id)
+                     .arg(botStateToString(bot->state)));
         return;
     }
 
-    LOG_INFO(QString("🔌 [链路断开] Bot-%1 (%2)").arg(bot->id).arg(bot->username));
+    LOG_INFO(QString("🔌 [链路断开] Bot-%1 (%2) 物理连接已失效").arg(bot->id).arg(bot->username));
+
     removeGame(bot, true, "Network Socket Closed");
 }
 
@@ -1755,9 +1751,14 @@ void BotManager::onBotGameCancelled(Bot *bot)
 {
     if (!isBotValid(bot, "GameCancelled")) return;
 
+    if (bot->state == BotState::Creating) {
+        LOG_INFO(QString("🛡️ [信号拦截] Bot-%1 正在开启新房间，忽略旧局取消信号").arg(bot->id));
+        return;
+    }
+
     LOG_INFO(QString("🔄 [状态同步] 收到 Client 取消信号: Bot-%1").arg(bot->id));
 
-    removeGame(bot, true, "Game Cancelled");
+    removeGame(bot, false, "Game Cancelled");
 }
 
 void BotManager::onBotGameStarted(Bot *bot)
