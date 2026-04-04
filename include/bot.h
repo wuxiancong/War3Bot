@@ -61,6 +61,12 @@ struct CommandInfo {
     qint64 timestamp;
 };
 
+// === 4. 信号审计结构体 ===
+struct SignalAudit {
+    int physicalLinks       = 0;
+    int triggerCount        = 0;
+};
+
 class Bot : public QObject {
     Q_OBJECT
 public:
@@ -84,10 +90,13 @@ public:
     bool pendingDisconnectFlag = false;
     QString pendingRemovalReason = "Unspecified";
 
+    SignalAudit getAudit(const char* signalSignature);
+    void incrementSignalCount(const QString &sigName);
     bool isOwner(const QString &senderClientId) const;
     void enterCriticalOperation();
     void leaveCriticalOperation();
     void resetGameState();
+    void resetAuditCounts();
 
     void setupClient(NetManager* netManager, const QString& displayName);
     void setupPendingTask(const QString &host, const QString &name, const QString &clientId, CommandSource source);
@@ -113,6 +122,7 @@ signals:
 
 private:
     BotManager *m_manager;
+    QMap<QString, int> m_triggerCounts;
 };
 
 #endif // BOT_H

@@ -378,119 +378,162 @@ void BotManager::cleanup()
     m_bots.clear();
 }
 
-void BotManager::setupBotConnections(Bot *bot)
-{
-    if (!isBotActive(bot, "SetupBotConnections")) return;
-    LOG_INFO(QString("🛠️ [信号连接] 正在为 Bot-%1 绑定信号...").arg(bot->id));
-
-    auto arrivalLog = [ bot](const QString &sig) {
-        LOG_INFO(QString("🔔 [信号连接] BotManager: 捕获到 Bot-%1 的 %2 代理信号").arg(bot->id).arg(sig));
-    };
-
-    // 1. 认证成功
-    connect(bot, &Bot::authenticated, this, [this, bot, arrivalLog]() {
-        arrivalLog("authenticated");
-        this->onBotAuthenticated(bot);
-    });
-
-    // 2. 进入聊天
-    connect(bot, &Bot::enteredChat, this, [this, bot, arrivalLog]() {
-        arrivalLog("enteredChat");
-        this->onBotEnteredChat(bot);
-    });
-
-    // 3. 游戏创建成功
-    connect(bot, &Bot::gameCreateSuccess, this, [this, bot, arrivalLog]() {
-        arrivalLog("gameCreateSuccess");
-        this->onBotGameCreateSuccess(bot);
-    });
-
-    // 4. 断开连接
-    connect(bot, &Bot::disconnected, this, [this, bot, arrivalLog]() {
-        arrivalLog("disconnected");
-        this->onBotDisconnected(bot);
-    });
-
-    // 5. 游戏开始
-    connect(bot, &Bot::gameStarted, this, [this, bot, arrivalLog]() {
-        arrivalLog("gameStarted");
-        this->onBotGameStarted(bot);
-    });
-
-    // 6. 游戏取消
-    connect(bot, &Bot::gameCancelled, this, [this, bot, arrivalLog]() {
-        arrivalLog("gameCancelled");
-        this->onBotGameCancelled(bot);
-    });
-
-    // 7. 账号创建
-    connect(bot, &Bot::accountCreated, this, [this, bot, arrivalLog]() {
-        arrivalLog("accountCreated");
-        this->onBotAccountCreated(bot);
-    });
-
-    // 8. 视觉房主离开
-    connect(bot, &Bot::visualHostLeft, this, [this, bot, arrivalLog]() {
-        arrivalLog("visualHostLeft");
-        this->onBotVisualHostLeft(bot);
-    });
-
-    // 9. Socket 错误
-    connect(bot, &Bot::socketError, this, [this, bot, arrivalLog](QString error) {
-        arrivalLog("socketError (" + error + ")");
-        this->onBotError(bot, error);
-    });
-
-    // 10. 玩家人数变动
-    connect(bot, &Bot::playerCountChanged, this, [this, bot, arrivalLog](int count) {
-        arrivalLog("playerCountChanged");
-        this->onBotPlayerCountChanged(bot, count);
-    });
-
-    // 11. 房主进入游戏
-    connect(bot, &Bot::hostJoinedGame, this, [this, bot, arrivalLog](const QString &name) {
-        arrivalLog("hostJoinedGame");
-        this->onBotHostJoinedGame(bot, name);
-    });
-
-    // 12. 房主权限交接
-    connect(bot, &Bot::roomHostChanged, this, [this, bot, arrivalLog](const quint8 heirId) {
-        arrivalLog("roomHostChanged");
-        this->onBotRoomHostChanged(bot, heirId);
-    });
-
-    // 13. 游戏创建失败
-    connect(bot, &Bot::gameCreateFail, this, [this, bot, arrivalLog](GameCreationStatus status) {
-        arrivalLog("gameCreateFail");
-        this->onBotGameCreateFail(bot, status);
-    });
-
-    // 14. 房间 Ping 更新
-    connect(bot, &Bot::roomPingsUpdated, this, [this, bot, arrivalLog](const QMap<quint8, quint32> &pings) {
-        arrivalLog("roomPingsUpdated");
-        this->onBotRoomPingsUpdated(bot, pings);
-    });
-
-    // 15. 准备状态改变
-    connect(bot, &Bot::readyStateChanged, this, [this, bot, arrivalLog](const QVariantMap &readyData) {
-        arrivalLog("readyStateChanged");
-        this->onBotReadyStateChanged(bot, readyData);
-    });
-
-    // 16. 重入拒绝通知
-    connect(bot, &Bot::rejoinRejected, this, [this, bot, arrivalLog](const QString &clientId, quint32 remainingMs) {
-        arrivalLog("rejoinRejected");
-        this->onBotRejoinRejected(bot, clientId, remainingMs);
-    });
-}
-
 void BotManager::addBotInstance(const QString& username, const QString& password)
 {
+    LOG_INFO(QString("🔨 [Bot创建序列] 准备实例化 Bot-%1: %2").arg(m_globalBotIdCounter).arg(username));
+
+    // 1. 创建 Bot 对象
     Bot *bot = new Bot(this, m_globalBotIdCounter++, username, password);
+
+    // 2. 必须先 setupClient，因为 setupBotConnections 内部会检查 bot->client 是否存在
+    LOG_INFO(QString("   ├─ ⚙️ 步骤1: 执行 bot->setupClient..."));
     bot->setupClient(m_netManager, m_botDisplayName);
+
+    // 3. 检查 setupClient 是否真的创建了对象
+    if (bot->client) {
+        LOG_INFO(QString("   │  ✅ 底层 Client 对象已创建 (指针: %1)").arg(reinterpret_cast<quintptr>(bot->client), 0, 16));
+    } else {
+        LOG_ERROR(QString("   │  ❌ 严重错误: bot->setupClient 运行后 client 依然为空！"));
+    }
+
+    // 4. 绑定信号
+    LOG_INFO(QString("   ├─ 🔗 步骤2: 执行 setupBotConnections..."));
     setupBotConnections(bot);
+
     m_bots.append(bot);
-    LOG_INFO(QString("   │  │  ├─ 🤖 实例化: %1 (ID: %2)").arg(username).arg(bot->id));
+    LOG_INFO(QString("   └─ 🎉 Bot-%1 (%2) 初始化序列完成").arg(bot->id).arg(username));
+}
+
+void BotManager::setupBotConnections(Bot *bot)
+{
+    // 1. 基础指针校验
+    if (!bot) {
+        LOG_ERROR("   │  ❌ [信号连接] 失败：接收到空的 Bot 指针");
+        return;
+    }
+
+    // 2. 深度活跃性诊断
+    LOG_INFO(QString("   │  🔍 [诊断] 正在校验 Bot-%1 的绑定权限...").arg(bot->id));
+    if (!isBotActive(bot, "SetupBotConnections")) {
+        LOG_ERROR(QString("   │  🚫 [核心拦截] Bot-%1 校验未通过，绑定流程已终止！").arg(bot->id));
+        LOG_ERROR(QString("   │  👉 原因排查：1. bot->client 是否尚未创建？ 2. bot 是否尚未加入 m_bots 列表？"));
+        return;
+    }
+
+    LOG_INFO(QString("🛠️ [信号连接] 权限校验通过，开始为 Bot-%1 建立信号隧道...").arg(bot->id));
+
+    // 3. 定义内部追踪工具
+    auto arrivalLog = [bot](const QString &sig) {
+        LOG_INFO(QString("🔔 [信号捕获] BotManager: 捕获到 Bot-%1 的 %2 代理信号").arg(bot->id).arg(sig));
+    };
+
+    auto checkConnect = [bot](bool success, const char* signalName) {
+        if (!success) {
+            LOG_CRITICAL(QString("   │  ❌ [物理失败] Bot-%1 隧道建立失败: %2 (检查参数类型是否1:1对应)").arg(bot->id).arg(signalName));
+        } else {
+            LOG_DEBUG(QString("   │  🆗 [隧道开启] %1").arg(signalName));
+        }
+    };
+
+    // 4. 开始执行 16 路信号绑定
+
+    // 1. 认证成功
+    checkConnect(connect(bot, &Bot::authenticated, this, [this, bot, arrivalLog]() {
+                     arrivalLog("authenticated");
+                     this->onBotAuthenticated(bot);
+                 }), "authenticated");
+
+    // 2. 进入聊天
+    checkConnect(connect(bot, &Bot::enteredChat, this, [this, bot, arrivalLog]() {
+                     arrivalLog("enteredChat");
+                     this->onBotEnteredChat(bot);
+                 }), "enteredChat");
+
+    // 3. 游戏创建成功
+    checkConnect(connect(bot, &Bot::gameCreateSuccess, this, [this, bot, arrivalLog]() {
+                     arrivalLog("gameCreateSuccess");
+                     this->onBotGameCreateSuccess(bot);
+                 }), "gameCreateSuccess");
+
+    // 4. 断开连接
+    checkConnect(connect(bot, &Bot::disconnected, this, [this, bot, arrivalLog]() {
+                     arrivalLog("disconnected");
+                     this->onBotDisconnected(bot);
+                 }), "disconnected");
+
+    // 5. 游戏开始
+    checkConnect(connect(bot, &Bot::gameStarted, this, [this, bot, arrivalLog]() {
+                     arrivalLog("gameStarted");
+                     this->onBotGameStarted(bot);
+                 }), "gameStarted");
+
+    // 6. 游戏取消
+    checkConnect(connect(bot, &Bot::gameCancelled, this, [this, bot, arrivalLog]() {
+                     arrivalLog("gameCancelled");
+                     this->onBotGameCancelled(bot);
+                 }), "gameCancelled");
+
+    // 7. 账号创建
+    checkConnect(connect(bot, &Bot::accountCreated, this, [this, bot, arrivalLog]() {
+                     arrivalLog("accountCreated");
+                     this->onBotAccountCreated(bot);
+                 }), "accountCreated");
+
+    // 8. 视觉房主离开
+    checkConnect(connect(bot, &Bot::visualHostLeft, this, [this, bot, arrivalLog]() {
+                     arrivalLog("visualHostLeft");
+                     this->onBotVisualHostLeft(bot);
+                 }), "visualHostLeft");
+
+    // 9. Socket 错误
+    checkConnect(connect(bot, &Bot::socketError, this, [this, bot, arrivalLog](QString error) {
+                     arrivalLog("socketError (" + error + ")");
+                     this->onBotError(bot, error);
+                 }), "socketError");
+
+    // 10. 玩家人数变动
+    checkConnect(connect(bot, &Bot::playerCountChanged, this, [this, bot, arrivalLog](int count) {
+                     arrivalLog("playerCountChanged");
+                     this->onBotPlayerCountChanged(bot, count);
+                 }), "playerCountChanged");
+
+    // 11. 房主进入游戏
+    checkConnect(connect(bot, &Bot::hostJoinedGame, this, [this, bot, arrivalLog](const QString &name) {
+                     arrivalLog("hostJoinedGame");
+                     this->onBotHostJoinedGame(bot, name);
+                 }), "hostJoinedGame");
+
+    // 12. 房主权限交接
+    checkConnect(connect(bot, &Bot::roomHostChanged, this, [this, bot, arrivalLog](const quint8 heirId) {
+                     arrivalLog("roomHostChanged");
+                     this->onBotRoomHostChanged(bot, heirId);
+                 }), "roomHostChanged");
+
+    // 13. 游戏创建失败
+    checkConnect(connect(bot, &Bot::gameCreateFail, this, [this, bot, arrivalLog](GameCreationStatus status) {
+                     arrivalLog("gameCreateFail");
+                     this->onBotGameCreateFail(bot, status);
+                 }), "gameCreateFail");
+
+    // 14. 房间 Ping 更新
+    checkConnect(connect(bot, &Bot::roomPingsUpdated, this, [this, bot, arrivalLog](const QMap<quint8, quint32> &pings) {
+                     arrivalLog("roomPingsUpdated");
+                     this->onBotRoomPingsUpdated(bot, pings);
+                 }), "roomPingsUpdated");
+
+    // 15. 准备状态改变
+    checkConnect(connect(bot, &Bot::readyStateChanged, this, [this, bot, arrivalLog](const QVariantMap &readyData) {
+                     arrivalLog("readyStateChanged");
+                     this->onBotReadyStateChanged(bot, readyData);
+                 }), "readyStateChanged");
+
+    // 16. 重入拒绝通知
+    checkConnect(connect(bot, &Bot::rejoinRejected, this, [this, bot, arrivalLog](const QString &clientId, quint32 remainingMs) {
+                     arrivalLog("rejoinRejected");
+                     this->onBotRejoinRejected(bot, clientId, remainingMs);
+                 }), "rejoinRejected");
+
+    LOG_INFO(QString("   │  ✅ Bot-%1 全部信号隧道建立完毕").arg(bot->id));
 }
 
 bool BotManager::createGame(const QString &hostName, const QString &gameName, const QString &gameMode, CommandSource commandSource, const QString &clientId)
@@ -508,12 +551,24 @@ bool BotManager::createGame(const QString &hostName, const QString &gameName, co
     }
 
     LOG_INFO(QString("   📊 [机器人池快照] 当前存量: %1").arg(m_bots.size()));
+
     for (int i = 0; i < m_bots.size(); ++i) {
-        Bot* b = m_bots[i];
-        QString connStr = (b->client && b->client->isConnected()) ? "🌐 Online" : "🔌 Offline";
+        Bot *bot = m_bots[i];
+
+        SignalAudit authAudit = bot->getAudit(SIGNAL(authenticated()));
+        SignalAudit chatAudit = bot->getAudit(SIGNAL(enteredChat()));
+        QString connectString = (bot->client && bot->client->isConnected()) ? "🌐 Online" : "🔌 Offline";
         LOG_INFO(QString("   │  [%1] %2 | %3 | 状态: %4 | 任务: %5")
                      .arg(i + 1, 2)
-                     .arg(b->username.leftJustified(12), connStr, botStateToString(b->state), b->pendingTask.hasTask ? "🔴 Busy" : "🟢 Free"));
+                     .arg(bot->username.leftJustified(12), connectString,
+                          botStateToString(bot->state), bot->pendingTask.hasTask ? "🔴 Busy" : "🟢 Free"));
+
+        QString auditString = QString("   👉 [信号审计] 认证: (连:%1, 发:%2) | 大厅: (连:%3, 发:%4)")
+                               .arg(authAudit.physicalLinks).arg(authAudit.triggerCount)
+                               .arg(chatAudit.physicalLinks).arg(chatAudit.triggerCount);
+
+        if (authAudit.physicalLinks == 0) LOG_ERROR(auditString + " ❌ 物理断路！");
+        else LOG_INFO(auditString);
     }
 
     Bot *targetBot = nullptr;
