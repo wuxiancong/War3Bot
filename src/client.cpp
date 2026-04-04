@@ -442,13 +442,16 @@ void Client::handleBNETTcpPacket(BNETPacketID id, const QByteArray &data)
     break;
 
     case SID_ENTERCHAT:
-        LOG_INFO("   └─ ✅ 状态: 已进入聊天环境 (Unique Name Assigned)");
+    {
+        LOG_INFO(QString("   └─ [协议追踪] Bot-%1 收到进入聊天确认 (0x0A)").arg(m_user));
         emit enteredChat();
         queryChannelList();
-        break;
+    }
+    break;
 
     case SID_GETCHANNELLIST: // 0x0B
     {
+        LOG_INFO(QString("   └─ [协议追踪] Bot-%1 收到获取频道列表(0x0B)").arg(m_user));
         m_channelList.clear();
         int offset = 0;
         while (offset < data.size()) {
@@ -499,6 +502,7 @@ void Client::handleBNETTcpPacket(BNETPacketID id, const QByteArray &data)
 
     case SID_CHATCOMMAND: // 0x0E
     {
+        LOG_INFO(QString("   └─ [协议追踪] Bot-%1 收到聊天命令消息(0x0E)").arg(m_user));
         QString cmdText = QString::fromUtf8(data).trimmed();
         QString hexData = data.toHex(' ').toUpper();
         LOG_INFO("💬 [BNET] 捕获到聊天/指令包 (SID_CHATCOMMAND - 0x0E)");
@@ -510,6 +514,7 @@ void Client::handleBNETTcpPacket(BNETPacketID id, const QByteArray &data)
 
     case SID_CHATEVENT:
     {
+        LOG_INFO(QString("   └─ [协议追踪] Bot-%1 收到聊天事件消息(0x0F)").arg(m_user));
         if (data.size() < 24) return;
 
         QDataStream in(data);
@@ -566,88 +571,9 @@ void Client::handleBNETTcpPacket(BNETPacketID id, const QByteArray &data)
     }
     break;
 
-    case SID_LOGONRESPONSE: // 0x29
-    case SID_LOGONRESPONSE2: // 0x3A
-    {
-        if (data.size() < 4) return;
-        quint32 result;
-        QDataStream ds(data);
-        ds.setByteOrder(QDataStream::LittleEndian);
-        ds >> result;
-
-        // 兼容两种协议的成功码 (0x29是1, 0x3A是0)
-        bool isSuccess = (id == SID_LOGONRESPONSE && result == 1) || (id == SID_LOGONRESPONSE2 && result == 0);
-
-        if (isSuccess) {
-            LOG_INFO("   ├─ 🎉 结果: 成功");
-            LOG_INFO("   └─ 🚀 动作: 发出 authenticated 信号 -> 进入聊天");
-            emit authenticated();
-            enterChat();
-        } else {
-            LOG_ERROR(QString("   └─ ❌ 结果: 失败 (Code: 0x%1)").arg(QString::number(result, 16)));
-        }
-    }
-    break;
-
-    case SID_AUTH_INFO:
-    case SID_AUTH_CHECK:
-        // 这个函数内部应该也有类似的日志优化
-        handleAuthCheck(data);
-        break;
-
-    case SID_AUTH_ACCOUNTCREATE:
-    {
-        if (data.size() < 4) return;
-        quint32 status;
-        QDataStream ds(data);
-        ds.setByteOrder(QDataStream::LittleEndian);
-        ds >> status;
-
-        if (status == 0) {
-            LOG_INFO("   ├─ 🎉 结果: 注册成功");
-            LOG_INFO("   └─ 🚀 动作: 自动尝试登录...");
-            emit accountCreated();
-            sendLoginRequest(Protocol_SRP_0x53);
-        } else if (status == 0x04) {
-            LOG_INFO("   ├─ ⚠️ 结果: 账号已存在");
-            LOG_INFO("   └─ 🚀 动作: 尝试直接登录...");
-            sendLoginRequest(Protocol_SRP_0x53);
-        } else {
-            LOG_ERROR(QString("   └─ ❌ 结果: 注册失败 (Code: 0x%1)").arg(QString::number(status, 16)));
-        }
-    }
-    break;
-
-    case SID_AUTH_ACCOUNTLOGON:
-        if (m_loginProtocol == Protocol_SRP_0x53) handleSRPLoginResponse(data);
-        break;
-
-    case SID_AUTH_ACCOUNTLOGONPROOF:
-    {
-        if (data.size() < 4) return;
-        quint32 status;
-        QDataStream ds(data);
-        ds.setByteOrder(QDataStream::LittleEndian);
-        ds >> status;
-
-        if (status == 0 || status == 0x0E) {
-            LOG_INFO("   ├─ 🎉 结果: SRP 验证通过");
-            LOG_INFO("   └─ 🚀 动作: 进入聊天");
-            emit authenticated();
-            enterChat();
-        } else {
-            QString reason = "未知错误";
-            if (status == 0x02) reason = "密码错误";
-            else if (status == 0x0D) reason = "账号不存在";
-
-            LOG_ERROR(QString("   ├─ ❌ 结果: 验证失败 (0x%1)").arg(QString::number(status, 16)));
-            LOG_INFO(QString("   └─ 📝 原因: %1").arg(reason));
-        }
-    }
-    break;
-
     case SID_STARTADVEX3:
     {
+        LOG_INFO(QString("   └─ [协议追踪] Bot-%1 收到房间创建结果 (0x1C)").arg(m_user));
         if (data.size() < 4) return;
         GameCreationStatus status;
         QDataStream ds(data);
@@ -671,6 +597,95 @@ void Client::handleBNETTcpPacket(BNETPacketID id, const QByteArray &data)
 
             // 触发失败信号，BotManager 会处理并通知客户端
             emit gameCreateFail(status);
+        }
+    }
+    break;
+
+    case SID_LOGONRESPONSE: // 0x29
+    case SID_LOGONRESPONSE2: // 0x3A
+    {
+        LOG_INFO(QString("   └─ [协议追踪] Bot-%1 收到登录结果响应 (0x29/0x3A)").arg(m_user));
+        if (data.size() < 4) return;
+        quint32 result;
+        QDataStream ds(data);
+        ds.setByteOrder(QDataStream::LittleEndian);
+        ds >> result;
+
+        // 兼容两种协议的成功码 (0x29是1, 0x3A是0)
+        bool isSuccess = (id == SID_LOGONRESPONSE && result == 1) || (id == SID_LOGONRESPONSE2 && result == 0);
+
+        if (isSuccess) {
+            LOG_INFO("   ├─ 🎉 结果: 成功");
+            LOG_INFO("   └─ 🚀 动作: 发出 authenticated 信号 -> 进入聊天");
+            emit authenticated();
+        } else {
+            LOG_ERROR(QString("   └─ ❌ 结果: 失败 (Code: 0x%1)").arg(QString::number(result, 16)));
+        }
+    }
+    break;
+
+    case SID_AUTH_INFO:
+    case SID_AUTH_CHECK:
+    {
+        LOG_INFO(QString("   └─ [协议追踪] Bot-%1 收到版本校验挑战 (0x50/0x51)").arg(m_user));
+        handleAuthCheck(data);
+    }
+    break;
+
+    case SID_AUTH_ACCOUNTCREATE:
+    {
+        LOG_INFO(QString("   └─ [协议追踪] Bot-%1 收到账号创建结果 (0x52)").arg(m_user));
+        if (data.size() < 4) return;
+        quint32 status;
+        QDataStream ds(data);
+        ds.setByteOrder(QDataStream::LittleEndian);
+        ds >> status;
+
+        if (status == 0) {
+            LOG_INFO("   ├─ 🎉 结果: 注册成功");
+            LOG_INFO("   └─ 🚀 动作: 自动尝试登录...");
+            emit accountCreated();
+            sendLoginRequest(Protocol_SRP_0x53);
+        } else if (status == 0x04) {
+            LOG_INFO("   ├─ ⚠️ 结果: 账号已存在");
+            LOG_INFO("   └─ 🚀 动作: 尝试直接登录...");
+            sendLoginRequest(Protocol_SRP_0x53);
+        } else {
+            LOG_ERROR(QString("   └─ ❌ 结果: 注册失败 (Code: 0x%1)").arg(QString::number(status, 16)));
+        }
+    }
+    break;
+
+    case SID_AUTH_ACCOUNTLOGON:
+    {
+        LOG_INFO(QString("   └─ [协议追踪] Bot-%1 收到登录挑战响应 (0x53)").arg(m_user));
+        if (m_loginProtocol == Protocol_SRP_0x53) {
+            handleSRPLoginResponse(data);
+        }
+    }
+    break;
+
+    case SID_AUTH_ACCOUNTLOGONPROOF:
+    {
+        LOG_INFO(QString("   └─ [协议追踪] Bot-%1 收到登录最终证明 (0x54)").arg(m_user));
+        if (data.size() < 4) return;
+        quint32 status;
+        QDataStream ds(data);
+        ds.setByteOrder(QDataStream::LittleEndian);
+        ds >> status;
+
+        if (status == 0 || status == 0x0E) {
+            LOG_INFO("   ├─ 🎉 结果: SRP 验证通过");
+            LOG_INFO("   └─ 🚀 动作: 进入聊天");
+            emit authenticated();
+            enterChat();
+        } else {
+            QString reason = "未知错误";
+            if (status == 0x02) reason = "密码错误";
+            else if (status == 0x0D) reason = "账号不存在";
+
+            LOG_ERROR(QString("   ├─ ❌ 结果: 验证失败 (0x%1)").arg(QString::number(status, 16)));
+            LOG_INFO(QString("   └─ 📝 原因: %1").arg(reason));
         }
     }
     break;

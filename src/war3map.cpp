@@ -654,7 +654,7 @@ void War3Map::analyzeStatString(const QString &label, const QByteArray &encodedD
         pathBytes.append(c);
     }
 
-    LOG_INFO("========================================");
+    LOG_INFO("----------------------------------------");
     LOG_INFO(QString("📊 StatString分析 [%1]").arg(label));
     LOG_INFO(QString("   Encoded Hex: %1").arg(QString(encodedData.toHex().toUpper())));
     LOG_INFO(QString("   Decoded Hex: %1").arg(QString(decoded.toHex().toUpper())));
@@ -673,7 +673,7 @@ void War3Map::analyzeStatString(const QString &label, const QByteArray &encodedD
     LOG_INFO(QString("   [Height]   : %1").arg(h));
     LOG_INFO(QString("   [CRC]      : 0x%1").arg(QString::number(crc, 16).toUpper()));
     LOG_INFO(QString("   [Path]     : %1").arg(QString(pathBytes)));
-    LOG_INFO("========================================");
+    LOG_INFO("----------------------------------------");
 }
 
 void War3Map::setPriorityCrcDirectory(const QString &dirPath)

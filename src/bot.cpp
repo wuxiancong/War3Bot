@@ -93,22 +93,58 @@ void Bot::setupClient(NetManager *netManager, const QString &displayName)
     client->setBotDisplayName(displayName);
     client->setCredentials(username, password, Protocol_SRP_0x53);
 
-    connect(client, &Client::authenticated,      this, &Bot::authenticated);
-    connect(client, &Client::gameCreateSuccess,  this, &Bot::gameCreateSuccess);
-    connect(client, &Client::gameCreateFail,     this, &Bot::gameCreateFail);
-    connect(client, &Client::disconnected,       this, &Bot::disconnected);
-    connect(client, &Client::socketError,        this, &Bot::socketError);
-    connect(client, &Client::enteredChat,        this, &Bot::enteredChat);
-    connect(client, &Client::gameStarted,        this, &Bot::gameStarted);
-    connect(client, &Client::gameCancelled,      this, &Bot::gameCancelled);
-    connect(client, &Client::playerCountChanged, this, &Bot::playerCountChanged);
-    connect(client, &Client::hostJoinedGame,     this, &Bot::hostJoinedGame);
-    connect(client, &Client::roomHostChanged,    this, &Bot::roomHostChanged);
-    connect(client, &Client::visualHostLeft,     this, &Bot::visualHostLeft);
-    connect(client, &Client::roomPingsUpdated,   this, &Bot::roomPingsUpdated);
-    connect(client, &Client::readyStateChanged,  this, &Bot::readyStateChanged);
-    connect(client, &Client::rejoinRejected,     this, &Bot::rejoinRejected);
-    connect(client, &Client::accountCreated,     this, &Bot::accountCreated);
+    auto relayLog = [this](const QString &sig) {
+        LOG_DEBUG(QString("📢 [信号中转] Bot-%1: 底层 Client::%2 -> 发送代理信号").arg(this->id).arg(sig));
+    };
+
+    connect(client, &Client::authenticated, this, [=](){
+        relayLog("authenticated"); emit authenticated();
+    });
+    connect(client, &Client::enteredChat, this, [=](){
+        relayLog("enteredChat"); emit enteredChat();
+    });
+    connect(client, &Client::disconnected, this, [=](){
+        relayLog("disconnected"); emit disconnected();
+    });
+    connect(client, &Client::gameStarted, this, [=](){
+        relayLog("gameStarted"); emit gameStarted();
+    });
+    connect(client, &Client::gameCancelled, this, [=](){
+        relayLog("gameCancelled"); emit gameCancelled();
+    });
+    connect(client, &Client::accountCreated, this, [=](){
+        relayLog("accountCreated"); emit accountCreated();
+    });
+    connect(client, &Client::visualHostLeft, this, [=](){
+        relayLog("visualHostLeft"); emit visualHostLeft();
+    });
+    connect(client, &Client::gameCreateSuccess, this, [=](){
+        relayLog("gameCreateSuccess"); emit gameCreateSuccess();
+    });
+    connect(client, &Client::socketError, this, [=](const QString &error){
+        relayLog("socketError"); emit socketError(error);
+    });
+    connect(client, &Client::playerCountChanged, this, [=](int count){
+        relayLog("playerCountChanged"); emit playerCountChanged(count);
+    });
+    connect(client, &Client::hostJoinedGame, this, [=](const QString &name){
+        relayLog("hostJoinedGame"); emit hostJoinedGame(name);
+    });
+    connect(client, &Client::roomHostChanged, this, [=](const quint8 heirPid){
+        relayLog("roomHostChanged"); emit roomHostChanged(heirPid);
+    });
+    connect(client, &Client::gameCreateFail, this, [=](GameCreationStatus status){
+        relayLog("gameCreateFail"); emit gameCreateFail(status);
+    });
+    connect(client, &Client::roomPingsUpdated, this, [=](const QMap<quint8, quint32> &pings){
+        relayLog("roomPingsUpdated"); emit roomPingsUpdated(pings);
+    });
+    connect(client, &Client::readyStateChanged, this, [=](const QVariantMap &readyData){
+        relayLog("readyStateChanged"); emit readyStateChanged(readyData);
+    });
+    connect(client, &Client::rejoinRejected, this, [=](const QString &clientId, quint32 remainingMs){
+        relayLog("rejoinRejected"); emit rejoinRejected(clientId, remainingMs);
+    });
 }
 
 void Bot::setupPendingTask(const QString &host, const QString &name, const QString &clientId, CommandSource source)
