@@ -2499,7 +2499,7 @@ void Client::updateAdv()
     QDataStream out(&payload, QIODevice::WriteOnly);
     out.setByteOrder(QDataStream::LittleEndian);
 
-    quint32 state = m_gameConfig.password.isEmpty() ? 0x00000010 : 0x00000011;
+    quint32 state = m_gameConfig.password.isEmpty() ? 0x00000001 : 0x00000011;
 
     out << state << (quint32)0
         << (quint16)m_gameConfig.comboGameType
@@ -2691,7 +2691,7 @@ void Client::createGame(const QString &gameName, const QString &password, Provid
     QByteArray payload;
     QDataStream out(&payload, QIODevice::WriteOnly);
     out.setByteOrder(QDataStream::LittleEndian);
-    quint32 state = password.isEmpty() ? 0x00000010 : 0x00000011;
+    quint32 state = password.isEmpty() ? 0x00000001 : 0x00000011;
 
     out << state << (quint32)0 << (quint16)comboGameType << (quint16)subGameType
         << (quint32)providerVersion << (quint32)ladderType;
