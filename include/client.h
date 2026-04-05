@@ -323,7 +323,19 @@ struct GameSlot {
 };
 
 // =========================================================
-// 2. 玩家运行时数据 (Player Runtime Data)
+// 2. 游戏配置数据 (Game Config)
+// =========================================================
+struct GameConfig {
+    QString         gameName;
+    QString         password;
+    ProviderVersion providerVersion;
+    ComboGameType   comboGameType;
+    SubGameType     subGameType;
+    LadderType      ladderType;
+};
+
+// =========================================================
+// 3. 玩家运行时数据 (Player Data)
 // =========================================================
 struct PlayerData {
     qint64          downloadStartTime       = 0;
@@ -359,18 +371,24 @@ struct PlayerData {
     qint64          lastCountdownTick       = 0;
 };
 
+// =========================================================
+// 4. 玩家重新加入 (Player Rejoin)
+// =========================================================
 struct PlayerRejoin {
     qint64          leaveTime;
     bool            isVisualHost;
 };
 
+// =========================================================
+// 5. 玩家动作数据 (Player Action)
+// =========================================================
 struct PlayerAction {
     quint8          pid;
     QByteArray      data;
 };
 
 // =========================================================
-// 3. 多语言消息封装 (Multi-Language Message)
+// 6. 多语言消息封装 (Multi-Language Message)
 // =========================================================
 struct MultiLangMsg {
     QMap<QString, QString> msgs;
@@ -552,8 +570,7 @@ private:
     quint8                          m_layoutStyle           = CustomForces;
 
     // 游戏数据
-    QString                         m_activeGamePassword;
-    QString                         m_activeGameName;
+    GameConfig                      m_gameConfig;
     QList<PlayerAction>             m_actionQueue;
     quint32                         m_hostCounter           = 0;
     quint32                         m_randomSeed            = 0;

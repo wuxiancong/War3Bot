@@ -2469,21 +2469,24 @@ void Client::updateAdv()
 {
     if (!isConnected() || m_gameStarted) return;
 
-    LOG_INFO(QString("♻️ [Adv更新] 重新发布广告包 | 房主: %1 | 房间: %2 | 密码: %3")
-                 .arg(m_host, m_activeGameName, m_activeGamePassword.isEmpty() ? "无" : "******"));
+    LOG_INFO(QString("♻️ [Adv更新] 重新同步战网看板 | 房主: %1 | 房间: %2")
+                 .arg(m_host, m_gameConfig.gameName));
 
-    // 1. 撤下旧看板
+    // 1. 撤下看板
     stopAdv();
-
-    // 2. 更新序列号
     m_hostCounter++;
 
-    // 3. 准备 StatString
+    // 2. 准备新的 StatString
     QString statDisplayName = m_host.isEmpty() ? m_botDisplayName : m_host;
     QByteArray encodedData = m_war3Map.getEncodedStatString(statDisplayName);
 
+    // 动态计算当前的剩余空位
+    int freeSlots = m_slots.size() - getOccupiedSlots();
+    if (freeSlots < 0) freeSlots = 0;
+    if (freeSlots > 9) freeSlots = 9;
+
     QByteArray finalStatString;
-    finalStatString.append('9');
+    finalStatString.append('0' + freeSlots);
 
     QString hexCounter = QString("%1").arg(m_hostCounter, 8, 16, QChar('0'));
     for(int i = hexCounter.length() - 1; i >= 0; i--) {
@@ -2491,25 +2494,26 @@ void Client::updateAdv()
     }
     finalStatString.append(encodedData);
 
-    // 4. 构建 0x1C 数据包
+    // 3. 构建 0x1C 数据包
     QByteArray payload;
     QDataStream out(&payload, QIODevice::WriteOnly);
     out.setByteOrder(QDataStream::LittleEndian);
 
-    // 状态位必须与初始创建一致 (0x01:公开, 0x10:有密码)
-    quint32 state = m_activeGamePassword.isEmpty() ? 0x00000001 : 0x00000011;
+    quint32 state = m_gameConfig.password.isEmpty() ? 0x00000010 : 0x00000011;
 
-    out << state << (quint32)0 << (quint16)Game_TFT_Custom << (quint16)SubType_Internet
-        << (quint32)Provider_TFT_New << (quint32)Ladder_None;
+    out << state << (quint32)0
+        << (quint16)m_gameConfig.comboGameType
+        << (quint16)m_gameConfig.subGameType
+        << (quint32)m_gameConfig.providerVersion
+        << (quint32)m_gameConfig.ladderType;
 
-    // 使用全局存储的名字和密码
-    out.writeRawData(m_activeGameName.toUtf8().constData(), m_activeGameName.toUtf8().size()); out << (quint8)0;
-    out.writeRawData(m_activeGamePassword.toUtf8().constData(), m_activeGamePassword.toUtf8().size()); out << (quint8)0;
+    out.writeRawData(m_gameConfig.gameName.toUtf8().constData(), m_gameConfig.gameName.toUtf8().size()); out << (quint8)0;
+    out.writeRawData(m_gameConfig.password.toUtf8().constData(), m_gameConfig.password.toUtf8().size()); out << (quint8)0;
     out.writeRawData(finalStatString.constData(), finalStatString.size()); out << (quint8)0;
 
     sendPacket(SID_STARTADVEX3, payload);
 
-    LOG_INFO("   └─ ✅ 战网看板已使用原始配置热更新完成");
+    LOG_INFO(QString("   └─ ✅ 战网看板已热更新 (显示空位: %1)").arg(freeSlots));
 }
 
 void Client::cancelGame(bool enterChatFlag)
@@ -2612,8 +2616,7 @@ void Client::createGame(const QString &gameName, const QString &password, Provid
                  .arg(sourceStr, password.isEmpty() ? "None" : "***",
                       m_enableObservers ? "12" : "10", m_enableObservers ? "有" : "无"));
 
-    m_activeGamePassword = password;
-    m_activeGameName = gameName;
+    m_gameConfig = { gameName, password, providerVersion, comboGameType, subGameType, ladderType };
 
     // 2. UDP 端口汇报检查
     if (m_udpSocket->state() == QAbstractSocket::BoundState) {
