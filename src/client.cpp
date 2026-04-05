@@ -4408,5 +4408,60 @@ QString Client::stripColorCodes(const QString &text)
     return QString(text).remove(colorRegex);
 }
 
+QString Client::translateSocketError(QAbstractSocket::SocketError err, const QString &errString) {
+    switch (err) {
+    case QAbstractSocket::RemoteHostClosedError:
+        return "玩家客户端主动关闭了连接 (Normal Exit or Alt+F4)";
+    case QAbstractSocket::NetworkError:
+        return "底层网络错误";
+    case QAbstractSocket::SocketTimeoutError:
+        return "连接超时";
+    case QAbstractSocket::ConnectionRefusedError:
+        return "连接被拒绝";
+    case QAbstractSocket::SocketResourceError:
+        return "本地资源不足";
+    case QAbstractSocket::SocketAccessError:
+        return "访问权限不足";
+    case QAbstractSocket::DatagramTooLargeError:
+        return "数据包过大";
+    case QAbstractSocket::AddressInUseError:
+        return "地址已被占用";
+    case QAbstractSocket::HostNotFoundError:
+        return "未找到主机";
+    case QAbstractSocket::UnsupportedSocketOperationError:
+        return "不支持的操作";
+    case QAbstractSocket::ProxyAuthenticationRequiredError:
+        return "代理需要认证";
+    case QAbstractSocket::SslHandshakeFailedError:
+        return "SSL握手失败";
+    case QAbstractSocket::UnfinishedSocketOperationError:
+        return "操作未完成";
+    case QAbstractSocket::ProxyConnectionRefusedError:
+        return "代理拒绝连接";
+    case QAbstractSocket::ProxyConnectionClosedError:
+        return "代理连接关闭";
+    case QAbstractSocket::ProxyConnectionTimeoutError:
+        return "代理连接超时";
+    case QAbstractSocket::ProxyNotFoundError:
+        return "未找到代理";
+    case QAbstractSocket::ProxyProtocolError:
+        return "代理协议错误";
+    case QAbstractSocket::OperationError:
+        return "操作错误 (可能是 Socket 已被强制销毁)";
+    case QAbstractSocket::SslInternalError:
+        return "SSL内部错误";
+    case QAbstractSocket::SslInvalidUserDataError:
+        return "SSL无效用户数据";
+    case QAbstractSocket::TemporaryError:
+        return "临时性错误";
+    case QAbstractSocket::UnknownSocketError:
+    default:
+        if (errString.contains("Unknown error", Qt::CaseInsensitive) || errString.isEmpty()) {
+            return "正常断开 / 服务器主动断开 (No active error)";
+        }
+        return QString("其他错误 (Code: %1): %2").arg(err).arg(errString);
+    }
+}
+
 quint32 Client::ipToUint32(const QHostAddress &address) { return address.toIPv4Address(); }
 quint32 Client::ipToUint32(const QString &ipAddress) { return QHostAddress(ipAddress).toIPv4Address(); }

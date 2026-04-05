@@ -1263,25 +1263,29 @@ void BotManager::onBotRoomHostChanged(Bot *bot, const quint8 heirPid)
 {
     if (!isBotActive(bot, "RoomHostChanged")) return;
 
-    bot->enterCriticalOperation();
-
     const auto &players = bot->client->getPlayers();
-    if (!players.contains(heirPid)) {
-        bot->leaveCriticalOperation();
-        return;
-    }
+    if (!players.contains(heirPid)) return;
+
+    QString oldUuid = bot->gameInfo.clientId;
+    QString oldHostName = bot->gameInfo.hostName;
 
     QString newHostName = players[heirPid].name;
     QString newUuid = players[heirPid].clientUuid;
 
-    bot->hostJoined = true;
-    bot->pendingRemoval = false;
+    m_hostNameToBotMap.remove(oldHostName.toLower());
+    m_clientIdToBotMap.remove(oldUuid);
+
+    m_hostNameToBotMap.insert(newHostName.toLower(), bot);
+    if (!newUuid.isEmpty()) {
+        m_clientIdToBotMap.insert(newUuid, bot);
+    }
+
     bot->hostname = newHostName;
     bot->gameInfo.clientId = newUuid;
     bot->gameInfo.hostName = newHostName;
+    bot->hostJoined = true;
 
-
-    LOG_INFO(QString("👑 [房主转让完成] Bot-%1: 新房主 %2 (UUID: %3)")
+    LOG_INFO(QString("👑 [映射同步完成] Bot-%1: 新房主 %2 (UUID: %3)")
                  .arg(bot->id).arg(newHostName, newUuid));
 
     for (auto it = players.begin(); it != players.end(); ++it) {
@@ -1292,7 +1296,6 @@ void BotManager::onBotRoomHostChanged(Bot *bot, const quint8 heirPid)
                                           MSG_ROOM_HOST_CHANGE,
                                           heirPid);
     }
-    bot->leaveCriticalOperation();
 }
 
 void BotManager::onBotVisualHostLeft(Bot *bot)

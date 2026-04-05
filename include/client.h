@@ -473,6 +473,7 @@ public:
     void writeIpToStreamWithLog(QDataStream &out, const QHostAddress &ip);                                      // Ip地址写入流
     void setBotDisplayName(const QString &name) { m_botDisplayName = name; }                                    // 获取显示名字
     const QMap<quint8, PlayerData> &getPlayers() const { return m_players; }                                    // 获取玩家数据
+    QString translateSocketError(QAbstractSocket::SocketError err, const QString &errString);
     QString getColoredTextByState(quint8 pid, const QString &text, bool isPlayerName = false);                  // 获取颜色文本
     QString getColoredTextByState(const PlayerData &p, const QString &text, bool isPlayerName = false);         // 获取颜色文本
 
