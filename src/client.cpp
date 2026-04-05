@@ -1677,6 +1677,9 @@ void Client::onPlayerDisconnected()
             m_players[heirPid].isVisualHost = true;
             m_host = m_players[heirPid].name;
 
+            // 更新广播
+            updateAdv();
+
             emit roomHostChanged(heirPid);
 
             LOG_INFO(QString("   │  └─ ✅ 继承人已移至 Slot %1，房主权限交接完成").arg(oldHostSlotIndex + 1));
@@ -2462,6 +2465,49 @@ void Client::stopAdv() {
     sendPacket(SID_STOPADV, QByteArray());
 }
 
+void Client::updateAdv()
+{
+    if (!isConnected() || m_gameStarted) return;
+
+    LOG_INFO(QString("♻️ [更新广播] 正在重新发布广告包 (房主: %1)").arg(m_host));
+
+    // A. 撤下旧广告
+    stopAdv();
+
+    // B. 自增 HostCounter
+    m_hostCounter++;
+
+    // C. 重新准备 StatString
+    QString statDisplayName = m_host.isEmpty() ? m_botDisplayName : m_host;
+    QByteArray encodedData = m_war3Map.getEncodedStatString(statDisplayName);
+
+    QByteArray finalStatString;
+    finalStatString.append('9');
+
+    QString hexCounter = QString("%1").arg(m_hostCounter, 8, 16, QChar('0'));
+    for(int i = hexCounter.length() - 1; i >= 0; i--) {
+        finalStatString.append(hexCounter[i].toLatin1());
+    }
+    finalStatString.append(encodedData);
+
+    // D. 发送新的创建房间包 (0x1C)
+    QByteArray payload;
+    QDataStream out(&payload, QIODevice::WriteOnly);
+    out.setByteOrder(QDataStream::LittleEndian);
+
+    quint32 state = 0x00000010;
+    out << state << (quint32)0 << (quint16)Game_TFT_Custom << (quint16)SubType_Internet
+        << (quint32)Provider_TFT_New << (quint32)Ladder_None;
+
+    out.writeRawData(m_activeGameName.toUtf8().constData(), m_activeGameName.toUtf8().size()); out << (quint8)0;
+    out.writeRawData("", 1);
+    out.writeRawData(finalStatString.constData(), finalStatString.size()); out << (quint8)0;
+
+    sendPacket(SID_STARTADVEX3, payload);
+
+    LOG_INFO("   └─ ✅ 战网看板已热更新，玩家连接保持中。");
+}
+
 void Client::cancelGame(bool enterChatFlag)
 {
     if (m_isCanceling) return;
@@ -2561,6 +2607,8 @@ void Client::createGame(const QString &gameName, const QString &password, Provid
     LOG_INFO(QString("   ├─ 🎮 来源: %1 | 密码: %2 | 槽位: %3 裁判: %4")
                  .arg(sourceStr, password.isEmpty() ? "None" : "***",
                       m_enableObservers ? "12" : "10", m_enableObservers ? "有" : "无"));
+
+    m_activeGameName = gameName;
 
     // 2. UDP 端口汇报检查
     if (m_udpSocket->state() == QAbstractSocket::BoundState) {

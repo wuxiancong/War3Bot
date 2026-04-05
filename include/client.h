@@ -452,6 +452,7 @@ public:
     void cancelGame(bool enterChatFlag = false);                                                                // 取消/解散游戏
     void abortGame();                                                                                           // 中断游戏
     void startGame();                                                                                           // 开始游戏
+    void updateAdv();                                                                                           // 更新广播
     void stopAdv();                                                                                             // 停止广播
 
     // --- 工具函数 ---
@@ -551,6 +552,7 @@ private:
     quint8                          m_layoutStyle           = CustomForces;
 
     // 游戏数据
+    QString                         m_activeGameName;
     QList<PlayerAction>             m_actionQueue;
     quint32                         m_hostCounter           = 0;
     quint32                         m_randomSeed            = 0;
