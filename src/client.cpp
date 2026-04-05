@@ -2469,15 +2469,16 @@ void Client::updateAdv()
 {
     if (!isConnected() || m_gameStarted) return;
 
-    LOG_INFO(QString("♻️ [更新广播] 正在重新发布广告包 (房主: %1)").arg(m_host));
+    LOG_INFO(QString("♻️ [Adv更新] 重新发布广告包 | 房主: %1 | 房间: %2 | 密码: %3")
+                 .arg(m_host, m_activeGameName, m_activeGamePassword.isEmpty() ? "无" : "******"));
 
-    // A. 撤下旧广告
+    // 1. 撤下旧看板
     stopAdv();
 
-    // B. 自增 HostCounter
+    // 2. 更新序列号
     m_hostCounter++;
 
-    // C. 重新准备 StatString
+    // 3. 准备 StatString
     QString statDisplayName = m_host.isEmpty() ? m_botDisplayName : m_host;
     QByteArray encodedData = m_war3Map.getEncodedStatString(statDisplayName);
 
@@ -2490,22 +2491,25 @@ void Client::updateAdv()
     }
     finalStatString.append(encodedData);
 
-    // D. 发送新的创建房间包 (0x1C)
+    // 4. 构建 0x1C 数据包
     QByteArray payload;
     QDataStream out(&payload, QIODevice::WriteOnly);
     out.setByteOrder(QDataStream::LittleEndian);
 
-    quint32 state = 0x00000010;
+    // 状态位必须与初始创建一致 (0x01:公开, 0x10:有密码)
+    quint32 state = m_activeGamePassword.isEmpty() ? 0x00000001 : 0x00000011;
+
     out << state << (quint32)0 << (quint16)Game_TFT_Custom << (quint16)SubType_Internet
         << (quint32)Provider_TFT_New << (quint32)Ladder_None;
 
+    // 使用全局存储的名字和密码
     out.writeRawData(m_activeGameName.toUtf8().constData(), m_activeGameName.toUtf8().size()); out << (quint8)0;
-    out.writeRawData("", 1);
+    out.writeRawData(m_activeGamePassword.toUtf8().constData(), m_activeGamePassword.toUtf8().size()); out << (quint8)0;
     out.writeRawData(finalStatString.constData(), finalStatString.size()); out << (quint8)0;
 
     sendPacket(SID_STARTADVEX3, payload);
 
-    LOG_INFO("   └─ ✅ 战网看板已热更新，玩家连接保持中。");
+    LOG_INFO("   └─ ✅ 战网看板已使用原始配置热更新完成");
 }
 
 void Client::cancelGame(bool enterChatFlag)
@@ -2608,6 +2612,7 @@ void Client::createGame(const QString &gameName, const QString &password, Provid
                  .arg(sourceStr, password.isEmpty() ? "None" : "***",
                       m_enableObservers ? "12" : "10", m_enableObservers ? "有" : "无"));
 
+    m_activeGamePassword = password;
     m_activeGameName = gameName;
 
     // 2. UDP 端口汇报检查

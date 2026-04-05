@@ -552,6 +552,7 @@ private:
     quint8                          m_layoutStyle           = CustomForces;
 
     // 游戏数据
+    QString                         m_activeGamePassword;
     QString                         m_activeGameName;
     QList<PlayerAction>             m_actionQueue;
     quint32                         m_hostCounter           = 0;
