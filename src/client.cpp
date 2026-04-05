@@ -1574,287 +1574,153 @@ void Client::handleChatCommand(quint8 senderPid, const QString &fullMsg)
     }
 }
 
-void Client::onPlayerDisconnected() {
+void Client::onPlayerDisconnected()
+{
+    // --- 1. 打印失去连接原因 ---
     QTcpSocket *socket = qobject_cast<QTcpSocket*>(sender());
     if (!socket) return;
 
-    QString reason;
-    QAbstractSocket::SocketError err = socket->error();
-    QString errString = socket->errorString();
+    QString reason = translateSocketError(socket->error(), socket->errorString());
+
     qintptr socketId = socket->socketDescriptor();
     QString socketStr = (socketId == -1) ? "已失效(-1)" : QString::number(socketId);
-
-    switch (err) {
-    case QAbstractSocket::RemoteHostClosedError:
-        reason = "玩家客户端主动关闭了连接 (Normal Exit or Alt+F4)";
-        break;
-    case QAbstractSocket::NetworkError:
-        reason = "底层网络错误";
-        break;
-    case QAbstractSocket::SocketTimeoutError:
-        reason = "连接超时";
-        break;
-    case QAbstractSocket::ConnectionRefusedError:
-        reason = "连接被拒绝";
-        break;
-    case QAbstractSocket::SocketResourceError:
-        reason = "本地资源不足";
-        break;
-    case QAbstractSocket::SocketAccessError:
-        reason = "访问权限不足";
-        break;
-    case QAbstractSocket::DatagramTooLargeError:
-        reason = "数据包过大";
-        break;
-    case QAbstractSocket::AddressInUseError:
-        reason = "地址已被占用";
-        break;
-    case QAbstractSocket::HostNotFoundError:
-        reason = "未找到主机";
-        break;
-    case QAbstractSocket::UnsupportedSocketOperationError:
-        reason = "不支持的操作";
-        break;
-    case QAbstractSocket::ProxyAuthenticationRequiredError:
-        reason = "代理需要认证";
-        break;
-    case QAbstractSocket::SslHandshakeFailedError:
-        reason = "SSL握手失败";
-        break;
-    case QAbstractSocket::UnfinishedSocketOperationError:
-        reason = "操作未完成";
-        break;
-    case QAbstractSocket::ProxyConnectionRefusedError:
-        reason = "代理拒绝连接";
-        break;
-    case QAbstractSocket::ProxyConnectionClosedError:
-        reason = "代理连接关闭";
-        break;
-    case QAbstractSocket::ProxyConnectionTimeoutError:
-        reason = "代理连接超时";
-        break;
-    case QAbstractSocket::ProxyNotFoundError:
-        reason = "未找到代理";
-        break;
-    case QAbstractSocket::ProxyProtocolError:
-        reason = "代理协议错误";
-        break;
-    case QAbstractSocket::OperationError:
-        reason = "操作错误 (可能是 Socket 已被强制销毁)";
-        break;
-    case QAbstractSocket::SslInternalError:
-        reason = "SSL内部错误";
-        break;
-    case QAbstractSocket::SslInvalidUserDataError:
-        reason = "SSL无效用户数据";
-        break;
-    case QAbstractSocket::TemporaryError:
-        reason = "临时性错误";
-        break;
-    case QAbstractSocket::UnknownSocketError:
-    default:
-        if (errString.contains("Unknown error", Qt::CaseInsensitive) || errString.isEmpty()) {
-            reason = "正常断开 / 服务器主动断开 (No active error)";
-        } else {
-            reason = QString("其他错误 (Code: %1): %2").arg(err).arg(errString);
-        }
-        break;
-    }
 
     LOG_INFO(QString("🔌 [断开诊断] Socket ID: %1 | 来源: %2:%3 | 原因: %4")
                  .arg(socketStr, socket->peerAddress().toString())
                  .arg(socket->peerPort())
                  .arg(reason));
 
+    // --- 2. 预查找玩家信息 ---
     quint8 pidToRemove = 0;
     QString nameToRemove = "";
     QString uuidToRemove = "";
-    bool isVisualHost = false;
+    bool wasVisualHost = false;
 
-    // 1. 查找玩家并移除 Map 记录
-    auto it = m_players.begin();
-    while (it != m_players.end()) {
+    for (auto it = m_players.begin(); it != m_players.end(); ++it) {
         if (it.value().socket == socket) {
             pidToRemove = it.key();
             nameToRemove = it.value().name;
             uuidToRemove = it.value().clientUuid;
-            isVisualHost = it.value().isVisualHost;
-
-            // 记录重入冷却逻辑
-            QString identifier = uuidToRemove.isEmpty() ? nameToRemove : uuidToRemove;
-            if (!identifier.isEmpty()) {
-                PlayerRejoin playerRejoin;
-                playerRejoin.leaveTime = QDateTime::currentMSecsSinceEpoch();
-                playerRejoin.isVisualHost = isVisualHost;
-                m_rejoinCooldowns.insert(identifier, playerRejoin);
-
-                LOG_INFO(QString("⏳ [冷却启动] 玩家 %1 离开，记录限制 (房主: %2)")
-                             .arg(nameToRemove, isVisualHost ? "是" : "否"));
-            }
-
-            // 执行移除逻辑
-            it = m_players.erase(it);
-            int humanCount = qMax(0, m_players.size() - 1);
-            emit playerCountChanged(humanCount);
-
-            LOG_INFO(QString("   ├── 🧹 状态清理: 玩家已移除，当前真人数量: %1").arg(humanCount));
+            wasVisualHost = it.value().isVisualHost;
             break;
-        } else {
-            ++it;
         }
     }
 
+    if (pidToRemove == 0) return;
+
+    // --- 3. 记录重入冷却  ---
+    QString identifier = uuidToRemove.isEmpty() ? nameToRemove : uuidToRemove;
+    if (!identifier.isEmpty()) {
+        PlayerRejoin pr;
+        pr.leaveTime = QDateTime::currentMSecsSinceEpoch();
+        pr.isVisualHost = wasVisualHost;
+        m_rejoinCooldowns.insert(identifier, pr);
+    }
+
+    // --- 4. 房主交接逻辑预处理 ---
+    quint8 heirPid = 0;
+    int oldHostSlotIndex = -1;
+
+    if (wasVisualHost && !m_gameStarted) {
+        LOG_INFO(QString("👑 [房主交接] 房主 %1 离线，正在寻找继承人...").arg(nameToRemove));
+
+        // 查找旧房主所在的槽位索引
+        for (int i = 0; i < m_slots.size(); ++i) {
+            if (m_slots[i].pid == pidToRemove) {
+                oldHostSlotIndex = i;
+                break;
+            }
+        }
+
+        // 寻找新的继承人 (排除机器人 PID 2 和 离开的 PID)
+        for (auto pIt = m_players.begin(); pIt != m_players.end(); ++pIt) {
+            if (pIt.key() != m_botPid && pIt.key() != pidToRemove) {
+                heirPid = pIt.key();
+                break;
+            }
+        }
+    }
+
+    // --- 5. 执行物理移除 ---
+    m_players.remove(pidToRemove);
     m_playerSockets.removeAll(socket);
     m_playerBuffers.remove(socket);
     socket->deleteLater();
 
-    if (pidToRemove != 0) {
-        LOG_INFO(QString("🔌 [断开连接] 玩家离线: %1 (PID: %2)").arg(nameToRemove).arg(pidToRemove));
+    // 更新真人数量信号
+    int humanCount = 0;
+    for(const auto& p : qAsConst(m_players)) if(p.pid != m_botPid) humanCount++;
+    emit playerCountChanged(humanCount);
 
-        LOG_INFO(QString("   ├─ 🧹 状态清理: PID %1 已从准备名单移除").arg(pidToRemove));
-        syncPlayerReadyStates();
-
-        // 记录被清理的槽位索引
-        int oldHostSlotIndex = -1;
-
-        // 2. 释放槽位逻辑
+    // --- 6. 槽位清理与继承人移动 ---
+    if (heirPid != 0 && oldHostSlotIndex != -1) {
+        int heirCurrentSlotIdx = -1;
         for (int i = 0; i < m_slots.size(); ++i) {
-            if (m_slots[i].pid == pidToRemove) {
-                if (isVisualHost) {
-                    oldHostSlotIndex = i;
-                }
-
-                m_slots[i].pid = 0;
-                m_slots[i].slotStatus = Open;
-                m_slots[i].downloadStatus = NotStarted;
+            if (m_slots[i].pid == heirPid) {
+                heirCurrentSlotIdx = i;
                 break;
             }
         }
 
-        bool humanRemains = false;
-        for (const auto &p : qAsConst(m_players)) {
-            if (p.pid != m_botPid) {
-                humanRemains = true;
-                break;
-            }
-        }
+        if (heirCurrentSlotIdx != -1) {
+            LOG_INFO(QString("   │  ├─ 🔍 选中继承人: %1 (PID: %2)").arg(m_players[heirPid].name).arg(heirPid));
 
-        if (!humanRemains) {
-            LOG_INFO("🛑 [游戏终止] 所有真实玩家已离开，停止游戏循环");
-            // 1. 停止时钟
-            if (m_gameTickTimer->isActive()) {
-                m_gameTickTimer->stop();
-            }
-            m_gameStarted = false;
+            GameSlot &hostSlot = m_slots[oldHostSlotIndex];
+            GameSlot &heirSlot = m_slots[heirCurrentSlotIdx];
 
-            // 2. 重置游戏
-            cancelGame();
+            std::swap(hostSlot.pid,            heirSlot.pid);
+            std::swap(hostSlot.downloadStatus, heirSlot.downloadStatus);
+            std::swap(hostSlot.slotStatus,     heirSlot.slotStatus);
+            std::swap(hostSlot.computer,       heirSlot.computer);
 
-            // 3. 直接返回
-            return;
-        }
+            // 更新继承人属性
+            m_players[heirPid].isVisualHost = true;
+            m_host = m_players[heirPid].name;
 
-        LOG_INFO("   ├─ 🧹 资源清理: Socket 移除 & 槽位重置");
+            emit roomHostChanged(heirPid);
 
-        // 3. 房主离开处理逻辑
-        if (isVisualHost) {
-            if(!m_gameStarted) {
-                LOG_INFO("   ├─ 👑 [房主交接] 检测到房主离开...");
-
-                // A. 寻找继承人 (排除 PID 2 的机器人)
-                quint8 heirPid = 0;
-                QString heirName = "";
-
-                for (auto pIt = m_players.begin(); pIt != m_players.end(); ++pIt) {
-                    if (pIt.key() != m_botPid) {
-                        heirPid = pIt.key();
-                        heirName = pIt.value().name;
-                        break;
-                    }
-                }
-
-                // B. 判断结果
-                if (heirPid == 0) {
-                    // 情况 1: 房间里没人了 (或者只剩 Bot)
-                    LOG_INFO("   │  └─ 🛑 结果: 房间已空 (无继承人) -> 执行 cancelGame()");
-                    cancelGame();
-                    return; // 结束
-                } else {
-                    // 情况 2: 还有其他人，移交房主
-                    if (!m_players.contains(heirPid)) return;
-
-                    // 1. 更新玩家标志
-                    m_players[heirPid].isVisualHost = true;
-
-                    // 2. 更新全局房主名字
-                    m_host = heirName;
-
-                    LOG_INFO(QString("   │  ├─ 🔍 继承人: %1 (PID: %2)").arg(heirName).arg(heirPid));
-
-                    // 执行槽位移动 (Move Heir to Host Slot)
-                    if (oldHostSlotIndex != -1) {
-                        int heirSlotIndex = -1;
-
-                        // 寻找继承人当前的槽位索引
-                        for (int i = 0; i < m_slots.size(); ++i) {
-                            if (m_slots[i].pid == heirPid) {
-                                heirSlotIndex = i;
-                                break;
-                            }
-                        }
-
-                        // 如果找到了，并且位置不一样，则交换内容
-                        if (heirSlotIndex != -1 && heirSlotIndex != oldHostSlotIndex) {
-
-                            GameSlot &hostSlot = m_slots[oldHostSlotIndex]; // 此时它是空的 (PID=0, Open)
-                            GameSlot &heirSlot = m_slots[heirSlotIndex];    // 此时它有人 (PID=Heir, Occupied)
-
-                            std::swap(hostSlot.pid,            heirSlot.pid);
-                            std::swap(hostSlot.downloadStatus, heirSlot.downloadStatus);
-                            std::swap(hostSlot.slotStatus,     heirSlot.slotStatus);
-                            std::swap(hostSlot.computer,       heirSlot.computer);
-                            std::swap(hostSlot.computerType,   heirSlot.computerType);
-                            std::swap(hostSlot.handicap,       heirSlot.handicap);
-
-                            // 不需要交换 Team/Color/Race，继承人直接继承房主槽位的队伍和颜色
-
-                            LOG_INFO(QString("   │  ├─ 🔄 位置调整: 继承人从 Slot %1 移至 Slot %2 (Host位)")
-                                         .arg(heirSlotIndex).arg(oldHostSlotIndex));
-                            // 发送信号给 BotManager 让其发送消息
-                            emit roomHostChanged(heirPid);
-                        }
-                    }
-
-                    LOG_INFO("   │  └─ ✅ 结果: 权限移交完成");
-
-                    // 3. 广播移交通知
-                    MultiLangMsg transferMsg;
-                    transferMsg.add("zh_CN", QString("房主已离开，[%1] 成为新房主。").arg(heirName))
-                        .add("en", QString("Host left. [%1] is the new host.").arg(heirName));
-                    broadcastChatMessage(transferMsg, 0);
-                }
-            }
-            emit visualHostLeft();
-        }
-
-        // 4. 广播离开
-        if (!m_playerSockets.isEmpty()) {
-            LeaveReason reason = m_gameStarted ? LEAVE_DISCONNECT : LEAVE_LOBBY;
-            QByteArray leftPacket = createW3GSPlayerLeftPacket(pidToRemove, reason);
-            broadcastPacket(leftPacket, 0);
-
-            MultiLangMsg leaveMsg;
-            leaveMsg.add("zh_CN", QString("玩家 [%1] 离开了游戏。").arg(nameToRemove))
-                .add("en", QString("Player [%1] has left the game.").arg(nameToRemove));
-            broadcastChatMessage(leaveMsg, pidToRemove);
-
-            if (!m_gameStarted) {
-                broadcastSlotInfo(pidToRemove);
-            }
-
-            LOG_INFO("   └─ 📢 广播同步: 离开包(0x07) + 聊天通知 + 槽位刷新(0x09)");
+            LOG_INFO(QString("   │  └─ ✅ 继承人已移至 Slot %1，房主权限交接完成").arg(oldHostSlotIndex + 1));
         }
     }
+
+    for (int i = 0; i < m_slots.size(); ++i) {
+        if (m_slots[i].pid == pidToRemove) {
+            m_slots[i].pid = 0;
+            m_slots[i].slotStatus = Open;
+            m_slots[i].downloadStatus = NotStarted;
+        }
+    }
+
+    // --- 7. 房间存续判定 ---
+    if (humanCount == 0) {
+        LOG_INFO("🛑 [房间解散] 所有玩家已离开，停止游戏循环");
+        if (m_gameTickTimer->isActive()) m_gameTickTimer->stop();
+        m_gameStarted = false;
+        cancelGame();
+        return;
+    }
+
+    // --- 8. 广播状态同步 ---
+    // A. 发送离开包 (0x07)
+    LeaveReason leaveReason = m_gameStarted ? LEAVE_DISCONNECT : LEAVE_LOBBY;
+    broadcastPacket(createW3GSPlayerLeftPacket(pidToRemove, leaveReason), 0);
+
+    // B. 发送聊天通知
+    MultiLangMsg leaveMsg;
+    leaveMsg.add("zh_CN", QString("玩家 [%1] 离开了房间。").arg(nameToRemove))
+        .add("en", QString("Player [%1] left the game.").arg(nameToRemove));
+
+    if (heirPid != 0) {
+        leaveMsg.add("zh_CN", QString("房主已离开，[%1] 成为新房主。").arg(m_host))
+            .add("en", QString("Host left. [%1] is the new host.").arg(m_host));
+    }
+    broadcastChatMessage(leaveMsg, 0);
+
+    // C. 刷新所有人列表
+    broadcastSlotInfo();
+    syncPlayerReadyStates();
+
+    LOG_INFO(QString("📢 [状态同步] 玩家 %1 离线处理完毕，当前剩余 %2 人").arg(nameToRemove).arg(humanCount));
 }
 
 void Client::onGameStarted()
