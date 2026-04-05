@@ -305,34 +305,34 @@ int BotManager::loadMoreBots(int count)
     return loadedCount;
 }
 
-bool BotManager::isBotValid(Bot *bot, const char *context)
+bool BotManager::isBotValid(Bot *bot, const QString &context)
 {
     // 1. 基础非空检查
     if (!bot) {
-        if (context) LOG_INFO(QString("❌ [致命] %1 收到空 Bot 指针").arg(context));
+        if (context.isEmpty()) LOG_INFO(QString("❌ [致命] %1 收到空 Bot 指针").arg(context));
         return false;
     }
 
     // 2. bot 是否还在管理池中
     if (!m_bots.contains(bot)) {
-        if (context) LOG_WARNING(QString("⚠️ [拦截] %1 收到已失效/销毁的 Bot (ID:%2)").arg(context).arg(bot->id));
+        if (context.isEmpty()) LOG_WARNING(QString("⚠️ [拦截] %1 收到已失效/销毁的 Bot (ID:%2)").arg(context).arg(bot->id));
         return false;
     }
 
     return true;
 }
 
-bool BotManager::isBotActive(Bot *bot, const char* context)
+bool BotManager::isBotActive(Bot *bot, const QString &context)
 {
     // 1. 第一层：内存与容器校验
     if (!bot || !m_bots.contains(bot)) {
-        if (context) LOG_INFO(QString("⚠️ [拦截] %1: Bot 实例已销毁或不在管理列表中").arg(context));
+        if (context.isEmpty()) LOG_INFO(QString("⚠️ [拦截] %1: Bot 实例已销毁或不在管理列表中").arg(context));
         return false;
     }
 
     // 2. 第二层：组件校验
     if (!bot->client) {
-        if (context) LOG_INFO(QString("❌ [拒绝] %1: Bot-%2 (%3) 的网络组件 (Client) 为空")
+        if (context.isEmpty()) LOG_INFO(QString("❌ [拒绝] %1: Bot-%2 (%3) 的网络组件 (Client) 为空")
                          .arg(context).arg(bot->id).arg(bot->username));
         return false;
     }
@@ -678,7 +678,7 @@ void BotManager::removeGame(Bot *bot, bool disconnectFlag, const QString &reason
     }
 
     // 5. 重置状态
-    bot->resetGameState(disconnectFlag, reason.toUtf8().constData());
+    bot->resetGameState(disconnectFlag, true, reason.toUtf8().constData());
     bot->state = disconnectFlag ? BotState::Disconnected : BotState::Idle;
     emit botStateChanged(bot->id, bot->username, bot->state);
 }

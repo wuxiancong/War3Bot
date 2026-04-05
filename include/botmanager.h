@@ -64,8 +64,8 @@ private slots:
 
 private:
     void addBotInstance(const QString &username, const QString &password);
-    bool isBotActive(Bot *bot, const char *context = nullptr);
-    bool isBotValid(Bot *bot, const char *context = nullptr);
+    bool isBotActive(Bot *bot, const QString &context);
+    bool isBotValid(Bot *bot, const QString &context);
     QString generateRandomPassword(int length);
     QString toLeetSpeak(const QString &input);
     QString botStateToString(BotState state);

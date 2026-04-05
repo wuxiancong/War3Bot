@@ -16,23 +16,32 @@ Bot::~Bot()
     }
 }
 
-void Bot::resetGameState(bool disconnectFlag, const char *context)
+void Bot::resetGameState(bool disconnectFlag, bool enterChatFlag, const QString &context)
 {
-    LOG_INFO(QString("🧹 [状态重置] Bot-%1 | 来源: %2 | 物理断开: %3")
-                 .arg(this->id).arg(context, disconnectFlag ? "是" : "否"));
+    // 1. 根节点日志：记录来源和核心标志
+    LOG_INFO(QString("🧹 [状态重置] Bot-%1 | 来源: %2").arg(this->id).arg(context));
+    LOG_INFO(QString("   ├─ ⚙️ 配置: 物理断开: %1 | 自动进入大厅: %2")
+                 .arg(disconnectFlag ? "✅ 是" : "❌ 否", enterChatFlag ? "✅ 是" : "❌ 否"));
 
     if (this->client) {
         if (disconnectFlag) {
+            // 场景：报错或强制下线
             if (this->client->isConnected()) {
-                LOG_INFO(QString("   ├── 🔌 动作: 强制断开 Client-%1 战网连接").arg(this->id));
+                LOG_INFO(QString("   ├── 🔌 动作: 正在强制切断 Client-%1 的 TCP 链路...").arg(this->id));
                 this->client->disconnectFromHost();
             }
         } else {
-            LOG_INFO(QString("   ├── 🔄 动作: 清理 Client-%1 房间缓存 (保留链路)").arg(this->id));
-            this->client->cancelGame();
+            // 场景：正常重置房间数据
+            QString strategy = enterChatFlag ? "执行网络切换 (返回频道)" : "纯内存清理 (准备新局)";
+            LOG_INFO(QString("   ├── 🔄 动作: 清理 Client-%1 房间缓存 | 策略: %2")
+                         .arg(this->id).arg(strategy));
+
+            // 将标志传给底层的 cancelGame
+            this->client->cancelGame(enterChatFlag);
         }
     }
 
+    // 2. 内存数据彻底清空
     this->gameInfo = GameInfo();
     this->pendingTask = PendingTask();
     this->m_triggerCounts.clear();
@@ -262,7 +271,7 @@ void Bot::setupGameInfo(const QString &host, const QString &name, const QString 
 {
     LOG_INFO(QString("📋 [元数据设置] Bot-%1: 正在初始化房间配置...").arg(this->id));
 
-    resetGameState(false, "Setup New Game Task");
+    resetGameState(false, false, "Setup Game Info");
 
     this->hostname = host;
     this->commandSource = source;
@@ -288,14 +297,15 @@ void Bot::setupGameInfo(const QString &host, const QString &name, const QString 
 SignalAudit Bot::getAudit(const char* signalSignature)
 {
     SignalAudit signalAudit;
-
     signalAudit.physicalLinks = this->receivers(signalSignature);
 
-    QString name = QString(signalSignature).section('(', 0, 0);
-    if (name.startsWith("2")) name.remove(0, 1);
+    QString sig = QString::fromUtf8(signalSignature);
+    QString name = sig.section('(', 0, 0);
+    int i = 0;
+    while (i < name.length() && name.at(i).isDigit()) i++;
+    name = name.mid(i);
 
     signalAudit.triggerCount = m_triggerCounts.value(name, 0);
-
     return signalAudit;
 }
 

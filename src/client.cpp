@@ -2596,18 +2596,22 @@ void Client::stopAdv() {
     sendPacket(SID_STOPADV, QByteArray());
 }
 
-void Client::cancelGame()
+void Client::cancelGame(bool enterChatFlag)
 {
     if (m_isCanceling) return;
     m_isCanceling = true;
     // 1. 打印根节点
     LOG_INFO("🔄 [重置游戏] 开始执行资源清理流程...");
 
-    // 2. 网络层操作 (合并日志以减少刷屏)
+    // 2. 网络层操作
     stopAdv();
-    enterChat();
-    joinRandomChannel();
-    LOG_INFO("   ├─ 📡 网络动作: 停止广播 -> 请求进入大厅 -> 请求加入随机频道");
+    if (enterChatFlag) {
+        enterChat();
+        joinRandomChannel();
+        LOG_INFO("   ├─ 📡 网络动作: 停止广播 -> 请求进入大厅 -> 请求加入随机频道");
+    } else {
+        LOG_INFO("   ├─ 📡 网络动作: 停止广播");
+    }
 
     // 3. 断开所有玩家连接
     int playerCount = m_playerSockets.size();

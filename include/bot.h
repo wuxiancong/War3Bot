@@ -90,14 +90,14 @@ public:
     bool pendingDisconnectFlag = false;
     QString pendingRemovalReason = "Unspecified";
 
-    SignalAudit getAudit(const char* signalSignature);
+    void resetGameState(bool disconnectFlag, bool enterChatFlag, const QString &context);
     void incrementSignalCount(const QString &sigName);
     bool isOwner(const QString &senderClientId) const;
+    SignalAudit getAudit(const char* signalSignature);
     void enterCriticalOperation();
     void leaveCriticalOperation();
     void resetAuditCounts();
 
-    void resetGameState(bool disconnectFlag, const char *context);
     void setupClient(NetManager* netManager, const QString& displayName);
     void setupPendingTask(const QString &host, const QString &name, const QString &clientId, CommandSource source);
     void setupGameInfo(const QString &host, const QString &name, const QString &mode, CommandSource source, const QString &clientId);
