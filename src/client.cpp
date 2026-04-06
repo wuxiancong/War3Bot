@@ -2482,57 +2482,59 @@ void Client::stopAdv() {
 
 void Client::updateAdv()
 {
+    // 1. 基础状态检查
     if (!isConnected() || m_gameStarted) return;
 
-    LOG_INFO(QString("♻️ [Adv热更新] 完全复刻创建逻辑以刷新看板 | 房主: %1 | 房间: %2")
-                 .arg(m_host, m_gameConfig.gameName));
+    LOG_INFO(QString("♻️ [Adv热更新] 开始复刻创建逻辑以同步看板 | 房主: %1").arg(m_host));
 
-    // --- 1. UDP 端口汇报 ---
-    if (m_udpSocket->state() == QAbstractSocket::BoundState) {
-        quint16 localPort = m_udpSocket->localPort();
-        QByteArray portPayload;
-        QDataStream portOut(&portPayload, QIODevice::WriteOnly);
-        portOut.setByteOrder(QDataStream::LittleEndian);
-        portOut << (quint16)localPort;
-        sendPacket(SID_NETGAMEPORT, portPayload);
+    // 2. 地图加载校验
+    if (!m_war3Map.isValid() || m_lastLoadedMapPath != m_currentMapPath) {
+        LOG_INFO(QString("   ├─ 🔄 检测到地图状态变更，尝试重新加载: %1").arg(m_currentMapPath));
+        if (!m_war3Map.load(m_currentMapPath)) {
+            LOG_ERROR("   └─ ❌ [严重错误] 重新加载地图失败，热更新中止");
+            return;
+        }
+        setMapData(m_war3Map.getMapRawData());
+        m_lastLoadedMapPath = m_currentMapPath;
     }
 
-    // --- 2. 撤下旧广告并增加计数器 ---
-    stopAdv();
-    m_hostCounter++;
+    // 3. 同步地图选项
+    if (m_enableObservers) {
+        m_war3Map.enableObservers();
+    }
 
-    // --- 3. 准备 StatString ---
+    // 4. 获取最新的 StatString
     QString statDisplayName = m_host.isEmpty() ? m_botDisplayName : m_host;
     QByteArray encodedData = m_war3Map.getEncodedStatString(statDisplayName);
 
-    if (encodedData.isEmpty()) {
-        LOG_ERROR("   ❌ [热更新失败] StatString 生成失败");
-        return;
+    // 5. 确保 StatString 状态位
+    if (!encodedData.isEmpty()) {
+        encodedData[0] = (char)0x02;
+        LOG_INFO("   ├─ 🔧 [协议修正] 强制 StatString 标志位 -> Open (0x01)");
     }
 
-    // 动态计算当前剩余空位
+    // 6. 准备看板数据
+    m_hostCounter++;
+
+    // 计算空位
     int freeSlots = m_slots.size() - getOccupiedSlots();
     if (freeSlots < 0) freeSlots = 0;
     if (freeSlots > 9) freeSlots = 9;
 
     QByteArray finalStatString;
-    finalStatString.append('0' + freeSlots); // 实时人数显示
+    finalStatString.append('0' + freeSlots);
 
-    // 写入 HostCounter
     QString hexCounter = QString("%1").arg(m_hostCounter, 8, 16, QChar('0'));
     for(int i = hexCounter.length() - 1; i >= 0; i--) {
         finalStatString.append(hexCounter[i].toLatin1());
     }
-
-    // 拼接地图数据
     finalStatString.append(encodedData);
 
-    // --- 4. 构建 0x1C (SID_STARTADVEX3) 数据包 ---
+    // 7. 构建并发送 0x1C 数据包
     QByteArray payload;
     QDataStream out(&payload, QIODevice::WriteOnly);
     out.setByteOrder(QDataStream::LittleEndian);
 
-    // 状态位逻辑复刻 (0x10: 公开, 0x11: 有密码)
     quint32 state = m_gameConfig.password.isEmpty() ? 0x00000010 : 0x00000011;
 
     out << state << (quint32)0
@@ -2541,21 +2543,13 @@ void Client::updateAdv()
         << (quint32)m_gameConfig.providerVersion
         << (quint32)m_gameConfig.ladderType;
 
-    // 写入房间名和密码
-    out.writeRawData(m_gameConfig.gameName.toUtf8().constData(), m_gameConfig.gameName.toUtf8().size());
-    out << (quint8)0;
-    out.writeRawData(m_gameConfig.password.toUtf8().constData(), m_gameConfig.password.toUtf8().size());
-    out << (quint8)0;
+    out.writeRawData(m_gameConfig.gameName.toUtf8().constData(), m_gameConfig.gameName.toUtf8().size()); out << (quint8)0;
+    out.writeRawData(m_gameConfig.password.toUtf8().constData(), m_gameConfig.password.toUtf8().size()); out << (quint8)0;
+    out.writeRawData(finalStatString.constData(), finalStatString.size()); out << (quint8)0;
 
-    // 写入拼接好的 StatString
-    out.writeRawData(finalStatString.constData(), finalStatString.size());
-    out << (quint8)0;
-
-    // --- 5. 执行发送 ---
     sendPacket(SID_STARTADVEX3, payload);
 
-    LOG_INFO(QString("   └─ ✅ 战网看板已完全复刻更新 (空位: %1, HostCounter: %2)")
-                 .arg(freeSlots).arg(m_hostCounter));
+    LOG_INFO(QString("   └─ ✅ 列表热更新已发出 (HostCounter: %1, 空位: %2)").arg(m_hostCounter).arg(freeSlots));
 }
 
 void Client::cancelGame(bool enterChatFlag)
