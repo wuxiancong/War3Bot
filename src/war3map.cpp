@@ -571,9 +571,6 @@ QByteArray War3Map::getEncodedStatString(const QString &hostName, const QString 
     ds.setByteOrder(QDataStream::LittleEndian);
     ds >> gameFlagsInt;
 
-    gameFlagsInt |= 0x01;  // 强制设置 Bit 0 为 1 (OPEN)
-    gameFlagsInt &= ~0x02; // 强制设置 Bit 1 为 0 (NOT STARTED)
-
     // 打印 Flags 详情
     LOG_INFO(QString("   ├─ 🚩 GameFlags (Int): 0x%1").arg(QString::number(gameFlagsInt, 16).toUpper().rightJustified(8, '0')));
 

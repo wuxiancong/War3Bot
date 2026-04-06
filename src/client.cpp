@@ -1576,14 +1576,13 @@ void Client::handleChatCommand(quint8 senderPid, const QString &fullMsg)
 
 void Client::onPlayerDisconnected()
 {
-    // --- 1. 打印失去连接原因 ---
     QTcpSocket *socket = qobject_cast<QTcpSocket*>(sender());
     if (!socket) return;
 
-    QString reason = translateSocketError(socket->error(), socket->errorString());
-
+    // --- 1. 错误诊断与日志记录 ---
     qintptr socketId = socket->socketDescriptor();
     QString socketStr = (socketId == -1) ? "已失效(-1)" : QString::number(socketId);
+    QString reason = translateSocketError(socket->error(), socket->errorString());
 
     LOG_INFO(QString("🔌 [断开诊断] Socket ID: %1 | 来源: %2:%3 | 原因: %4")
                  .arg(socketStr, socket->peerAddress().toString())
@@ -1596,7 +1595,8 @@ void Client::onPlayerDisconnected()
     QString uuidToRemove = "";
     bool wasVisualHost = false;
 
-    for (auto it = m_players.begin(); it != m_players.end(); ++it) {
+    auto it = m_players.begin();
+    while (it != m_players.end()) {
         if (it.value().socket == socket) {
             pidToRemove = it.key();
             nameToRemove = it.value().name;
@@ -1604,17 +1604,20 @@ void Client::onPlayerDisconnected()
             wasVisualHost = it.value().isVisualHost;
             break;
         }
+        ++it;
     }
 
     if (pidToRemove == 0) return;
 
-    // --- 3. 记录重入冷却  ---
+    // --- 3. 记录重入冷却逻辑 ---
     QString identifier = uuidToRemove.isEmpty() ? nameToRemove : uuidToRemove;
     if (!identifier.isEmpty()) {
         PlayerRejoin pr;
         pr.leaveTime = QDateTime::currentMSecsSinceEpoch();
         pr.isVisualHost = wasVisualHost;
         m_rejoinCooldowns.insert(identifier, pr);
+
+        LOG_INFO(QString("⏳ [冷却启动] 玩家 %1 离开，已记录重入限制").arg(nameToRemove));
     }
 
     // --- 4. 房主交接逻辑预处理 ---
@@ -1622,9 +1625,9 @@ void Client::onPlayerDisconnected()
     int oldHostSlotIndex = -1;
 
     if (wasVisualHost && !m_gameStarted) {
-        LOG_INFO(QString("👑 [房主交接] 房主 %1 离线，正在寻找继承人...").arg(nameToRemove));
+        LOG_INFO(QString("👑 [房主交接] 房主 %1 离线，寻找继承人...").arg(nameToRemove));
 
-        // 查找旧房主所在的槽位索引
+        // 记录原房主所在的槽位索引
         for (int i = 0; i < m_slots.size(); ++i) {
             if (m_slots[i].pid == pidToRemove) {
                 oldHostSlotIndex = i;
@@ -1632,7 +1635,7 @@ void Client::onPlayerDisconnected()
             }
         }
 
-        // 寻找新的继承人 (排除机器人 PID 2 和 离开的 PID)
+        // 寻找新的继承人
         for (auto pIt = m_players.begin(); pIt != m_players.end(); ++pIt) {
             if (pIt.key() != m_botPid && pIt.key() != pidToRemove) {
                 heirPid = pIt.key();
@@ -1647,12 +1650,24 @@ void Client::onPlayerDisconnected()
     m_playerBuffers.remove(socket);
     socket->deleteLater();
 
-    // 更新真人数量信号
+    // 更新真人数量并向外发射信号
     int humanCount = 0;
     for(const auto& p : qAsConst(m_players)) if(p.pid != m_botPid) humanCount++;
     emit playerCountChanged(humanCount);
 
-    // --- 6. 槽位清理与继承人移动 ---
+    LOG_INFO(QString("🔌 [断开连接] 玩家离线: %1 (PID: %2) | 剩余真人: %3")
+                 .arg(nameToRemove).arg(pidToRemove).arg(humanCount));
+
+    // --- 6. 房间存续判定 ---
+    if (humanCount == 0) {
+        LOG_INFO("🛑 [房间解散] 所有真实玩家已离开，执行资源回收");
+        if (m_gameTickTimer->isActive()) m_gameTickTimer->stop();
+        m_gameStarted = false;
+        cancelGame();
+        return;
+    }
+
+    // --- 7. 执行继承与看板热刷新逻辑 ---
     if (heirPid != 0 && oldHostSlotIndex != -1) {
         int heirCurrentSlotIdx = -1;
         for (int i = 0; i < m_slots.size(); ++i) {
@@ -1665,6 +1680,7 @@ void Client::onPlayerDisconnected()
         if (heirCurrentSlotIdx != -1) {
             LOG_INFO(QString("   │  ├─ 🔍 选中继承人: %1 (PID: %2)").arg(m_players[heirPid].name).arg(heirPid));
 
+            // A. 物理交换槽位信息
             GameSlot &hostSlot = m_slots[oldHostSlotIndex];
             GameSlot &heirSlot = m_slots[heirCurrentSlotIdx];
 
@@ -1672,58 +1688,57 @@ void Client::onPlayerDisconnected()
             std::swap(hostSlot.downloadStatus, heirSlot.downloadStatus);
             std::swap(hostSlot.slotStatus,     heirSlot.slotStatus);
             std::swap(hostSlot.computer,       heirSlot.computer);
+            std::swap(hostSlot.computerType,   heirSlot.computerType);
+            std::swap(hostSlot.handicap,       heirSlot.handicap);
 
-            // 更新继承人属性
+            // B. 更新内部状态
             m_players[heirPid].isVisualHost = true;
             m_host = m_players[heirPid].name;
 
-            // 更新广播
+            // C. 驱动战网热刷新过程
             updateAdv();
 
             emit roomHostChanged(heirPid);
 
-            LOG_INFO(QString("   │  └─ ✅ 继承人已移至 Slot %1，房主权限交接完成").arg(oldHostSlotIndex + 1));
+            LOG_INFO(QString("   │  └─ ✅ 继承人移至 Slot %1，看板刷新序列已启动").arg(oldHostSlotIndex + 1));
         }
     }
 
+    // --- 8. 清理离开者的槽位 ---
     for (int i = 0; i < m_slots.size(); ++i) {
-        if (m_slots[i].pid == pidToRemove) {
+        if (m_slots[i].pid == pidToRemove || (m_slots[i].pid == 0 && m_slots[i].slotStatus == Occupied)) {
             m_slots[i].pid = 0;
             m_slots[i].slotStatus = Open;
             m_slots[i].downloadStatus = NotStarted;
         }
     }
 
-    // --- 7. 房间存续判定 ---
-    if (humanCount == 0) {
-        LOG_INFO("🛑 [房间解散] 所有玩家已离开，停止游戏循环");
-        if (m_gameTickTimer->isActive()) m_gameTickTimer->stop();
-        m_gameStarted = false;
-        cancelGame();
-        return;
+    // --- 9. 广播状态同步至房间内其他玩家 ---
+    // A. 发送离开协议包 (0x07)
+    LeaveReason lr = m_gameStarted ? LEAVE_DISCONNECT : LEAVE_LOBBY;
+    broadcastPacket(createW3GSPlayerLeftPacket(pidToRemove, lr), 0);
+
+    // B. 发送房主离开事件信号
+    if (wasVisualHost) {
+        emit visualHostLeft();
     }
 
-    // --- 8. 广播状态同步 ---
-    // A. 发送离开包 (0x07)
-    LeaveReason leaveReason = m_gameStarted ? LEAVE_DISCONNECT : LEAVE_LOBBY;
-    broadcastPacket(createW3GSPlayerLeftPacket(pidToRemove, leaveReason), 0);
-
-    // B. 发送聊天通知
+    // C. 发送聊天通知
     MultiLangMsg leaveMsg;
     leaveMsg.add("zh_CN", QString("玩家 [%1] 离开了房间。").arg(nameToRemove))
-        .add("en", QString("Player [%1] left the game.").arg(nameToRemove));
+        .add("en", QString("Player [%1] has left the game.").arg(nameToRemove));
 
     if (heirPid != 0) {
-        leaveMsg.add("zh_CN", QString("房主已离开，[%1] 成为新房主。").arg(m_host))
+        leaveMsg.add("zh_CN", QString("房主已更换为 [%1]。").arg(m_host))
             .add("en", QString("Host left. [%1] is the new host.").arg(m_host));
     }
     broadcastChatMessage(leaveMsg, 0);
 
-    // C. 刷新所有人列表
+    // D. 刷新所有人的 Slot 列表和准备状态
     broadcastSlotInfo();
     syncPlayerReadyStates();
 
-    LOG_INFO(QString("📢 [状态同步] 玩家 %1 离线处理完毕，当前剩余 %2 人").arg(nameToRemove).arg(humanCount));
+    LOG_INFO(QString("📢 [状态同步] 离线处理完成，当前房主: %1").arg(m_host));
 }
 
 void Client::onGameStarted()
@@ -2469,37 +2484,56 @@ void Client::updateAdv()
 {
     if (!isConnected() || m_gameStarted) return;
 
-    LOG_INFO(QString("♻️ [Adv更新] 重新同步战网看板 | 房主: %1 | 房间: %2")
+    LOG_INFO(QString("♻️ [Adv热更新] 完全复刻创建逻辑以刷新看板 | 房主: %1 | 房间: %2")
                  .arg(m_host, m_gameConfig.gameName));
 
-    // 1. 撤下看板
+    // --- 1. UDP 端口汇报 ---
+    if (m_udpSocket->state() == QAbstractSocket::BoundState) {
+        quint16 localPort = m_udpSocket->localPort();
+        QByteArray portPayload;
+        QDataStream portOut(&portPayload, QIODevice::WriteOnly);
+        portOut.setByteOrder(QDataStream::LittleEndian);
+        portOut << (quint16)localPort;
+        sendPacket(SID_NETGAMEPORT, portPayload);
+    }
+
+    // --- 2. 撤下旧广告并增加计数器 ---
     stopAdv();
     m_hostCounter++;
 
-    // 2. 准备新的 StatString
+    // --- 3. 准备 StatString ---
     QString statDisplayName = m_host.isEmpty() ? m_botDisplayName : m_host;
     QByteArray encodedData = m_war3Map.getEncodedStatString(statDisplayName);
 
-    // 动态计算当前的剩余空位
+    if (encodedData.isEmpty()) {
+        LOG_ERROR("   ❌ [热更新失败] StatString 生成失败");
+        return;
+    }
+
+    // 动态计算当前剩余空位
     int freeSlots = m_slots.size() - getOccupiedSlots();
     if (freeSlots < 0) freeSlots = 0;
     if (freeSlots > 9) freeSlots = 9;
 
     QByteArray finalStatString;
-    finalStatString.append('0' + freeSlots);
+    finalStatString.append('0' + freeSlots); // 实时人数显示
 
+    // 写入 HostCounter
     QString hexCounter = QString("%1").arg(m_hostCounter, 8, 16, QChar('0'));
     for(int i = hexCounter.length() - 1; i >= 0; i--) {
         finalStatString.append(hexCounter[i].toLatin1());
     }
+
+    // 拼接地图数据
     finalStatString.append(encodedData);
 
-    // 3. 构建 0x1C 数据包
+    // --- 4. 构建 0x1C (SID_STARTADVEX3) 数据包 ---
     QByteArray payload;
     QDataStream out(&payload, QIODevice::WriteOnly);
     out.setByteOrder(QDataStream::LittleEndian);
 
-    quint32 state = m_gameConfig.password.isEmpty() ? 0x00000001 : 0x00000011;
+    // 状态位逻辑复刻 (0x10: 公开, 0x11: 有密码)
+    quint32 state = m_gameConfig.password.isEmpty() ? 0x00000010 : 0x00000011;
 
     out << state << (quint32)0
         << (quint16)m_gameConfig.comboGameType
@@ -2507,13 +2541,21 @@ void Client::updateAdv()
         << (quint32)m_gameConfig.providerVersion
         << (quint32)m_gameConfig.ladderType;
 
-    out.writeRawData(m_gameConfig.gameName.toUtf8().constData(), m_gameConfig.gameName.toUtf8().size()); out << (quint8)0;
-    out.writeRawData(m_gameConfig.password.toUtf8().constData(), m_gameConfig.password.toUtf8().size()); out << (quint8)0;
-    out.writeRawData(finalStatString.constData(), finalStatString.size()); out << (quint8)0;
+    // 写入房间名和密码
+    out.writeRawData(m_gameConfig.gameName.toUtf8().constData(), m_gameConfig.gameName.toUtf8().size());
+    out << (quint8)0;
+    out.writeRawData(m_gameConfig.password.toUtf8().constData(), m_gameConfig.password.toUtf8().size());
+    out << (quint8)0;
 
+    // 写入拼接好的 StatString
+    out.writeRawData(finalStatString.constData(), finalStatString.size());
+    out << (quint8)0;
+
+    // --- 5. 执行发送 ---
     sendPacket(SID_STARTADVEX3, payload);
 
-    LOG_INFO(QString("   └─ ✅ 战网看板已热更新 (显示空位: %1)").arg(freeSlots));
+    LOG_INFO(QString("   └─ ✅ 战网看板已完全复刻更新 (空位: %1, HostCounter: %2)")
+                 .arg(freeSlots).arg(m_hostCounter));
 }
 
 void Client::cancelGame(bool enterChatFlag)
@@ -2691,7 +2733,7 @@ void Client::createGame(const QString &gameName, const QString &password, Provid
     QByteArray payload;
     QDataStream out(&payload, QIODevice::WriteOnly);
     out.setByteOrder(QDataStream::LittleEndian);
-    quint32 state = password.isEmpty() ? 0x00000001 : 0x00000011;
+    quint32 state = password.isEmpty() ? 0x00000010 : 0x00000011;
 
     out << state << (quint32)0 << (quint16)comboGameType << (quint16)subGameType
         << (quint32)providerVersion << (quint32)ladderType;
