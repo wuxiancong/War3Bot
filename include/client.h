@@ -529,10 +529,10 @@ signals:
     void roomHostChanged(const quint8 heirPid);
     void hostJoinedGame(const QString &username);
     void gameCreateFail(GameCreationStatus status);
-    void gameCreateSuccess(CommandSource commandSource);
     void readyStateChanged(const QVariantMap &readyData);
     void roomPingsUpdated(const QMap<quint8, quint32> &pings);
     void rejoinRejected(const QString &clientId, quint32 remainingMs);
+    void gameCreateSuccess(CommandSource commandSource, bool isHotRefresh);
     void requestCreateGame(const QString &username, const QString &gameName, CommandSource commandSource);
 
 private slots:
@@ -617,6 +617,7 @@ private:
     bool                            m_isBot                 = false;
     bool                            m_isCanceling           = false;
     bool                            m_gameStarted           = false;
+    bool                            m_isRefreshingAdv       = false;
 
     // 登录选项
     quint32                         m_logonType             = 0;

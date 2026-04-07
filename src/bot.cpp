@@ -186,10 +186,10 @@ void Bot::setupClient(NetManager *netManager, const QString &displayName)
                }), "visualHostLeft");
 
     // 8. 创建房间成功
-    checkRelay(connect(client, &Client::gameCreateSuccess, this, [this, relayLog](){
+    checkRelay(connect(client, &Client::gameCreateSuccess, this, [this, relayLog](CommandSource source, bool isHotRefresh){
                    this->incrementSignalCount("gameCreateSuccess");
-                   relayLog("gameCreateSuccess");
-                   emit gameCreateSuccess();
+                   relayLog(QString("gameCreateSuccess (source: %1 hotRefresh: %2)").arg(source).arg(isHotRefresh));
+                   emit gameCreateSuccess(isHotRefresh);
                }), "gameCreateSuccess");
 
     // 9. Socket错误

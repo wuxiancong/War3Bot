@@ -50,9 +50,9 @@ private slots:
     void onBotGameCreateFail(Bot *bot, GameCreationStatus status);
     void onBotHostJoinedGame(Bot *bot, const QString &hostName);
     void onBotRoomHostChanged(Bot *bot, const quint8 heirPid);
+    void onBotGameCreateSuccess(Bot *bot, bool isHotRefresh);
     void onBotPlayerCountChanged(Bot *bot, int count);
     void onBotError(Bot *bot, QString error);
-    void onBotGameCreateSuccess(Bot *bot);
     void onBotVisualHostLeft(Bot *bot);
     void onBotAccountCreated(Bot *bot);
     void onBotAuthenticated(Bot *bot);

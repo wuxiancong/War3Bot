@@ -442,9 +442,9 @@ void BotManager::setupBotConnections(Bot *bot)
                  }), "enteredChat");
 
     // 3. 游戏创建成功
-    checkConnect(connect(bot, &Bot::gameCreateSuccess, this, [this, bot, arrivalLog]() {
-                     arrivalLog("gameCreateSuccess");
-                     this->onBotGameCreateSuccess(bot);
+    checkConnect(connect(bot, &Bot::gameCreateSuccess, this, [this, bot, arrivalLog](bool isHotRefresh) {
+                     arrivalLog(QString("gameCreateSuccess (hotRefresh: %1)").arg(isHotRefresh));
+                     this->onBotGameCreateSuccess(bot, isHotRefresh);
                  }), "gameCreateSuccess");
 
     // 4. 断开连接
@@ -1148,15 +1148,16 @@ void BotManager::onBotPlayerCountChanged(Bot *bot, int count)
     LOG_INFO(QString("   └── ✅ 结果: 真人玩家数已同步为 %1").arg(count));
 }
 
-void BotManager::onBotGameCreateSuccess(Bot *bot)
+void BotManager::onBotGameCreateSuccess(Bot *bot, bool isHotRefresh)
 {
     if (!isBotActive(bot, "GameCreateSuccess")) return;
 
     // 1. 更新内部状态
-    bot->hostJoined = false;
-    bot->state = BotState::Reserved;
+    bot->hostJoined = isHotRefresh;
+    bot->state = isHotRefresh ? BotState::Waiting : BotState::Reserved;
     bot->gameInfo.createTime = QDateTime::currentMSecsSinceEpoch();
 
+    // 更新全局搜索映射表
     if (!bot->hostname.isEmpty()) {
         m_hostNameToBotMap.insert(bot->hostname.toLower(), bot);
     }
@@ -1176,12 +1177,18 @@ void BotManager::onBotGameCreateSuccess(Bot *bot)
     QString clientId = bot->gameInfo.clientId;
 
     // 3. 打印详细树状日志
-    LOG_INFO("🎮 [房间创建完成回调]");
+    LOG_INFO(isHotRefresh ? "♻️ [房间看板热更新完成]" : "🎮 [房间创建完成回调]");
     LOG_INFO(QString("   ├─ 🤖 机器人实例: %1 (ID: %2)").arg(bot->username).arg(bot->id));
     LOG_INFO(QString("   ├─ 👤 房主名称:  %1 (UUID:  %2)").arg(bot->hostname, clientId));
     LOG_INFO(QString("   ├─ 🏠 房间名称:  %1").arg(bot->gameInfo.gameName));
     LOG_INFO(QString("   ├─ 🚩 游戏模式:  %1").arg(bot->gameInfo.gameMode));
     LOG_INFO(QString("   ├─ 🛡️ 地图校验:  0x%1").arg(QString::number(serverMapCrc, 16).toUpper()));
+
+    if (isHotRefresh) {
+        LOG_INFO(QString("   └─ ✅ 结果: 房主交接成功，已拦截自动进入指令以防止进程重启"));
+        emit botStateChanged(bot->id, bot->username, bot->state);
+        return;
+    }
 
     // 诊断端口状态
     if (botListenPort == 0) {
@@ -1192,7 +1199,6 @@ void BotManager::onBotGameCreateSuccess(Bot *bot)
 
     // 4. 发送 TCP 控制指令
     if (m_netManager) {
-        quint16 botListenPort = bot->client->getListenPort();
         bool okToGameLoby = m_netManager->sendEnterRoomCommand(clientId, m_controlPort, bot->commandSource == From_Server);
         bool okToLauncher = m_netManager->sendMessageToClient(clientId, S_C_MESSAGE, MSG_HOST_CREATED_GAME, botListenPort);
         bool okToCheckCrc = m_netManager->sendMessageToClient(clientId, S_C_MESSAGE, MSG_CHECK_MAP_CRC, static_cast<quint64>(serverMapCrc));
@@ -1273,9 +1279,11 @@ void BotManager::onBotRoomHostChanged(Bot *bot, const quint8 heirPid)
     QString newUuid = players[heirPid].clientUuid;
 
     m_hostNameToBotMap.remove(oldHostName.toLower());
-    m_clientIdToBotMap.remove(oldUuid);
+    if (!newHostName.isEmpty()) {
+        m_hostNameToBotMap.insert(newHostName.toLower(), bot);
+    }
 
-    m_hostNameToBotMap.insert(newHostName.toLower(), bot);
+    m_clientIdToBotMap.remove(oldUuid);
     if (!newUuid.isEmpty()) {
         m_clientIdToBotMap.insert(newUuid, bot);
     }
@@ -1306,9 +1314,8 @@ void BotManager::onBotVisualHostLeft(Bot *bot)
     bot->enterCriticalOperation();
 
     QString oldHostName = bot->gameInfo.hostName;
-    QString oldUuid = bot->gameInfo.clientId;
-    QString newUuid = "";
     QString newHostName = "";
+    QString newUuid = "";
     quint8 newHostPid = 0;
 
     const QMap<quint8, PlayerData> &players = bot->client->getPlayers();
@@ -1329,18 +1336,6 @@ void BotManager::onBotVisualHostLeft(Bot *bot)
                      .arg(bot->gameInfo.gameName, newHostName).arg(newHostPid));
 
         bot->pendingRemoval = false;
-
-        // 更新映射表：先移除旧的，再插入新的
-        m_hostNameToBotMap.remove(oldHostName.toLower());
-        m_hostNameToBotMap.insert(newHostName.toLower(), bot);
-
-        m_clientIdToBotMap.remove(oldUuid);
-        m_clientIdToBotMap.insert(newUuid, bot);
-
-        // 更新 Bot 内部信息
-        bot->gameInfo.clientId = newUuid;
-        bot->gameInfo.hostName = newHostName;
-        bot->hostname = newHostName;
 
         // 3. 向全房间广播通知
         for (const auto &p : players) {

@@ -110,10 +110,10 @@ signals:
     void authenticated();
     void accountCreated();
     void visualHostLeft();
-    void gameCreateSuccess();
     void socketError(QString error);
     void playerCountChanged(int count);
     void hostJoinedGame(const QString &name);
+    void gameCreateSuccess(bool isHotRefresh);
     void roomHostChanged(const quint8 heirPid);
     void gameCreateFail(GameCreationStatus status);
     void roomPingsUpdated(const QMap<quint8, quint32> &pings);

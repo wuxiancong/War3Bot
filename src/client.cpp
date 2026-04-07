@@ -583,7 +583,7 @@ void Client::handleBNETTcpPacket(BNETPacketID id, const QByteArray &data)
         if (status == GameCreate_Ok) {
             LOG_INFO("   ├─ ✅ 结果: 房间创建成功");
             LOG_INFO("   └─ 📢 状态: 广播已启动");
-            emit gameCreateSuccess(From_Client);
+            emit gameCreateSuccess(From_Client, m_isRefreshingAdv);
         } else {
             QString errStr;
             switch (status) {
@@ -2486,6 +2486,8 @@ void Client::updateAdv()
     // 1. 基础状态检查
     if (!isConnected() || m_gameStarted) return;
 
+    m_isRefreshingAdv = true;
+
     LOG_INFO(QString("♻️ [Adv热更新] 开始复刻创建逻辑以同步看板 | 房主: %1").arg(m_host));
 
     // 2. 地图加载校验
@@ -2518,7 +2520,7 @@ void Client::updateAdv()
     m_hostCounter++;
 
     // 计算空位
-    int freeSlots = m_slots.size() - getOccupiedSlots();
+    int freeSlots = m_slots.size() - getOccupiedSlots() + 1;
     if (freeSlots < 0) freeSlots = 0;
     if (freeSlots > 9) freeSlots = 9;
 
