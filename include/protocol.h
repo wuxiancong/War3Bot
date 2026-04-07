@@ -27,9 +27,10 @@ enum PacketType : quint8 {
     S_C_UPLOADRESULT                = 0x10,
     S_C_PING_LIST                   = 0x11,
     S_C_READY_LIST                  = 0x12,
-    C_S_PREJOINROOM              = 0x13,
-    C_S_ROOM_PING                   = 0x14,
-    S_C_ROOM_PONG                   = 0x15
+    C_S_PREJOINROOM                 = 0x13,
+    S_C_PREJOINROOM                 = 0x14,
+    C_S_ROOM_PING                   = 0x15,
+    S_C_ROOM_PONG                   = 0x16
 };
 
 // ==================== 错误码定义 ====================
@@ -63,7 +64,12 @@ enum ErrorCode : quint8 {
     ERR_CREATE_ERROR                = 12,
     ERR_TASK_TIMEOUT                = 13,
     ERR_CREATE_INTERRUPTED          = 14,
-    ERR_TASK_INTERRUPTED            = 15
+    ERR_TASK_INTERRUPTED            = 15,
+    ERR_GAME_NOT_FOUND              = 16,
+    ERR_GAME_FULL                   = 17,
+    ERR_GAME_STARTED                = 18,
+    ERR_DUPLICATE_NAME              = 19,
+    ERR_BANNED_USER                 = 20
 };
 
 enum MessageCode : quint8 {
@@ -157,6 +163,13 @@ struct CSPreJoinRoomPacket {
     char roomName[32];
     char hostName[32];
     char clientId[64];
+};
+
+struct SCPreJoinRoomPacket {
+    char userName[32];
+    char hostName[32];
+    quint8 status;
+    quint8 errorCode;
 };
 
 struct CSRoomPingPacket {

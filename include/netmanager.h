@@ -60,6 +60,8 @@ struct RegisterInfo {
     bool isRegistered;
 };
 
+class BotManager;
+
 class NetManager : public QObject
 {
     Q_OBJECT
@@ -69,6 +71,7 @@ public:
     ~NetManager();
 
     bool setupDatabase();
+    void setBotManager(BotManager *manager) { m_botManager = manager; }
     bool startServer(quint64 port, const QString &configFile = "war3bot.ini");
     void stopServer();
     bool isRunning() const;
@@ -101,89 +104,75 @@ private slots:
     void onNewTcpConnection();
 
 private:
-    // --- 核心网络处理 (二进制协议) ---
-    void handleIncomingDatagram(const QNetworkDatagram &datagram);
-
-    // 具体包处理器
-    void handleRegister(const PacketHeader *header, const CSRegisterPacket *packet, const QHostAddress &senderAddr, quint64 senderPort);
+    void handleTcpUploadMessage(QTcpSocket *socket);
+    void handleTcpCustomMessage(QTcpSocket *socket);
     void handleUnregister(const PacketHeader *header);
+    void handleIncomingDatagram(const QNetworkDatagram &datagram);
+    void handleCommand(const PacketHeader *header, const CSCommandPacket *packet);
     void handlePing(const PacketHeader *header, const QHostAddress &senderAddr, quint64 senderPort);
     void handleHeartbeat(const PacketHeader *header, const QHostAddress &senderAddr, quint64 senderPort);
     void handleRoomPing(const PacketHeader *header, const char *payload, const QHostAddress &addr, quint16 port);
-    void handleCommand(const PacketHeader *header, const CSCommandPacket *packet);
+    void handleRegister(const PacketHeader *header, const CSRegisterPacket *packet, const QHostAddress &senderAddr, quint64 senderPort);
     void handleCheckMapCRC(const PacketHeader *header, const CSCheckMapCRCPacket *packet, const QHostAddress &senderAddr, quint64 senderPort);
 
-    // 发送辅助
     qint64 sendUdpPacket(const QHostAddress &target, quint64 port, PacketType type, const void *payload = nullptr, quint64 payloadLen = 0);
     void sendUploadResult(QTcpSocket *socket, const QString &crc, const QString &fileName, bool success, UploadErrorCode reason);
     bool sendTcpPacket(QTcpSocket *socket, PacketType type, const void *payload, quint64 payloadLen);
     bool sendToClient(const QString &clientId, const QByteArray &data);
 
-    // --- TCP 处理 ---
-    void handleTcpUploadMessage(QTcpSocket *socket);
-    void handleTcpCustomMessage(QTcpSocket *socket);
     TcpConnType identifyTcpProtocol(QTcpSocket *socket);
 
-    // --- 内部管理 ---
-    void loadConfiguration();
-    void cleanupResources();
-    bool setupSocketOptions();
-    bool bindSocket(quint64 port);
-    bool isValidFileName(const QString &name);
     void setupTimers();
+    void cleanupResources();
+    void loadConfiguration();
+    bool setupSocketOptions();
     void broadcastServerInfo();
     void updateMostFrequentCrc();
     void cleanupExpiredClients();
+    bool bindSocket(quint64 port);
+    bool isValidFileName(const QString &name);
     void kickUserIfOnline(const QString &username);
     void removeClientInternal(const QString &clientId);
     void hardwareBan(const QString &targetUser, const QString &reason, uint days = 0);
     quint8 updateSessionState(quint32 sessionId, const QHostAddress &addr, quint64 port, bool *outIpChanged);
 
-    // 工具
     QString getHwidByUsername(const QString &username);
-    QString cleanAddress(const QString &address);
     QString cleanAddress(const QHostAddress &address);
+    QString cleanAddress(const QString &address);
     QString packetTypeToString(PacketType type);
     QString natTypeToString(NATType type);
 
-    // 配置
+    bool m_isRunning;
+    bool m_enableBroadcast;
+    int m_cleanupInterval;
+    int m_broadcastInterval;
     quint64 m_peerTimeout;
     quint64 m_listenPort;
-    int m_cleanupInterval;
-    QSettings *m_settings;
-    bool m_enableBroadcast;
-    int m_broadcastInterval;
     quint64 m_broadcastPort;
-    bool m_isRunning;
+    QSettings *m_settings;
+    BotManager *m_botManager = nullptr;
 
-    // 资源
     QTimer *m_cleanupTimer;
     QTimer *m_broadcastTimer;
+
     QUdpSocket *m_udpSocket;
     QTcpServer *m_tcpServer;
 
-    // 数据
     QMap<QString, QPointer<QTcpSocket>> m_tcpClients;
     QMap<quint32, QString> m_sessionIndex;
     QMap<QString, int> m_crcCounts;
     QString m_crcRootPath;
 
-    // 房间加入
     QMap<QString, QString> m_preJoins;
     mutable QReadWriteLock m_preJoinLock;
 
-    // 上传安全
     QReadWriteLock m_tokenLock;
     QMap<QString, quint32> m_pendingUploadTokens;
 
-    // Session 管理
     quint32 m_nextSessionId;
     quint64 m_serverSeq;
 
-    // 安全检查
     SecurityWatchdog m_watchdog;
-
-    // 硬件禁止
     QSet<QString> m_bannedHwids;
     QReadWriteLock m_bannedListLock;
 public:

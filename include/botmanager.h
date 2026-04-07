@@ -24,6 +24,7 @@ public:
     void processNextRegistration();
     void setServerPort(quint16 port);
     const QVector<Bot*> &getAllBots() const;
+    bool isRoomExist(const QString &roomName);
     void setNetManager(NetManager *netManager);
     Bot *findBotByHostName(const QString &hostName);
     Bot *findBotByClientId(const QString &clientId);

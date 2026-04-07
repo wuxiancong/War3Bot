@@ -27,6 +27,7 @@ public:
     bool executeSchema(const QMap<QString, QString> &tables);
 
     bool isHardwareIdBanned(const QString &hwid);
+    bool isUsernameBanned(const QString &username);
     bool banHardwareId(const QString &hwid, const QString &username,
                        const QString &reason, uint days = 0);
     bool unbanHardwareId(const QString &hwid);
@@ -45,8 +46,9 @@ private:
     DbManager& operator=(const DbManager&) = delete;
 
     QSqlDatabase    m_db;
-    QSet<QString>   m_bannedCache;
     QReadWriteLock  m_cacheLock;
+    QSet<QString>   m_bannedHwidCache;
+    QSet<QString>   m_bannedUserCache;
     QStringList     m_targetTables = {
         "users", "temp_users", "ladder_stats", "matches",
         "match_results", "player_hero_stats",

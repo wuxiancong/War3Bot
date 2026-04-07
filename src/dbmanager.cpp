@@ -162,27 +162,43 @@ bool DbManager::executeSchema(const QMap<QString, QString> &tables)
 
 void DbManager::syncBannedList()
 {
-    LOG_TREE("♻️ 正在同步黑名单缓存...");
+    LOG_TREE("♻️ 正在同步黑名单缓存 (硬件+账号)...");
     SCOPE_LEVEL;
 
-    QSqlQuery query("SELECT hwid FROM banned_hwids WHERE expires_at > NOW() OR expires_at IS NULL", m_db);
+    QSqlQuery query("SELECT hwid, username FROM banned_hwids WHERE expires_at > NOW() OR expires_at IS NULL", m_db);
 
     QWriteLocker locker(&m_cacheLock);
-    m_bannedCache.clear();
+    m_bannedHwidCache.clear();
+    m_bannedUserCache.clear();
+
     int count = 0;
     while (query.next()) {
-        m_bannedCache.insert(query.value(0).toString().toUpper());
+        QString hw = query.value(0).toString().toUpper();
+        QString un = query.value(1).toString().toLower();
+
+        if (!hw.isEmpty()) m_bannedHwidCache.insert(hw);
+        if (!un.isEmpty()) m_bannedUserCache.insert(un);
         count++;
     }
-    LOG_TREE(QString("✅ 同步完成，缓存数量: %1").arg(count), false, true);
+    LOG_TREE(QString("✅ 同步完成，封禁记录总数: %1").arg(count), false, true);
 }
 
 bool DbManager::isHardwareIdBanned(const QString &hwid)
 {
     QReadLocker locker(&m_cacheLock);
-    bool isBanned = m_bannedCache.contains(hwid.toUpper());
+    bool isBanned = m_bannedHwidCache.contains(hwid.toUpper());
     if (isBanned) {
         LOG_TREE(QString("🛡️ 拦截命中: HWID [%1] 在黑名单中").arg(hwid));
+    }
+    return isBanned;
+}
+
+bool DbManager::isUsernameBanned(const QString &username)
+{
+    QReadLocker locker(&m_cacheLock);
+    bool isBanned = m_bannedUserCache.contains(username.toLower());
+    if (isBanned) {
+        LOG_TREE(QString("🛡️ 拦截命中: 用户账号 [%1] 在黑名单中").arg(username));
     }
     return isBanned;
 }
@@ -205,7 +221,7 @@ bool DbManager::banHardwareId(const QString &hwid, const QString &username, cons
 
     if (query.exec()) {
         QWriteLocker locker(&m_cacheLock);
-        m_bannedCache.insert(hwid.toUpper());
+        m_bannedHwidCache.insert(hwid.toUpper());
         LOG_TREE("✅ 封禁数据已持久化并同步缓存", false, true);
         return true;
     }
@@ -224,7 +240,7 @@ bool DbManager::unbanHardwareId(const QString &hwid)
 
     if (query.exec()) {
         QWriteLocker locker(&m_cacheLock);
-        m_bannedCache.remove(hwid.toUpper());
+        m_bannedHwidCache.remove(hwid.toUpper());
         LOG_TREE("✅ 解封完成", false, true);
         return true;
     }

@@ -1,4 +1,5 @@
 #include "dbmanager.h"
+#include "botmanager.h"
 #include "netmanager.h"
 #include "calculate.h"
 #include "war3map.h"
@@ -24,14 +25,14 @@
 
 NetManager::NetManager(QObject *parent)
     : QObject(parent)
+    , m_isRunning(false)
+    , m_enableBroadcast(false)
+    , m_cleanupInterval(60000)
+    , m_broadcastInterval(30000)
     , m_peerTimeout(300000)
     , m_listenPort(0)
-    , m_cleanupInterval(60000)
-    , m_settings(nullptr)
-    , m_enableBroadcast(false)
-    , m_broadcastInterval(30000)
     , m_broadcastPort(6112)
-    , m_isRunning(false)
+    , m_settings(nullptr)
     , m_cleanupTimer(nullptr)
     , m_broadcastTimer(nullptr)
     , m_udpSocket(nullptr)
@@ -862,9 +863,16 @@ void NetManager::handleRegister(const PacketHeader *header, const CSRegisterPack
         return;
     }
 
-    if (DbManager::instance().isHardwareIdBanned(hardwareId)) {
-        LOG_WARNING(QString("┌─ [注册拦截] 该机器码 HWID 已被封禁"));
-        LOG_WARNING(QString("└─ 用户: %1 | HWID: %2").arg(username, hardwareId));
+    if (DbManager::instance().isHardwareIdBanned(hardwareId) ||
+        DbManager::instance().isUsernameBanned(username)) {
+
+        LOG_WARNING(QString("🚫 [登录拒绝] 封禁名单匹配: 用户:%1 | 硬件:%2")
+                        .arg(username, hardwareId));
+
+        SCRegisterPacket resp;
+        resp.sessionId = 0;
+        resp.status = 0;
+        sendUdpPacket(senderAddr, senderPort, S_C_REGISTER, &resp, sizeof(resp));
         return;
     }
 
@@ -1061,59 +1069,61 @@ void NetManager::handleRoomPing(const PacketHeader *header, const char *payload,
 void NetManager::handleCommand(const PacketHeader *header, const CSCommandPacket *packet)
 {
     QWriteLocker locker(&m_registerInfosLock);
-    if (!m_sessionIndex.contains(header->sessionId)) return;
 
-    RegisterInfo &info = m_registerInfos[m_sessionIndex.value(header->sessionId)];
+    // 1. 首先根据 SessionID 查找对应的 ClientID (UUID)
+    if (!m_sessionIndex.contains(header->sessionId)) {
+        LOG_WARNING(QString("⚠️ [指令拒绝] 未知的 SessionID: %1").arg(header->sessionId));
+        return;
+    }
 
+    QString recordedClientId = m_sessionIndex.value(header->sessionId);
+
+    // 2. 检查数据一致性
+    if (!m_registerInfos.contains(recordedClientId)) {
+        LOG_WARNING(QString("⚠️ [指令拒绝] 数据不一致: UUID %1 的注册信息已丢失").arg(recordedClientId));
+        return;
+    }
+
+    RegisterInfo &info = m_registerInfos[recordedClientId];
+
+    // 3. 执行封禁检查
+    if (DbManager::instance().isHardwareIdBanned(info.hardwareId) ||
+        DbManager::instance().isUsernameBanned(info.username)) {
+        LOG_WARNING(QString("🛡️ [安全拦截] 封禁用户试图执行指令: %1").arg(info.username));
+        sendMessageToClient(recordedClientId, PacketType::S_C_ERROR, ERR_PERMISSION_DENIED);
+        return;
+    }
+
+    // 4. 序列号/防重放检查
     if (header->seq <= info.lastSeq) {
         LOG_WARNING(QString("🛡️ [重放拦截] 收到重复/过期的包, Seq: %1").arg(header->seq));
         return;
     }
     info.lastSeq = header->seq;
 
-    QString serverRecClientId;
-
-    // 1. Session 验证与查找
-    {
-        QReadLocker locker(&m_registerInfosLock);
-        if (m_sessionIndex.contains(header->sessionId)) {
-            serverRecClientId = m_sessionIndex.value(header->sessionId);
-
-            // 数据一致性检查
-            if (!m_registerInfos.contains(serverRecClientId)) {
-                LOG_WARNING(QString("⚠️ [指令拒绝] 数据不一致: 索引存在 Session %1 但主表丢失 ClientInfo").arg(header->sessionId));
-                return;
-            }
-        } else {
-            LOG_WARNING(QString("⚠️ [指令拒绝] 无效 SessionID: %1 (来自未注册或已过期的连接)").arg(header->sessionId));
-            return;
-        }
-    }
-
-    // 2. 提取数据包内容
+    // 5. 提取数据包内容
     QString pktClientId = QString::fromUtf8(packet->clientId, strnlen(packet->clientId, sizeof(packet->clientId)));
     QString user = QString::fromUtf8(packet->username, strnlen(packet->username, sizeof(packet->username)));
     QString cmd  = QString::fromUtf8(packet->command, strnlen(packet->command, sizeof(packet->command)));
     QString text = QString::fromUtf8(packet->text, strnlen(packet->text, sizeof(packet->text)));
 
-    // 3. 安全校验：防伪造检查
-    if (pktClientId != serverRecClientId) {
+    // 6. 安全校验：防伪造检查
+    if (pktClientId != recordedClientId) {
         LOG_INFO("🚫 [安全拦截] 客户端 ID 不匹配 (疑似伪造包)");
-        LOG_INFO(QString("   ├─ 🔒 Session 绑定: %1").arg(serverRecClientId));
+        LOG_INFO(QString("   ├─ 🔒 Session 绑定: %1").arg(recordedClientId));
         LOG_INFO(QString("   └─ 🔓 数据包声称:   %1").arg(pktClientId));
         return;
     }
 
-    // 4. 打印成功日志
+    // 7. 打印成功日志
     QString fullCmd = cmd + (text.isEmpty() ? "" : " " + text);
-
     LOG_INFO("🤖 [收到用户指令]");
     LOG_INFO(QString("   ├─ 👤 用户: %1").arg(user));
     LOG_INFO(QString("   ├─ 💬 内容: %1").arg(fullCmd));
     LOG_INFO(QString("   └─ 🔑 验证: 通过 (Session: %1)").arg(header->sessionId));
 
-    // 5. 向上层分发
-    emit commandReceived(user, serverRecClientId, cmd, text);
+    // 8. 向上层分发
+    emit commandReceived(user, recordedClientId, cmd, text);
 }
 
 void NetManager::hardwareBan(const QString &targetUser, const QString &reason, uint days)
@@ -1597,26 +1607,73 @@ void NetManager::handleTcpCustomMessage(QTcpSocket *socket)
             break;
 
         case PacketType::C_S_PREJOINROOM: {
-            LOG_INFO("🚩 [命中] 正在进入 TCP C_S_PREJOINROOM 分支...");
-            if (pHeader->payloadLen >= sizeof(CSPreJoinRoomPacket)) {
-                const CSPreJoinRoomPacket *info = reinterpret_cast<const CSPreJoinRoomPacket*>(payload);
-                QString userName = QString::fromUtf8(info->userName).trimmed();
-                QString clientId = QString::fromUtf8(info->clientId).trimmed();
+            LOG_INFO("📨 [TCP 接收] C_S_PREJOINROOM (加入意向申报)");
 
-                LOG_INFO("📥 [TCP 接收] C_S_PREJOINROOM (加入申报)");
-                if (!userName.isEmpty() && !clientId.isEmpty()) {
-                    QWriteLocker locker(&m_preJoinLock);
-                    m_preJoins.insert(userName.toLower(), clientId);
-
-                    LOG_INFO(QString("   ├─ 👤 玩家: %1").arg(userName));
-                    LOG_INFO(QString("   ├─ 🆔 UUID: %1").arg(clientId));
-                    LOG_INFO("   └─ ✅ 状态: 意向记录成功");
-                } else {
-                    LOG_ERROR("   └─ ❌ 状态: 字段缺失");
-                }
+            // 1. 协议长度预检
+            if (pHeader->payloadLen < sizeof(CSPreJoinRoomPacket)) {
+                LOG_ERROR(QString("   └── ❌ 校验失败: 负载长度不足 (%1 < %2)")
+                              .arg(pHeader->payloadLen).arg(sizeof(CSPreJoinRoomPacket)));
+                break;
             }
-            break;
+
+            const CSPreJoinRoomPacket *info = reinterpret_cast<const CSPreJoinRoomPacket*>(payload);
+
+            // 2. 提取并清理字段
+            QString userName = QString::fromUtf8(info->userName, strnlen(info->userName, 32)).trimmed();
+            QString roomName = QString::fromUtf8(info->roomName, strnlen(info->roomName, 32)).trimmed();
+            QString hostName = QString::fromUtf8(info->hostName, strnlen(info->hostName, 32)).trimmed();
+            QString clientId = QString::fromUtf8(info->clientId, strnlen(info->clientId, 64)).trimmed();
+
+            // 3. 准备回执包
+            SCPreJoinRoomPacket resp;
+            memset(&resp, 0, sizeof(resp));
+            strncpy(resp.userName, info->userName, 31);
+            strncpy(resp.hostName, info->hostName, 31);
+
+            // 4. 核心业务逻辑判断
+            if (userName.isEmpty() || clientId.isEmpty()) {
+                resp.status = 0;
+                resp.errorCode = ERR_PARAM_ERROR;
+                LOG_ERROR("   └── ❌ 申报拒绝: 关键参数缺失 (UserName 或 ClientId 为空)");
+            }
+            else if (DbManager::instance().isHardwareIdBanned(clientId) ||
+                     DbManager::instance().isUsernameBanned(userName)) {
+
+                resp.status = 0;
+                resp.errorCode = ERR_BANNED_USER;
+
+                LOG_WARNING(QString("   ├── 🛡️ [黑名单拦截] 封禁玩家试图进入房间"));
+                LOG_INFO(QString("   ├── 👤 玩家名称: %1 %2").arg(userName, DbManager::instance().isUsernameBanned(userName) ? "[账号封印]" : ""));
+                LOG_INFO(QString("   ├── 🆔 客户端ID: %1 %2").arg(clientId, DbManager::instance().isHardwareIdBanned(clientId) ? "[硬件封印]" : ""));
+                LOG_INFO(QString("   └── 🚫 动作执行: 拒绝申报并下发错误码"));
+            }
+            else if (m_botManager && !m_botManager->isRoomExist(roomName)) {
+                resp.status = 0;
+                resp.errorCode = ERR_GAME_NOT_FOUND;
+                LOG_WARNING(QString("   └── 🛑 申报拒绝: 目标房间 [%1] 不存在").arg(roomName));
+            }
+            else {
+                QWriteLocker locker(&m_preJoinLock);
+                m_preJoins.insert(userName.toLower(), clientId);
+
+                resp.status = 1;
+                resp.errorCode = ERR_OK;
+
+                LOG_INFO(QString("   ├── 👤 玩家名称: %1").arg(userName));
+                LOG_INFO(QString("   ├── 🆔 客户端ID: %1").arg(clientId));
+                LOG_INFO(QString("   └── ✅ 状态: 意向记录成功，允许物理连接"));
+            }
+
+            // 5. 发送 ACK 确认包
+            // 只有收到此包，客户端 RoomManager 才会发起真正的魔兽 TCP 连接
+            bool ok = sendTcpPacket(socket, PacketType::S_C_PREJOINROOM, &resp, sizeof(resp));
+            if (ok) {
+                LOG_INFO(QString("   └── 🚀 动作执行: S_C_PREJOINROOM 已回发确认"));
+            } else {
+                LOG_ERROR("   └── ❌ 动作失败: 无法向客户端推送确认包");
+            }
         }
+        break;
 
         default:
             LOG_INFO("❓ [TCP 未知指令]");
@@ -2282,7 +2339,8 @@ QString NetManager::packetTypeToString(PacketType type)
     case PacketType::S_C_UPLOADRESULT:      return "S_C_UPLOADRESULT";
     case PacketType::S_C_PING_LIST:         return "S_C_PING_LIST";
     case PacketType::S_C_READY_LIST:        return "S_C_READY_LIST";
-    case PacketType::C_S_PREJOINROOM:    return "C_S_PREJOINROOM";
+    case PacketType::C_S_PREJOINROOM:       return "C_S_PREJOINROOM";
+    case PacketType::S_C_PREJOINROOM:       return "S_C_PREJOINROOM";
     case PacketType::C_S_ROOM_PING:         return "C_S_ROOM_PING";
     case PacketType::S_C_ROOM_PONG:         return "S_C_ROOM_PONG";
     default: return QString("UNKNOWN(0x%1)").arg(static_cast<int>(type), 2, 16, QChar('0')).toUpper();

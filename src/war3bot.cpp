@@ -73,6 +73,7 @@ bool War3Bot::startServer(quint16 port, const QString &configFile)
     LOG_INFO("├── 🔧 核心组件初始化...");
     if (!m_netManager) {
         m_netManager = new NetManager(this);
+        m_netManager->setBotManager(m_botManager);
         m_botManager->setNetManager(m_netManager);
 
         // 关键依赖注入

@@ -727,6 +727,12 @@ void BotManager::setNetManager(NetManager *netManager)
     }
 }
 
+bool BotManager::isRoomExist(const QString &roomName)
+{
+    if (roomName.isEmpty()) return false;
+    return m_activeGames.contains(roomName.toLower());
+}
+
 Bot *BotManager::findBotByHostName(const QString &hostName)
 {
     if (hostName.isEmpty()) return nullptr;
