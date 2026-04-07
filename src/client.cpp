@@ -2510,13 +2510,7 @@ void Client::updateAdv()
     QString statDisplayName = m_host.isEmpty() ? m_botDisplayName : m_host;
     QByteArray encodedData = m_war3Map.getEncodedStatString(statDisplayName);
 
-    // 5. 确保 StatString 状态位
-    if (!encodedData.isEmpty()) {
-        encodedData[0] = (char)0x02;
-        LOG_INFO("   ├─ 🔧 [协议修正] 强制 StatString 标志位 -> Open (0x01)");
-    }
-
-    // 6. 准备看板数据
+    // 5. 准备看板数据
     m_hostCounter++;
 
     // 计算空位
@@ -2533,7 +2527,7 @@ void Client::updateAdv()
     }
     finalStatString.append(encodedData);
 
-    // 7. 构建并发送 0x1C 数据包
+    // 6. 构建并发送 0x1C 数据包
     QByteArray payload;
     QDataStream out(&payload, QIODevice::WriteOnly);
     out.setByteOrder(QDataStream::LittleEndian);
@@ -2563,13 +2557,13 @@ void Client::cancelGame(bool enterChatFlag)
     LOG_INFO("🔄 [重置游戏] 开始执行资源清理流程...");
 
     // 2. 网络层操作
-    stopAdv("Cancel Game");
     if (enterChatFlag) {
         enterChat();
         joinRandomChannel();
         LOG_INFO("   ├─ 📡 网络动作: 停止广播 -> 请求进入大厅 -> 请求加入随机频道");
     } else {
-        LOG_INFO("   ├─ 📡 网络动作: 停止广播");
+        stopAdv("Cancel Game");
+        LOG_INFO("   ├─ 📡 网络动作: 停止广播 -> 标记游戏开始 -> 列表不包含此房间");
     }
 
     // 3. 断开所有玩家连接

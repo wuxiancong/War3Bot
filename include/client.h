@@ -450,7 +450,10 @@ public:
     void enterChat();                                                                                           // 进入聊天
     void createAccount();                                                                                       // 注册账号
     void queryChannelList();                                                                                    // 请求频道列表
-    void joinChannel(const QString &channelName);                                                               // 加入频道
+
+    // --- 频道管理 ---
+    void joinRandomChannel();                                                                                   // 加入随机频道
+    void joinChannel(const QString &channelName);                                                               // 加入指定频道
 
     // --- 游戏主机管理 ---
     bool isHostJoined();                                                                                        // 房主是否加入
@@ -670,9 +673,6 @@ private:
     // --- 平台自定义包 ---
     QByteArray createPlatformPacket(PacketType type, const void *payload, quint16 payloadSize);
     void handlePlatformUdpPacket(const QByteArray &data, const QHostAddress &sender, quint16 senderPort);
-
-    // --- 频道管理 ---
-    void joinRandomChannel();
 
     // --- 状态管理 ---
     void checkAllPlayersLoaded();
