@@ -1152,86 +1152,87 @@ void BotManager::onBotGameCreateSuccess(Bot *bot, bool isHotRefresh)
 {
     if (!isBotActive(bot, "GameCreateSuccess")) return;
 
-    // 1. 更新内部状态
+    // 1. 更新机器人内部状态机
+    // 热更新模式下，房主已在房内，状态直接跳过 Reserved 进入 Waiting
     bot->hostJoined = isHotRefresh;
     bot->state = isHotRefresh ? BotState::Waiting : BotState::Reserved;
     bot->gameInfo.createTime = QDateTime::currentMSecsSinceEpoch();
 
-    // 更新全局搜索映射表
+    // 2. 原子化更新全局搜索映射表 (确保新房主拥有控制权)
+    QString lowerRoomName = bot->gameInfo.gameName.toLower();
     if (!bot->hostname.isEmpty()) {
         m_hostNameToBotMap.insert(bot->hostname.toLower(), bot);
     }
-
     if (!bot->gameInfo.clientId.isEmpty()) {
         m_clientIdToBotMap.insert(bot->gameInfo.clientId, bot);
     }
-
-    QString lowerName = bot->gameInfo.gameName.toLower();
-    if (!lowerName.isEmpty()) {
-        m_activeGames.insert(lowerName, bot);
+    if (!lowerRoomName.isEmpty()) {
+        m_activeGames.insert(lowerRoomName, bot);
     }
 
-    // 2. 获取端口并进行严格诊断
+    // 3. 提取网络指令参数
     quint16 botListenPort = bot->client->getListenPort();
     quint32 serverMapCrc = bot->client->getMapCRC();
     QString clientId = bot->gameInfo.clientId;
 
-    // 3. 打印详细树状日志
+    // 4. 打印详细树状日志
     LOG_INFO(isHotRefresh ? "♻️ [房间看板热更新完成]" : "🎮 [房间创建完成回调]");
     LOG_INFO(QString("   ├─ 🤖 机器人实例: %1 (ID: %2)").arg(bot->username).arg(bot->id));
-    LOG_INFO(QString("   ├─ 👤 房主名称:  %1 (UUID:  %2)").arg(bot->hostname, clientId));
+    LOG_INFO(QString("   ├─ 👤 房主名称:  %1 (UUID: %2)").arg(bot->hostname, clientId));
     LOG_INFO(QString("   ├─ 🏠 房间名称:  %1").arg(bot->gameInfo.gameName));
     LOG_INFO(QString("   ├─ 🚩 游戏模式:  %1").arg(bot->gameInfo.gameMode));
-    LOG_INFO(QString("   ├─ 🚩 地图校验:  0x%1").arg(QString::number(serverMapCrc, 16).toUpper()));
-    LOG_INFO(QString("   └─ 🚩 当前状态:  %1").arg(botStateToString(bot->state)));
+    LOG_INFO(QString("   ├─ 🛡️ 地图校验:  0x%1").arg(QString::number(serverMapCrc, 16).toUpper()));
+    LOG_INFO(QString("   └─ ⚙️ 当前状态:  %1").arg(botStateToString(bot->state)));
 
-    if (isHotRefresh) {
-        if (m_netManager) {
-            bool okToCheckCrc =m_netManager->sendMessageToClient(clientId, S_C_MESSAGE, MSG_CHECK_MAP_CRC, static_cast<quint64>(serverMapCrc));
-            if (okToCheckCrc) {
-                LOG_INFO("   └─ 🚀 校验指令: 已发送服务端 CRC 供客户端比对");
-            } else {
-                LOG_ERROR("   └─ ❌ 校验指令: 发送失败 (目标用户不在线或未记录通道)");
-            }
-            quint64 now = QDateTime::currentMSecsSinceEpoch();
-            bool okToLauncher = m_netManager->sendMessageToClient(clientId, S_C_MESSAGE, MSG_HOST_JOINED_GAME, now);
-            if (okToLauncher) {
-                LOG_INFO(QString("   └─ 🚀 自动进入: 指令已发送 (目标端口: %1)").arg(m_controlPort));
-            } else {
-                LOG_ERROR("   └─ ❌ 自动进入: 发送失败 (目标用户不在线或未记录通道)");
-            }
-            LOG_INFO("   └─ ✅ 结果: 房主交接成功。已下发状态同步消息，Launcher 状态已更正为 InRoom");
-        }
-        emit botStateChanged(bot->id, bot->username, bot->state);
+    if (!m_netManager) {
+        LOG_CRITICAL("   └── ❌ 系统错误: NetManager 未绑定，无法同步指令消息");
         return;
     }
 
-    // 诊断端口状态
-    if (botListenPort == 0) {
-        LOG_ERROR("   ├─ ❌ 端口错误: 获取到 0！(检查 bindToRandomPort 是否成功)");
-    } else {
-        LOG_INFO(QString("   ├─ 🔌 分配端口:  %1").arg(botListenPort));
+    // ==================== 分支处理 ====================
+
+    if (isHotRefresh) {
+        // --- 场景 A: 房主交接热更新 (不重启魔兽，仅同步 UI) ---
+        LOG_INFO("   🚀 [状态同步序列] 正在为新房主同步 UI 状态...");
+
+        // A-1. 发送 CRC 校验 (维持前端校验逻辑完整性)
+        bool okCrc = m_netManager->sendMessageToClient(clientId, S_C_MESSAGE, MSG_CHECK_MAP_CRC, (quint64)serverMapCrc);
+
+        // A-2. 发送 JOINED 消息 (核心：驱动前端 QML 切换到 InRoom 状态，绕过重启逻辑)
+        bool okSync = m_netManager->sendMessageToClient(clientId, S_C_MESSAGE, MSG_HOST_JOINED_GAME, 1);
+
+        if (okCrc && okSync) {
+            LOG_INFO("   └─ ✅ 结果: 房主交接成功。已发送热更新标志 (data=1)");
+        } else {
+            LOG_ERROR("   └── ❌ 警告: 状态同步消息下发失败 (用户可能突然离线)");
+        }
+
+        emit botStateChanged(bot->id, bot->username, bot->state);
+        return; // 🛑 结束热更新流程
     }
 
-    // 4. 发送 TCP 控制指令
-    if (m_netManager) {
-        bool okToGameLoby = m_netManager->sendEnterRoomCommand(clientId, m_controlPort, bot->commandSource == From_Server);
-        bool okToLauncher = m_netManager->sendMessageToClient(clientId, S_C_MESSAGE, MSG_HOST_CREATED_GAME, botListenPort);
-        bool okToCheckCrc = m_netManager->sendMessageToClient(clientId, S_C_MESSAGE, MSG_CHECK_MAP_CRC, static_cast<quint64>(serverMapCrc));
-
-        if (okToCheckCrc) {
-            LOG_INFO("   └─ 🚀 校验指令: 已发送服务端 CRC 供客户端比对");
-        } else {
-            LOG_ERROR("   └─ ❌ 校验指令: 发送失败 (目标用户不在线或未记录通道)");
-        }
-
-        if (okToGameLoby && okToLauncher) {
-            LOG_INFO(QString("   └─ 🚀 自动进入: 指令已发送 (目标端口: %1)").arg(m_controlPort));
-        } else {
-            LOG_ERROR("   └─ ❌ 自动进入: 发送失败 (目标用户不在线或未记录通道)");
-        }
+    // --- 场景 B: 全新创建房间 (需触发魔兽启动/进入) ---
+    if (botListenPort == 0) {
+        LOG_ERROR("   ├── ❌ 端口错误: 获取到 0！(检查 bindToRandomPort 是否成功)");
     } else {
-        LOG_INFO("   └─ 🛑 系统错误: NetManager 未绑定，无法发送指令");
+        LOG_INFO(QString("   ├── 🔌 分配端口:  %1").arg(botListenPort));
+    }
+
+    LOG_INFO("   🚀 [控制指令下发] 正在通知 Launcher 进入房间...");
+
+    // B-1. 发送控制命令 (ENTER_ROOM 会触发 Launcher 端的魔兽进入房间逻辑)
+    bool okCmd = m_netManager->sendEnterRoomCommand(clientId, m_controlPort, bot->commandSource == From_Server);
+
+    // B-2. 发送创建成功消息 (触发 Launcher 端的 Socket 准备)
+    bool okCreated = m_netManager->sendMessageToClient(clientId, S_C_MESSAGE, MSG_HOST_CREATED_GAME, botListenPort);
+
+    // B-3. 发送地图校验
+    bool okCrc = m_netManager->sendMessageToClient(clientId, S_C_MESSAGE, MSG_CHECK_MAP_CRC, (quint64)serverMapCrc);
+
+    if (okCmd && okCreated && okCrc) {
+        LOG_INFO(QString("   └── ✅ 结果: 初始指令已全部送达 (目标控制端口: %1)").arg(m_controlPort));
+    } else {
+        LOG_ERROR("   └── ❌ 结果: 部分控制指令发送失败");
     }
 
     emit botStateChanged(bot->id, bot->username, bot->state);
