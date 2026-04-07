@@ -777,40 +777,67 @@ void NetManager::handleIncomingDatagram(const QNetworkDatagram &datagram)
         }
         break;
 
-    case PacketType::C_S_PREJOINROOM:
-        if (header->payloadLen >= sizeof(CSPreJoinRoomPacket)) {
-            const CSPreJoinRoomPacket *info = reinterpret_cast<const CSPreJoinRoomPacket*>(payload);
+    case PacketType::C_S_PREJOINROOM: {
+        LOG_INFO("📨 [UDP 接收] C_S_PREJOINROOM (加入意向申报)");
 
-            QString userName = QString::fromUtf8(info->userName).trimmed();
-            QString clientId = QString::fromUtf8(info->clientId).trimmed();
-
-            LOG_INFO("📥 [UDP 接收] C_S_PREJOINROOM (加入意向申报)");
-
-            bool isUserEmpty = userName.isEmpty();
-            bool isClientEmpty = clientId.isEmpty();
-
-            if (isUserEmpty || isClientEmpty) {
-                if (isUserEmpty && isClientEmpty) {
-                    LOG_ERROR("   └── ❌ 错误: userName 和 clientId 同时为空，包数据可能异常");
-                } else if (isUserEmpty) {
-                    LOG_ERROR(QString("   └── ❌ 错误: userName 为空 (此时 clientId 为: %1)").arg(clientId));
-                } else {
-                    LOG_ERROR(QString("   └── ❌ 错误: clientId 为空 (此时 userName 为: %1)").arg(userName));
-                }
-            } else {
-                QWriteLocker locker(&m_preJoinLock);
-                m_preJoins.insert(userName.toLower(), clientId);
-
-                LOG_INFO(QString("   ├── 👤 玩家名称: %1").arg(userName));
-                LOG_INFO(QString("   ├── 🆔 客户端ID: %1").arg(clientId));
-                LOG_INFO(QString("   └── ✅ 状态: 预备加入映射记录成功"));
-            }
-        } else {
-            LOG_ERROR(QString("   └── ❌ 错误: 包长度不足 (预期 %1, 实际 %2)")
-                          .arg(sizeof(CSPreJoinRoomPacket))
-                          .arg(header->payloadLen));
+        // 1. 协议长度预检
+        if (header->payloadLen < sizeof(CSPreJoinRoomPacket)) {
+            LOG_ERROR(QString("   └── ❌ 校验失败: 负载长度不足 (%1 < %2)")
+                          .arg(header->payloadLen).arg(sizeof(CSPreJoinRoomPacket)));
+            break;
         }
-        break;
+
+        const CSPreJoinRoomPacket *info = reinterpret_cast<const CSPreJoinRoomPacket*>(payload);
+
+        // 2. 提取字段
+        QString userName = QString::fromUtf8(info->userName, strnlen(info->userName, 32)).trimmed();
+        QString roomName = QString::fromUtf8(info->roomName, strnlen(info->roomName, 32)).trimmed();
+        QString hostName = QString::fromUtf8(info->hostName, strnlen(info->hostName, 32)).trimmed();
+        QString clientId = QString::fromUtf8(info->clientId, strnlen(info->clientId, 64)).trimmed();
+
+        // 3. 准备 UDP 回执包
+        SCPreJoinRoomPacket resp;
+        memset(&resp, 0, sizeof(resp));
+        qstrncpy(resp.userName, info->userName, sizeof(resp.userName));
+        qstrncpy(resp.hostName, info->hostName, sizeof(resp.hostName));
+
+        // 4. 业务逻辑拦截
+        if (userName.isEmpty() || clientId.isEmpty()) {
+            resp.status = 0;
+            resp.errorCode = ERR_PARAM_ERROR;
+            LOG_ERROR("   └── ❌ 申报拒绝: 关键参数缺失");
+        }
+        else if (DbManager::instance().isHardwareIdBanned(clientId) ||
+                 DbManager::instance().isUsernameBanned(userName)) {
+            resp.status = 0;
+            resp.errorCode = ERR_BANNED_USER;
+            LOG_WARNING(QString("   ├── 🛡️ [黑名单拦截] 封禁玩家试图进入房间: %1").arg(userName));
+        }
+        else if (m_botManager && !m_botManager->isRoomExist(roomName)) {
+            resp.status = 0;
+            resp.errorCode = ERR_GAME_NOT_FOUND;
+            LOG_WARNING(QString("   └── 🛑 申报拒绝: 房间 [%1] 不存在").arg(roomName));
+        }
+        else {
+            QWriteLocker locker(&m_preJoinLock);
+            m_preJoins.insert(userName.toLower(), clientId);
+
+            resp.status = 1;
+            resp.errorCode = ERR_OK;
+
+            LOG_INFO(QString("   ├── 👤 玩家名称: %1").arg(userName));
+            LOG_INFO(QString("   ├── 🆔 客户端ID: %1").arg(clientId));
+            LOG_INFO(QString("   └── ✅ 状态: 意向记录成功 (UDP 通道)"));
+        }
+
+        // 5. 通过 UDP 原路回发确认包
+        sendUdpPacket(datagram.senderAddress(), datagram.senderPort(), PacketType::S_C_PREJOINROOM, &resp, sizeof(resp));
+
+        if (resp.status == 1) {
+            LOG_INFO("   └── 🚀 动作执行: S_C_PREJOINROOM 已回发确认，等待魔兽 TCP 连接");
+        }
+    }
+    break;
 
     case PacketType::C_S_COMMAND:
         if (header->payloadLen >= sizeof(CSCommandPacket)) {
@@ -1577,35 +1604,6 @@ void NetManager::handleTcpCustomMessage(QTcpSocket *socket)
             break;
         }
 
-        case PacketType::C_S_COMMAND:
-            LOG_INFO("🚩 [命中] 正在进入 TCP C_S_COMMAND 分支...");
-            if (pHeader->payloadLen >= sizeof(CSCommandPacket)) {
-                const CSCommandPacket *cmdPkt = reinterpret_cast<const CSCommandPacket*>(payload);
-                QString text = QString::fromUtf8(cmdPkt->text, strnlen(cmdPkt->text, sizeof(cmdPkt->text)));
-                QString cmdStr = QString::fromUtf8(cmdPkt->command, strnlen(cmdPkt->command, sizeof(cmdPkt->command)));
-                QString user = QString::fromUtf8(cmdPkt->username, strnlen(cmdPkt->username, sizeof(cmdPkt->username)));
-
-                if (currentClientId.isEmpty()) {
-                    LOG_INFO("🛑 [TCP 指令拒绝]");
-                    LOG_ERROR("   ├─ ❌ 原因: 未鉴权连接 (无有效 SessionID)");
-                    if (cmdStr == "/host") {
-                        LOG_INFO("   └─ 🛡️ 动作: 发送 RETRY_HOST 指令");
-                        sendRetryCommand(socket);
-                    }
-                    break;
-                }
-
-                LOG_INFO("🎮 [TCP 指令接收]");
-                LOG_INFO(QString("   ├─ 👤 发送者: %1").arg(user));
-                LOG_INFO(QString("   ├─ 🔗 来源ID: %1").arg(currentClientId));
-                LOG_INFO(QString("   ├─ 💬 指令:   %1").arg(cmdStr));
-                if (!text.isEmpty()) LOG_INFO(QString("   ├─ 📄 参数:   %1").arg(text));
-                LOG_INFO("   └─ 🚀 动作:    分发至 BotManager");
-
-                emit commandReceived(user, currentClientId, cmdStr, text);
-            }
-            break;
-
         case PacketType::C_S_PREJOINROOM: {
             LOG_INFO("📨 [TCP 接收] C_S_PREJOINROOM (加入意向申报)");
 
@@ -1630,7 +1628,7 @@ void NetManager::handleTcpCustomMessage(QTcpSocket *socket)
             strncpy(resp.userName, info->userName, 31);
             strncpy(resp.hostName, info->hostName, 31);
 
-            // 4. 核心业务逻辑判断
+            // 4. 业务逻辑拦截
             if (userName.isEmpty() || clientId.isEmpty()) {
                 resp.status = 0;
                 resp.errorCode = ERR_PARAM_ERROR;
@@ -1674,6 +1672,35 @@ void NetManager::handleTcpCustomMessage(QTcpSocket *socket)
             }
         }
         break;
+
+        case PacketType::C_S_COMMAND:
+            LOG_INFO("🚩 [命中] 正在进入 TCP C_S_COMMAND 分支...");
+            if (pHeader->payloadLen >= sizeof(CSCommandPacket)) {
+                const CSCommandPacket *cmdPkt = reinterpret_cast<const CSCommandPacket*>(payload);
+                QString text = QString::fromUtf8(cmdPkt->text, strnlen(cmdPkt->text, sizeof(cmdPkt->text)));
+                QString cmdStr = QString::fromUtf8(cmdPkt->command, strnlen(cmdPkt->command, sizeof(cmdPkt->command)));
+                QString user = QString::fromUtf8(cmdPkt->username, strnlen(cmdPkt->username, sizeof(cmdPkt->username)));
+
+                if (currentClientId.isEmpty()) {
+                    LOG_INFO("🛑 [TCP 指令拒绝]");
+                    LOG_ERROR("   ├─ ❌ 原因: 未鉴权连接 (无有效 SessionID)");
+                    if (cmdStr == "/host") {
+                        LOG_INFO("   └─ 🛡️ 动作: 发送 RETRY_HOST 指令");
+                        sendRetryCommand(socket);
+                    }
+                    break;
+                }
+
+                LOG_INFO("🎮 [TCP 指令接收]");
+                LOG_INFO(QString("   ├─ 👤 发送者: %1").arg(user));
+                LOG_INFO(QString("   ├─ 🔗 来源ID: %1").arg(currentClientId));
+                LOG_INFO(QString("   ├─ 💬 指令:   %1").arg(cmdStr));
+                if (!text.isEmpty()) LOG_INFO(QString("   ├─ 📄 参数:   %1").arg(text));
+                LOG_INFO("   └─ 🚀 动作:    分发至 BotManager");
+
+                emit commandReceived(user, currentClientId, cmdStr, text);
+            }
+            break;
 
         default:
             LOG_INFO("❓ [TCP 未知指令]");
