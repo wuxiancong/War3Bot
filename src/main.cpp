@@ -493,7 +493,7 @@ int main(int argc, char *argv[]) {
                 LOG_INFO("🛑 正在停止 [所有] 机器人的广播...");
                 for (auto *bot : bots) {
                     if (bot && bot->client) {
-                        bot->client->stopAdv();
+                        bot->client->stopAdv("Stop Command 1");
                         count++;
                     }
                 }
@@ -503,7 +503,7 @@ int main(int argc, char *argv[]) {
                 for (auto *bot : bots) {
                     if (bot && bot->client && bot->client->isConnected()) {
                         if (bot->username.compare(targetUser, Qt::CaseInsensitive) == 0) {
-                            bot->client->stopAdv();
+                            bot->client->stopAdv("Stop Command 2");
                             LOG_INFO(QString("✅ 已停止 Bot-%1 (%2) 的广播").arg(bot->id).arg(bot->username));
                             found = true;
                             break;

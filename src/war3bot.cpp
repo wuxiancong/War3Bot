@@ -215,7 +215,7 @@ void War3Bot::stopAdv()
     // 2. 如果已连接，发送停止广播协议
     if (m_client && m_client->isConnected()) {
         LOG_INFO("🛑 [单用户] 正在请求停止游戏 (取消主机广播)...");
-        m_client->stopAdv();
+        m_client->stopAdv("War3 Bot");
     } else {
         LOG_INFO("ℹ️ [单用户] 战网未连接，仅清除了挂起的创建任务。");
     }

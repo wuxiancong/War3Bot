@@ -2475,8 +2475,9 @@ void Client::joinRandomChannel()
 // 8. 房间主机逻辑
 // =========================================================
 
-void Client::stopAdv() {
-    LOG_INFO("🛑 [停止广播] 发送 SID_STOPADV (0x02)");
+void Client::stopAdv(const QString &context)
+{
+    LOG_INFO(QString("🛑 [停止广播] 发送 SID_STOPADV (0x02) | 来源: %1").arg(context));
     sendPacket(SID_STOPADV, QByteArray());
 }
 
@@ -2560,7 +2561,7 @@ void Client::cancelGame(bool enterChatFlag)
     LOG_INFO("🔄 [重置游戏] 开始执行资源清理流程...");
 
     // 2. 网络层操作
-    stopAdv();
+    stopAdv("Cancel Game");
     if (enterChatFlag) {
         enterChat();
         joinRandomChannel();
@@ -2753,7 +2754,7 @@ void Client::startGame()
     if (m_startTimer->isActive()) return;
 
     // 1. 先关大门：停止广播，停止 Ping
-    stopAdv(); // 停止 UDP 广播
+    stopAdv("Start Game"); // 停止 UDP 广播
     if (m_pingTimer && m_pingTimer->isActive()) {
         m_pingTimer->stop();
     }
