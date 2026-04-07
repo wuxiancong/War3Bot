@@ -16,12 +16,12 @@ Bot::~Bot()
     }
 }
 
-void Bot::resetGameState(bool disconnectFlag, bool enterChatFlag, const QString &context)
+void Bot::resetGameState(bool disconnectFlag, const QString &context)
 {
     // 1. 根节点日志：记录来源和核心标志
     LOG_INFO(QString("🧹 [状态重置] Bot-%1 | 来源: %2").arg(this->id).arg(context));
-    LOG_INFO(QString("   ├─ ⚙️ 配置: 物理断开: %1 | 自动进入大厅: %2")
-                 .arg(disconnectFlag ? "✅ 是" : "❌ 否", enterChatFlag ? "✅ 是" : "❌ 否"));
+    LOG_INFO(QString("   ├─ ⚙️ 配置: 物理断开: %1")
+                 .arg(disconnectFlag ? "✅ 是" : "❌ 否"));
 
     if (this->client) {
         if (disconnectFlag) {
@@ -30,14 +30,6 @@ void Bot::resetGameState(bool disconnectFlag, bool enterChatFlag, const QString 
                 LOG_INFO(QString("   ├── 🔌 动作: 正在强制切断 Client-%1 的 TCP 链路...").arg(this->id));
                 this->client->disconnectFromHost();
             }
-        } else {
-            // 场景：正常重置房间数据
-            QString strategy = enterChatFlag ? "执行网络切换 (返回频道)" : "纯内存清理 (准备新局)";
-            LOG_INFO(QString("   ├── 🔄 动作: 清理 Client-%1 房间缓存 | 策略: %2")
-                         .arg(this->id).arg(strategy));
-
-            // 将标志传给底层的 cancelGame
-            this->client->cancelGame(enterChatFlag);
         }
     }
 
@@ -273,7 +265,7 @@ void Bot::setupGameInfo(const QString &host, const QString &name, const QString 
 {
     LOG_INFO(QString("📋 [元数据设置] Bot-%1: 正在初始化房间配置...").arg(this->id));
 
-    resetGameState(false, false, "Setup Game Info");
+    resetGameState(false, "Setup Game Info");
 
     this->hostname = host;
     this->commandSource = source;

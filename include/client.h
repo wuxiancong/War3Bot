@@ -471,7 +471,7 @@ public:
                     ProviderVersion providerVersion, ComboGameType comboGameType,
                     SubGameType subGameType, LadderType ladderType,CommandSource commandSource);                // 创建游戏
     void stopAdv(const QString &context = "Unspecified");                                                       // 停止广播
-    void cancelGame(bool enterChatFlag = false);                                                                // 取消/解散游戏
+    void cancelGame();                                                                                          // 取消/解散游戏
     void abortGame();                                                                                           // 中断游戏
     void startGame();                                                                                           // 开始游戏
     void updateAdv();                                                                                           // 更新广播

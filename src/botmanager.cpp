@@ -678,7 +678,7 @@ void BotManager::removeGame(Bot *bot, bool disconnectFlag, const QString &reason
     }
 
     // 5. 重置状态
-    bot->resetGameState(disconnectFlag, true, reason.toUtf8().constData());
+    bot->resetGameState(disconnectFlag, reason.toUtf8().constData());
     bot->state = disconnectFlag ? BotState::Disconnected : BotState::Idle;
     emit botStateChanged(bot->id, bot->username, bot->state);
 }
