@@ -188,7 +188,9 @@ void Bot::setupClient(NetManager *netManager, const QString &displayName)
     // 8. 创建房间成功
     checkRelay(connect(client, &Client::gameCreateSuccess, this, [this, relayLog](CommandSource source, bool isHotRefresh){
                    this->incrementSignalCount("gameCreateSuccess");
-                   relayLog(QString("gameCreateSuccess (source: %1 hotRefresh: %2)").arg(source).arg(isHotRefresh));
+                   QString srcStr = (source == From_Client) ? "Client" :  (source == From_Server) ? "Server" : "Unknown";
+                   QString hotStr = isHotRefresh ? "true" : "false";
+                   relayLog(QString("gameCreateSuccess (source: %2 hotRefresh: %3)").arg(this->id).arg(srcStr, hotStr));
                    emit gameCreateSuccess(isHotRefresh);
                }), "gameCreateSuccess");
 

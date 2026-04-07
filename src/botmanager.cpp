@@ -1182,10 +1182,26 @@ void BotManager::onBotGameCreateSuccess(Bot *bot, bool isHotRefresh)
     LOG_INFO(QString("   ├─ 👤 房主名称:  %1 (UUID:  %2)").arg(bot->hostname, clientId));
     LOG_INFO(QString("   ├─ 🏠 房间名称:  %1").arg(bot->gameInfo.gameName));
     LOG_INFO(QString("   ├─ 🚩 游戏模式:  %1").arg(bot->gameInfo.gameMode));
-    LOG_INFO(QString("   ├─ 🛡️ 地图校验:  0x%1").arg(QString::number(serverMapCrc, 16).toUpper()));
+    LOG_INFO(QString("   ├─ 🚩 地图校验:  0x%1").arg(QString::number(serverMapCrc, 16).toUpper()));
+    LOG_INFO(QString("   └─ 🚩 当前状态:  %1").arg(botStateToString(bot->state)));
 
     if (isHotRefresh) {
-        LOG_INFO(QString("   └─ ✅ 结果: 房主交接成功，已拦截自动进入指令以防止进程重启"));
+        if (m_netManager) {
+            bool okToCheckCrc =m_netManager->sendMessageToClient(clientId, S_C_MESSAGE, MSG_CHECK_MAP_CRC, static_cast<quint64>(serverMapCrc));
+            if (okToCheckCrc) {
+                LOG_INFO("   └─ 🚀 校验指令: 已发送服务端 CRC 供客户端比对");
+            } else {
+                LOG_ERROR("   └─ ❌ 校验指令: 发送失败 (目标用户不在线或未记录通道)");
+            }
+            quint64 now = QDateTime::currentMSecsSinceEpoch();
+            bool okToLauncher = m_netManager->sendMessageToClient(clientId, S_C_MESSAGE, MSG_HOST_JOINED_GAME, now);
+            if (okToLauncher) {
+                LOG_INFO(QString("   └─ 🚀 自动进入: 指令已发送 (目标端口: %1)").arg(m_controlPort));
+            } else {
+                LOG_ERROR("   └─ ❌ 自动进入: 发送失败 (目标用户不在线或未记录通道)");
+            }
+            LOG_INFO("   └─ ✅ 结果: 房主交接成功。已下发状态同步消息，Launcher 状态已更正为 InRoom");
+        }
         emit botStateChanged(bot->id, bot->username, bot->state);
         return;
     }
