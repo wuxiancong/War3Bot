@@ -16,18 +16,17 @@ Bot::~Bot()
     }
 }
 
-void Bot::resetGame(bool disconnectFlag, bool isInit, const QString &context)
+void Bot::resetGame(bool disconnectFlag, const QString &context)
 {
     if (!client) return;
 
-    QString actionType = isInit ? "初始化" : "清理";
-    LOG_INFO(QString("🧹 [%1] Bot-%2 | 来源: %3").arg(actionType, QString::number(id), context));
+    LOG_INFO(QString("🧹 重置 Bot-%2 | 来源: %3").arg(QString::number(id), context));
 
     // 1. 更新状态
     state = disconnectFlag ? BotState::Disconnected : BotState::Idle;
 
     // 2. 驱动底层 Client 重置
-    client->resetGame(isInit);
+    client->resetGame();
 
     // 3. 处理 BNET 链路
     if (disconnectFlag && client->isConnected()) {
@@ -270,7 +269,7 @@ void Bot::setupGameInfo(const QString &host, const QString &name, const QString 
 {
     LOG_INFO(QString("📋 [元数据设置] Bot-%1: 正在初始化房间配置...").arg(id));
 
-    resetGame(false, true, "Setup Game Info");
+    resetGame(false, "Setup Game Info");
 
     hostname = host;
     commandSource = source;

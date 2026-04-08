@@ -90,7 +90,7 @@ public:
     bool pendingDisconnectFlag = false;
     QString pendingRemovalReason = "None";
 
-    void resetGame(bool disconnectFlag, bool isInit, const QString &context);
+    void resetGame(bool disconnectFlag, const QString &context);
     void incrementSignalCount(const QString &sigName);
     bool isOwner(const QString &senderClientId) const;
     SignalAudit getAudit(const char* signalSignature);

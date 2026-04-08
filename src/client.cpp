@@ -2549,10 +2549,9 @@ void Client::updateAdv()
     LOG_INFO(QString("   └─ ✅ 列表热更新已发出 (HostCounter: %1, 空位: %2)").arg(m_hostCounter).arg(freeSlots));
 }
 
-void Client::resetGame(bool isInit)
+void Client::resetGame()
 {
-    QString actionType = isInit ? "初始化" : "清理";
-    LOG_INFO(QString("🧹 [Client-%1] 执行内存重置 | 模式: %2").arg(m_botPid).arg(actionType));
+    LOG_INFO(QString("🧹 [Client-%1] 执行内存重置").arg(m_botPid));
 
     // 1. 停止计时器
     if (m_startLagTimer) m_startLagTimer->stop();
@@ -2585,7 +2584,7 @@ void Client::resetGame(bool isInit)
     m_gameStarted = false;
     m_isRefreshingAdv = false;
 
-    LOG_INFO(QString("   └─ ✅ %1 完成").arg(actionType));
+    LOG_INFO(QString("   └─ ✅ 重置完成"));
 }
 
 void Client::cancelGame()

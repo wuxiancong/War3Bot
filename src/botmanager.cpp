@@ -697,7 +697,7 @@ void BotManager::removeGame(Bot *bot, bool disconnectFlag, const QString &reason
     unregisterBotMappings(bot->gameInfo.clientId, bot->hostname, bot->gameInfo.gameName);
 
     // B. 执行机器人内部重置
-    bot->resetGame(disconnectFlag, false, reason);
+    bot->resetGame(disconnectFlag, reason);
 
     // C. 向外部发射状态变更信号
     emit botStateChanged(bot->id, bot->username, bot->state);
@@ -720,12 +720,16 @@ void BotManager::registerBotMappings(Bot *bot)
         QString lowerName = bot->hostname.toLower();
         m_hostNameToBotMap.insert(lowerName, bot);
         LOG_INFO(QString("   ├─ 👤 映射房主: %1 -> Bot:%2").arg(lowerName, bot->username));
+    } else {
+        LOG_INFO("   ├─ 👤 房主名为空，跳过映射建立");
     }
 
     // 2. 映射 ClientId
     if (!bot->gameInfo.clientId.isEmpty()) {
         m_clientIdToBotMap.insert(bot->gameInfo.clientId, bot);
         LOG_INFO(QString("   ├─ 🆔 映射 ID: %1 -> Bot:%2").arg(bot->gameInfo.clientId, bot->username));
+    } else {
+        LOG_INFO("   ├─ 🆔 ClientId 为空，跳过映射建立");
     }
 
     // 3. 映射房间名
@@ -733,6 +737,8 @@ void BotManager::registerBotMappings(Bot *bot)
     if (!lowerRoom.isEmpty()) {
         m_activeGames.insert(lowerRoom, bot);
         LOG_INFO(QString("   └─ 🏠 映射房间: %1 -> Bot:%2").arg(lowerRoom, bot->username));
+    } else {
+        LOG_INFO("   └─ 🏠 房间名为空，跳过映射建立");
     }
 }
 
@@ -747,6 +753,8 @@ void BotManager::unregisterBotMappings(const QString &clientId, const QString &h
         } else {
             LOG_INFO(QString("   ├─ 🆔 移除 ClientId: %1 -> ⚪ 无需清理").arg(clientId));
         }
+    } else {
+        LOG_INFO("   ├─ 🆔 ClientId 为空，跳过映射清理");
     }
 
     // 2. 清理房主名称映射
@@ -757,6 +765,8 @@ void BotManager::unregisterBotMappings(const QString &clientId, const QString &h
         } else {
             LOG_INFO(QString("   ├─ 👤 移除房主名: %1 -> ⚪ 无需清理").arg(lowerName));
         }
+    } else {
+        LOG_INFO("   ├─ 👤 房主名为空，跳过映射清理");
     }
 
     // 3. 清理房间映射
