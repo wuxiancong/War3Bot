@@ -29,11 +29,10 @@ public:
     Bot *findBotByHostName(const QString &hostName);
     Bot *findBotByClientId(const QString &clientId);
     void initializeBots(quint32 initialCount, const QString &configPath);
-    void removeBotMappings(const QString &clientId, const QString &hostName);
     bool checkCooldown(const QString &clientId, const QString &command, qint64 now);
     bool createBotAccountFilesIfNotExist(bool allowAutoGenerate, int targetListNumber);
     void handleHostCommand(const QString &userName, const QString &clientId, const QString &text);
-    void removeGame(Bot *bot, bool disconnectFlag = false, const QString &reason = "Unspecified");
+    void removeGame(Bot *bot, bool disconnectFlag = false, const QString &reason = "None");
     bool createGame(const QString &hostName, const QString &gameName, const QString &gameMode, CommandSource commandSource, const QString &clientId);
 
 signals:
@@ -64,12 +63,13 @@ private slots:
     void onBotPendingTaskTimeout();
 
 private:
+    void unregisterBotMappings(const QString &clientId, const QString &hostName, const QString &roomName);
     void addBotInstance(const QString &username, const QString &password);
     bool isBotActive(Bot *bot, const QString &context);
     bool isBotValid(Bot *bot, const QString &context);
     QString generateRandomPassword(int length);
     QString toLeetSpeak(const QString &input);
-    QString botStateToString(BotState state);
+    void registerBotMappings(Bot *bot);
     void setupBotConnections(Bot *bot);
     QString generateUniqueUsername();
     QChar randomCase(QChar c);

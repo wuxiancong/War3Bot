@@ -553,7 +553,7 @@ bool BotManager::createGame(const QString &hostName, const QString &gameName, co
         LOG_INFO(QString("   │  [%1] %2 | %3 | 状态: %4 | 任务: %5")
                      .arg(i + 1, 2)
                      .arg(bot->username.leftJustified(12), connectString,
-                          botStateToString(bot->state), bot->pendingTask.hasTask ? "🔴 Busy" : "🟢 Free"));
+                          bot->botStateToString(bot->state), bot->pendingTask.hasTask ? "🔴 Busy" : "🟢 Free"));
 
         QString auditString = QString("   👉 [信号审计] 认证: (连:%1, 发:%2) | 大厅: (连:%3, 发:%4)")
                                .arg(authAudit.physicalLinks).arg(authAudit.triggerCount)
@@ -587,7 +587,7 @@ bool BotManager::createGame(const QString &hostName, const QString &gameName, co
             if (isInterruptible && !bot->pendingTask.hasTask) {
                 targetBot = bot;
                 LOG_INFO(QString("   🎯 [P2-抢占成功] 捕获机器人: [%1] (当前状态: %2)")
-                             .arg(targetBot->username, botStateToString(targetBot->state)));
+                             .arg(targetBot->username, bot->botStateToString(targetBot->state)));
                 break;
             }
         }
@@ -653,6 +653,7 @@ void BotManager::removeGame(Bot *bot, bool disconnectFlag, const QString &reason
 {
     if (!isBotValid(bot, "RemoveGame")) return;
 
+    // 1. 拦截状态
     if (bot->state == BotState::Connecting ||
         bot->state == BotState::Unregistered ||
         bot->state == BotState::Authenticated ||
@@ -660,7 +661,7 @@ void BotManager::removeGame(Bot *bot, bool disconnectFlag, const QString &reason
 
         LOG_INFO(QString("🛡️ [状态锁] 成功拦截旧链路信号: Bot-%1 当前正处于 %2 阶段，已拒绝来自 (%3) 的清理请求")
                      .arg(bot->id)
-                     .arg(botStateToString(bot->state), reason));
+                     .arg(bot->botStateToString(bot->state), reason));
         return;
     }
 
@@ -669,44 +670,81 @@ void BotManager::removeGame(Bot *bot, bool disconnectFlag, const QString &reason
 
     LOG_INFO(QString("🧹 [执行清理] 机器人: %1 | 原因: %2").arg(bot->username, reason));
 
-    // 3. 清理内存映射
-    removeBotMappings(bot->gameInfo.clientId, bot->hostname);
+    // 3. 注销全局映射
+    unregisterBotMappings(bot->gameInfo.clientId, bot->hostname, bot->gameInfo.gameName);
 
-    // 4. 清理房间映射
-    if (!bot->gameInfo.gameName.isEmpty()) {
-        m_activeGames.remove(bot->gameInfo.gameName.toLower());
-    }
+    // 4. 执行状态重置
+    bot->resetGame(disconnectFlag, false, reason);
 
-    // 5. 重置状态
-    bot->state = disconnectFlag ? BotState::Disconnected : BotState::Idle;
-    bot->resetGameState(disconnectFlag, reason.toUtf8().constData());
+    // 5. 发出状态变更信号
     emit botStateChanged(bot->id, bot->username, bot->state);
 
-    // 6. 取消游戏
-    bot->client->cancelGame();
+    // 6. 取消底层游戏逻辑
+    if (bot->client) {
+        bot->client->cancelGame();
+    }
 }
 
-void BotManager::removeBotMappings(const QString &clientId, const QString &hostName)
+void BotManager::registerBotMappings(Bot *bot)
 {
-    // 🚀 1. 清理 ClientId 映射 (m_clientIdToBotMap)
+    if (!bot) return;
+
+    LOG_INFO("🔗 [建立全局映射关系]");
+
+    // 1. 映射房主名称
+    if (!bot->hostname.isEmpty()) {
+        QString lowerName = bot->hostname.toLower();
+        m_hostNameToBotMap.insert(lowerName, bot);
+        LOG_INFO(QString("   ├─ 👤 映射房主: %1 -> Bot:%2").arg(lowerName, bot->username));
+    }
+
+    // 2. 映射 ClientId
+    if (!bot->gameInfo.clientId.isEmpty()) {
+        m_clientIdToBotMap.insert(bot->gameInfo.clientId, bot);
+        LOG_INFO(QString("   ├─ 🆔 映射 ID: %1 -> Bot:%2").arg(bot->gameInfo.clientId, bot->username));
+    }
+
+    // 3. 映射房间名
+    QString lowerRoom = bot->gameInfo.gameName.toLower();
+    if (!lowerRoom.isEmpty()) {
+        m_activeGames.insert(lowerRoom, bot);
+        LOG_INFO(QString("   └─ 🏠 映射房间: %1 -> Bot:%2").arg(lowerRoom, bot->username));
+    }
+}
+
+void BotManager::unregisterBotMappings(const QString &clientId, const QString &hostName, const QString &roomName)
+{
+    LOG_INFO("🧹 [清理全局映射关系]");
+
+    // 1. 清理 ClientId 映射
     if (!clientId.isEmpty()) {
-        bool removedCid = m_clientIdToBotMap.remove(clientId) > 0;
-        if (removedCid) {
-            LOG_INFO(QString("   ├── 🆔 移除 ClientId 映射: %1 -> ✅ 成功").arg(clientId));
+        if (m_clientIdToBotMap.remove(clientId) > 0) {
+            LOG_INFO(QString("   ├─ 🆔 移除 ClientId: %1 -> ✅ 成功").arg(clientId));
         } else {
-            LOG_WARNING(QString("   ├── 🆔 移除 ClientId 映射: %1 -> ⚠️ 未在表中").arg(clientId));
+            LOG_INFO(QString("   ├─ 🆔 移除 ClientId: %1 -> ⚪ 无需清理").arg(clientId));
         }
     }
 
-    // 🚀 2. 清理 房主名称 映射 (m_hostNameToBotMap)
+    // 2. 清理房主名称映射
     if (!hostName.isEmpty()) {
-        QString lowerHostName = hostName.toLower();
-        bool removedHost = m_hostNameToBotMap.remove(lowerHostName) > 0;
-        if (removedHost) {
-            LOG_INFO(QString("   ├── 👤 移除 房主 映射: %1 -> ✅ 成功").arg(lowerHostName));
+        QString lowerName = hostName.toLower();
+        if (m_hostNameToBotMap.remove(lowerName) > 0) {
+            LOG_INFO(QString("   ├─ 👤 移除房主名: %1 -> ✅ 成功").arg(lowerName));
         } else {
-            LOG_WARNING(QString("   ├── 👤 移除 房主 映射: %1 -> ⚠️ 未在表中").arg(lowerHostName));
+            LOG_INFO(QString("   ├─ 👤 移除房主名: %1 -> ⚪ 无需清理").arg(lowerName));
         }
+    }
+
+    // 3. 清理房间映射
+    if (!roomName.isEmpty()) {
+        QString lowerRoom = roomName.toLower();
+        if (m_activeGames.remove(lowerRoom) > 0) {
+            LOG_INFO(QString("   └─ 🏠 移除房间名: %1 -> ✅ 成功").arg(lowerRoom));
+        } else {
+            LOG_INFO(QString("   └─ 🏠 移除房间名: %1 -> ⚪ 无需清理").arg(lowerRoom));
+        }
+    } else {
+        LOG_INFO("   └─ 🏠 房间名为空，跳过映射清理");
     }
 }
 
@@ -1162,21 +1200,32 @@ void BotManager::onBotGameCreateSuccess(Bot *bot, bool isHotRefresh)
     if (!isBotActive(bot, "GameCreateSuccess")) return;
 
     // 1. 更新机器人内部状态机
-    // 热更新模式下，房主已在房内，状态直接跳过 Reserved 进入 Waiting
     bot->hostJoined = isHotRefresh;
     bot->state = isHotRefresh ? BotState::Waiting : BotState::Reserved;
     bot->gameInfo.createTime = QDateTime::currentMSecsSinceEpoch();
 
-    // 2. 原子化更新全局搜索映射表 (确保新房主拥有控制权)
+    // 2. 原子化更新全局搜索映射表
+    QString oldClientId = bot->gameInfo.clientId;
+    QString oldHostName = bot->hostname;
+    QString oldRoomName = bot->gameInfo.gameName;
     QString lowerRoomName = bot->gameInfo.gameName.toLower();
-    if (!bot->hostname.isEmpty()) {
-        m_hostNameToBotMap.insert(bot->hostname.toLower(), bot);
+
+    if (isHotRefresh) {
+        LOG_INFO("🔄 [执行房主交接/热更新流程]");
+
+        // 1. 注销所有旧的映射关系
+        unregisterBotMappings(oldClientId, oldHostName, oldRoomName);
+
+        // 2. 修改 Bot 内部属性为新房主的信息
+        // bot->hostname = newHostName;
+        // bot->gameInfo.clientId = newClientId;
+
+        // 3. 重新建立映射关系
+        registerBotMappings(bot);
     }
-    if (!bot->gameInfo.clientId.isEmpty()) {
-        m_clientIdToBotMap.insert(bot->gameInfo.clientId, bot);
-    }
-    if (!lowerRoomName.isEmpty()) {
-        m_activeGames.insert(lowerRoomName, bot);
+    else {
+        unregisterBotMappings(oldClientId, oldHostName, oldRoomName);
+        registerBotMappings(bot);
     }
 
     // 3. 提取网络指令参数
@@ -1191,7 +1240,7 @@ void BotManager::onBotGameCreateSuccess(Bot *bot, bool isHotRefresh)
     LOG_INFO(QString("   ├─ 🏠 房间名称:  %1").arg(bot->gameInfo.gameName));
     LOG_INFO(QString("   ├─ 🚩 游戏模式:  %1").arg(bot->gameInfo.gameMode));
     LOG_INFO(QString("   ├─ 🛡️ 地图校验:  0x%1").arg(QString::number(serverMapCrc, 16).toUpper()));
-    LOG_INFO(QString("   └─ ⚙️ 当前状态:  %1").arg(botStateToString(bot->state)));
+    LOG_INFO(QString("   └─ ⚙️ 当前状态:  %1").arg(bot->botStateToString(bot->state)));
 
     if (!m_netManager) {
         LOG_CRITICAL("   └── ❌ 系统错误: NetManager 未绑定，无法同步指令消息");
@@ -1671,7 +1720,7 @@ void BotManager::onBotError(Bot *bot, QString error)
         LOG_WARNING(QString("⚠️ [连接失败] Bot-%1 拨号过程中遇到错误: %2").arg(bot->id).arg(error));
     } else {
         LOG_ERROR(QString("┌── ❌ [Bot异常中断] Bot-%1 (%2)").arg(bot->id).arg(bot->username));
-        LOG_INFO(QString("├── 状态: %1 | 原因: %2").arg(botStateToString(bot->state), error));
+        LOG_INFO(QString("├── 状态: %1 | 原因: %2").arg(bot->botStateToString(bot->state), error));
 
         QString ownerId = bot->gameInfo.clientId;
 
@@ -1729,7 +1778,7 @@ void BotManager::onBotDisconnected(Bot *bot)
 
         LOG_INFO(QString("🛡️ [安全策略] 拦截延迟断开信号: Bot-%1 正在执行新任务 (%2)")
                      .arg(bot->id)
-                     .arg(botStateToString(bot->state)));
+                     .arg(bot->botStateToString(bot->state)));
         return;
     }
 
@@ -2217,23 +2266,4 @@ bool BotManager::createBotAccountFilesIfNotExist(bool allowAutoGenerate, int tar
     }
 
     return generatedAny;
-}
-
-QString BotManager::botStateToString(BotState state)
-{
-    switch (state) {
-    case BotState::Disconnected:  return "Disconnected (已断开)";
-    case BotState::Connecting:    return "Connecting (连接中)";
-    case BotState::Unregistered:  return "Unregistered (未注册)";
-    case BotState::Authenticated: return "Authenticated (已认证)";
-    case BotState::InLobby:       return "InLobby (大厅中)";
-    case BotState::Idle:          return "Idle (空闲待机)";
-    case BotState::Creating:      return "Creating (创建中)";
-    case BotState::Reserved:      return "Reserved (已预留)";
-    case BotState::Waiting:       return "Waiting (等待房主)";
-    case BotState::Starting:      return "Starting (启动中)";
-    case BotState::InGame:        return "InGame (游戏内)";
-    case BotState::Finishing:     return "Finishing (清理中)";
-    default:                      return QString("Unknown (%1)").arg(static_cast<int>(state));
-    }
 }

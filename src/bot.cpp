@@ -16,33 +16,36 @@ Bot::~Bot()
     }
 }
 
-void Bot::resetGameState(bool disconnectFlag, const QString &context)
+void Bot::resetGame(bool disconnectFlag, bool isInit, const QString &context)
 {
-    // 1. 根节点日志：记录来源和核心标志
-    LOG_INFO(QString("🧹 [状态重置] Bot-%1 | 来源: %2").arg(id).arg(context));
-    LOG_INFO(QString("   ├─ ⚙️ 配置: 物理断开: %1")
-                 .arg(disconnectFlag ? "✅ 是" : "❌ 否"));
+    QString actionType = isInit ? "初始化" : "清理";
+    LOG_INFO(QString("🧹 [%1] Bot-%2 | 来源: %3").arg(actionType, QString::number(id), context));
 
+    state = disconnectFlag ? BotState::Disconnected : BotState::Idle;
+    LOG_INFO(QString("   ├─ ⚙️ 配置: 物理断开: %1 | 最终状态: %2")
+                 .arg(disconnectFlag ? "✅ 是" : "❌ 否", botStateToString(this->state)));
+
+    // 3. 驱动底层 Client 重置
     if (client) {
-        if (disconnectFlag) {
-            // 场景：报错或强制下线
-            if (client->isConnected()) {
-                LOG_INFO(QString("   ├── 🔌 动作: 正在强制切断 Client-%1 的 TCP 链路...").arg(id));
-                client->disconnectFromHost();
-            }
+        client->resetGame(isInit);
+        if (disconnectFlag && client->isConnected()) {
+            LOG_INFO(QString("   ├── 🔌 动作: 正在强制切断 Client-%1 的 BNET 链路...").arg(id));
+            client->disconnectFromHost();
         }
     }
 
-    // 2. 内存数据彻底清空
-    gameInfo = GameInfo();
-    pendingTask = PendingTask();
+    gameInfo                = GameInfo();
+    pendingTask             = PendingTask();
+
+    hostJoined              = false;
+    pendingRemoval          = false;
+    commandSource           = From_Server;
+    activeOperations        = 0;
+    pendingRemovalReason    = "None";
+
     m_triggerCounts.clear();
 
-    commandSource = From_Server;
-    hostJoined = false;
-    pendingRemoval = false;
-    activeOperations = 0;
-    pendingRemovalReason = "None";
+    LOG_INFO(QString("   └─ ✅ Bot-%1 业务数据已完全归零").arg(id));
 }
 
 bool Bot::isOwner(const QString &senderClientId) const
@@ -265,7 +268,7 @@ void Bot::setupGameInfo(const QString &host, const QString &name, const QString 
 {
     LOG_INFO(QString("📋 [元数据设置] Bot-%1: 正在初始化房间配置...").arg(id));
 
-    resetGameState(false, "Setup Game Info");
+    resetGame(false, true, "Setup Game Info");
 
     hostname = host;
     commandSource = source;
@@ -286,6 +289,25 @@ void Bot::setupGameInfo(const QString &host, const QString &name, const QString 
 
     LOG_INFO(QString("   ├─ 🏠 房间名称: %1").arg(name));
     LOG_INFO(QString("   └─ 👤 视觉房主: %1 (ClientId: %2)").arg(host, clientId));
+}
+
+QString Bot::botStateToString(BotState state)
+{
+    switch (state) {
+    case BotState::Disconnected:  return "Disconnected (已断开)";
+    case BotState::Connecting:    return "Connecting (连接中)";
+    case BotState::Unregistered:  return "Unregistered (未注册)";
+    case BotState::Authenticated: return "Authenticated (已认证)";
+    case BotState::InLobby:       return "InLobby (大厅中)";
+    case BotState::Idle:          return "Idle (空闲待机)";
+    case BotState::Creating:      return "Creating (创建中)";
+    case BotState::Reserved:      return "Reserved (已预留)";
+    case BotState::Waiting:       return "Waiting (等待房主)";
+    case BotState::Starting:      return "Starting (启动中)";
+    case BotState::InGame:        return "InGame (游戏内)";
+    case BotState::Finishing:     return "Finishing (清理中)";
+    default:                      return QString("Unknown (%1)").arg(static_cast<int>(state));
+    }
 }
 
 SignalAudit Bot::getAudit(const char* signalSignature)

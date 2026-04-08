@@ -470,7 +470,8 @@ public:
     void createGame(const QString &gameName, const QString &password,
                     ProviderVersion providerVersion, ComboGameType comboGameType,
                     SubGameType subGameType, LadderType ladderType,CommandSource commandSource);                // 创建游戏
-    void stopAdv(const QString &context = "Unspecified");                                                       // 停止广播
+    void stopAdv(const QString &context = "None");                                                       // 停止广播
+    void resetGame(bool isInit);                                                                                // 游戏重置
     void cancelGame();                                                                                          // 取消/解散游戏
     void abortGame();                                                                                           // 中断游戏
     void startGame();                                                                                           // 开始游戏

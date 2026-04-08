@@ -88,12 +88,13 @@ public:
     int activeOperations = 0;
     bool pendingRemoval = false;
     bool pendingDisconnectFlag = false;
-    QString pendingRemovalReason = "Unspecified";
+    QString pendingRemovalReason = "None";
 
-    void resetGameState(bool disconnectFlag, const QString &context);
+    void resetGame(bool disconnectFlag, bool isInit, const QString &context);
     void incrementSignalCount(const QString &sigName);
     bool isOwner(const QString &senderClientId) const;
     SignalAudit getAudit(const char* signalSignature);
+    QString botStateToString(BotState state);
     void enterCriticalOperation();
     void leaveCriticalOperation();
     void resetAuditCounts();

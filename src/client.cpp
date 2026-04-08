@@ -2549,85 +2549,66 @@ void Client::updateAdv()
     LOG_INFO(QString("   └─ ✅ 列表热更新已发出 (HostCounter: %1, 空位: %2)").arg(m_hostCounter).arg(freeSlots));
 }
 
-void Client::cancelGame()
+void Client::resetGame(bool isInit)
 {
-    if (m_isCanceling) return;
+    QString actionType = isInit ? "初始化" : "清理";
+    LOG_INFO(QString("🧹 [Client-%1] 执行内存重置 | 模式: %2").arg(m_botPid).arg(actionType));
 
-    // 1. 标记当前状态
-    m_isCanceling = true;
-    LOG_INFO("🔄 [重置游戏] 开始执行资源清理流程...");
+    // 1. 停止所有活跃的游戏逻辑计时器
+    if (m_startLagTimer->isActive()) m_startLagTimer->stop();
+    if (m_gameTickTimer->isActive()) m_gameTickTimer->stop();
+    if (m_startTimer->isActive())    m_startTimer->stop();
+    if (m_pingTimer->isActive())     m_pingTimer->stop();
 
-    // 2. 进入聊天大厅
-    enterChat();
-    joinRandomChannel();
-    LOG_INFO("   ├─ 📡 网络动作: 停止广播 -> 请求进入大厅 -> 请求加入随机频道");
-
-    // 3. 断开所有玩家连接
-    int playerCount = m_playerSockets.size();
-    if (playerCount > 0) {
-        LOG_INFO(QString("   ├─ 🔌 连接清理: 正在断开 %1 名玩家 Socket").arg(playerCount));
+    // 2. 强力清理玩家连接
+    if (!m_playerSockets.isEmpty()) {
+        LOG_INFO(QString("   ├─ 🔌 正在释放 %1 个玩家 Socket").arg(m_playerSockets.size()));
         for (auto socket : qAsConst(m_playerSockets)) {
-            if (socket->state() == QAbstractSocket::ConnectedState) {
-                socket->disconnectFromHost();
+            if (socket) {
+                socket->abort();
+                socket->deleteLater();
             }
-            socket->deleteLater();
         }
-    } else {
-        LOG_INFO("   ├─ 🔌 连接清理: 当前无活跃 TCP 连接");
+        m_playerSockets.clear();
     }
 
-    // 4. 清理容器
-    m_playerSockets.clear();
+    // 3. 清空所有内存容器
     m_playerBuffers.clear();
     m_actionQueue.clear();
     m_players.clear();
 
-    // 5. 重置槽位
-    initSlots();
-    LOG_INFO("   ├─ 🧹 内存清理: 玩家映射表清空 & 地图槽位重置");
-
-    // 6. 停止各类计时器
-    bool anyTimerActive = false;
-
-    // A. 启动缓冲 (Start Lag)
-    if (m_startLagTimer->isActive()) {
-        m_startLagTimer->stop();
-        LOG_INFO("   ├─ 🛑 [计时器] 强制中止: 启动缓冲 (StartLag)");
-        anyTimerActive = true;
-    }
-
-    // B. 游戏心跳 (Game Tick)
-    if (m_gameTickTimer->isActive()) {
-        m_gameTickTimer->stop();
-        LOG_INFO("   ├─ 🛑 [计时器] 强制停止: 游戏心跳 (GameTick)");
-        anyTimerActive = true;
-    }
-
-    // C. 倒计时 (Countdown)
-    if (m_startTimer->isActive()) {
-        m_startTimer->stop();
-        LOG_INFO("   ├─ 🛑 [计时器] 强制中止: 游戏开始倒计时 (Countdown)");
-        anyTimerActive = true;
-    }
-
-    if (!anyTimerActive) {
-        LOG_INFO("   ├─ ℹ️ [计时器] 无活跃的游戏逻辑计时器");
-    }
-
-    // 7. 重置标志位
-    m_gameStarted = false;
-    LOG_INFO(QString("   ├─ ⚙️ 标志重置: GameStarted=False | HostCounter (%1)").arg(m_hostCounter));
-
-    // 8. 停止 Ping 循环 (最后一步)
-    if (m_pingTimer->isActive()) {
-        m_pingTimer->stop();
-        LOG_INFO("   └─ 🛑 [计时器] 停止大厅 Ping 循环 -> 状态: IDLE");
+    // 4. 槽位状态重置
+    if (isInit) {
+        initSlots();
+        LOG_INFO("   ├─ 🧩 槽位初始化完毕 (准备创建新房间)");
     } else {
-        LOG_INFO("   └─ ✅ [状态] 机器人已就绪 (Ping 循环未运行)");
+        m_slots.clear();
+        LOG_INFO("   ├─ 🧩 槽位已彻底注销 (清理完毕)");
     }
+
+    // 5. 状态标志位复位
+    m_gameStarted = false;
+
+    LOG_INFO(QString("   └─ ✅ %1 完成").arg(actionType));
+}
+
+void Client::cancelGame()
+{
+    if (m_isCanceling) return;
+
+    LOG_INFO("📡 [协议动作] 正在向战网发送取消房间指令...");
+
+    m_isCanceling = true;
+
+    if (isConnected()) {
+        enterChat();
+        joinRandomChannel();
+        LOG_INFO("   ├─ 🔄 状态同步: 已请求回到大厅并加入频道");
+    }
+
+    m_isCanceling = false;
 
     emit gameCancelled();
-    m_isCanceling = false;
 }
 
 void Client::createGame(const QString &gameName, const QString &password, ProviderVersion providerVersion, ComboGameType comboGameType, SubGameType subGameType, LadderType ladderType, CommandSource commandSource)
