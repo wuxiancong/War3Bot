@@ -18,22 +18,24 @@ Bot::~Bot()
 
 void Bot::resetGame(bool disconnectFlag, bool isInit, const QString &context)
 {
+    if (!client) return;
+
     QString actionType = isInit ? "初始化" : "清理";
     LOG_INFO(QString("🧹 [%1] Bot-%2 | 来源: %3").arg(actionType, QString::number(id), context));
 
+    // 1. 更新状态
     state = disconnectFlag ? BotState::Disconnected : BotState::Idle;
-    LOG_INFO(QString("   ├─ ⚙️ 配置: 物理断开: %1 | 最终状态: %2")
-                 .arg(disconnectFlag ? "✅ 是" : "❌ 否", botStateToString(this->state)));
 
-    // 3. 驱动底层 Client 重置
-    if (client) {
-        client->resetGame(isInit);
-        if (disconnectFlag && client->isConnected()) {
-            LOG_INFO(QString("   ├── 🔌 动作: 正在强制切断 Client-%1 的 BNET 链路...").arg(id));
-            client->disconnectFromHost();
-        }
+    // 2. 驱动底层 Client 重置
+    client->resetGame(isInit);
+
+    // 3. 处理 BNET 链路
+    if (disconnectFlag && client->isConnected()) {
+        LOG_INFO(QString("   ├── 🔌 动作: 正在强制切断 Client-%1 的 BNET 链路...").arg(id));
+        client->disconnectFromHost();
     }
 
+    // 4. 重置 Bot 自身的业务数据
     gameInfo                = GameInfo();
     pendingTask             = PendingTask();
 

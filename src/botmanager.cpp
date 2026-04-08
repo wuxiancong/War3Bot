@@ -1199,32 +1199,13 @@ void BotManager::onBotGameCreateSuccess(Bot *bot, bool isHotRefresh)
 {
     if (!isBotActive(bot, "GameCreateSuccess")) return;
 
-    // 1. 更新机器人内部状态机
+    // 1. 更新机器人内部属性
     bot->hostJoined = isHotRefresh;
     bot->state = isHotRefresh ? BotState::Waiting : BotState::Reserved;
     bot->gameInfo.createTime = QDateTime::currentMSecsSinceEpoch();
 
-    // 2. 原子化更新全局搜索映射表
-    QString oldClientId = bot->gameInfo.clientId;
-    QString oldHostName = bot->hostname;
-    QString oldRoomName = bot->gameInfo.gameName;
-    QString lowerRoomName = bot->gameInfo.gameName.toLower();
-
-    if (isHotRefresh) {
-        LOG_INFO("🔄 [执行房主交接/热更新流程]");
-
-        // 1. 注销所有旧的映射关系
-        unregisterBotMappings(oldClientId, oldHostName, oldRoomName);
-
-        // 2. 修改 Bot 内部属性为新房主的信息
-        // bot->hostname = newHostName;
-        // bot->gameInfo.clientId = newClientId;
-
-        // 3. 重新建立映射关系
-        registerBotMappings(bot);
-    }
-    else {
-        unregisterBotMappings(oldClientId, oldHostName, oldRoomName);
+    // 2. 注册全局搜索映射表
+    if (!isHotRefresh) {
         registerBotMappings(bot);
     }
 
@@ -1247,16 +1228,14 @@ void BotManager::onBotGameCreateSuccess(Bot *bot, bool isHotRefresh)
         return;
     }
 
-    // ==================== 分支处理 ====================
-
     if (isHotRefresh) {
-        // --- 场景 A: 房主交接热更新 (不重启魔兽，仅同步 UI) ---
+        // --- 场景 A: 房主交接热更新 ---
         LOG_INFO("   🚀 [状态同步序列] 正在为新房主同步 UI 状态...");
 
-        // A-1. 发送 CRC 校验 (维持前端校验逻辑完整性)
+        // A-1. 发送 CRC 校验
         bool okCrc = m_netManager->sendMessageToClient(clientId, S_C_MESSAGE, MSG_CHECK_MAP_CRC, (quint64)serverMapCrc);
 
-        // A-2. 发送 JOINED 消息 (核心：驱动前端 QML 切换到 InRoom 状态，绕过重启逻辑)
+        // A-2. 发送 JOINED
         bool okSync = m_netManager->sendMessageToClient(clientId, S_C_MESSAGE, MSG_HOST_JOINED_GAME, 1);
 
         if (okCrc && okSync) {
@@ -1266,10 +1245,10 @@ void BotManager::onBotGameCreateSuccess(Bot *bot, bool isHotRefresh)
         }
 
         emit botStateChanged(bot->id, bot->username, bot->state);
-        return; // 🛑 结束热更新流程
+        return;
     }
 
-    // --- 场景 B: 全新创建房间 (需触发魔兽启动/进入) ---
+    // --- 场景 B: 全新创建房间 ---
     if (botListenPort == 0) {
         LOG_ERROR("   ├── ❌ 端口错误: 获取到 0！(检查 bindToRandomPort 是否成功)");
     } else {
@@ -1348,36 +1327,30 @@ void BotManager::onBotRoomHostChanged(Bot *bot, const quint8 heirPid)
     if (!players.contains(heirPid)) return;
 
     QString oldClientId = bot->gameInfo.clientId;
-    QString oldHostName = bot->gameInfo.hostName;
+    QString oldHostName = bot->hostname;
 
     QString newHostName = players[heirPid].name;
     QString newClientId = players[heirPid].clientId;
 
-    m_hostNameToBotMap.remove(oldHostName.toLower());
-    if (!newHostName.isEmpty()) {
-        m_hostNameToBotMap.insert(newHostName.toLower(), bot);
-    }
+    // 1. 注销全局搜索映射表
+    unregisterBotMappings(oldClientId, oldHostName, "");
 
-    m_clientIdToBotMap.remove(oldClientId);
-    if (!newClientId.isEmpty()) {
-        m_clientIdToBotMap.insert(newClientId, bot);
-    }
-
+    // 2. 更新机器人内部属性
     bot->hostname = newHostName;
     bot->gameInfo.clientId = newClientId;
     bot->gameInfo.hostName = newHostName;
     bot->hostJoined = true;
 
-    LOG_INFO(QString("👑 [映射同步完成] Bot-%1: 新房主 %2 (ClientId: %3)")
-                 .arg(bot->id).arg(newHostName, newClientId));
+    // 3. 注册全局搜索映射表
+    registerBotMappings(bot);
 
+    LOG_INFO(QString("👑 [房主权限交接] Bot-%1: 从 %2 转移至 %3")
+                 .arg(bot->id).arg(oldHostName, newHostName));
+
+    // 4. 通知房间内所有玩家房主变了
     for (auto it = players.begin(); it != players.end(); ++it) {
         if (it.key() == 2) continue;
-
-        m_netManager->sendMessageToClient(it.value().clientId,
-                                          S_C_MESSAGE,
-                                          MSG_ROOM_HOST_CHANGE,
-                                          heirPid);
+        m_netManager->sendMessageToClient(it.value().clientId, S_C_MESSAGE, MSG_ROOM_HOST_CHANGE, heirPid);
     }
 }
 

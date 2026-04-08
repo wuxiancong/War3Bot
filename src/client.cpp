@@ -2554,40 +2554,36 @@ void Client::resetGame(bool isInit)
     QString actionType = isInit ? "初始化" : "清理";
     LOG_INFO(QString("🧹 [Client-%1] 执行内存重置 | 模式: %2").arg(m_botPid).arg(actionType));
 
-    // 1. 停止所有活跃的游戏逻辑计时器
-    if (m_startLagTimer->isActive()) m_startLagTimer->stop();
-    if (m_gameTickTimer->isActive()) m_gameTickTimer->stop();
-    if (m_startTimer->isActive())    m_startTimer->stop();
-    if (m_pingTimer->isActive())     m_pingTimer->stop();
+    // 1. 停止计时器
+    if (m_startLagTimer) m_startLagTimer->stop();
+    if (m_gameTickTimer) m_gameTickTimer->stop();
+    if (m_startTimer)    m_startTimer->stop();
+    if (m_pingTimer)     m_pingTimer->stop();
 
-    // 2. 强力清理玩家连接
+    // 2. 清理玩家连接
     if (!m_playerSockets.isEmpty()) {
         LOG_INFO(QString("   ├─ 🔌 正在释放 %1 个玩家 Socket").arg(m_playerSockets.size()));
         for (auto socket : qAsConst(m_playerSockets)) {
             if (socket) {
-                socket->abort();
+                socket->disconnectFromHost();
                 socket->deleteLater();
             }
         }
         m_playerSockets.clear();
     }
 
-    // 3. 清空所有内存容器
+    // 3. 清空容器
     m_playerBuffers.clear();
     m_actionQueue.clear();
     m_players.clear();
 
     // 4. 槽位状态重置
-    if (isInit) {
-        initSlots();
-        LOG_INFO("   ├─ 🧩 槽位初始化完毕 (准备创建新房间)");
-    } else {
-        m_slots.clear();
-        LOG_INFO("   ├─ 🧩 槽位已彻底注销 (清理完毕)");
-    }
+    initSlots();
+    LOG_INFO(QString("   ├─ 🧩 槽位状态已重置 (当前槽位总数: %1)").arg(m_slots.size()));
 
     // 5. 状态标志位复位
     m_gameStarted = false;
+    m_isRefreshingAdv = false;
 
     LOG_INFO(QString("   └─ ✅ %1 完成").arg(actionType));
 }
