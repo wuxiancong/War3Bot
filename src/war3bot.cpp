@@ -235,9 +235,9 @@ bool War3Bot::isRunning() const
     return m_netManager && m_netManager->isRunning();
 }
 
-void War3Bot::onPeerRegistered(const QString &peerId, const QString &clientUuid, int size)
+void War3Bot::onPeerRegistered(const QString &peerId, const QString &clientId, int size)
 {
-    LOG_INFO(QString("新对等节点已连接 - peerID: %1, 客户端ID: %2 共计 %3 个客户端").arg(peerId, clientUuid).arg(size));
+    LOG_INFO(QString("新对等节点已连接 - peerID: %1, 客户端ID: %2 共计 %3 个客户端").arg(peerId, clientId).arg(size));
 }
 
 void War3Bot::onPeerRemoved(const QString &peerId)

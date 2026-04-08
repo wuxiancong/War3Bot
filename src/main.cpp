@@ -439,10 +439,10 @@ int main(int argc, char *argv[]) {
             QString gameMode = parts[1];
             QString gameName = parts[2];
             QString hostName = (parts.size() > 2) ? parts[3] : "Admin";
-            QString consoleUuid = "CONSOLE_" + QString::number(QDateTime::currentMSecsSinceEpoch());
+            QString consoleClientId = "CONSOLE_" + QString::number(QDateTime::currentMSecsSinceEpoch());
 
             // createGame 内部会自动处理寻找空闲Bot或扩容
-            bool scheduled = botManager->createGame(hostName, gameName, gameMode, From_Client, consoleUuid);
+            bool scheduled = botManager->createGame(hostName, gameName, gameMode, From_Client, consoleClientId);
 
             if (scheduled) {
                 LOG_INFO(QString("✅ 任务已提交: 房主[%1] 房间[%2]").arg(hostName, gameName));

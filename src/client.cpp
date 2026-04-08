@@ -809,8 +809,8 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         LOG_INFO(QString("   ├─ 🌍 内网IP: %1:%2").arg(iAddr.toString()).arg(clientInternalPort));
         LOG_INFO(QString("   ├─ 🔧 监听端口: %1").arg(clientListenPort));
 
-        QString currentUuid = (m_netManager) ? m_netManager->getUuidByPreJoinName(clientPlayerName) : "";
-        QString identifier = currentUuid.isEmpty() ? clientPlayerName : currentUuid;
+        QString currentClientId = (m_netManager) ? m_netManager->getClientIdByPreJoinName(clientPlayerName) : "";
+        QString identifier = currentClientId.isEmpty() ? clientPlayerName : currentClientId;
 
         if (!identifier.isEmpty() && m_rejoinCooldowns.contains(identifier)) {
             PlayerRejoin playerRejoin = m_rejoinCooldowns.value(identifier);
@@ -826,7 +826,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
                              .arg(clientPlayerName)
                              .arg(cooldownLimit)
                              .arg(elapsed));
-                emit rejoinRejected(currentUuid, remaining);
+                emit rejoinRejected(currentClientId, remaining);
                 socket->write(createW3GSRejectJoinPacket(BAD_GAME));
                 socket->flush();
                 socket->disconnectFromHost();
@@ -948,12 +948,12 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         playerData.readyCountdown = 10;
         playerData.isReady = nameMatch;
         playerData.lastResponseTime = QDateTime::currentMSecsSinceEpoch();
-        playerData.clientUuid = currentUuid;
-        if (!playerData.clientUuid.isEmpty()) {
-            LOG_INFO(QString("🔗 [关联成功] 玩家: %1 <-> UUID: %2")
-                         .arg(clientPlayerName, playerData.clientUuid));
+        playerData.clientId = currentClientId;
+        if (!playerData.clientId.isEmpty()) {
+            LOG_INFO(QString("🔗 [关联成功] 玩家: %1 <-> ClientId: %2")
+                         .arg(clientPlayerName, playerData.clientId));
         } else {
-            LOG_WARNING(QString("⚠️ [关联失败] 玩家 %1 确实没有申报 UUID").arg(clientPlayerName));
+            LOG_WARNING(QString("⚠️ [关联失败] 玩家 %1 确实没有申报 ClientId").arg(clientPlayerName));
         }
 
         m_players.insert(newPid, playerData);
@@ -1592,7 +1592,7 @@ void Client::onPlayerDisconnected()
     // --- 2. 预查找玩家信息 ---
     quint8 pidToRemove = 0;
     QString nameToRemove = "";
-    QString uuidToRemove = "";
+    QString clientIdToRemove = "";
     bool wasVisualHost = false;
 
     auto it = m_players.begin();
@@ -1600,7 +1600,7 @@ void Client::onPlayerDisconnected()
         if (it.value().socket == socket) {
             pidToRemove = it.key();
             nameToRemove = it.value().name;
-            uuidToRemove = it.value().clientUuid;
+            clientIdToRemove = it.value().clientId;
             wasVisualHost = it.value().isVisualHost;
             break;
         }
@@ -1610,7 +1610,7 @@ void Client::onPlayerDisconnected()
     if (pidToRemove == 0) return;
 
     // --- 3. 记录重入冷却逻辑 ---
-    QString identifier = uuidToRemove.isEmpty() ? nameToRemove : uuidToRemove;
+    QString identifier = clientIdToRemove.isEmpty() ? nameToRemove : clientIdToRemove;
     if (!identifier.isEmpty()) {
         PlayerRejoin pr;
         pr.leaveTime = QDateTime::currentMSecsSinceEpoch();
@@ -3657,12 +3657,12 @@ quint8 Client::getPidByPlayerName(const QString &PlayerName) const
     return 0;
 }
 
-quint8 Client::getPidByUuid(const QString &uuid) const
+quint8 Client::getPidByClientId(const QString &clientId) const
 {
-    if (uuid.isEmpty()) return 0;
+    if (clientId.isEmpty()) return 0;
 
     for (auto it = m_players.constBegin(); it != m_players.constEnd(); ++it) {
-        if (it.value().clientUuid == uuid) {
+        if (it.value().clientId == clientId) {
             return it.key();
         }
     }
@@ -4068,7 +4068,7 @@ void Client::syncPlayerReadyStates()
                  .arg(syncMap.size() / 2));
 }
 
-void Client::setPlayerReadyStates(const QString &uuid, const QString &name, bool ready)
+void Client::setPlayerReadyStates(const QString &clientId, const QString &name, bool ready)
 {
     bool found = false;
     QString matchType = "None";
@@ -4077,20 +4077,20 @@ void Client::setPlayerReadyStates(const QString &uuid, const QString &name, bool
     // 1. 入口日志：记录收到的原始指令参数
     LOG_INFO(QString("⚙️ [准备状态变更] 收到指令请求:"));
     LOG_INFO(QString("   ├─ 👤 申报名字: %1").arg(name.isEmpty() ? "(空)" : name));
-    LOG_INFO(QString("   ├─ 🆔 申报 UUID: %1").arg(uuid.isEmpty() ? "(空)" : uuid));
+    LOG_INFO(QString("   ├─ 🆔 申报 ClientId: %1").arg(clientId.isEmpty() ? "(空)" : clientId));
     LOG_INFO(QString("   └─ 🚩 目标动作: %1").arg(ready ? "✅ READY" : "⏳ UNREADY"));
 
     for (auto it = m_players.begin(); it != m_players.end(); ++it) {
         PlayerData &p = it.value();
 
         // 执行判定
-        bool uuidMatch = (!uuid.isEmpty() && p.clientUuid == uuid);
+        bool clientIdMatch = (!clientId.isEmpty() && p.clientId == clientId);
         bool nameMatch = (!name.isEmpty() && p.name.compare(name, Qt::CaseInsensitive) == 0);
 
-        if (uuidMatch || nameMatch) {
+        if (clientIdMatch || nameMatch) {
             found = true;
             matchedPid = it.key();
-            matchType = uuidMatch ? "UUID 匹配成功" : "名字匹配成功";
+            matchType = clientIdMatch ? "ClientId 匹配成功" : "名字匹配成功";
 
             // 2. 命中日志
             LOG_INFO(QString("   ├── ✅ 命中玩家: %1 (PID: %2)").arg(p.name).arg(matchedPid));
@@ -4100,15 +4100,6 @@ void Client::setPlayerReadyStates(const QString &uuid, const QString &name, bool
             p.isReady = ready;
             if (!ready) {
                 p.readyCountdown = 10;
-            }
-
-            // 3. UUID 补全逻辑日志
-            if (p.clientUuid.isEmpty() && !uuid.isEmpty()) {
-                p.clientUuid = uuid;
-                LOG_INFO(QString("   │   └─ 🔗 [身份补全] 该玩家此前缺失 UUID，现已成功绑定: %1").arg(uuid));
-            } else {
-                LOG_INFO(QString("   │   └─ 🆔 身份校验: UUID 状态正常 (%1)")
-                             .arg(p.clientUuid.isEmpty() ? "仍为空" : "已存在"));
             }
 
             break;
@@ -4132,18 +4123,18 @@ void Client::setPlayerReadyStates(const QString &uuid, const QString &name, bool
                 bool isLast = (count == m_players.size());
                 QString prefix = isLast ? "       └─ " : "       ├─ ";
 
-                LOG_INFO(QString("%1PID:%2 | Name:\"%3\" | UUID:\"%4\"")
+                LOG_INFO(QString("%1PID:%2 | Name:\"%3\" | ClientId:\"%4\"")
                              .arg(prefix)
                              .arg(it.key())
-                             .arg(it.value().name, it.value().clientUuid.isEmpty() ? "MISSING" : it.value().clientUuid));
+                             .arg(it.value().name, it.value().clientId.isEmpty() ? "MISSING" : it.value().clientId));
             }
         }
     }
 }
 
-bool Client::hasPlayerByUuid(const QString &uuid) const {
+bool Client::hasPlayerByClientId(const QString &clientId) const {
     for (const auto &p : m_players) {
-        if (p.clientUuid == uuid) return true;
+        if (p.clientId == clientId) return true;
     }
     return false;
 }

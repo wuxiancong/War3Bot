@@ -346,7 +346,7 @@ struct PlayerData {
     double          currentSpeedKBps        = 0.0;
 
     QString         name;
-    QString         clientUuid;
+    QString         clientId;
     QTcpSocket*     socket = nullptr;
     QTextCodec*     codec = nullptr;
     QHostAddress    extIp;
@@ -461,12 +461,12 @@ public:
     void syncPlayerReadyStates();                                                                               // 同步玩家准备状态
     void swapSlots(int slot1, int slot2);                                                                       // 交换玩家槽位
     void setGameTickInterval(quint16 interval = 50);                                                            // 设置发送频率
-    bool hasPlayerByUuid(const QString &uuid) const;                                                            // 房间是否存在玩家
+    bool hasPlayerByClientId(const QString &clientId) const;                                                            // 房间是否存在玩家
     bool hasPlayerByUserName(const QString &userName) const;                                                    // 房间是否存在玩家
     void setHost(QString creatorName) { m_host = creatorName; };                                                // 设置房间房主名字
     quint16 getGameTickInterval() const { return m_gameTickInterval; }                                          // 获取发送频率
     void setMaxDownloadSpeed(quint32 kbps) { m_maxDownloadSpeed = kbps; }                                       // 设置地图最大下载数度
-    void setPlayerReadyStates(const QString &uuid, const QString &name, bool ready);                            // 设置玩家准备状态
+    void setPlayerReadyStates(const QString &clientId, const QString &name, bool ready);                            // 设置玩家准备状态
     void createGame(const QString &gameName, const QString &password,
                     ProviderVersion providerVersion, ComboGameType comboGameType,
                     SubGameType subGameType, LadderType ladderType,CommandSource commandSource);                // 创建游戏
@@ -511,7 +511,7 @@ public:
     bool isSlotOccupied(int slotIndex) const;
     int getSlotIndexByPid(quint8 pid) const;
     QString getPlayerNameByPid(quint8 pid) const;
-    quint8 getPidByUuid(const QString &uuid) const;
+    quint8 getPidByClientId(const QString &clientId) const;
     quint8 getPidBySocket(QTcpSocket *socket) const;
     quint8 getPidByPlayerName(const QString &PlayerName) const;
     QString getPlayerNameBySocket(QTcpSocket *socket) const;

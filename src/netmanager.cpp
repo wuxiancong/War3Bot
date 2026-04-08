@@ -137,7 +137,7 @@ bool NetManager::setupDatabase()
 
         // --- [第二部分：CC 平台扩展字段] ---
         "nickname VARCHAR(32) DEFAULT '' COMMENT '显示昵称',"
-        "last_uuid VARCHAR(40) DEFAULT '' COMMENT '软件安装实例UUID',"
+        "last_clientId VARCHAR(40) DEFAULT '' COMMENT '软件安装实例ClientId',"
         "last_hwid VARCHAR(64) DEFAULT '' COMMENT '物理硬件指纹',"
 
         // --- [双重验证与来源追踪] ---
@@ -752,97 +752,28 @@ void NetManager::handleIncomingDatagram(const QNetworkDatagram &datagram)
     }
 
     switch (packetType) {
-    case PacketType::C_S_REGISTER:
+    case C_S_REGISTER:
         if (header->payloadLen >= sizeof(CSRegisterPacket)) {
             LOG_INFO("📥 [UDP 接收] C_S_REGISTER (注册请求)");
             handleRegister(header, reinterpret_cast<CSRegisterPacket*>(payload), datagram.senderAddress(), datagram.senderPort());
         }
         break;
 
-    case PacketType::C_S_HEARTBEAT:
-    case PacketType::C_S_PING:
+    case C_S_HEARTBEAT:
+    case C_S_PING:
         handleHeartbeat(header, datagram.senderAddress(), datagram.senderPort());
         break;
 
-    case PacketType::C_S_ROOM_PING:
+    case C_S_ROOM_PING:
         LOG_INFO("📥 [UDP 接收] C_S_ROOM_PING (房间列表Ping)");
         handleRoomPing(header, payload, datagram.senderAddress(), datagram.senderPort());
         break;
 
-    case PacketType::C_S_CHECKMAPCRC:
+    case C_S_CHECKMAPCRC:
         if (header->payloadLen >= sizeof(CSCheckMapCRCPacket)) {
             LOG_INFO("📥 [UDP 接收] C_S_CHECKMAPCRC (地图校验检查)");
             handleCheckMapCRC(header, reinterpret_cast<CSCheckMapCRCPacket*>(payload),
                               datagram.senderAddress(), datagram.senderPort());
-        }
-        break;
-
-    case PacketType::C_S_PREJOINROOM: {
-        LOG_INFO("📨 [UDP 接收] C_S_PREJOINROOM (加入意向申报)");
-
-        // 1. 协议长度预检
-        if (header->payloadLen < sizeof(CSPreJoinRoomPacket)) {
-            LOG_ERROR(QString("   └── ❌ 校验失败: 负载长度不足 (%1 < %2)")
-                          .arg(header->payloadLen).arg(sizeof(CSPreJoinRoomPacket)));
-            break;
-        }
-
-        const CSPreJoinRoomPacket *info = reinterpret_cast<const CSPreJoinRoomPacket*>(payload);
-
-        // 2. 提取字段
-        QString userName = QString::fromUtf8(info->userName, strnlen(info->userName, 32)).trimmed();
-        QString roomName = QString::fromUtf8(info->roomName, strnlen(info->roomName, 32)).trimmed();
-        QString hostName = QString::fromUtf8(info->hostName, strnlen(info->hostName, 32)).trimmed();
-        QString clientId = QString::fromUtf8(info->clientId, strnlen(info->clientId, 64)).trimmed();
-
-        // 3. 准备 UDP 回执包
-        SCPreJoinRoomPacket resp;
-        memset(&resp, 0, sizeof(resp));
-        qstrncpy(resp.userName, info->userName, sizeof(resp.userName));
-        qstrncpy(resp.hostName, info->hostName, sizeof(resp.hostName));
-
-        // 4. 业务逻辑拦截
-        if (userName.isEmpty() || clientId.isEmpty()) {
-            resp.status = 0;
-            resp.errorCode = ERR_PARAM_ERROR;
-            LOG_ERROR("   └── ❌ 申报拒绝: 关键参数缺失");
-        }
-        else if (DbManager::instance().isHardwareIdBanned(clientId) ||
-                 DbManager::instance().isUsernameBanned(userName)) {
-            resp.status = 0;
-            resp.errorCode = ERR_BANNED_USER;
-            LOG_WARNING(QString("   ├── 🛡️ [黑名单拦截] 封禁玩家试图进入房间: %1").arg(userName));
-        }
-        else if (m_botManager && !m_botManager->isRoomExist(roomName)) {
-            resp.status = 0;
-            resp.errorCode = ERR_GAME_NOT_FOUND;
-            LOG_WARNING(QString("   └── 🛑 申报拒绝: 房间 [%1] 不存在").arg(roomName));
-        }
-        else {
-            QWriteLocker locker(&m_preJoinLock);
-            m_preJoins.insert(userName.toLower(), clientId);
-
-            resp.status = 1;
-            resp.errorCode = ERR_OK;
-
-            LOG_INFO(QString("   ├── 👤 玩家名称: %1").arg(userName));
-            LOG_INFO(QString("   ├── 🆔 客户端ID: %1").arg(clientId));
-            LOG_INFO(QString("   └── ✅ 状态: 意向记录成功 (UDP 通道)"));
-        }
-
-        // 5. 通过 UDP 原路回发确认包
-        sendUdpPacket(datagram.senderAddress(), datagram.senderPort(), PacketType::S_C_PREJOINROOM, &resp, sizeof(resp));
-
-        if (resp.status == 1) {
-            LOG_INFO("   └── 🚀 动作执行: S_C_PREJOINROOM 已回发确认，等待魔兽 TCP 连接");
-        }
-    }
-    break;
-
-    case PacketType::C_S_COMMAND:
-        if (header->payloadLen >= sizeof(CSCommandPacket)) {
-            LOG_INFO("📥 [UDP 接收] C_S_COMMAND (业务指令)");
-            handleCommand(header, reinterpret_cast<CSCommandPacket*>(payload));
         }
         break;
 
@@ -937,7 +868,7 @@ void NetManager::handleRegister(const PacketHeader *header, const CSRegisterPack
     // 4. 打印简洁树状日志
     LOG_INFO(QString("┌── [用户注册] 来自: %1:%2").arg(actualPublicIp).arg(senderPort));
     LOG_INFO(QString("├── 身份: %1 (SID: %2)").arg(username).arg(newSessionId));
-    LOG_INFO(QString("├── 设备: UUID: %1 | HWID: %2").arg(clientId, hardwareId));
+    LOG_INFO(QString("├── 设备: ClientId: %1 | HWID: %2").arg(clientId, hardwareId));
     LOG_INFO(QString("├── 本地: %1:%2").arg(localIp).arg(packet->localPort));
 
     // 对比汇报与实际
@@ -965,9 +896,9 @@ void NetManager::handleUnregister(const PacketHeader *header)
         return;
     }
 
-    QString uuid = m_sessionIndex.take(header->sessionId);
-    if (m_registerInfos.contains(uuid)) {
-        RegisterInfo info = m_registerInfos.take(uuid);
+    QString clientId = m_sessionIndex.take(header->sessionId);
+    if (m_registerInfos.contains(clientId)) {
+        RegisterInfo info = m_registerInfos.take(clientId);
 
         // 计算在线时长
         qint64 durationSec = (QDateTime::currentMSecsSinceEpoch() - info.firstSeen) / 1000;
@@ -979,7 +910,7 @@ void NetManager::handleUnregister(const PacketHeader *header)
         LOG_INFO(QString("├── 时长: %1").arg(durationStr));
         LOG_INFO(QString("└── 状态: 已离线 (内存资源已回收)"));
     } else {
-        LOG_ERROR(QString("└── [系统异常] 索引与主表不同步 (UUID: %1)").arg(uuid));
+        LOG_ERROR(QString("└── [系统异常] 索引与主表不同步 (ClientId: %1)").arg(clientId));
     }
 }
 
@@ -995,12 +926,12 @@ quint8 NetManager::updateSessionState(quint32 sessionId, const QHostAddress &add
         return Unregistered;
     }
 
-    QString uuid = m_sessionIndex.value(sessionId);
-    if (!m_registerInfos.contains(uuid)) {
+    QString clientId = m_sessionIndex.value(sessionId);
+    if (!m_registerInfos.contains(clientId)) {
         return Unregistered;
     }
 
-    RegisterInfo &info = m_registerInfos[uuid];
+    RegisterInfo &info = m_registerInfos[clientId];
 
     // 1. 更新活跃时间
     info.lastSeen = QDateTime::currentMSecsSinceEpoch();
@@ -1097,7 +1028,7 @@ void NetManager::handleCommand(const PacketHeader *header, const CSCommandPacket
 {
     QWriteLocker locker(&m_registerInfosLock);
 
-    // 1. 首先根据 SessionID 查找对应的 ClientID (UUID)
+    // 1. 首先根据 SessionID 查找对应的 ClientID (ClientId)
     if (!m_sessionIndex.contains(header->sessionId)) {
         LOG_WARNING(QString("⚠️ [指令拒绝] 未知的 SessionID: %1").arg(header->sessionId));
         return;
@@ -1107,7 +1038,7 @@ void NetManager::handleCommand(const PacketHeader *header, const CSCommandPacket
 
     // 2. 检查数据一致性
     if (!m_registerInfos.contains(recordedClientId)) {
-        LOG_WARNING(QString("⚠️ [指令拒绝] 数据不一致: UUID %1 的注册信息已丢失").arg(recordedClientId));
+        LOG_WARNING(QString("⚠️ [指令拒绝] 数据不一致: ClientId %1 的注册信息已丢失").arg(recordedClientId));
         return;
     }
 
@@ -1459,11 +1390,11 @@ void NetManager::handleTcpUploadMessage(QTcpSocket *socket)
                         QWriteLocker locker(&m_registerInfosLock);
                         // 1. 先查索引
                         if (m_sessionIndex.contains(sid)) {
-                            QString uuid = m_sessionIndex.value(sid);
+                            QString clientId = m_sessionIndex.value(sid);
                             // 2. 再查主表
-                            if (m_registerInfos.contains(uuid)) {
-                                m_registerInfos[uuid].crcToken = currentCrcToken;
-                                clientName = m_registerInfos[uuid].username;
+                            if (m_registerInfos.contains(clientId)) {
+                                m_registerInfos[clientId].crcToken = currentCrcToken;
+                                clientName = m_registerInfos[clientId].username;
                                 updated = true;
                                 LOG_INFO(QString("🗺️ 已更新用户 %1 的地图CRC: %2 (via SessionID)")
                                              .arg(clientName, currentCrcToken));
@@ -1572,7 +1503,7 @@ void NetManager::handleTcpCustomMessage(QTcpSocket *socket)
                     currentClientId = clientId;
 
                     emit controlLinkEstablished(clientId);
-                    LOG_INFO(QString("🔗 [TCP 控制通道绑定] UUID: %1 | 状态: 绑定成功").arg(clientId));
+                    LOG_INFO(QString("🔗 [TCP 控制通道绑定] ClientId: %1 | 状态: 绑定成功").arg(clientId));
                 }
                 else if (connType == Tcp_W3GS) {
                     socket->setProperty("clientId", clientId);
@@ -1938,14 +1869,14 @@ void NetManager::sendRoomPong(const QHostAddress &targetAddr, quint16 targetPort
     QByteArray nameBytes = hostName.toUtf8();
     memcpy(resp.targetHostName, nameBytes.constData(), qMin(nameBytes.size(), 31));
 
-    // 填充 UUID
+    // 填充 ClientId
     QByteArray idBytes = clientId.toUtf8();
     memcpy(resp.targetClientId, idBytes.constData(), qMin(idBytes.size(), 63));
 
     LOG_INFO("📤 [UDP] 下发 RoomPong 响应包");
     LOG_INFO(QString("   ├── 📍 目标: %1:%2").arg(targetAddr.toString()).arg(targetPort));
     LOG_INFO(QString("   ├── 👤 房主: %1").arg(hostName.isEmpty() ? "N/A" : hostName));
-    LOG_INFO(QString("   ├── 🆔 UUID: %1").arg(clientId.isEmpty() ? "N/A" : clientId));
+    LOG_INFO(QString("   ├── 🆔 ClientId: %1").arg(clientId.isEmpty() ? "N/A" : clientId));
     LOG_INFO(QString("   ├── ⏱️ 原始时间戳: %1").arg(clientTime));
     LOG_INFO(QString("   ├── 👥 当前人数:   %1").arg(current));
     LOG_INFO(QString("   └── 📏 最大人数:   %1").arg(max));
@@ -2047,13 +1978,13 @@ void NetManager::sendUploadResult(QTcpSocket* socket, const QString& crc, const 
     if (!found && fallbackSessionId != 0) {
         // 尝试通过索引直接查找
         if (m_sessionIndex.contains(fallbackSessionId)) {
-            QString uuid = m_sessionIndex.value(fallbackSessionId);
-            if (m_registerInfos.contains(uuid)) {
-                const RegisterInfo &info = m_registerInfos[uuid];
+            QString clientId = m_sessionIndex.value(fallbackSessionId);
+            if (m_registerInfos.contains(clientId)) {
+                const RegisterInfo &info = m_registerInfos[clientId];
                 targetAddr = QHostAddress(info.publicIp);
                 targetPort = info.publicPort;
                 found = true;
-                LOG_INFO(QString("✅ 通过索引找回用户: %1 (Session: %2)").arg(uuid).arg(fallbackSessionId));
+                LOG_INFO(QString("✅ 通过索引找回用户: %1 (Session: %2)").arg(clientId).arg(fallbackSessionId));
             }
         }
     }
@@ -2171,7 +2102,7 @@ void NetManager::cleanupExpiredClients()
 
     // 定义临时结构体存储待删除信息，避免在 remove 时丢失用户名等信息
     struct ExpiredClient {
-        QString uuid;
+        QString clientId;
         QString username;
         quint64 silenceDuration;
     };
@@ -2200,32 +2131,32 @@ void NetManager::cleanupExpiredClients()
         bool isLast = (i == expiredList.size() - 1);
         QString prefix = isLast ? "   └─ " : "   ├─ ";
 
-        // 打印详情：显示用户名、UUID前8位、沉默秒数
-        LOG_INFO(QString("%1🚫 移除: %2 (UUID: %3...) | 已沉默: %4s")
-                     .arg(prefix, client.username, client.uuid)
+        // 打印详情：显示用户名、ClientId前8位、沉默秒数
+        LOG_INFO(QString("%1🚫 移除: %2 (ClientId: %3...) | 已沉默: %4s")
+                     .arg(prefix, client.username, client.clientId)
                      .arg(client.silenceDuration / 1000.0, 0, 'f', 1));
 
         // 执行移除
-        removeClientInternal(client.uuid);
-        emit clientExpired(client.uuid);
+        removeClientInternal(client.clientId);
+        emit clientExpired(client.clientId);
     }
 }
 
-void NetManager::removeClientInternal(const QString &uuid)
+void NetManager::removeClientInternal(const QString &clientId)
 {
-    if (!m_registerInfos.contains(uuid)) return;
+    if (!m_registerInfos.contains(clientId)) return;
 
-    RegisterInfo info = m_registerInfos[uuid];
+    RegisterInfo info = m_registerInfos[clientId];
     m_watchdog.markSessionInactive(QHostAddress(info.publicIp), info.sessionId);
 
     // 1. 获取 SessionID
-    quint32 sid = m_registerInfos[uuid].sessionId;
+    quint32 sid = m_registerInfos[clientId].sessionId;
 
     // 2. 删索引
     m_sessionIndex.remove(sid);
 
     // 3. 删主表
-    m_registerInfos.remove(uuid);
+    m_registerInfos.remove(clientId);
 }
 
 // ==================== 工具函数 ====================
@@ -2274,7 +2205,7 @@ QString NetManager::getHwidByUsername(const QString &username)
     return hwid;
 }
 
-QString NetManager::getUuidByPreJoinName(const QString &pName)
+QString NetManager::getClientIdByPreJoinName(const QString &pName)
 {
     if (pName.isEmpty()) return "";
 
@@ -2282,10 +2213,10 @@ QString NetManager::getUuidByPreJoinName(const QString &pName)
     QWriteLocker locker(&m_preJoinLock);
 
     if (m_preJoins.contains(lowerName)) {
-        QString uuid = m_preJoins.take(lowerName);
-        LOG_INFO(QString("🎯 [UUID 匹配成功] 玩家: %1 -> UUID: %2")
-                     .arg(pName, uuid));
-        return uuid;
+        QString clientId = m_preJoins.take(lowerName);
+        LOG_INFO(QString("🎯 [ClientId 匹配成功] 玩家: %1 -> ClientId: %2")
+                     .arg(pName, clientId));
+        return clientId;
     }
 
     return "";

@@ -77,7 +77,7 @@ public:
     bool isRunning() const;
     QByteArray getAppSecret() const;
     QList<RegisterInfo> getOnlinePlayers() const;
-    QString getUuidByPreJoinName(const QString &userName);
+    QString getClientIdByPreJoinName(const QString &userName);
     bool isClientRegistered(const QString &clientId) const;
     bool sendMessageToClient(const QString &clientId, PacketType type, quint8 code, quint64 data = 0, bool isUdp = false);
     void sendRoomPong(const QHostAddress &targetAddr, quint16 targetPort, quint64 clientTime, quint8 current, quint8 max,

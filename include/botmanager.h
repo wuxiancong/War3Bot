@@ -34,13 +34,13 @@ public:
     bool createBotAccountFilesIfNotExist(bool allowAutoGenerate, int targetListNumber);
     void handleHostCommand(const QString &userName, const QString &clientId, const QString &text);
     void removeGame(Bot *bot, bool disconnectFlag = false, const QString &reason = "Unspecified");
-    bool createGame(const QString &hostName, const QString &gameName, const QString &gameMode, CommandSource commandSource, const QString &clientUuid);
+    bool createGame(const QString &hostName, const QString &gameName, const QString &gameMode, CommandSource commandSource, const QString &clientId);
 
 signals:
     void botStateChanged(int botId, QString username, BotState newState);
     
 public slots:
-    void onBotCommandReceived(const QString &userName, const QString &clientUuid, const QString &command, const QString &text);
+    void onBotCommandReceived(const QString &userName, const QString &clientId, const QString &command, const QString &text);
     void onBotClientExpired(const QString &clientId);
 
 private slots:

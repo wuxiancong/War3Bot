@@ -678,9 +678,12 @@ void BotManager::removeGame(Bot *bot, bool disconnectFlag, const QString &reason
     }
 
     // 5. 重置状态
-    bot->resetGameState(disconnectFlag, reason.toUtf8().constData());
     bot->state = disconnectFlag ? BotState::Disconnected : BotState::Idle;
+    bot->resetGameState(disconnectFlag, reason.toUtf8().constData());
     emit botStateChanged(bot->id, bot->username, bot->state);
+
+    // 6. 取消游戏
+    bot->client->cancelGame();
 }
 
 void BotManager::removeBotMappings(const QString &clientId, const QString &hostName)
@@ -689,9 +692,9 @@ void BotManager::removeBotMappings(const QString &clientId, const QString &hostN
     if (!clientId.isEmpty()) {
         bool removedCid = m_clientIdToBotMap.remove(clientId) > 0;
         if (removedCid) {
-            LOG_INFO(QString("   ├── 🆔 移除 UUID 映射: %1 -> ✅ 成功").arg(clientId));
+            LOG_INFO(QString("   ├── 🆔 移除 ClientId 映射: %1 -> ✅ 成功").arg(clientId));
         } else {
-            LOG_WARNING(QString("   ├── 🆔 移除 UUID 映射: %1 -> ⚠️ 未在表中").arg(clientId));
+            LOG_WARNING(QString("   ├── 🆔 移除 ClientId 映射: %1 -> ⚠️ 未在表中").arg(clientId));
         }
     }
 
@@ -784,7 +787,7 @@ bool BotManager::checkCooldown(const QString &clientId, const QString &command, 
             // 通知客户端进入冷却
             m_netManager->sendMessageToClient(clientId, S_C_ERROR, ERR_COOLDOWN, remaining);
 
-            LOG_INFO(QString("⏳ [频率限制] UUID: %1 | 指令: %2 | 剩余: %3ms")
+            LOG_INFO(QString("⏳ [频率限制] ClientId: %1 | 指令: %2 | 剩余: %3ms")
                          .arg(clientId, command).arg(remaining));
             return false;
         }
@@ -822,9 +825,9 @@ void BotManager::handleHostCommand(const QString &userName, const QString &clien
     if (existingBotByCid != nullptr || existingBotByName != nullptr) {
         LOG_WARNING("   ├── 🛡️ [重复开房拦截] 系统检测到活跃冲突");
 
-        // 1. 检查基于设备/UUID的映射
+        // 1. 检查基于设备/ClientId的映射
         if (existingBotByCid) {
-            LOG_INFO(QString("   │   ├─ 📱 来源: 设备匹配 (UUID: %1)").arg(clientId));
+            LOG_INFO(QString("   │   ├─ 📱 来源: 设备匹配 (ClientId: %1)").arg(clientId));
             LOG_INFO(QString("   │   ├─ 🏠 所在房间: [%1]").arg(existingBotByCid->gameInfo.gameName));
             LOG_INFO(QString("   │   └─ 👤 房间主人: %1").arg(existingBotByCid->hostname));
         }
@@ -835,7 +838,7 @@ void BotManager::handleHostCommand(const QString &userName, const QString &clien
 
             LOG_INFO(QString("   │   ├─ 👤 来源: 账号匹配 (用户名: %1)").arg(userName));
             LOG_INFO(QString("   │   ├─ 🏠 所在房间: [%1]").arg(existingBotByName->gameInfo.gameName));
-            LOG_INFO(QString("   │   └─ 🆔 绑定UUID: %1 %2")
+            LOG_INFO(QString("   │   └─ 🆔 绑定ClientId: %1 %2")
                          .arg(existingBotByName->gameInfo.clientId, isDifferentBot ? "[⚠️ 与当前请求ID不符]" : ""));
         }
 
@@ -935,7 +938,7 @@ void BotManager::onBotClientExpired(const QString &clientId)
 {
     Bot *bot = findBotByClientId(clientId);
     if (bot) {
-        LOG_INFO(QString("🧹 [系统自动回收] 检测到 UUID %1 会话已过期，正在强制解散房间").arg(clientId));
+        LOG_INFO(QString("🧹 [系统自动回收] 检测到 ClientId %1 会话已过期，正在强制解散房间").arg(clientId));
         removeGame(bot, true, "Session Expired");
     }
 }
@@ -958,7 +961,7 @@ void BotManager::onBotCommandReceived(const QString &userName,
         return;
 
     LOG_INFO("📨 [收到用户指令]");
-    LOG_INFO(QString("   ├─ 👤 发送者: %1 (UUID: %2)").arg(userName, clientId));
+    LOG_INFO(QString("   ├─ 👤 发送者: %1 (ClientId: %2)").arg(userName, clientId));
     LOG_INFO(QString("   └─ 💬 内容:   %1 %2").arg(trimmedCommand, text));
 
     // --- 2. 指令逻辑分发 ---
@@ -970,7 +973,7 @@ void BotManager::onBotCommandReceived(const QString &userName,
     // --- 3. 处理准备/取消准备 (所有玩家可用) ---
     if (trimmedCommand == "/ready" || trimmedCommand == "/unready" ||
         trimmedCommand == "/swapself" || trimmedCommand == "/swap") {
-        LOG_INFO(QString("[指令处理] 收到玩家 %1 (UUID: %2) 的指令: %3")
+        LOG_INFO(QString("[指令处理] 收到玩家 %1 (ClientId: %2) 的指令: %3")
                      .arg(userName, clientId, trimmedCommand));
 
         Bot *targetBot = nullptr;
@@ -980,7 +983,7 @@ void BotManager::onBotCommandReceived(const QString &userName,
 
             bool isHost = bot->isOwner(clientId) || (bot->hostname.compare(userName, Qt::CaseInsensitive) == 0);
 
-            bool isMember = bot->client->hasPlayerByUuid(clientId) || bot->client->hasPlayerByUserName(userName);
+            bool isMember = bot->client->hasPlayerByClientId(clientId) || bot->client->hasPlayerByUserName(userName);
 
             if (isHost || isMember) {
                 targetBot = bot;
@@ -1010,7 +1013,7 @@ void BotManager::onBotCommandReceived(const QString &userName,
 
             }
             else if (trimmedCommand == "/swapself") {
-                quint8 myPid = client->getPidByUuid(clientId);
+                quint8 myPid = client->getPidByClientId(clientId);
                 if (myPid == 0) {
                     myPid = client->getPidByPlayerName(userName);
                 }
@@ -1090,12 +1093,12 @@ void BotManager::onBotCommandReceived(const QString &userName,
 
     // --- 4. 特殊处理 /unhost (仅限当前真正的房主) ---
     if (trimmedCommand == "/unhost") {
-        LOG_INFO(QString("🧹 [指令] 玩家 %1 (UUID: %2) 请求解散房间").arg(userName, clientId));
+        LOG_INFO(QString("🧹 [指令] 玩家 %1 (ClientId: %2) 请求解散房间").arg(userName, clientId));
 
         Bot *myBot = findBotByClientId(clientId);
 
         if (!myBot) {
-            LOG_WARNING(QString("   └── 🛑 [拒绝] 玩家 %1 并非当前活跃房主（UUID不匹配），忽略解散请求").arg(userName));
+            LOG_WARNING(QString("   └── 🛑 [拒绝] 玩家 %1 并非当前活跃房主（ClientId不匹配），忽略解散请求").arg(userName));
             return;
         }
 
@@ -1184,7 +1187,7 @@ void BotManager::onBotGameCreateSuccess(Bot *bot, bool isHotRefresh)
     // 4. 打印详细树状日志
     LOG_INFO(isHotRefresh ? "♻️ [房间看板热更新完成]" : "🎮 [房间创建完成回调]");
     LOG_INFO(QString("   ├─ 🤖 机器人实例: %1 (ID: %2)").arg(bot->username).arg(bot->id));
-    LOG_INFO(QString("   ├─ 👤 房主名称:  %1 (UUID: %2)").arg(bot->hostname, clientId));
+    LOG_INFO(QString("   ├─ 👤 房主名称:  %1 (ClientId: %2)").arg(bot->hostname, clientId));
     LOG_INFO(QString("   ├─ 🏠 房间名称:  %1").arg(bot->gameInfo.gameName));
     LOG_INFO(QString("   ├─ 🚩 游戏模式:  %1").arg(bot->gameInfo.gameMode));
     LOG_INFO(QString("   ├─ 🛡️ 地图校验:  0x%1").arg(QString::number(serverMapCrc, 16).toUpper()));
@@ -1295,34 +1298,34 @@ void BotManager::onBotRoomHostChanged(Bot *bot, const quint8 heirPid)
     const auto &players = bot->client->getPlayers();
     if (!players.contains(heirPid)) return;
 
-    QString oldUuid = bot->gameInfo.clientId;
+    QString oldClientId = bot->gameInfo.clientId;
     QString oldHostName = bot->gameInfo.hostName;
 
     QString newHostName = players[heirPid].name;
-    QString newUuid = players[heirPid].clientUuid;
+    QString newClientId = players[heirPid].clientId;
 
     m_hostNameToBotMap.remove(oldHostName.toLower());
     if (!newHostName.isEmpty()) {
         m_hostNameToBotMap.insert(newHostName.toLower(), bot);
     }
 
-    m_clientIdToBotMap.remove(oldUuid);
-    if (!newUuid.isEmpty()) {
-        m_clientIdToBotMap.insert(newUuid, bot);
+    m_clientIdToBotMap.remove(oldClientId);
+    if (!newClientId.isEmpty()) {
+        m_clientIdToBotMap.insert(newClientId, bot);
     }
 
     bot->hostname = newHostName;
-    bot->gameInfo.clientId = newUuid;
+    bot->gameInfo.clientId = newClientId;
     bot->gameInfo.hostName = newHostName;
     bot->hostJoined = true;
 
-    LOG_INFO(QString("👑 [映射同步完成] Bot-%1: 新房主 %2 (UUID: %3)")
-                 .arg(bot->id).arg(newHostName, newUuid));
+    LOG_INFO(QString("👑 [映射同步完成] Bot-%1: 新房主 %2 (ClientId: %3)")
+                 .arg(bot->id).arg(newHostName, newClientId));
 
     for (auto it = players.begin(); it != players.end(); ++it) {
         if (it.key() == 2) continue;
 
-        m_netManager->sendMessageToClient(it.value().clientUuid,
+        m_netManager->sendMessageToClient(it.value().clientId,
                                           S_C_MESSAGE,
                                           MSG_ROOM_HOST_CHANGE,
                                           heirPid);
@@ -1338,7 +1341,7 @@ void BotManager::onBotVisualHostLeft(Bot *bot)
 
     QString oldHostName = bot->gameInfo.hostName;
     QString newHostName = "";
-    QString newUuid = "";
+    QString newClientId = "";
     quint8 newHostPid = 0;
 
     const QMap<quint8, PlayerData> &players = bot->client->getPlayers();
@@ -1346,7 +1349,7 @@ void BotManager::onBotVisualHostLeft(Bot *bot)
     // 1. 寻找继承人 (在 Client 侧已经处理过 isVisualHost 标记)
     for (auto it = players.begin(); it != players.end(); ++it) {
         if (it.key() != 2 && it.value().isVisualHost) {
-            newUuid = it.value().clientUuid;
+            newClientId = it.value().clientId;
             newHostName = it.value().name;
             newHostPid = it.key();
             break;
@@ -1354,7 +1357,7 @@ void BotManager::onBotVisualHostLeft(Bot *bot)
     }
 
     // 2. 执行所有权交接逻辑
-    if (!newUuid.isEmpty()) {
+    if (!newClientId.isEmpty()) {
         LOG_INFO(QString("👑 [房主移交成功] 目标: %1 | 新房主: %2 (PID: %3)")
                      .arg(bot->gameInfo.gameName, newHostName).arg(newHostPid));
 
@@ -1362,8 +1365,8 @@ void BotManager::onBotVisualHostLeft(Bot *bot)
 
         // 3. 向全房间广播通知
         for (const auto &p : players) {
-            if (p.pid != 2 && !p.clientUuid.isEmpty()) {
-                m_netManager->sendMessageToClient(p.clientUuid, PacketType::S_C_MESSAGE, MSG_HOST_LEAVE_GAME, newHostPid);
+            if (p.pid != 2 && !p.clientId.isEmpty()) {
+                m_netManager->sendMessageToClient(p.clientId, PacketType::S_C_MESSAGE, MSG_HOST_LEAVE_GAME, newHostPid);
             }
         }
 
@@ -1458,12 +1461,12 @@ void BotManager::onBotRoomPingReceived(const QHostAddress &addr, quint16 port, c
     switch (mode) {
     case ByClientId:
         bot = findBotByClientId(identifier);
-        modeTag = "UUID Only";
+        modeTag = "ClientId Only";
         break;
     case ByBoth:
         bot = findBotByClientId(identifier);
         if (!bot) bot = findBotByHostName(identifier);
-        modeTag = "Both (Name & UUID)";
+        modeTag = "Both (Name & ClientId)";
         break;
     case ByHostName:
     default:
@@ -1497,17 +1500,17 @@ void BotManager::onBotRoomPingReceived(const QHostAddress &addr, quint16 port, c
     // 4. 根据模式准备发送给客户端的参数
     if (m_netManager) {
         QString outHost = "";
-        QString outUuid = "";
+        QString outClientId = "";
 
         if (isHit) {
             outHost = bot->hostname;
-            outUuid = bot->gameInfo.clientId;
+            outClientId = bot->gameInfo.clientId;
         }
 
-        m_netManager->sendRoomPong(addr, port, clientTime, current, max, outHost, outUuid);
+        m_netManager->sendRoomPong(addr, port, clientTime, current, max, outHost, outClientId);
 
-        LOG_INFO(QString("   └── ✅ 动作执行: 已回发 Pong (Host:%1 | UUID:%2)")
-                     .arg(outHost.isEmpty() ? "N/A" : outHost, outUuid.isEmpty() ? "N/A" : outUuid));
+        LOG_INFO(QString("   └── ✅ 动作执行: 已回发 Pong (Host:%1 | ClientId:%2)")
+                     .arg(outHost.isEmpty() ? "N/A" : outHost, outClientId.isEmpty() ? "N/A" : outClientId));
     }
 }
 
@@ -1515,7 +1518,7 @@ void BotManager::onBotRejoinRejected(Bot *bot, const QString &clientId, quint32 
 {
     if (!isBotValid(bot, "RejoinRejected")) return;
 
-    LOG_INFO(QString("📢 [重入通知] 房间: %1 | 通知 UUID: %2 | 冷却: %3ms")
+    LOG_INFO(QString("📢 [重入通知] 房间: %1 | 通知 ClientId: %2 | 冷却: %3ms")
                  .arg(bot->gameInfo.gameName, clientId).arg(remainingMs));
 
     if (m_netManager && !clientId.isEmpty()) {
@@ -1535,45 +1538,45 @@ void BotManager::onBotRoomPingsUpdated(Bot *bot, const QMap<quint8, quint32> &pi
         summary += QString("P%1:%2ms").arg(it.key()).arg(it.value());
     }
 
-    QSet<QString> targetUuids;
+    QSet<QString> targetClientIds;
 
     // A. 强制加入房间创建者
     if (!bot->gameInfo.clientId.isEmpty()) {
-        targetUuids.insert(bot->gameInfo.clientId);
+        targetClientIds.insert(bot->gameInfo.clientId);
     }
 
     // B. 加入房间内所有已识别的玩家
     const QMap<quint8, PlayerData> &roomPlayers = bot->client->getPlayers();
     for (const auto &player : roomPlayers) {
-        if (!player.clientUuid.isEmpty()) {
-            targetUuids.insert(player.clientUuid);
+        if (!player.clientId.isEmpty()) {
+            targetClientIds.insert(player.clientId);
         }
     }
 
     LOG_INFO(QString("📡 [延迟同步序列] 房间: %1").arg(bot->gameInfo.gameName));
     LOG_INFO(QString("   ├── 📊 实时数据: [%1]").arg(summary.isEmpty() ? "空" : summary));
-    LOG_INFO(QString("   ├── 👥 接收目标: %1 个实例").arg(targetUuids.size()));
+    LOG_INFO(QString("   ├── 👥 接收目标: %1 个实例").arg(targetClientIds.size()));
 
     int sentCount = 0;
-    int total = targetUuids.size();
+    int total = targetClientIds.size();
     int i = 0;
 
-    for (const QString &uuid : targetUuids) {
+    for (const QString &clientId : targetClientIds) {
         i++;
         bool isLast = (i == total);
         QString branch = isLast ? "   └── " : "   ├── ";
 
         // 发送 TCP 指令
         if (m_netManager) {
-            bool ok = m_netManager->sendRoomPings(uuid, vMap);
+            bool ok = m_netManager->sendRoomPings(clientId, vMap);
 
             if (ok) {
                 sentCount++;
-                bool isRoomOwner = (uuid == bot->gameInfo.clientId);
-                LOG_INFO(QString("%1🚀 下发至 %2 [UUID: %3]")
-                             .arg(branch, isRoomOwner ? "👑 房主" : "👤 玩家", uuid));
+                bool isRoomOwner = (clientId == bot->gameInfo.clientId);
+                LOG_INFO(QString("%1🚀 下发至 %2 [ClientId: %3]")
+                             .arg(branch, isRoomOwner ? "👑 房主" : "👤 玩家", clientId));
             } else {
-                LOG_INFO(QString("%1❌ 失败: 客户端 %2 已断开控制链路").arg(branch, uuid));
+                LOG_INFO(QString("%1❌ 失败: 客户端 %2 已断开控制链路").arg(branch, clientId));
             }
         }
     }
@@ -1632,25 +1635,25 @@ void BotManager::onBotReadyStateChanged(Bot *bot, const QVariantMap &readyData)
     }
 
     // 2. 收集发送目标
-    QSet<QString> targetUuids;
+    QSet<QString> targetClientIds;
     if (!bot->gameInfo.clientId.isEmpty()) {
-        targetUuids.insert(bot->gameInfo.clientId);
+        targetClientIds.insert(bot->gameInfo.clientId);
     }
 
     const QMap<quint8, PlayerData> &roomPlayers = bot->client->getPlayers();
     for (const auto &player : roomPlayers) {
-        if (!player.clientUuid.isEmpty()) {
-            targetUuids.insert(player.clientUuid);
+        if (!player.clientId.isEmpty()) {
+            targetClientIds.insert(player.clientId);
         }
     }
 
-    LOG_INFO(QString("   ├─ 📡 广播发送目标: %1 个客户端实例").arg(targetUuids.size()));
+    LOG_INFO(QString("   ├─ 📡 广播发送目标: %1 个客户端实例").arg(targetClientIds.size()));
 
     // 3. 执行下发
     int sendSuccessCount = 0;
-    for (const QString &uuid : targetUuids) {
+    for (const QString &clientId : targetClientIds) {
         if (m_netManager) {
-            m_netManager->sendRoomReadyStates(uuid, vMap);
+            m_netManager->sendRoomReadyStates(clientId, vMap);
             sendSuccessCount++;
         }
     }
