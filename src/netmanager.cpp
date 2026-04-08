@@ -1556,8 +1556,10 @@ void NetManager::handleTcpCustomMessage(QTcpSocket *socket)
             // 3. 准备回执包
             SCPreJoinRoomPacket resp;
             memset(&resp, 0, sizeof(resp));
-            strncpy(resp.userName, info->userName, 31);
-            strncpy(resp.hostName, info->hostName, 31);
+            memset(resp.userName, 0, sizeof(resp.userName));
+            strncpy(resp.userName, info->userName, sizeof(resp.userName) - 1);
+            memset(resp.hostName, 0, sizeof(resp.hostName));
+            strncpy(resp.hostName, info->hostName, sizeof(resp.hostName) - 1);
 
             // 4. 业务逻辑拦截
             if (userName.isEmpty() || clientId.isEmpty()) {

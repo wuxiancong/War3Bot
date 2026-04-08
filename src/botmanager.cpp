@@ -653,34 +653,58 @@ void BotManager::removeGame(Bot *bot, bool disconnectFlag, const QString &reason
 {
     if (!isBotValid(bot, "RemoveGame")) return;
 
-    // 1. 拦截状态
-    if (bot->state == BotState::Connecting ||
-        bot->state == BotState::Unregistered ||
-        bot->state == BotState::Authenticated ||
-        bot->state == BotState::Creating) {
+    // --- 1. 状态锁：细分拦截逻辑 ---
 
-        LOG_INFO(QString("🛡️ [状态锁] 成功拦截旧链路信号: Bot-%1 当前正处于 %2 阶段，已拒绝来自 (%3) 的清理请求")
-                     .arg(bot->id)
-                     .arg(bot->botStateToString(bot->state), reason));
+    if (bot->state == BotState::Connecting) {
+        // 使用链式 .arg().arg() 修复编译错误
+        LOG_INFO(QString("🛡️ [状态锁] Bot-%1 正在发起网络连接，已拦截来自 (%2) 的清理请求")
+                     .arg(bot->id).arg(reason));
         return;
     }
 
-    // 2. 标记清理中
+    if (bot->state == BotState::Unregistered) {
+        LOG_INFO(QString("🛡️ [状态锁] Bot-%1 尚未完成账号注册，已拦截来自 (%2) 的清理请求")
+                     .arg(bot->id).arg(reason));
+        return;
+    }
+
+    if (bot->state == BotState::Authenticated) {
+        LOG_INFO(QString("🛡️ [状态锁] Bot-%1 已通过身份验证但尚未就绪，已拦截来自 (%2) 的清理请求")
+                     .arg(bot->id).arg(reason));
+        return;
+    }
+
+    if (bot->state == BotState::Creating) {
+        LOG_INFO(QString("🛡️ [状态锁] Bot-%1 正在执行房间创建指令，已拦截来自 (%2) 的清理请求")
+                     .arg(bot->id).arg(reason));
+        return;
+    }
+
+    // --- 2. 递归保护 ---
+    if (bot->state == BotState::Finishing) {
+        LOG_INFO(QString("🛡️ [递归拦截] Bot-%1 已经在清理序列中，跳过重复请求 (%2)")
+                     .arg(bot->id).arg(reason));
+        return;
+    }
+
+    // --- 3. 执行清理序列 ---
+
     bot->state = BotState::Finishing;
 
     LOG_INFO(QString("🧹 [执行清理] 机器人: %1 | 原因: %2").arg(bot->username, reason));
 
-    // 3. 注销全局映射
+    // A. 注销全局映射
     unregisterBotMappings(bot->gameInfo.clientId, bot->hostname, bot->gameInfo.gameName);
 
-    // 4. 执行状态重置
+    // B. 执行机器人内部重置
     bot->resetGame(disconnectFlag, false, reason);
 
-    // 5. 发出状态变更信号
+    // C. 向外部发射状态变更信号
     emit botStateChanged(bot->id, bot->username, bot->state);
 
-    // 6. 取消底层游戏逻辑
+    // D. 执行最后的协议层面取消动作
     if (bot->client) {
+        LOG_INFO(QString("   └─ 📡 协议动作: 调用底层 Client::cancelGame"));
         bot->client->cancelGame();
     }
 }
@@ -1336,10 +1360,10 @@ void BotManager::onBotRoomHostChanged(Bot *bot, const quint8 heirPid)
     unregisterBotMappings(oldClientId, oldHostName, "");
 
     // 2. 更新机器人内部属性
+    bot->hostJoined = true;
     bot->hostname = newHostName;
     bot->gameInfo.clientId = newClientId;
     bot->gameInfo.hostName = newHostName;
-    bot->hostJoined = true;
 
     // 3. 注册全局搜索映射表
     registerBotMappings(bot);
@@ -1797,13 +1821,35 @@ void BotManager::onBotGameCancelled(Bot *bot)
 {
     if (!isBotValid(bot, "GameCancelled")) return;
 
-    if (bot->state == BotState::Creating) {
-        LOG_INFO(QString("🛡️ [信号拦截] Bot-%1 正在开启新房间，忽略旧局取消信号").arg(bot->id));
+    // --- 1. 递归保护：防止 removeGame 过程中再次触发信号 ---
+    if (bot->state == BotState::Finishing) {
+        LOG_INFO(QString("🛡️ [递归拦截] Bot-%1 正在执行清理流程，已忽略重复信号").arg(bot->id));
         return;
     }
 
-    LOG_INFO(QString("🔄 [状态同步] 收到 Client 取消信号: Bot-%1").arg(bot->id));
+    // --- 2. 空闲保护：防止对已在大厅的机器人重复操作 ---
+    if (bot->state == BotState::Idle) {
+        LOG_INFO(QString("🛡️ [状态忽略] Bot-%1 已经是空闲状态 (Idle)，无需处理取消信号").arg(bot->id));
+        return;
+    }
 
+    // --- 3. 断线保护：防止对已下线的机器人发送协议包 ---
+    if (bot->state == BotState::Disconnected) {
+        LOG_INFO(QString("🛡️ [断线拦截] Bot-%1 链路已断开，已忽略取消信号").arg(bot->id));
+        return;
+    }
+
+    // --- 4. 流程保护：防止旧房间的取消信号破坏新房间的创建 ---
+    if (bot->state == BotState::Creating) {
+        LOG_INFO(QString("🛡️ [流程拦截] Bot-%1 正在开启新房间，已拦截旧局延迟信号").arg(bot->id));
+        return;
+    }
+
+    // --- 5. 状态确认：记录当前正在处理的活跃取消动作 ---
+    LOG_INFO(QString("🔄 [状态同步] 收到 Client 取消信号: Bot-%1 | 触发清理序列 (当前状态: %2)")
+                 .arg(bot->id).arg(bot->botStateToString(bot->state)));
+
+    // 执行核心清理逻辑
     removeGame(bot, false, "Game Cancelled");
 }
 
