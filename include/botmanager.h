@@ -20,6 +20,7 @@ public:
 
     void cleanup();
     void startAllBots();
+    void cleanupGhostRooms();
     int loadMoreBots(int count);
     void processNextRegistration();
     void setServerPort(quint16 port);
@@ -28,6 +29,7 @@ public:
     void setNetManager(NetManager *netManager);
     Bot *findBotByHostName(const QString &hostName);
     Bot *findBotByClientId(const QString &clientId);
+    bool isGhostRoom(Bot *bot, const QString &mappedName);
     void initializeBots(quint32 initialCount, const QString &configPath);
     bool checkCooldown(const QString &clientId, const QString &command, qint64 now);
     bool createBotAccountFilesIfNotExist(bool allowAutoGenerate, int targetListNumber);

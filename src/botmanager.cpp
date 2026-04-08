@@ -802,10 +802,67 @@ void BotManager::setNetManager(NetManager *netManager)
     }
 }
 
+bool BotManager::isGhostRoom(Bot *bot, const QString &mappedName)
+{
+    if (!bot) return true;
+
+    bool invalidState = (bot->state == BotState::Idle ||
+                         bot->state == BotState::Disconnected ||
+                         bot->state == BotState::Finishing);
+
+    bool dataMismatch = (bot->gameInfo.gameName.isEmpty() ||
+                         bot->gameInfo.gameName.toLower() != mappedName.toLower());
+
+    return invalidState || dataMismatch;
+}
+
 bool BotManager::isRoomExist(const QString &roomName)
 {
     if (roomName.isEmpty()) return false;
-    return m_activeGames.contains(roomName.toLower());
+
+    QString lowerName = roomName.toLower();
+
+    if (!m_activeGames.contains(lowerName)) {
+        return false;
+    }
+
+    Bot *bot = m_activeGames.value(lowerName);
+
+    if (isGhostRoom(bot, lowerName)) {
+        LOG_WARNING(QString("   🧹 [懒清理] 发现房间名 [%1] 的映射已失效 (Bot状态: %2)，正在自动移除...")
+                        .arg(lowerName, bot ? bot->botStateToString(bot->state) : "Null"));
+
+        m_activeGames.remove(lowerName);
+        return false;
+    }
+
+    return true;
+}
+
+void BotManager::cleanupGhostRooms()
+{
+    LOG_INFO("🔍 [系统巡检] 正在扫描并清理幽灵房间映射...");
+
+    int count = 0;
+    auto it = m_activeGames.begin();
+
+    while (it != m_activeGames.end()) {
+        if (isGhostRoom(it.value(), it.key())) {
+            LOG_WARNING(QString("   🧹 移除失效房名映射: [%1] -> Bot: %2 (状态: %3)")
+                            .arg(it.key())
+                            .arg(it.value() ? it.value()->username : "Null")
+                            .arg(it.value() ? it.value()->botStateToString(it.value()->state) : "N/A"));
+
+            it = m_activeGames.erase(it);
+            count++;
+        } else {
+            ++it;
+        }
+    }
+
+    if (count > 0) {
+        LOG_INFO(QString("   ✅ 清理完成，共移除 %1 条幽灵映射").arg(count));
+    }
 }
 
 Bot *BotManager::findBotByHostName(const QString &hostName)
@@ -873,26 +930,11 @@ bool BotManager::checkCooldown(const QString &clientId, const QString &command, 
 void BotManager::handleHostCommand(const QString &userName, const QString &clientId, const QString &text)
 {
     LOG_INFO("🎮 [创建房间流程]");
+    cleanupGhostRooms();
 
     // 1. 重复开房检查
     Bot *existingBotByCid = findBotByClientId(clientId);
     Bot *existingBotByName = findBotByHostName(userName);
-
-    auto isGhostBot = [](Bot* bot) {
-        return bot && (bot->gameInfo.gameName.isEmpty() || bot->state == BotState::Idle || bot->state == BotState::Disconnected);
-    };
-
-    if (isGhostBot(existingBotByCid)) {
-        LOG_WARNING(QString("   🧹 发现设备残留幽灵 Bot (ID:%1)，正在强制清除映射...").arg(existingBotByCid->id));
-        m_clientIdToBotMap.remove(clientId);
-        existingBotByCid = nullptr;
-    }
-
-    if (isGhostBot(existingBotByName)) {
-        LOG_WARNING(QString("   🧹 发现账号残留幽灵 Bot (ID:%1)，正在强制清除映射...").arg(existingBotByName->id));
-        m_hostNameToBotMap.remove(userName.toLower());
-        existingBotByName = nullptr;
-    }
 
     if (existingBotByCid != nullptr || existingBotByName != nullptr) {
         LOG_WARNING("   ├── 🛡️ [重复开房拦截] 系统检测到活跃冲突");
@@ -966,7 +1008,7 @@ void BotManager::handleHostCommand(const QString &userName, const QString &clien
     QString finalGameName = prefix + QString::fromUtf8(nameBytes);
 
     // 5. 重名检查
-    if (m_activeGames.contains(finalGameName.toLower())) {
+    if (isRoomExist(finalGameName)) {
         LOG_ERROR(QString("   └─ ❌ 错误: 房间名 [%1] 已存在").arg(finalGameName));
         m_netManager->sendMessageToClient(clientId, S_C_ERROR, ERR_GAME_NAME_EXISTS);
         return;
