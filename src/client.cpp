@@ -4018,7 +4018,7 @@ void Client::syncPlayerReadyStates()
 {
     QVariantMap syncMap;
 
-    // 1. 预筛选需要同步的玩家（排除机器人），方便计算索引
+    // 1. 预筛选需要同步的玩家
     QList<PlayerData> playersToSync;
     for (auto it = m_players.constBegin(); it != m_players.constEnd(); ++it) {
         if (it.key() != m_botPid) {
