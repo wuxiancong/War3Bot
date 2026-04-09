@@ -556,8 +556,8 @@ bool BotManager::createGame(const QString &hostName, const QString &gameName, co
                           bot->botStateToString(bot->state), bot->pendingTask.hasTask ? "🔴 Busy" : "🟢 Free"));
 
         QString auditString = QString("   👉 [信号审计] 认证: (连:%1, 发:%2) | 大厅: (连:%3, 发:%4)")
-                               .arg(authAudit.physicalLinks).arg(authAudit.triggerCount)
-                               .arg(chatAudit.physicalLinks).arg(chatAudit.triggerCount);
+                                  .arg(authAudit.physicalLinks).arg(authAudit.triggerCount)
+                                  .arg(chatAudit.physicalLinks).arg(chatAudit.triggerCount);
 
         if (authAudit.physicalLinks == 0) LOG_ERROR(auditString + " ❌ 物理断路！");
         else LOG_INFO(auditString);
@@ -849,9 +849,9 @@ void BotManager::cleanupGhostRooms()
     while (it != m_activeGames.end()) {
         if (isGhostRoom(it.value(), it.key())) {
             LOG_WARNING(QString("   🧹 移除失效房名映射: [%1] -> Bot: %2 (状态: %3)")
-                            .arg(it.key())
-                            .arg(it.value() ? it.value()->username : "Null")
-                            .arg(it.value() ? it.value()->botStateToString(it.value()->state) : "N/A"));
+                            .arg(it.key(),
+                                 it.value() ? it.value()->username : "Null",
+                                 it.value() ? it.value()->botStateToString(it.value()->state) : "N/A"));
 
             it = m_activeGames.erase(it);
             count++;
@@ -1734,18 +1734,31 @@ void BotManager::onBotReadyStateChanged(Bot *bot, const QVariantMap &readyData)
 
     // 2. 收集发送目标
     QSet<QString> targetClientIds;
+    LOG_INFO("   ├─ 🎯 正在构建广播目标列表...");
+
+    // 房主保底
     if (!bot->gameInfo.clientId.isEmpty()) {
         targetClientIds.insert(bot->gameInfo.clientId);
+        LOG_INFO(QString("   │  ├─ 🏠 房主(Creator) ID 已加入: %1").arg(bot->gameInfo.clientId));
+    } else {
+        LOG_WARNING("   │  ├─ ⚠️ [警告] 机器人 gameInfo 中没有房主 ClientId");
     }
 
     const QMap<quint8, PlayerData> &roomPlayers = bot->client->getPlayers();
     for (const auto &player : roomPlayers) {
+        if (player.pid == 2) continue;
+
         if (!player.clientId.isEmpty()) {
             targetClientIds.insert(player.clientId);
+            LOG_INFO(QString("   │  ├─ 👤 玩家 %1 (PID:%2) ID 已加入: %3")
+                         .arg(player.name, -15).arg(player.pid).arg(player.clientId));
+        } else {
+            LOG_ERROR(QString("   │  ├─ ❌ [失败] 无法获取玩家 %1 (PID:%2) 的 ClientId，他将无法收到同步！")
+                          .arg(player.name).arg(player.pid));
         }
     }
 
-    LOG_INFO(QString("   ├─ 📡 广播发送目标: %1 个客户端实例").arg(targetClientIds.size()));
+    LOG_INFO(QString("   ├─ 📡 最终广播发送目标: %1 个去重后的终端").arg(targetClientIds.size()));
 
     // 3. 执行下发
     int sendSuccessCount = 0;
