@@ -4018,10 +4018,22 @@ void Client::syncPlayerReadyStates()
 {
     QVariantMap syncMap;
 
+    // 1. 预筛选需要同步的玩家（排除机器人），方便计算索引
+    QList<PlayerData> playersToSync;
     for (auto it = m_players.constBegin(); it != m_players.constEnd(); ++it) {
-        if (it.key() == m_botPid) continue;
+        if (it.key() != m_botPid) {
+            playersToSync.append(it.value());
+        }
+    }
 
-        const PlayerData &p = it.value();
+    LOG_INFO(QString("📡 [状态同步] 正在构建准备状态表 (玩家数: %1)...").arg(playersToSync.size()));
+
+    int count = playersToSync.size();
+    for (int i = 0; i < count; ++i) {
+        const PlayerData &p = playersToSync[i];
+        bool isLast = (i == count - 1);
+        QString prefix = isLast ? "   └── " : "   ├── ";
+        QString indent = isLast ? "       " : "   │   ";
 
         QVariantMap pInfo;
         pInfo["r"] = p.isReady;
@@ -4029,10 +4041,18 @@ void Client::syncPlayerReadyStates()
         pInfo["pid"] = p.pid;
         pInfo["name"] = p.name;
 
-        // 1. 添加 PID 为键
+        QString statusDesc = p.isReady ? "✅ 已就绪" : QString("⏳ 未准备 (%1s)").arg(p.readyCountdown);
+        LOG_INFO(QString("%1[PID: %2] 状态: %3").arg(prefix).arg(p.pid, -2).arg(statusDesc));
+
+        if (p.name.isEmpty()) {
+            LOG_WARNING(QString("%1⚠️  [警告] 玩家 PID %2 的名字为空！魔兽客户端无法实时更新准备状态。")
+                            .arg(indent).arg(p.pid));
+        } else {
+            LOG_INFO(QString("%1👤 玩家名: %2").arg(indent, p.name));
+        }
+
         syncMap.insert(QString::number(p.pid), pInfo);
 
-        // 2. 添加 玩家名 为键
         if (!p.name.isEmpty()) {
             syncMap.insert(p.name, pInfo);
         }
@@ -4040,8 +4060,7 @@ void Client::syncPlayerReadyStates()
 
     emit readyStateChanged(syncMap);
 
-    LOG_INFO(QString("   └─ 📡 状态同步: 已构建双索引准备列表 (玩家数: %1)")
-                 .arg(syncMap.size() / 2));
+    LOG_INFO(QString("   ✅ 同步完成。构建键值对: %1 (双索引模式)").arg(syncMap.size()));
 }
 
 void Client::setPlayerReadyStates(const QString &clientId, const QString &name, bool ready)
@@ -4085,7 +4104,7 @@ void Client::setPlayerReadyStates(const QString &clientId, const QString &name, 
     // 4. 结果分支处理
     if (found) {
         LOG_INFO(QString("   └── 🚀 处理完成: 正在触发全房数据同步广播"));
-        this->syncPlayerReadyStates();
+        syncPlayerReadyStates();
     } else {
         // 5. 失败详细分析日志
         LOG_ERROR(QString("   └── ❌ [匹配失败] 房间内找不到该玩家！当前房间存量分析:"));
