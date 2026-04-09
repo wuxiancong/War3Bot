@@ -1561,6 +1561,18 @@ void NetManager::handleTcpCustomMessage(QTcpSocket *socket)
             memset(resp.hostName, 0, sizeof(resp.hostName));
             strncpy(resp.hostName, info->hostName, sizeof(resp.hostName) - 1);
 
+            auto recordPreJoinSuccess = [&]() {
+                QWriteLocker locker(&m_preJoinLock);
+                m_preJoins.insert(userName.toLower(), clientId);
+
+                resp.status = 1;
+                resp.errorCode = ERR_OK;
+
+                LOG_INFO(QString("   ├── 👤 玩家名称: %1").arg(userName));
+                LOG_INFO(QString("   ├── 🆔 客户端ID: %1").arg(clientId));
+                LOG_INFO(QString("   └── ✅ 状态: 意向记录成功，允许物理连接"));
+            };
+
             // 4. 业务逻辑拦截
             if (userName.isEmpty() || clientId.isEmpty()) {
                 resp.status = 0;
@@ -1578,25 +1590,24 @@ void NetManager::handleTcpCustomMessage(QTcpSocket *socket)
                 LOG_INFO(QString("   ├── 🆔 客户端ID: %1 %2").arg(clientId, DbManager::instance().isHardwareIdBanned(clientId) ? "[硬件封印]" : ""));
                 LOG_INFO(QString("   └── 🚫 动作执行: 拒绝申报并下发错误码"));
             }
-            else if (m_botManager && !m_botManager->isRoomExist(roomName)) {
-                resp.status = 0;
-                resp.errorCode = ERR_GAME_NOT_FOUND;
-                LOG_WARNING(QString("   └── 🛑 申报拒绝: 目标房间 [%1] 不存在").arg(roomName));
-            }
             else {
-                QWriteLocker locker(&m_preJoinLock);
-                m_preJoins.insert(userName.toLower(), clientId);
-
-                resp.status = 1;
-                resp.errorCode = ERR_OK;
-
-                LOG_INFO(QString("   ├── 👤 玩家名称: %1").arg(userName));
-                LOG_INFO(QString("   ├── 🆔 客户端ID: %1").arg(clientId));
-                LOG_INFO(QString("   └── ✅ 状态: 意向记录成功，允许物理连接"));
+                if (roomName.isEmpty()) {
+                    LOG_INFO(QString("   └── ℹ️ 动作执行: 房间名为空，检测到特殊环境加入，依然执行记录以确保后续状态同步能找到 ClientId"));
+                    recordPreJoinSuccess();
+                }
+                else {
+                    if (m_botManager && !m_botManager->isRoomExist(roomName)) {
+                        resp.status = 0;
+                        resp.errorCode = ERR_GAME_NOT_FOUND;
+                        LOG_WARNING(QString("   └── 🛑 申报拒绝: 目标房间 [%1] 不存在").arg(roomName));
+                    }
+                    else {
+                        recordPreJoinSuccess();
+                    }
+                }
             }
 
-            // 5. 发送 ACK 确认包
-            // 只有收到此包，客户端 RoomManager 才会发起真正的魔兽 TCP 连接
+            // 5. 发送确认包
             bool ok = sendTcpPacket(socket, PacketType::S_C_PREJOINROOM, &resp, sizeof(resp));
             if (ok) {
                 LOG_INFO(QString("   └── 🚀 动作执行: S_C_PREJOINROOM 已回发确认"));
