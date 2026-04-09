@@ -46,6 +46,7 @@ public slots:
 
 private slots:
     void onBotRoomPingReceived(const QHostAddress &addr, quint16 port, const QString &identifier, quint64 clientTime, PingSearchMode mode = ByHostName);
+    void onBotGameStateChanged(Bot *bot, const QString &clientId, GameState gameState);
     void onBotRejoinRejected(Bot *bot, const QString &clientId, quint32 remainingMs);
     void onBotRoomPingsUpdated(Bot *bot, const QMap<quint8, quint32> &pings);
     void onBotReadyStateChanged(Bot *bot, const QVariantMap &readyData);

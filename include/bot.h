@@ -117,9 +117,10 @@ signals:
     void gameCreateSuccess(bool isHotRefresh);
     void roomHostChanged(const quint8 heirPid);
     void gameCreateFail(GameCreationStatus status);
-    void roomPingsUpdated(const QMap<quint8, quint32> &pings);
     void readyStateChanged(const QVariantMap &readyData);
+    void roomPingsUpdated(const QMap<quint8, quint32> &pings);
     void rejoinRejected(const QString &clientId, quint32 remainingMs);
+    void gameStateChanged(const QString &clientId, GameState gameState);
 
 private:
     BotManager *m_manager;

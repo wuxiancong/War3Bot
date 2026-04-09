@@ -79,7 +79,16 @@ enum MessageCode : quint8 {
     MSG_HOST_LEAVE_GAME             = 3,
     MSG_HOST_UNHOST_GAME            = 4,
     MSG_ROOM_HOST_CHANGE            = 5,
-    MSG_REJECT_REJOIN               = 6
+    MSG_REJECT_REJOIN               = 6,
+    MSG_GAME_STATE_CHANGE           = 7
+};
+
+enum GameState : quint8 {
+    GAME_STATE_IDLE                 = 0,
+    GAME_STATE_INROOM               = 1,
+    GAME_STATE_LOADING              = 2,
+    GAME_STATE_INGAME               = 3,
+    GAME_STATE_FINISHED             = 4
 };
 
 enum TcpConnType {

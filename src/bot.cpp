@@ -130,7 +130,7 @@ void Bot::setupClient(NetManager *netManager, const QString &displayName)
 
     LOG_INFO(QString("   ├── 📡 正在铺设信号中转隧道 (Client -> Bot)..."));
 
-    // --- 16 路信号中转绑定 ---
+    // --- 17 路信号中转绑定 ---
 
     // 1. 认证
     checkRelay(connect(client, &Client::authenticated, this, [this, relayLog](){
@@ -232,14 +232,21 @@ void Bot::setupClient(NetManager *netManager, const QString &displayName)
                    emit roomPingsUpdated(pings);
                }), "roomPingsUpdated");
 
-    // 15. 准备状态
+    // 15. 游戏状态
+    checkRelay(connect(client, &Client::gameStateChanged, this, [this, relayLog](const QString &clientId, GameState gameState){
+                   incrementSignalCount("gameStateChanged");
+                   relayLog("gameStateChanged");
+                   emit gameStateChanged(clientId, gameState);
+               }), "gameStateChanged");
+
+    // 16. 准备状态
     checkRelay(connect(client, &Client::readyStateChanged, this, [this, relayLog](const QVariantMap &readyData){
                    incrementSignalCount("readyStateChanged");
                    relayLog("readyStateChanged");
                    emit readyStateChanged(readyData);
                }), "readyStateChanged");
 
-    // 16. 重入拦截
+    // 17. 重入拦截
     checkRelay(connect(client, &Client::rejoinRejected, this, [this, relayLog](const QString &clientId, quint32 remainingMs){
                    incrementSignalCount("rejoinRejected");
                    relayLog("rejoinRejected");

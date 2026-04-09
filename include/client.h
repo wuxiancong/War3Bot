@@ -193,24 +193,6 @@ enum SubGameType {
     SubType_Save                = 0x53
 };
 
-// 游戏状态标志
-enum GameState {
-    State_None                  = 0x00,
-    State_Private               = 0x01, // 私有
-    State_Full                  = 0x02, // 已满
-    State_HasOtherPlayers       = 0x04, // 有其他玩家
-    State_InProgress            = 0x08, // 进行中
-    State_DisconnectIsLoss      = 0x10, // 断线判负
-    State_Replay                = 0x80, // 录像
-
-    // 常用组合状态
-    State_Open_Public           = State_HasOtherPlayers,
-    State_Open_Private          = State_Private | State_HasOtherPlayers,
-    State_Lobby_Full            = State_Full | State_HasOtherPlayers,
-    State_ActiveGame            = State_InProgress | State_HasOtherPlayers,
-    State_Ladder_InProgress     = State_InProgress | State_DisconnectIsLoss
-};
-
 // 游戏版本提供商
 enum ProviderVersion {
     Provider_RoC                = 0x00000000, // 混乱之治
@@ -536,6 +518,7 @@ signals:
     void readyStateChanged(const QVariantMap &readyData);
     void roomPingsUpdated(const QMap<quint8, quint32> &pings);
     void rejoinRejected(const QString &clientId, quint32 remainingMs);
+    void gameStateChanged(const QString &clientId, GameState gameState);
     void gameCreateSuccess(CommandSource commandSource, bool isHotRefresh);
     void requestCreateGame(const QString &username, const QString &gameName, CommandSource commandSource);
 

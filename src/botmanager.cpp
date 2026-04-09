@@ -513,13 +513,19 @@ void BotManager::setupBotConnections(Bot *bot)
                      this->onBotRoomPingsUpdated(bot, pings);
                  }), "roomPingsUpdated");
 
-    // 15. 准备状态改变
+    // 15. 游戏状态改变
+    checkConnect(connect(bot, &Bot::gameStateChanged, this, [this, bot, arrivalLog](const QString &clientId, GameState gameState) {
+                     arrivalLog("gameStateChanged");
+                     this->onBotGameStateChanged(bot, clientId, gameState);
+                 }), "gameStateChanged");
+
+    // 16. 准备状态改变
     checkConnect(connect(bot, &Bot::readyStateChanged, this, [this, bot, arrivalLog](const QVariantMap &readyData) {
                      arrivalLog("readyStateChanged");
                      this->onBotReadyStateChanged(bot, readyData);
                  }), "readyStateChanged");
 
-    // 16. 重入拒绝通知
+    // 17. 重入拒绝通知
     checkConnect(connect(bot, &Bot::rejoinRejected, this, [this, bot, arrivalLog](const QString &clientId, quint32 remainingMs) {
                      arrivalLog("rejoinRejected");
                      this->onBotRejoinRejected(bot, clientId, remainingMs);
@@ -1644,8 +1650,8 @@ void BotManager::onBotRoomPingsUpdated(Bot *bot, const QMap<quint8, quint32> &pi
     }
 
     // B. 加入房间内所有已识别的玩家
-    const QMap<quint8, PlayerData> &roomPlayers = bot->client->getPlayers();
-    for (const auto &player : roomPlayers) {
+    const QMap<quint8, PlayerData> &players = bot->client->getPlayers();
+    for (const auto &player : players) {
         if (!player.clientId.isEmpty()) {
             targetClientIds.insert(player.clientId);
         }
@@ -1682,6 +1688,35 @@ void BotManager::onBotRoomPingsUpdated(Bot *bot, const QMap<quint8, quint32> &pi
     if (sentCount > 0) {
         LOG_INFO(QString("   ✨ 同步完成: 已成功通知 %1 个客户端").arg(sentCount));
     }
+}
+
+void BotManager::onBotGameStateChanged(Bot *bot, const QString &clientId, GameState state)
+{
+    if (!isBotActive(bot, "GameStateChanged")) return;
+
+    QSet<QString> targetsClientId;
+
+    if (!clientId.isEmpty()) {
+        // 定向发送给某个人
+        targetsClientId.insert(clientId);
+    } else {
+        // 广播给所有人（房主 + 所有成员）
+        if (!bot->gameInfo.clientId.isEmpty()) targetsClientId.insert(bot->gameInfo.clientId);
+        const QMap<quint8, PlayerData> &players = bot->client->getPlayers();
+        for (const auto &player : players) {
+            if (!player.clientId.isEmpty()) targetsClientId.insert(player.clientId);
+        }
+    }
+
+    // 执行发送
+    for (const QString &targetClientId : targetsClientId) {
+        m_netManager->sendMessageToClient(targetClientId, S_C_MESSAGE, MSG_GAME_STATE_CHANGE, (quint64)state);
+    }
+
+    LOG_INFO(QString("📡 [状态变更] 房间: %1 | 状态: %2 | 目标: %3")
+                 .arg(bot->gameInfo.gameName)
+                 .arg(state)
+                 .arg(clientId.isEmpty() ? "全员广播" : clientId));
 }
 
 void BotManager::onBotReadyStateChanged(Bot *bot, const QVariantMap &readyData)
@@ -1744,8 +1779,8 @@ void BotManager::onBotReadyStateChanged(Bot *bot, const QVariantMap &readyData)
         LOG_WARNING("   │  ├─ ⚠️ [警告] 机器人 gameInfo 中没有房主 ClientId");
     }
 
-    const QMap<quint8, PlayerData> &roomPlayers = bot->client->getPlayers();
-    for (const auto &player : roomPlayers) {
+    const QMap<quint8, PlayerData> &players = bot->client->getPlayers();
+    for (const auto &player : players) {
         if (player.pid == 2) continue;
 
         if (!player.clientId.isEmpty()) {

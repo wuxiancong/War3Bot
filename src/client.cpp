@@ -957,6 +957,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         }
 
         m_players.insert(newPid, playerData);
+        emit gameStateChanged(currentClientId, GAME_STATE_INROOM);
 
         LOG_INFO(QString("   ├─ 💾 玩家注册: PID %1 (Slot %2)").arg(newPid).arg(slotIndex));
         int humanCount = qMax(0, m_players.size() - 1);
@@ -1608,6 +1609,9 @@ void Client::onPlayerDisconnected()
     }
 
     if (pidToRemove == 0) return;
+    if (!clientIdToRemove.isEmpty()) {
+        emit gameStateChanged(clientIdToRemove, GAME_STATE_IDLE);
+    }
 
     // --- 3. 记录重入冷却逻辑 ---
     QString identifier = clientIdToRemove.isEmpty() ? nameToRemove : clientIdToRemove;
@@ -1785,6 +1789,7 @@ void Client::onGameStarted()
     LOG_INFO(QString("      └─ 📊 统计: 共需等待 %1 名真实玩家").arg(waitCount));
 
     emit gameStarted();
+    emit gameStateChanged("", GAME_STATE_LOADING);
 }
 
 void Client::onGameTick()
@@ -1881,6 +1886,7 @@ void Client::onStartLagFinished()
     LOG_INFO(QString("   └─ 🚀 动作: 正式开启 GameTick 循环 (Interval: %1 ms)").arg(m_gameTickInterval));
 
     m_gameTickTimer->start();
+    emit gameStateChanged("", GAME_STATE_INGAME);
 }
 
 // =========================================================
@@ -2598,6 +2604,7 @@ void Client::cancelGame()
     if (isConnected()) {
         enterChat();
         joinRandomChannel();
+        emit gameStateChanged("", GAME_STATE_IDLE);
         LOG_INFO("   ├─ 🔄 状态同步: 已请求回到大厅并加入频道");
     }
 
