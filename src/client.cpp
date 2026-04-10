@@ -869,8 +869,8 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
         // 2. 槽位分配
         int slotIndex = -1;
-        for (int i = 0; i < m_slots.size(); ++i) {
-            if (m_slots[i].slotStatus == Open && m_slots[i].pid == 0) {
+        for (int i = 0; i < m_gameSlots.size(); ++i) {
+            if (m_gameSlots[i].slotStatus == Open && m_gameSlots[i].pid == 0) {
                 slotIndex = i;
                 break;
             }
@@ -924,10 +924,10 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
             LOG_INFO(QString("   └─ ✅ 分配成功: PID %1 (无冲突)").arg(newPid));
         }
 
-        m_slots[slotIndex].pid = newPid;
-        m_slots[slotIndex].slotStatus = Occupied;
-        m_slots[slotIndex].downloadStatus = DownloadStart;
-        m_slots[slotIndex].computer = Human;
+        m_gameSlots[slotIndex].pid = newPid;
+        m_gameSlots[slotIndex].slotStatus = Occupied;
+        m_gameSlots[slotIndex].downloadStatus = DownloadStart;
+        m_gameSlots[slotIndex].computer = Human;
 
         qint64 now = QDateTime::currentMSecsSinceEpoch();
 
@@ -974,7 +974,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
         for (auto it = m_players.begin(); it != m_players.end(); ++it) {
             const PlayerData &p = it.value();
-            if (p.pid == newPid || p.pid == m_botPid) continue;
+            if (p.pid == m_botPid) continue;
             finalPacket.append(createPlayerInfoPacket(p.pid, p.name, p.extIp, p.extPort, p.intIp, p.intPort));
         }
 
@@ -1262,10 +1262,10 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         }
 
         bool validSlot = false;
-        for (int i = 0; i < m_slots.size(); ++i) {
-            if (m_slots[i].pid == currentPid) {
-                if (m_slots[i].downloadStatus != Completed) {
-                    m_slots[i].downloadStatus = DownloadStart   ;
+        for (int i = 0; i < m_gameSlots.size(); ++i) {
+            if (m_gameSlots[i].pid == currentPid) {
+                if (m_gameSlots[i].downloadStatus != Completed) {
+                    m_gameSlots[i].downloadStatus = DownloadStart   ;
                     validSlot = true;
                 }
                 break;
@@ -1300,13 +1300,13 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         bool isDownloadFinished = (clientMapSize == hostMapSize);
 
         bool slotUpdated = false;
-        for (int i = 0; i < m_slots.size(); ++i) {
-            if (m_slots[i].pid == currentPid) {
+        for (int i = 0; i < m_gameSlots.size(); ++i) {
+            if (m_gameSlots[i].pid == currentPid) {
 
                 // [A] 下载完成
                 if (isMapMatched || isDownloadFinished) {
-                    if (m_slots[i].downloadStatus != Completed) {
-                        m_slots[i].downloadStatus = Completed;
+                    if (m_gameSlots[i].downloadStatus != Completed) {
+                        m_gameSlots[i].downloadStatus = Completed;
                         playerData.isDownloadStart    = false;
                         slotUpdated = true;
                         LOG_INFO("   └─ ✅ 状态: 地图完整/校验通过");
@@ -1314,8 +1314,8 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
                 }
                 // [B] 需要下载
                 else {
-                    if (m_slots[i].downloadStatus != DownloadStart   ) {
-                        m_slots[i].downloadStatus = DownloadStart   ;
+                    if (m_gameSlots[i].downloadStatus != DownloadStart   ) {
+                        m_gameSlots[i].downloadStatus = DownloadStart   ;
                     }
 
                     // 情况 1: 初始请求 / 开始下载 (Flag=1)
@@ -1377,11 +1377,11 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
                              .arg(percent)
                              .arg(playerData.lastDownloadOffset));
                 bool needBroadcast = false;
-                for (int i = 0; i < m_slots.size(); ++i) {
-                    if (m_slots[i].pid == toPid) {
-                        quint8 oldStatus = m_slots[i].downloadStatus;
+                for (int i = 0; i < m_gameSlots.size(); ++i) {
+                    if (m_gameSlots[i].pid == toPid) {
+                        quint8 oldStatus = m_gameSlots[i].downloadStatus;
                         if (oldStatus != Completed && percent > oldStatus && (percent - oldStatus >= 5)) {
-                            m_slots[i].downloadStatus = static_cast<quint8>(percent);
+                            m_gameSlots[i].downloadStatus = static_cast<quint8>(percent);
                             needBroadcast = true;
                         }
                         break;
@@ -1398,9 +1398,9 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
                 playerData.isDownloadStart = false;
 
                 // 更新槽位为 100%
-                for (int i = 0; i < m_slots.size(); ++i) {
-                    if (m_slots[i].pid == toPid) {
-                        m_slots[i].downloadStatus = 100;
+                for (int i = 0; i < m_gameSlots.size(); ++i) {
+                    if (m_gameSlots[i].pid == toPid) {
+                        m_gameSlots[i].downloadStatus = 100;
                         break;
                     }
                 }
@@ -1632,8 +1632,8 @@ void Client::onPlayerDisconnected()
         LOG_INFO(QString("👑 [房主交接] 房主 %1 离线，寻找继承人...").arg(nameToRemove));
 
         // 记录原房主所在的槽位索引
-        for (int i = 0; i < m_slots.size(); ++i) {
-            if (m_slots[i].pid == pidToRemove) {
+        for (int i = 0; i < m_gameSlots.size(); ++i) {
+            if (m_gameSlots[i].pid == pidToRemove) {
                 oldHostSlotIndex = i;
                 break;
             }
@@ -1674,8 +1674,8 @@ void Client::onPlayerDisconnected()
     // --- 7. 执行继承与看板热刷新逻辑 ---
     if (heirPid != 0 && oldHostSlotIndex != -1) {
         int heirCurrentSlotIdx = -1;
-        for (int i = 0; i < m_slots.size(); ++i) {
-            if (m_slots[i].pid == heirPid) {
+        for (int i = 0; i < m_gameSlots.size(); ++i) {
+            if (m_gameSlots[i].pid == heirPid) {
                 heirCurrentSlotIdx = i;
                 break;
             }
@@ -1685,8 +1685,8 @@ void Client::onPlayerDisconnected()
             LOG_INFO(QString("   │  ├─ 🔍 选中继承人: %1 (PID: %2)").arg(m_players[heirPid].name).arg(heirPid));
 
             // A. 物理交换槽位信息
-            GameSlot &hostSlot = m_slots[oldHostSlotIndex];
-            GameSlot &heirSlot = m_slots[heirCurrentSlotIdx];
+            GameSlot &hostSlot = m_gameSlots[oldHostSlotIndex];
+            GameSlot &heirSlot = m_gameSlots[heirCurrentSlotIdx];
 
             std::swap(hostSlot.pid,            heirSlot.pid);
             std::swap(hostSlot.downloadStatus, heirSlot.downloadStatus);
@@ -1709,11 +1709,11 @@ void Client::onPlayerDisconnected()
     }
 
     // --- 8. 清理离开者的槽位 ---
-    for (int i = 0; i < m_slots.size(); ++i) {
-        if (m_slots[i].pid == pidToRemove || (m_slots[i].pid == 0 && m_slots[i].slotStatus == Occupied)) {
-            m_slots[i].pid = 0;
-            m_slots[i].slotStatus = Open;
-            m_slots[i].downloadStatus = NotStarted;
+    for (int i = 0; i < m_gameSlots.size(); ++i) {
+        if (m_gameSlots[i].pid == pidToRemove || (m_gameSlots[i].pid == 0 && m_gameSlots[i].slotStatus == Occupied)) {
+            m_gameSlots[i].pid = 0;
+            m_gameSlots[i].slotStatus = Open;
+            m_gameSlots[i].downloadStatus = NotStarted;
         }
     }
 
@@ -2520,7 +2520,7 @@ void Client::updateAdv()
     m_hostCounter++;
 
     // 计算空位
-    int freeSlots = m_slots.size() - getOccupiedSlots() + 1;
+    int freeSlots = m_gameSlots.size() - getOccupiedSlots() + 1;
     if (freeSlots < 0) freeSlots = 0;
     if (freeSlots > 9) freeSlots = 9;
 
@@ -2584,7 +2584,7 @@ void Client::resetGame()
 
     // 4. 槽位状态重置
     initSlots();
-    LOG_INFO(QString("   ├─ 🧩 槽位状态已重置 (当前槽位总数: %1)").arg(m_slots.size()));
+    LOG_INFO(QString("   ├─ 🧩 槽位状态已重置 (当前槽位总数: %1)").arg(m_gameSlots.size()));
 
     // 5. 状态标志位复位
     m_gameStarted = false;
@@ -2857,7 +2857,7 @@ QByteArray Client::createW3GSSlotInfoJoinPacket(quint8 playerID, const QHostAddr
     out << (quint8)0xF7 << (quint8)0x04 << (quint16)0; // Header
     out << slotBlockSize;
     out.writeRawData(slotData.data(), slotData.size());
-    out << (quint32)m_randomSeed << (quint8)m_layoutStyle << (quint8)m_slots.size();
+    out << (quint32)m_randomSeed << (quint8)m_layoutStyle << (quint8)m_gameSlots.size();
 
     out << (quint8)playerID;
     out << (quint16)2 << (quint16)qToBigEndian(localPort);
@@ -2999,7 +2999,7 @@ QByteArray Client::createW3GSSlotInfoPacket()
     // 5. 写入随机种子、布局样式、槽位总数
     out << (quint32)m_randomSeed;                           // 随机种子
     out << (quint8)m_layoutStyle;                           // 布局样式
-    out << (quint8)m_slots.size();                          // 槽位总数
+    out << (quint8)m_gameSlots.size();                      // 槽位总数
 
     // 6. 回填包总长度
     QDataStream lenStream(&packet, QIODevice::ReadWrite);
@@ -3329,8 +3329,8 @@ void Client::initSlots(quint8 maxPlayers)
 {
     LOG_INFO(QString("🧹 [槽位重置] 地图槽位数: %1").arg(maxPlayers));
 
-    m_slots.clear();
-    m_slots.resize(maxPlayers);
+    m_gameSlots.clear();
+    m_gameSlots.resize(maxPlayers);
     m_players.clear();
 
     for (auto socket : qAsConst(m_playerSockets)) {
@@ -3348,7 +3348,7 @@ void Client::initSlots(quint8 maxPlayers)
 
     // 初始化地图槽
     for (quint8 i = 0; i < maxPlayers; ++i) {
-        GameSlot &slot = m_slots[i];
+        GameSlot &slot = m_gameSlots[i];
         slot = GameSlot();
 
         slot.pid            = 0;
@@ -3418,7 +3418,7 @@ void Client::initSlotsFromMap(quint8 maxPlayers)
             }
         }
 
-        GameSlot &slot = m_slots[i];
+        GameSlot &slot = m_gameSlots[i];
         QString typeLog;
         QString raceLog;
 
@@ -3457,7 +3457,7 @@ void Client::initSlotsFromMap(quint8 maxPlayers)
         LOG_INFO(QString("   ├─ 👓 扩展裁判位: Slot %1 - %2").arg(mapSlotCount + 1).arg(finalSlotCount));
 
         for (int i = mapSlotCount; i < finalSlotCount; ++i) {
-            GameSlot &slot = m_slots[i];
+            GameSlot &slot = m_gameSlots[i];
 
             // 裁判的标准设置
             slot.pid            = 0;
@@ -3477,7 +3477,7 @@ void Client::initSlotsFromMap(quint8 maxPlayers)
     int humanCount = 0;
     int compCount = 0;
     int obsCount = 0;
-    for(const auto &s : qAsConst(m_slots)) {
+    for(const auto &s : qAsConst(m_gameSlots)) {
         if (s.slotStatus == Open) {
             if (s.team == 12) obsCount++;
             else if (s.computer == Human) humanCount++;
@@ -3493,9 +3493,9 @@ QByteArray Client::serializeSlotData() {
     QDataStream ds(&data, QIODevice::WriteOnly);
     ds.setByteOrder(QDataStream::LittleEndian);
 
-    ds << (quint8)m_slots.size();
+    ds << (quint8)m_gameSlots.size();
 
-    for (const auto &slot : qAsConst(m_slots)) {
+    for (const auto &slot : qAsConst(m_gameSlots)) {
         ds << slot.pid;
         ds << slot.downloadStatus;
         ds << slot.slotStatus;
@@ -3511,16 +3511,16 @@ QByteArray Client::serializeSlotData() {
 
 quint8  Client::getTotalSlots() const
 {
-    if (m_slots.isEmpty()) return 10;
-    return m_slots.size();
+    if (m_gameSlots.isEmpty()) return 10;
+    return m_gameSlots.size();
 }
 
 quint8  Client::getOccupiedSlots() const
 {
-    if (m_slots.isEmpty()) return 1;
+    if (m_gameSlots.isEmpty()) return 1;
 
     quint8  count = 0;
-    for (const auto &slot : m_slots) {
+    for (const auto &slot : m_gameSlots) {
         // 统计状态为 Occupied 的槽位
         if (slot.slotStatus == Occupied) {
             count++;
@@ -3534,7 +3534,7 @@ void Client::swapSlots(int slot1, int slot2)
     // 1. 基础校验
     if (m_gameStarted || !isConnected()) return;
 
-    int maxSlots = m_slots.size();
+    int maxSlots = m_gameSlots.size();
 
     // 2. 转换索引 (用户输入 1-12 -> 数组索引 0-11)
     int idx1 = slot1 - 1;
@@ -3547,13 +3547,13 @@ void Client::swapSlots(int slot1, int slot2)
     }
 
     // 4. 保护检查 (防止交换 HostBot，PID 2)
-    if (m_slots[idx1].pid == m_botPid || m_slots[idx2].pid == m_botPid) {
+    if (m_gameSlots[idx1].pid == m_botPid || m_gameSlots[idx2].pid == m_botPid) {
         return;
     }
 
     // 5. 获取引用
-    GameSlot &s1 = m_slots[idx1];
-    GameSlot &s2 = m_slots[idx2];
+    GameSlot &s1 = m_gameSlots[idx1];
+    GameSlot &s2 = m_gameSlots[idx2];
 
     // [A] 交换玩家身份与状态 (PID, 下载状态, 槽位开关, 电脑设置)
     std::swap(s1.pid,            s2.pid);            // 交换 PID
@@ -3584,8 +3584,8 @@ int Client::getSlotIndexByPid(quint8 pid) const
 {
     if (pid == 0) return -1;
 
-    for (int i = 0; i < m_slots.size(); ++i) {
-        if (m_slots[i].pid == pid) {
+    for (int i = 0; i < m_gameSlots.size(); ++i) {
+        if (m_gameSlots[i].pid == pid) {
             return i;
         }
     }
@@ -3596,7 +3596,7 @@ quint8 Client::findFreePid() const
 {
     bool pid1_taken = m_players.contains(1);
     if (!pid1_taken) {
-        for(const auto& s : m_slots) if(s.pid == 1) pid1_taken = true;
+        for(const auto& s : m_gameSlots) if(s.pid == 1) pid1_taken = true;
     }
     if (!pid1_taken) return 1;
 
@@ -3604,7 +3604,7 @@ quint8 Client::findFreePid() const
         if (m_players.contains(pid)) continue;
 
         bool usedInSlot = false;
-        for (const auto &slot : m_slots) {
+        for (const auto &slot : m_gameSlots) {
             if (slot.pid == pid) {
                 usedInSlot = true;
                 break;
@@ -3703,8 +3703,8 @@ QTextCodec* Client::getCodecByPid(quint8 pid) const
 
 bool Client::isSlotOccupied(int slotIndex) const {
     int idx = slotIndex - 1;
-    if (idx < 0 || idx >= m_slots.size()) return false;
-    return m_slots[idx].slotStatus == Occupied;
+    if (idx < 0 || idx >= m_gameSlots.size()) return false;
+    return m_gameSlots[idx].slotStatus == Occupied;
 }
 
 QString Client::getSlotInfoString() const
