@@ -661,8 +661,15 @@ void BotManager::removeGame(Bot *bot, bool disconnectFlag, const QString &reason
 
     // --- 1. 状态锁：细分拦截逻辑 ---
 
+    if (bot->activeOperations > 0) {
+        LOG_INFO(QString("⏳ Bot-%1 正在执行关键操作，标记为延迟移除").arg(bot->id));
+        bot->pendingRemoval = true;
+        bot->pendingDisconnectFlag = disconnectFlag;
+        bot->pendingRemovalReason = reason;
+        return;
+    }
+
     if (bot->state == BotState::Connecting) {
-        // 使用链式 .arg().arg() 修复编译错误
         LOG_INFO(QString("🛡️ [状态锁] Bot-%1 正在发起网络连接，已拦截来自 (%2) 的清理请求")
                      .arg(bot->id).arg(reason));
         return;
@@ -696,6 +703,7 @@ void BotManager::removeGame(Bot *bot, bool disconnectFlag, const QString &reason
     // --- 3. 执行清理序列 ---
 
     bot->state = BotState::Finishing;
+    bot->finishingStartTime = QDateTime::currentMSecsSinceEpoch();
 
     LOG_INFO(QString("🧹 [执行清理] 机器人: %1 | 原因: %2").arg(bot->username, reason));
 
@@ -871,24 +879,57 @@ void BotManager::cleanupGhostRooms()
     }
 }
 
-Bot *BotManager::findBotByHostName(const QString &hostName)
+void BotManager::cleanupGhostBots()
 {
-    if (hostName.isEmpty()) return nullptr;
-    QString lowerName = hostName.toLower();
+    quint64 now = QDateTime::currentMSecsSinceEpoch();
+    const quint64 GHOST_TIMEOUT_MS = 5000;
 
-    if (m_hostNameToBotMap.contains(lowerName)) {
-        return m_hostNameToBotMap.value(lowerName);
+    for (int i = m_bots.size() - 1; i >= 0; --i) {
+        Bot *bot = m_bots[i];
+
+        if (bot->state == BotState::Finishing) {
+            quint64 elapsed = now - bot->finishingStartTime;
+
+            if (elapsed > GHOST_TIMEOUT_MS) {
+                LOG_ERROR(QString("👻 [幽灵清理] 发现僵尸机器人 Bot-%1 长期卡在 Finishing 状态")
+                              .arg(bot->id));
+                LOG_ERROR(QString("   ├── ⏱️ 已停留: %1 ms").arg(elapsed));
+                LOG_ERROR(QString("   └── 🚨 强制执行物理弹出与销毁"));
+                unregisterBotMappings(bot->gameInfo.clientId, bot->hostname, bot->gameInfo.gameName);
+                bot->resetGame(false, "CleanupGhostBots");
+            }
+        }
+    }
+}
+
+Bot *BotManager::findBotByClientId(const QString &clientId, bool onlyOccupied)
+{
+    if (clientId.isEmpty()) return nullptr;
+
+    Bot *bot = m_clientIdToBotMap.value(clientId, nullptr);
+
+    if (bot) {
+        if (onlyOccupied && !bot->isOccupied()) {
+            return nullptr;
+        }
+        return bot;
     }
 
     return nullptr;
 }
 
-Bot *BotManager::findBotByClientId(const QString &clientId)
+Bot *BotManager::findBotByHostName(const QString &hostName, bool onlyOccupied)
 {
-    if (clientId.isEmpty()) return nullptr;
+    if (hostName.isEmpty()) return nullptr;
+    QString lowerName = hostName.toLower();
 
-    if (m_clientIdToBotMap.contains(clientId)) {
-        return m_clientIdToBotMap.value(clientId);
+    Bot *bot = m_hostNameToBotMap.value(lowerName, nullptr);
+
+    if (bot) {
+        if (onlyOccupied && !bot->isOccupied()) {
+            return nullptr;
+        }
+        return bot;
     }
 
     return nullptr;
@@ -938,6 +979,7 @@ void BotManager::handleHostCommand(const QString &userName, const QString &clien
 {
     LOG_INFO("🎮 [创建房间流程]");
     cleanupGhostRooms();
+    cleanupGhostBots();
 
     // 1. 重复开房检查
     Bot *existingBotByCid = findBotByClientId(clientId);
@@ -1538,7 +1580,9 @@ void BotManager::onBotPendingTaskTimeout()
     const quint64 TASK_TIMEOUT_MS = 6000;               // 6秒创建超时
     const quint64 HOST_JOIN_TIMEOUT_MS = 5000;          // 5秒进房超时
 
-    for (Bot *bot : qAsConst(m_bots)) {
+    QVector<Bot*> botsCopy = m_bots;
+
+    for (Bot *bot : qAsConst(botsCopy)) {
         if (!isBotActive(bot, "PendingTaskTimeout")) continue;
 
         // --- A. 任务执行超时逻辑 ---
@@ -1571,12 +1615,11 @@ void BotManager::onBotPendingTaskTimeout()
                 if (!bot->gameInfo.clientId.isEmpty()) {
                     m_netManager->sendMessageToClient(bot->gameInfo.clientId, S_C_ERROR, ERR_WAIT_HOST_TIMEOUT);
                 }
-
-                bot->state = BotState::Finishing;
                 removeGame(bot, false, "Waiting Host Join Timeout");
             }
         }
     }
+    cleanupGhostBots();
 }
 
 void BotManager::onBotRoomPingReceived(const QHostAddress &addr, quint16 port, const QString &identifier, quint64 clientTime, PingSearchMode mode)

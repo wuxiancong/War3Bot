@@ -16,6 +16,13 @@ Bot::~Bot()
     }
 }
 
+bool Bot::isOccupied()
+{
+    return (state != BotState::Idle &&
+            state != BotState::Disconnected &&
+            state != BotState::Finishing);
+}
+
 void Bot::resetGame(bool disconnectFlag, const QString &context)
 {
     if (!client) return;

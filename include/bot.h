@@ -81,6 +81,7 @@ public:
     GameInfo gameInfo;
     PendingTask pendingTask;
     Client *client = nullptr;
+    qint64 finishingStartTime = 0;
 
     bool hostJoined = false;
     CommandSource commandSource = From_Server;
@@ -98,6 +99,7 @@ public:
     void enterCriticalOperation();
     void leaveCriticalOperation();
     void resetAuditCounts();
+    bool isOccupied();
 
     void setupClient(NetManager* netManager, const QString& displayName);
     void setupPendingTask(const QString &host, const QString &name, const QString &clientId, CommandSource source);

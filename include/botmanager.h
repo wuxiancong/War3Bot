@@ -20,6 +20,7 @@ public:
 
     void cleanup();
     void startAllBots();
+    void cleanupGhostBots();
     void cleanupGhostRooms();
     int loadMoreBots(int count);
     void processNextRegistration();
@@ -27,10 +28,10 @@ public:
     const QVector<Bot*> &getAllBots() const;
     bool isRoomExist(const QString &roomName);
     void setNetManager(NetManager *netManager);
-    Bot *findBotByHostName(const QString &hostName);
-    Bot *findBotByClientId(const QString &clientId);
     bool isGhostRoom(Bot *bot, const QString &mappedName);
     void initializeBots(quint32 initialCount, const QString &configPath);
+    Bot *findBotByHostName(const QString &hostName, bool onlyActive = true);
+    Bot *findBotByClientId(const QString &clientId, bool onlyActive = true);
     bool checkCooldown(const QString &clientId, const QString &command, qint64 now);
     bool createBotAccountFilesIfNotExist(bool allowAutoGenerate, int targetListNumber);
     void handleHostCommand(const QString &userName, const QString &clientId, const QString &text);
