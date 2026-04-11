@@ -258,7 +258,7 @@ void Client::onNewConnection()
 // 3. TCP 核心处理 (收发包)
 // =========================================================
 
-void Client::sendPacket(BNETPacketID id, const QByteArray &payload)
+void Client::sendPacket(BNCSPacketID id, const QByteArray &payload)
 {
     if (!m_tcpSocket) {
         LOG_ERROR("❌ 发送失败: Socket 未初始化");
@@ -412,11 +412,11 @@ void Client::onTcpReadyRead()
 
         QByteArray packetData = m_tcpSocket->read(length);
         quint8 packetIdVal = (quint8)packetData[1];
-        handleBNETTcpPacket((BNETPacketID)packetIdVal, packetData.mid(4));
+        handleBNETTcpPacket((BNCSPacketID)packetIdVal, packetData.mid(4));
     }
 }
 
-void Client::handleBNETTcpPacket(BNETPacketID id, const QByteArray &data)
+void Client::handleBNETTcpPacket(BNCSPacketID id, const QByteArray &data)
 {
     // 忽略心跳包的日志，避免刷屏
     if (id != SID_PING) {
@@ -2235,7 +2235,7 @@ void Client::sendLoginRequest(LoginProtocol protocol)
         out.writeRawData(m_user.toUtf8().constData(), m_user.toUtf8().size());
         out << (quint8)0;
 
-        BNETPacketID pktId = (protocol == Protocol_Old_0x29 ? SID_LOGONRESPONSE : SID_LOGONRESPONSE2);
+        BNCSPacketID pktId = (protocol == Protocol_Old_0x29 ? SID_LOGONRESPONSE : SID_LOGONRESPONSE2);
         LOG_INFO(QString("   └─ 🚀 动作: 发送 Hash 证明 -> 0x%1").arg(QString::number(pktId, 16).toUpper()));
 
         sendPacket(pktId, payload);
@@ -4254,7 +4254,7 @@ QString Client::getPrimaryIPv4() {
     return QString();
 }
 
-QString Client::getBnetPacketName(BNETPacketID id)
+QString Client::getBnetPacketName(BNCSPacketID id)
 {
     switch (id) {
     case SID_NULL:                   return "SID_NULL (空包)";

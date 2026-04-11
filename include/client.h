@@ -26,7 +26,7 @@ enum LoginProtocol {
 };
 
 // TCP 协议 ID (BNET)
-enum BNETPacketID {
+enum BNCSPacketID {
     SID_NULL                    = 0x00, // [C->S] 空包
     SID_STOPADV                 = 0x02, // [C->S] 停止广播
     SID_GETADVLISTEX            = 0x09, // [C->S] 房间列表响应
@@ -470,7 +470,7 @@ public:
     quint16 getListenPort()const;                                                                               // 获取监听端口
     quint32 getMapCRC() const;                                                                                  // 获取地图CRC
     bool isBlackListedPort(quint16 port);                                                                       // 检查端口黑名单
-    QString getBnetPacketName(BNETPacketID id);                                                                 // 获取对应的包名
+    QString getBnetPacketName(BNCSPacketID id);                                                                 // 获取对应的包名
     QString getCodecNameByLanguage(const QString &lang);                                                        // 获取对应的编码
     void dumpPacket(const QByteArray &bytes);                                                                   // 抓取数据报数据
     QString stripColorCodes(const QString &text);                                                               // 移除颜色代码
@@ -648,10 +648,10 @@ private:
     QByteArray createPlayerInfoPacket(quint8 pid, const QString& name, const QHostAddress& externalIp, quint16 externalPort, const QHostAddress& internalIp, quint16 internalPort);
 
     // --- 内部网络处理 ---
-    void sendPacket(BNETPacketID id, const QByteArray &payload);
+    void sendPacket(BNCSPacketID id, const QByteArray &payload);
     void sendNextMapPart(quint8 toPid, quint8 fromPid = m_botPid);
     void handleChatCommand(quint8 senderPid, const QString &fullMsg);
-    void handleBNETTcpPacket(BNETPacketID id, const QByteArray &data);
+    void handleBNETTcpPacket(BNCSPacketID id, const QByteArray &data);
     void handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &payload);
     void handleW3GSUdpPacket(const QByteArray &data, const QHostAddress &sender, quint16 senderPort);
 
