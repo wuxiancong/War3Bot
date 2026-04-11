@@ -29,6 +29,7 @@ enum LoginProtocol {
 enum BNETPacketID {
     SID_NULL                    = 0x00, // [C->S] 空包
     SID_STOPADV                 = 0x02, // [C->S] 停止广播
+    SID_GETADVLISTEX            = 0x09, // [C->S] 房间列表响应
     SID_ENTERCHAT               = 0x0A, // [C->S] 进入聊天
     SID_GETCHANNELLIST          = 0x0B, // [C->S] 获取频道列表
     SID_JOINCHANNEL             = 0x0C, // [C->S] 加入频道

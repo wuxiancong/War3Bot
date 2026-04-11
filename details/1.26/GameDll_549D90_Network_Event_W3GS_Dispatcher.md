@@ -1,4 +1,4 @@
-# War3 网络事件分发循环 (Network Event Dispatcher Loop) 分析报告
+# War3 网络事件分发循环 (Network Event W3GS Dispatcher) 分析报告
 
 *   **目标模块**: `Game.dll` (v1.26.0.6401)
 *   **分析基址**: `0x6F000000`
