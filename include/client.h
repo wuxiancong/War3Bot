@@ -424,6 +424,8 @@ public:
     bool isConnecting() const;                                                                                  // 是否正在连接
     void disconnectFromHost();                                                                                  // 断开主机连接
     void connectToHost(const QString &address, quint16 port);                                                   // 连接远程主机
+    bool disconnectPlayerByClientId(const QString &clientId);                                                   // 断连远程主机
+    bool disconnectPlayerByUserName(const QString &userName);                                                   // 断连远程主机
     void setCredentials(const QString &user, const QString &pass, LoginProtocol protocol = Protocol_SRP_0x53);  // 设置认证信息
 
     // 设置 NetManager 指针
@@ -444,12 +446,12 @@ public:
     void syncPlayerReadyStates();                                                                               // 同步玩家准备状态
     void swapSlots(int slot1, int slot2);                                                                       // 交换玩家槽位
     void setGameTickInterval(quint16 interval = 50);                                                            // 设置发送频率
-    bool hasPlayerByClientId(const QString &clientId) const;                                                            // 房间是否存在玩家
+    bool hasPlayerByClientId(const QString &clientId) const;                                                    // 房间是否存在玩家
     bool hasPlayerByUserName(const QString &userName) const;                                                    // 房间是否存在玩家
     void setHost(QString creatorName) { m_host = creatorName; };                                                // 设置房间房主名字
     quint16 getGameTickInterval() const { return m_gameTickInterval; }                                          // 获取发送频率
     void setMaxDownloadSpeed(quint32 kbps) { m_maxDownloadSpeed = kbps; }                                       // 设置地图最大下载数度
-    void setPlayerReadyStates(const QString &clientId, const QString &name, bool ready);                            // 设置玩家准备状态
+    void setPlayerReadyStates(const QString &clientId, const QString &name, bool ready);                        // 设置玩家准备状态
     void createGame(const QString &gameName, const QString &password,
                     ProviderVersion providerVersion, ComboGameType comboGameType,
                     SubGameType subGameType, LadderType ladderType,CommandSource commandSource);                // 创建游戏

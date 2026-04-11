@@ -77,10 +77,11 @@ enum MessageCode : quint8 {
     MSG_HOST_CREATED_GAME           = 1,
     MSG_CHECK_MAP_CRC               = 2,
     MSG_HOST_LEAVE_GAME             = 3,
-    MSG_HOST_UNHOST_GAME            = 4,
-    MSG_ROOM_HOST_CHANGE            = 5,
-    MSG_REJECT_REJOIN               = 6,
-    MSG_GAME_STATE_CHANGE           = 7
+    MSG_PLAYER_LEAVE_GAME           = 4,
+    MSG_HOST_UNHOST_GAME            = 5,
+    MSG_ROOM_HOST_CHANGE            = 6,
+    MSG_REJECT_REJOIN               = 7,
+    MSG_GAME_STATE_CHANGE           = 8
 };
 
 enum GameState : quint8 {

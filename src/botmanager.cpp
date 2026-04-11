@@ -903,6 +903,7 @@ bool BotManager::checkCooldown(const QString &clientId, const QString &command, 
         cooldownRules.insert("/start", 3000);
         cooldownRules.insert("/join", 500);
         cooldownRules.insert("/unhost", 1000);
+        cooldownRules.insert("/leave", 500);
         cooldownRules.insert("/swap", 500);
         cooldownRules.insert("/ready", 1000);
         cooldownRules.insert("/unready", 1000);
@@ -1092,7 +1093,8 @@ void BotManager::onBotCommandReceived(const QString &userName,
 
     // --- 3. 处理准备/取消准备 (所有玩家可用) ---
     if (trimmedCommand == "/ready" || trimmedCommand == "/unready" ||
-        trimmedCommand == "/swapself" || trimmedCommand == "/swap") {
+        trimmedCommand == "/swapself" || trimmedCommand == "/swap" ||
+        trimmedCommand == "/leave") {
         LOG_INFO(QString("[指令处理] 收到玩家 %1 (ClientId: %2) 的指令: %3")
                      .arg(userName, clientId, trimmedCommand));
 
@@ -1206,6 +1208,29 @@ void BotManager::onBotCommandReceived(const QString &userName,
                 } else {
                     LOG_WARNING("   └─ ⚠️ 参数错误: /swap 指令格式不正确");
                 }
+            }
+            else if (trimmedCommand == "/leave") {
+                LOG_INFO(QString("🚪 [指令] 玩家 %1 (ClientId: %2) 请求离开房间").arg(userName, clientId));
+                LOG_INFO(QString("   └─ 📍 匹配成功: 正在从机器人 [%1] 的房间中移除玩家").arg(targetBot->username));
+
+                // 1. 优先尝试使用 ClientId 断开
+                bool success = targetBot->client->disconnectPlayerByClientId(clientId);
+
+                // 2. 如果失败，则尝试使用 UserName 兜底
+                if (!success) {
+                    LOG_INFO("   ├─ 🔍 ClientId 匹配失败，尝试通过 UserName 匹配...");
+                    success = targetBot->client->disconnectPlayerByUserName(userName);
+                }
+
+                // 3. 根据最终结果发送反馈给 Launcher
+                if (success) {
+                    LOG_INFO("   └─ ✅ 执行结果: 玩家已成功断开");
+                    m_netManager->sendMessageToClient(clientId, S_C_MESSAGE, MSG_PLAYER_LEAVE_GAME, 1);
+                } else {
+                    LOG_WARNING("   └─ ❌ 执行结果: 无法在 Socket 列表中找到该玩家");
+                    m_netManager->sendMessageToClient(clientId, S_C_MESSAGE, MSG_PLAYER_LEAVE_GAME, 0);
+                }
+                return;
             }
         }
         return;

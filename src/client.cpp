@@ -1575,6 +1575,56 @@ void Client::handleChatCommand(quint8 senderPid, const QString &fullMsg)
     }
 }
 
+bool Client::disconnectPlayerByClientId(const QString &clientId)
+{
+    if (clientId.isEmpty()) {
+        LOG_WARNING("⚠️ [断开尝试] 传入的 ClientId 为空");
+        return false;
+    }
+
+    quint8 pid = getPidByClientId(clientId);
+    if (pid != 0 && m_players.contains(pid)) {
+        QTcpSocket *socket = m_players[pid].socket;
+        if (socket && socket->state() == QAbstractSocket::ConnectedState) {
+            LOG_INFO(QString("🔌 [主动断开] 匹配 ClientId: [%1] | 玩家: %2 (PID: %3)")
+                         .arg(clientId, m_players[pid].name).arg(pid));
+            socket->disconnectFromHost();
+            return true;
+        } else {
+            LOG_WARNING(QString("⚠️ [断开失败] 玩家 %1 (PID: %2) 的 Socket 已失效或不在线")
+                            .arg(m_players[pid].name).arg(pid));
+        }
+    } else {
+        LOG_WARNING(QString("⚠️ [断开失败] 房间内找不到 ClientId 为 [%1] 的活跃玩家").arg(clientId));
+    }
+    return false;
+}
+
+bool Client::disconnectPlayerByUserName(const QString &userName)
+{
+    if (userName.isEmpty()) {
+        LOG_WARNING("⚠️ [断开尝试] 传入的 UserName 为空");
+        return false;
+    }
+
+    quint8 pid = getPidByPlayerName(userName);
+    if (pid != 0 && m_players.contains(pid)) {
+        QTcpSocket *socket = m_players[pid].socket;
+        if (socket && socket->state() == QAbstractSocket::ConnectedState) {
+            LOG_INFO(QString("🔌 [主动断开] 匹配 UserName: [%1] (PID: %2)")
+                         .arg(userName).arg(pid));
+            socket->disconnectFromHost();
+            return true;
+        } else {
+            LOG_WARNING(QString("⚠️ [断开失败] 玩家 %1 (PID: %2) 的 Socket 已失效或不在线")
+                            .arg(userName).arg(pid));
+        }
+    } else {
+        LOG_WARNING(QString("⚠️ [断开失败] 房间内找不到名字为 [%1] 的活跃玩家").arg(userName));
+    }
+    return false;
+}
+
 void Client::onPlayerDisconnected()
 {
     QTcpSocket *socket = qobject_cast<QTcpSocket*>(sender());
