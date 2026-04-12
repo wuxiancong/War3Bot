@@ -702,6 +702,11 @@ void NetManager::handleIncomingDatagram(const QNetworkDatagram &datagram)
     }
     qDebug() << "│   │   └── ✅ 基础校验通过";
 
+    if ((packetType == C_S_PING || packetType == C_S_HEARTBEAT) && header->sessionId == 0) {
+        handleUdpPing(header, datagram.senderAddress(), datagram.senderPort());
+        return;
+    }
+
     // 暂存校验位用于比对
     quint16 receivedChecksum = header->checksum;
     char receivedSignature[16];
@@ -757,11 +762,6 @@ void NetManager::handleIncomingDatagram(const QNetworkDatagram &datagram)
             LOG_INFO("📥 [UDP 接收] C_S_REGISTER (注册请求)");
             handleRegister(header, reinterpret_cast<CSRegisterPacket*>(payload), datagram.senderAddress(), datagram.senderPort());
         }
-        break;
-
-    case C_S_HEARTBEAT:
-    case C_S_PING:
-        handleHeartbeat(header, datagram.senderAddress(), datagram.senderPort());
         break;
 
     case C_S_ROOM_PING:
@@ -949,7 +949,30 @@ quint8 NetManager::updateSessionState(quint32 sessionId, const QHostAddress &add
     return Registered;
 }
 
-void NetManager::handlePing(const PacketHeader *header, const QHostAddress &senderAddr, quint64 senderPort)
+void NetManager::handleTcpPing(QTcpSocket *socket)
+{
+    while (socket->bytesAvailable() >= (qint64)sizeof(PacketHeader)) {
+        PacketHeader header;
+        socket->peek(reinterpret_cast<char*>(&header), sizeof(PacketHeader));
+
+        if (header.magic == PROTOCOL_MAGIC && header.command == C_S_PING && header.sessionId == 0) {
+
+            socket->read(sizeof(PacketHeader));
+
+            SCPongPacket pong;
+            pong.status = 2;
+
+            sendTcpPacket(socket, PacketType::S_C_PONG, &pong, sizeof(pong));
+
+            LOG_DEBUG(QString("⚡ [FastPath] 已响应来自 %1 的连通性探测")
+                          .arg(socket->peerAddress().toString()));
+        } else {
+            break;
+        }
+    }
+}
+
+void NetManager::handleUdpPing(const PacketHeader *header, const QHostAddress &senderAddr, quint64 senderPort)
 {
     bool ipChanged = false;
 
@@ -963,26 +986,6 @@ void NetManager::handlePing(const PacketHeader *header, const QHostAddress &send
         LOG_DEBUG(QString("🏓 [PING] Session:%1 <-> %2:%3").arg(header->sessionId).arg(senderAddr.toString()).arg(senderPort));
     } else {
         LOG_DEBUG(QString("⚠️ [PING] 未注册探测 <-> %1:%2").arg(senderAddr.toString()).arg(senderPort));
-    }
-}
-
-void NetManager::handleHeartbeat(const PacketHeader *header, const QHostAddress &senderAddr, quint64 senderPort)
-{
-    if (header->sessionId == 0) return;
-
-    bool ipChanged = false;
-    int status = updateSessionState(header->sessionId, senderAddr, senderPort, &ipChanged);
-
-    SCPongPacket pongPkt;
-    pongPkt.status = status;
-    sendUdpPacket(senderAddr, senderPort, S_C_PONG, &pongPkt, sizeof(pongPkt));
-
-    if (status == 2) {
-        if (ipChanged) {
-            LOG_INFO(QString("🔄 [网络漫游/NAT变更] Session: %1 新地址: %2").arg(header->sessionId).arg(senderAddr.toString()));
-        }
-    } else {
-        LOG_INFO(QString("🛑 [心跳拒绝] Session无效: %1").arg(header->sessionId));
     }
 }
 
@@ -1194,6 +1197,19 @@ void NetManager::onTcpReadyRead()
     if (!socket) {
         LOG_ERROR("❌ [onTcpReadyRead] 异常：无法获取信号发送者 Socket");
         return;
+    }
+
+    // 逻辑提前：先探测是否为无需 Session 的 Ping 探测包 (SessionID == 0)
+    if (socket->bytesAvailable() >= (qint64)sizeof(PacketHeader)) {
+        PacketHeader header;
+        socket->peek(reinterpret_cast<char*>(&header), sizeof(PacketHeader));
+        // 识别特征：私有魔数 + Ping 指令 + Session 为 0
+        if (header.magic == PROTOCOL_MAGIC && (header.command == C_S_PING ||
+                                               header.command == C_S_HEARTBEAT) && header.sessionId == 0) {
+            handleTcpPing(socket);
+            // 如果处理完所有 Ping 包后，缓冲区已经没有足够数据，直接退出，不干扰业务日志
+            if (socket->bytesAvailable() < (qint64)sizeof(PacketHeader)) return;
+        }
     }
 
     // 获取当前连接类型
@@ -1520,21 +1536,6 @@ void NetManager::handleTcpCustomMessage(QTcpSocket *socket)
 
         // 6. 处理具体指令
         switch (static_cast<PacketType>(pHeader->command)) {
-        case PacketType::C_S_HEARTBEAT:
-        case PacketType::C_S_PING: {
-            updateSessionState(pHeader->sessionId, socket->peerAddress(), socket->peerPort(), nullptr);
-
-            // 回复 Pong
-            SCPongPacket pong;
-            pong.status = 2;
-            sendTcpPacket(socket, PacketType::S_C_PONG, &pong, sizeof(pong));
-
-            LOG_DEBUG(QString("💓 [TCP %1] Session: %2")
-                          .arg(static_cast<PacketType>(pHeader->command) == PacketType::C_S_HEARTBEAT ? "Heartbeat" : "Ping")
-                          .arg(pHeader->sessionId));
-            break;
-        }
-
         case PacketType::C_S_PREJOINROOM: {
             LOG_INFO("📨 [TCP 接收] C_S_PREJOINROOM (加入意向申报)");
 
@@ -1666,6 +1667,14 @@ void NetManager::onNewTcpConnection()
         QString peerIp = socket->peerAddress().toString();
         quint16 peerPort = socket->peerPort();
         LOG_INFO(QString("   ├── 📥 握手请求: %1:%2").arg(peerIp).arg(peerPort));
+
+        // 1. 看门狗拦截检查
+        if (!m_watchdog.checkTcpConnection(socket->peerAddress())) {
+            LOG_WARNING(QString("   ├── 🛡️ [安全拦截] 该 IP %1 触发频率限制，强制断开").arg(peerIp));
+            socket->abort();
+            socket->deleteLater();
+            continue;
+        }
 
         // 1. 看门狗拦截检查
         if (!m_watchdog.checkTcpConnection(socket->peerAddress())) {

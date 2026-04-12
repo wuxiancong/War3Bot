@@ -104,13 +104,13 @@ private slots:
     void onNewTcpConnection();
 
 private:
+    void handleTcpPing(QTcpSocket *socket);
     void handleTcpUploadMessage(QTcpSocket *socket);
     void handleTcpCustomMessage(QTcpSocket *socket);
     void handleUnregister(const PacketHeader *header);
     void handleIncomingDatagram(const QNetworkDatagram &datagram);
     void handleCommand(const PacketHeader *header, const CSCommandPacket *packet);
-    void handlePing(const PacketHeader *header, const QHostAddress &senderAddr, quint64 senderPort);
-    void handleHeartbeat(const PacketHeader *header, const QHostAddress &senderAddr, quint64 senderPort);
+    void handleUdpPing(const PacketHeader *header, const QHostAddress &senderAddr, quint64 senderPort);
     void handleRoomPing(const PacketHeader *header, const char *payload, const QHostAddress &addr, quint16 port);
     void handleRegister(const PacketHeader *header, const CSRegisterPacket *packet, const QHostAddress &senderAddr, quint64 senderPort);
     void handleCheckMapCRC(const PacketHeader *header, const CSCheckMapCRCPacket *packet, const QHostAddress &senderAddr, quint64 senderPort);
