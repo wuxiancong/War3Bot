@@ -770,6 +770,11 @@ void NetManager::handleIncomingDatagram(const QNetworkDatagram &datagram)
         }
         break;
     }
+    case C_S_UNREGISTER: {
+        LOG_INFO(QString("📤 [UDP 接收] C_S_UNREGISTER (注销请求) | SID: %1").arg(header->sessionId));
+        handleUnregister(header, datagram.senderAddress(), datagram.senderPort());
+        break;
+    }
 
     case C_S_ROOM_PING: {
         LOG_INFO("📥 [UDP 接收] C_S_ROOM_PING (房间列表Ping)");
@@ -896,28 +901,37 @@ void NetManager::handleRegister(const PacketHeader *header, const CSRegisterPack
     sendUdpPacket(senderAddr, senderPort, S_C_REGISTER, &resp, sizeof(resp), newSessionId);
 }
 
-void NetManager::handleUnregister(const PacketHeader *header)
+void NetManager::handleUnregister(const PacketHeader *header, const QHostAddress &senderAddr, quint64 senderPort)
 {
     if (header->sessionId == 0) return;
 
+    // 1. 发送响应包给客户端
+    sendUdpPacket(senderAddr, senderPort, S_C_UNREGISTER, nullptr, 0, header->sessionId);
+
     QWriteLocker locker(&m_registerInfosLock);
     if (!m_sessionIndex.contains(header->sessionId)) {
-        LOG_WARNING(QString("┌─ [注销失败] 未找到会话"));
-        LOG_WARNING(QString("└─ SessionID: %1").arg(header->sessionId));
+        LOG_WARNING(QString("┌─ [注销失败] 未找到活跃会话"));
+        LOG_WARNING(QString("└─ SessionID: %1 | 来源: %2:%3")
+                        .arg(header->sessionId).arg(senderAddr.toString()).arg(senderPort));
         return;
     }
 
+    // 2. 执行下线逻辑
     QString clientId = m_sessionIndex.take(header->sessionId);
     if (m_registerInfos.contains(clientId)) {
         RegisterInfo info = m_registerInfos.take(clientId);
 
         // 计算在线时长
         qint64 durationSec = (QDateTime::currentMSecsSinceEpoch() - info.firstSeen) / 1000;
-        QString durationStr = QString("%1h %2m %3s").arg(durationSec / 3600).arg((durationSec % 3600) / 60).arg(durationSec % 60);
+        QString durationStr = QString("%1h %2m %3s")
+                                  .arg(durationSec / 3600)
+                                  .arg((durationSec % 3600) / 60)
+                                  .arg(durationSec % 60);
 
-        // 打印简洁日志
+        // 3. 打印详细日志
         LOG_INFO(QString("┌── [用户注销] 用户: %1").arg(info.username));
-        LOG_INFO(QString("├── 会话: SID: %1 | Seq: %2").arg(header->sessionId).arg(header->seq));
+        LOG_INFO(QString("├── 地址: %1:%2").arg(senderAddr.toString()).arg(senderPort));
+        LOG_INFO(QString("├── 会话: SID: %1 | 最后序列号: %2").arg(header->sessionId).arg(header->seq));
         LOG_INFO(QString("├── 时长: %1").arg(durationStr));
         LOG_INFO(QString("└── 状态: 已离线 (内存资源已回收)"));
     } else {
