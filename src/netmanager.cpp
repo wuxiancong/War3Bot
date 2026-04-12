@@ -566,7 +566,7 @@ qint64 NetManager::sendUdpPacket(const QHostAddress &target, quint64 port, Packe
     return sent;
 }
 
-bool NetManager::sendTcpPacket(QTcpSocket *socket, PacketType type, const void *payload, quint64 payloadLen)
+bool NetManager::sendTcpPacket(QTcpSocket *socket, PacketType type, const void *payload, quint64 payloadLen, quint32 sessionId)
 {
     // 0. 基础指针空校验
     if (!socket) {
@@ -576,8 +576,8 @@ bool NetManager::sendTcpPacket(QTcpSocket *socket, PacketType type, const void *
 
     if (socket->thread() != QThread::currentThread()) {
         QByteArray data((const char*)payload, (int)payloadLen);
-        QMetaObject::invokeMethod(this, [this, socket, type, data]() {
-            this->sendTcpPacket(socket, type, data.constData(), data.size());
+        QMetaObject::invokeMethod(this, [this, socket, type, data, sessionId]() {
+            this->sendTcpPacket(socket, type, data.constData(), data.size(), sessionId);
         }, Qt::QueuedConnection);
         return true;
     }
@@ -606,12 +606,16 @@ bool NetManager::sendTcpPacket(QTcpSocket *socket, PacketType type, const void *
     header->version = PROTOCOL_VERSION;
     header->command = static_cast<quint8>(type);
 
-    QVariant sidProp = socket->property("sessionId");
+    quint32 finalSessionId = sessionId;
+    if (finalSessionId == 0) {
+        QVariant sidProp = socket->property("sessionId");
+        finalSessionId = sidProp.isValid() ? sidProp.toUInt() : 0;
+    }
+
     QVariant cidProp = socket->property("clientId");
-    quint32 sessionId = sidProp.isValid() ? sidProp.toUInt() : 0;
     QString clientId = cidProp.isValid() ? cidProp.toString() : "Unknown";
 
-    header->sessionId = sessionId;
+    header->sessionId = finalSessionId;
     header->seq = ++m_serverSeq;
     header->payloadLen = payloadLen;
     header->checksum = 0;
@@ -638,7 +642,7 @@ bool NetManager::sendTcpPacket(QTcpSocket *socket, PacketType type, const void *
     if (sent == totalSize) {
         LOG_INFO(QString("🚀 [TCP] %1 -> %2 (SID: %3 | CID: %4 | Len: %5)")
                      .arg(packetTypeToString(type), peerInfo)
-                     .arg(sessionId)
+                     .arg(finalSessionId)
                      .arg(clientId)
                      .arg(sent));
         return true;
@@ -702,7 +706,25 @@ void NetManager::handleIncomingDatagram(const QNetworkDatagram &datagram)
     }
     qDebug() << "│   │   └── ✅ 基础校验通过";
 
-    if ((packetType == C_S_PING || packetType == C_S_HEARTBEAT) && header->sessionId == 0) {
+    if (packetType == C_S_PING || packetType == C_S_HEARTBEAT) {
+        quint32 sessionId = header->sessionId;
+        bool isRegistered = false;
+        {
+            QReadLocker locker(&m_registerInfosLock);
+            isRegistered = m_sessionIndex.contains(sessionId);
+        }
+
+        if (!isRegistered && sessionId != 0) {
+            LOG_INFO(QString("🔍 [链路探测] 收到探测标识: %1 | 来自: %2:%3")
+                         .arg(sessionId)
+                         .arg(datagram.senderAddress().toString())
+                         .arg(datagram.senderPort()));
+        } else if (sessionId == 0) {
+            LOG_DEBUG(QString("🔍 [链路探测] 收到匿名探测 | 来自: %1:%2")
+                          .arg(datagram.senderAddress().toString())
+                          .arg(datagram.senderPort()));
+        }
+
         handleUdpPing(header, datagram.senderAddress(), datagram.senderPort());
         return;
     }
@@ -980,17 +1002,22 @@ void NetManager::handleTcpPing(QTcpSocket *socket)
         PacketHeader header;
         socket->peek(reinterpret_cast<char*>(&header), sizeof(PacketHeader));
 
-        if (header.magic == PROTOCOL_MAGIC && header.command == C_S_PING && header.sessionId == 0) {
-
+        if (header.magic == PROTOCOL_MAGIC && (header.command == C_S_PING || header.command == C_S_HEARTBEAT)) {
             socket->read(sizeof(PacketHeader));
+
+            // 1. 备份原有的 sessionId 属性
+            QVariant oldSid = socket->property("sessionId");
+
+            // 2. 强制将探测包里的 detectId 设置为当前 Socket 的属性
+            socket->setProperty("sessionId", header.sessionId);
 
             SCPongPacket pong;
             pong.status = 2;
 
+            // 3. 调用原有的 sendTcpPacket
             sendTcpPacket(socket, PacketType::S_C_PONG, &pong, sizeof(pong));
 
-            LOG_DEBUG(QString("⚡ [FastPath] 已响应来自 %1 的连通性探测")
-                          .arg(socket->peerAddress().toString()));
+            LOG_DEBUG(QString("⚡ [FastPath] 响应探测 | 标识: %1").arg(header.sessionId));
         } else {
             break;
         }
@@ -1221,15 +1248,25 @@ void NetManager::onTcpReadyRead()
         return;
     }
 
-    // 逻辑提前：先探测是否为无需 Session 的 Ping 探测包 (SessionID == 0)
     if (socket->bytesAvailable() >= (qint64)sizeof(PacketHeader)) {
         PacketHeader header;
         socket->peek(reinterpret_cast<char*>(&header), sizeof(PacketHeader));
-        // 识别特征：私有魔数 + Ping 指令 + Session 为 0
-        if (header.magic == PROTOCOL_MAGIC && (header.command == C_S_PING ||
-                                               header.command == C_S_HEARTBEAT) && header.sessionId == 0) {
+        if (header.magic == PROTOCOL_MAGIC &&
+            (header.command == C_S_PING || header.command == C_S_HEARTBEAT)) {
+            bool isRegistered = false;
+            {
+                QReadLocker locker(&m_registerInfosLock);
+                isRegistered = m_sessionIndex.contains(header.sessionId);
+            }
+
+            if (!isRegistered && header.sessionId != 0) {
+                LOG_INFO(QString("🔍 [TCP 链路探测] 收到探测标识: %1 | 来自: %2")
+                             .arg(header.sessionId)
+                             .arg(socket->peerAddress().toString()));
+            }
+
             handleTcpPing(socket);
-            // 如果处理完所有 Ping 包后，缓冲区已经没有足够数据，直接退出，不干扰业务日志
+
             if (socket->bytesAvailable() < (qint64)sizeof(PacketHeader)) return;
         }
     }
