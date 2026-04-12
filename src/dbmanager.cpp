@@ -279,6 +279,7 @@ void DbManager::checkConnection()
 {
     if (!m_db.isOpen() || !m_db.isValid()) {
         LOG_TREE("📡 [DB] 连接断开，触发重连流程...");
+        LOG_TREE(QString("可用驱动: %1").arg(QSqlDatabase::drivers().join(", ")));
         SCOPE_LEVEL;
         if (m_db.open()) {
             LOG_TREE("✅ 重连成功，重新加载缓存", false, true);
