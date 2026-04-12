@@ -511,7 +511,7 @@ void NetManager::stopServer()
 
 // ==================== 二进制发送逻辑 ====================
 
-qint64 NetManager::sendUdpPacket(const QHostAddress &target, quint64 port, PacketType type, const void *payload, quint64 payloadLen)
+qint64 NetManager::sendUdpPacket(const QHostAddress &target, quint64 port, PacketType type, const void *payload, quint64 payloadLen, quint32 sessionId)
 {
     if (!m_udpSocket) {
         LOG_ERROR("❌ [UDP] 发送失败: UDP Socket 未初始化");
@@ -528,7 +528,7 @@ qint64 NetManager::sendUdpPacket(const QHostAddress &target, quint64 port, Packe
     header->magic = PROTOCOL_MAGIC;
     header->version = PROTOCOL_VERSION;
     header->command = static_cast<quint8>(type);
-    header->sessionId = 0;
+    header->sessionId = sessionId;
     header->seq = ++m_serverSeq;
     header->payloadLen = payloadLen;
     header->checksum = 0;
@@ -608,10 +608,10 @@ bool NetManager::sendTcpPacket(QTcpSocket *socket, PacketType type, const void *
 
     QVariant sidProp = socket->property("sessionId");
     QVariant cidProp = socket->property("clientId");
-    quint32 sid = sidProp.isValid() ? sidProp.toUInt() : 0;
+    quint32 sessionId = sidProp.isValid() ? sidProp.toUInt() : 0;
     QString clientId = cidProp.isValid() ? cidProp.toString() : "Unknown";
 
-    header->sessionId = sid;
+    header->sessionId = sessionId;
     header->seq = ++m_serverSeq;
     header->payloadLen = payloadLen;
     header->checksum = 0;
@@ -638,7 +638,7 @@ bool NetManager::sendTcpPacket(QTcpSocket *socket, PacketType type, const void *
     if (sent == totalSize) {
         LOG_INFO(QString("🚀 [TCP] %1 -> %2 (SID: %3 | CID: %4 | Len: %5)")
                      .arg(packetTypeToString(type), peerInfo)
-                     .arg(sid)
+                     .arg(sessionId)
                      .arg(clientId)
                      .arg(sent));
         return true;
@@ -882,7 +882,7 @@ void NetManager::handleRegister(const PacketHeader *header, const CSRegisterPack
     SCRegisterPacket resp;
     resp.sessionId = newSessionId;
     resp.status = 2; // Registered
-    sendUdpPacket(senderAddr, senderPort, S_C_REGISTER, &resp, sizeof(resp));
+    sendUdpPacket(senderAddr, senderPort, S_C_REGISTER, &resp, sizeof(resp), newSessionId);
 }
 
 void NetManager::handleUnregister(const PacketHeader *header)
@@ -975,17 +975,17 @@ void NetManager::handleTcpPing(QTcpSocket *socket)
 void NetManager::handleUdpPing(const PacketHeader *header, const QHostAddress &senderAddr, quint64 senderPort)
 {
     bool ipChanged = false;
-
-    int status = updateSessionState(header->sessionId, senderAddr, senderPort, &ipChanged);
+    quint32 sessionId = header->sessionId;
+    int status = updateSessionState(sessionId, senderAddr, senderPort, &ipChanged);
 
     SCPongPacket pongPkt;
     pongPkt.status = status;
-    sendUdpPacket(senderAddr, senderPort, S_C_PONG, &pongPkt, sizeof(pongPkt));
+    sendUdpPacket(senderAddr, senderPort, S_C_PONG, &pongPkt, sizeof(pongPkt), sessionId);
 
     if (status == 2) {
-        LOG_DEBUG(QString("🏓 [PING] Session:%1 <-> %2:%3").arg(header->sessionId).arg(senderAddr.toString()).arg(senderPort));
+        LOG_DEBUG(QString("🏓 [PING] 已注册探测 Session:%1 <-> %2:%3").arg(sessionId).arg(senderAddr.toString()).arg(senderPort));
     } else {
-        LOG_DEBUG(QString("⚠️ [PING] 未注册探测 <-> %1:%2").arg(senderAddr.toString()).arg(senderPort));
+        LOG_DEBUG(QString("⚠️ [PING] 未注册探测 Session:%1 <-> %1:%2").arg(sessionId).arg(senderAddr.toString()).arg(senderPort));
     }
 }
 
@@ -1105,20 +1105,17 @@ void NetManager::hardwareBan(const QString &targetUser, const QString &reason, u
 
 void NetManager::handleCheckMapCRC(const PacketHeader *header, const CSCheckMapCRCPacket *packet, const QHostAddress &senderAddr, quint64 senderPort)
 {
-    Q_UNUSED(header);
     QString crcHex = QString::fromUtf8(packet->crcHex, strnlen(packet->crcHex, sizeof(packet->crcHex))).trimmed();
 
     QString scriptDir = QCoreApplication::applicationDirPath() + "/war3files/crc/" + crcHex;
     QDir dir(scriptDir);
-    bool exists = dir.exists() && QFile::exists(scriptDir + "/common.j"); // 简化检查
+    bool exists = dir.exists() && QFile::exists(scriptDir + "/common.j");
 
-    // 构造响应
     SCCheckMapCRCPacket resp;
     memset(&resp, 0, sizeof(resp));
     strncpy(resp.crcHex, crcHex.toStdString().c_str(), sizeof(resp.crcHex) - 1);
     resp.exists = exists ? 1 : 0;
 
-    // 如果不存在，加入待上传白名单
     if (!exists) {
         QWriteLocker locker(&m_tokenLock);
         m_pendingUploadTokens.insert(crcHex, header->sessionId);
@@ -1128,7 +1125,7 @@ void NetManager::handleCheckMapCRC(const PacketHeader *header, const CSCheckMapC
         LOG_INFO(QString("✅ 请求CRC %1 已存在").arg(crcHex));
     }
 
-    sendUdpPacket(senderAddr, senderPort, S_C_CHECKMAPCRC, &resp, sizeof(resp));
+    sendUdpPacket(senderAddr, senderPort, S_C_CHECKMAPCRC, &resp, sizeof(resp), header->sessionId);
 }
 
 // ==================== TCP ====================

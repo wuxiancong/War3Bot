@@ -115,7 +115,7 @@ private:
     void handleRegister(const PacketHeader *header, const CSRegisterPacket *packet, const QHostAddress &senderAddr, quint64 senderPort);
     void handleCheckMapCRC(const PacketHeader *header, const CSCheckMapCRCPacket *packet, const QHostAddress &senderAddr, quint64 senderPort);
 
-    qint64 sendUdpPacket(const QHostAddress &target, quint64 port, PacketType type, const void *payload = nullptr, quint64 payloadLen = 0);
+    qint64 sendUdpPacket(const QHostAddress &target, quint64 port, PacketType type, const void *payload = nullptr, quint64 payloadLen = 0, quint32 sessionId = 0);
     void sendUploadResult(QTcpSocket *socket, const QString &crc, const QString &fileName, bool success, UploadErrorCode reason);
     bool sendTcpPacket(QTcpSocket *socket, PacketType type, const void *payload, quint64 payloadLen);
     bool sendToClient(const QString &clientId, const QByteArray &data);
