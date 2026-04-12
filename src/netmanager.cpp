@@ -757,31 +757,42 @@ void NetManager::handleIncomingDatagram(const QNetworkDatagram &datagram)
     }
 
     switch (packetType) {
-    case C_S_REGISTER:
+    case C_S_PING:
+    case C_S_HEARTBEAT: {
+        handleUdpPing(header, datagram.senderAddress(), datagram.senderPort());
+        break;
+    }
+
+    case C_S_REGISTER: {
         if (header->payloadLen >= sizeof(CSRegisterPacket)) {
             LOG_INFO("📥 [UDP 接收] C_S_REGISTER (注册请求)");
             handleRegister(header, reinterpret_cast<CSRegisterPacket*>(payload), datagram.senderAddress(), datagram.senderPort());
         }
         break;
+    }
 
-    case C_S_ROOM_PING:
+    case C_S_ROOM_PING: {
         LOG_INFO("📥 [UDP 接收] C_S_ROOM_PING (房间列表Ping)");
         handleRoomPing(header, payload, datagram.senderAddress(), datagram.senderPort());
         break;
+    }
 
-    case C_S_CHECKMAPCRC:
+    case C_S_CHECKMAPCRC: {
         if (header->payloadLen >= sizeof(CSCheckMapCRCPacket)) {
             LOG_INFO("📥 [UDP 接收] C_S_CHECKMAPCRC (地图校验检查)");
             handleCheckMapCRC(header, reinterpret_cast<CSCheckMapCRCPacket*>(payload),
                               datagram.senderAddress(), datagram.senderPort());
         }
         break;
+    }
 
     default:
-        LOG_INFO("❓ [UDP 未知指令]");
-        LOG_INFO(QString("   └─ 🔢 Command: %1 (0x%2)")
-                     .arg(packetType)
-                     .arg(QString::number(packetType, 16).toUpper()));
+        LOG_WARNING(QString("❓ [UDP 未知指令] 来自 %1:%2 | Cmd: %3 (0x%4) | SID: %5")
+                        .arg(datagram.senderAddress().toString())
+                        .arg(datagram.senderPort())
+                        .arg(packetType)
+                        .arg(QString::number(packetType, 16).toUpper())
+                        .arg(header->sessionId));
         break;
     }
 }
@@ -1533,6 +1544,12 @@ void NetManager::handleTcpCustomMessage(QTcpSocket *socket)
 
         // 6. 处理具体指令
         switch (static_cast<PacketType>(pHeader->command)) {
+        case C_S_PING:
+        case C_S_HEARTBEAT: {
+            handleTcpPing(socket);
+            break;
+        }
+
         case PacketType::C_S_PREJOINROOM: {
             LOG_INFO("📨 [TCP 接收] C_S_PREJOINROOM (加入意向申报)");
 
