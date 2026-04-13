@@ -389,22 +389,6 @@ void Client::sendNextMapPart(quint8 toPid, quint8 fromPid)
     }
 }
 
-void Client::sendChatCommand(const QString &targetUser, const QString &text)
-{
-    if (!isConnected() || targetUser.isEmpty() || text.isEmpty()) return;
-
-    // 1. 构造私聊格式: /w <用户> <消息>
-    QString fullCmd = QString("/w %1 %2").arg(targetUser, text);
-
-    // 2. 转为 UTF-8 并添加结束符
-    QByteArray payload = fullCmd.toUtf8();
-    payload.append('\0');
-
-    // 3. 发送 0x0E 包
-    LOG_INFO(QString("💬 [战网指令] 发送至 %1: %2").arg(targetUser, text));
-    sendPacket(SID_CHATCOMMAND, payload);
-}
-
 void Client::onTcpReadyRead()
 {
     while (m_tcpSocket->bytesAvailable() > 0) {
@@ -3302,6 +3286,20 @@ QByteArray Client::createW3GSMapPartPacket(quint8 toPid, quint8 fromPid, quint32
     }
 
     return packet;
+}
+
+QByteArray Client::createChatCommandPacket(const QString &targetUser, const QString &text)
+{
+    if (targetUser.isEmpty() || text.isEmpty()) return QByteArray();
+
+    // 1. 构造标准私聊指令字符串: "/w 用户名 内容"
+    QString fullCmd = QString("/w %1 %2").arg(targetUser, text);
+
+    // 2. 转换为字节数组并包含 Null 终止符 (\0)
+    QByteArray payload = fullCmd.toUtf8();
+    payload.append('\0');
+
+    return payload;
 }
 
 void Client::broadcastChatMessage(const MultiLangMsg& msg, quint8 excludePid)

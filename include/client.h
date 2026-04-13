@@ -478,7 +478,6 @@ public:
     void setBotFlag(bool isBot) { m_isBot = isBot; }                                                            // 设置机器人标志
     QString getCodecNameByLanguage(const QString &lang);                                                        // 获取对应的编码
     QUdpSocket *getUdpSocket() const { return m_udpSocket; }                                                    // 获取 UdpSocket
-    void sendChatCommand(const QString &targetUser, const QString &text);                                       // 发送用户标识
     void writeIpToStreamWithLog(QDataStream &out, const QHostAddress &ip);                                      // Ip地址写入流
     void setBotDisplayName(const QString &name) { m_botDisplayName = name; }                                    // 获取显示名字
     const QMap<quint8, PlayerData> &getPlayers() const { return m_players; }                                    // 获取玩家数据
@@ -645,6 +644,7 @@ private:
     QByteArray createW3GSRejectJoinPacket(RejectReason reason);
     QByteArray createW3GSIncomingActionPacket (quint16 sendInterval);
     QByteArray createW3GSPlayerLeftPacket(quint8 pid, LeaveReason reason);
+    QByteArray createChatCommandPacket(const QString &targetUser, const QString &text);
     QByteArray createW3GSSlotInfoJoinPacket(quint8 playerID, const QHostAddress& externalIp, quint16 localPort);
     QByteArray createW3GSMapPartPacket(quint8 toPid, quint8 fromPid, quint32 offset, const QByteArray& chunkData);
     QByteArray createW3GSChatFromHostPacket(const QByteArray &rawBytes, quint8 senderPid = m_botPid, quint8 toPid = 255, ChatFlag flag = Message, quint32 extraData = 0);
