@@ -1773,7 +1773,7 @@ void NetManager::onTcpDisconnected() {
     }
 }
 
-bool NetManager::sendEnterRoomCommand(const QString &clientId, quint64 port, bool isServerCmd)
+bool NetManager::sendEnterRoomCommand(const QString &clientId, const QString &roomName, bool isServerCmd)
 {
     if(isServerCmd){
         return true;
@@ -1791,13 +1791,13 @@ bool NetManager::sendEnterRoomCommand(const QString &clientId, quint64 port, boo
 
     if (socket.isNull()) {
         LOG_ERROR(QString("🛑 [指令发送失败] 目标 %1 已离线 (QPointer 为空)").arg(clientId));
-        m_tcpClients.remove(clientId); // 清理失效键
+        m_tcpClients.remove(clientId);
         return false;
     }
 
     // 2. 检查 Socket 状态
     if (socket->state() != QAbstractSocket::ConnectedState) {
-        m_tcpClients.remove(clientId); // 清理死链接
+        m_tcpClients.remove(clientId);
         LOG_INFO("🛑 [指令发送失败]");
         LOG_INFO(QString("   ├─ 🎯 目标: %1").arg(clientId));
         LOG_ERROR("   └─ ❌ 原因: Socket 连接已断开 (清理僵尸连接)");
@@ -1808,32 +1808,23 @@ bool NetManager::sendEnterRoomCommand(const QString &clientId, quint64 port, boo
     SCCommandPacket pkt;
     memset(&pkt, 0, sizeof(pkt));
 
-    // 填充 ClientID (截断保护)
     strncpy(pkt.clientId, clientId.toUtf8().constData(), sizeof(pkt.clientId) - 1);
 
-    // 填充指令
     const char *cmd = "ENTER_ROOM";
     strncpy(pkt.command, cmd, sizeof(pkt.command) - 1);
 
-    // 填充参数 (端口)
-    QString portStr = QString::number(port);
-    strncpy(pkt.text, portStr.toUtf8().constData(), sizeof(pkt.text) - 1);
+    strncpy(pkt.text, roomName.toUtf8().constData(), sizeof(pkt.text) - 1);
 
-    // 4. 发送 PacketType::S_C_COMMAND
+    // 4. 发送
     bool ok = sendTcpPacket(socket, PacketType::S_C_COMMAND, &pkt, sizeof(pkt));
 
-    // 5. 打印结果日志
+    // 5. 日志
     if (ok) {
         LOG_INFO("🚀 [自动进入指令分发]");
         LOG_INFO(QString("   ├─ 👤 目标用户: %1").arg(clientId));
-        LOG_INFO(QString("   ├─ 🚪 房间端口: %1").arg(port));
+        LOG_INFO(QString("   ├─ 🏠 房间名称: %1").arg(roomName));
         LOG_INFO("   └─ ✅ 发送状态: 成功 (TCP)");
-    } else {
-        LOG_INFO("🛑 [指令发送失败]");
-        LOG_INFO(QString("   ├─ 🎯 目标: %1").arg(clientId));
-        LOG_ERROR("   └─ ❌ 原因: TCP Socket 写入错误");
     }
-
     return ok;
 }
 

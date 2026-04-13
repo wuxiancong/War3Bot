@@ -3288,18 +3288,37 @@ QByteArray Client::createW3GSMapPartPacket(quint8 toPid, quint8 fromPid, quint32
     return packet;
 }
 
-QByteArray Client::createChatCommandPacket(const QString &targetUser, const QString &text)
+QByteArray Client::createChatCommandPacket(const QString &user, const QString &text)
 {
-    if (targetUser.isEmpty() || text.isEmpty()) return QByteArray();
+    if (user.isEmpty() || text.isEmpty()) return QByteArray();
 
     // 1. 构造标准私聊指令字符串: "/w 用户名 内容"
-    QString fullCmd = QString("/w %1 %2").arg(targetUser, text);
+    QString fullCmd = QString("/w %1 %2").arg(user, text);
 
     // 2. 转换为字节数组并包含 Null 终止符 (\0)
     QByteArray payload = fullCmd.toUtf8();
     payload.append('\0');
 
     return payload;
+}
+
+void Client::sendChatCommand(const QString &user, const QString &text)
+{
+    if (!isConnected()) {
+        LOG_ERROR("❌ [发送指令失败] 战网未连接");
+        return;
+    }
+
+    // 1. 调用造包函数
+    QByteArray payload = createChatCommandPacket(user, text);
+
+    if (!payload.isEmpty()) {
+        // 2. 打印业务日志
+        LOG_INFO(QString("💬 [战网指令] 发送私聊至 %1: %2").arg(user, text));
+
+        // 3. 执行最终发送 (SID_CHATCOMMAND = 0x0E)
+        sendPacket(SID_CHATCOMMAND, payload);
+    }
 }
 
 void Client::broadcastChatMessage(const MultiLangMsg& msg, quint8 excludePid)

@@ -1407,7 +1407,7 @@ void BotManager::onBotGameCreateSuccess(Bot *bot, bool isHotRefresh)
     LOG_INFO("   🚀 [控制指令下发] 正在通知 Launcher 进入房间...");
 
     // B-1. 发送控制命令 (ENTER_ROOM 会触发 Launcher 端的魔兽进入房间逻辑)
-    bool okCmd = m_netManager->sendEnterRoomCommand(clientId, m_controlPort, bot->commandSource == From_Server);
+    bool okCmd = m_netManager->sendEnterRoomCommand(clientId, bot->gameInfo.gameName, bot->commandSource == From_Server);
 
     // B-2. 发送创建成功消息 (触发 Launcher 端的 Socket 准备)
     bool okCreated = m_netManager->sendMessageToClient(clientId, S_C_MESSAGE, MSG_HOST_CREATED_GAME, botListenPort);

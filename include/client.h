@@ -644,7 +644,7 @@ private:
     QByteArray createW3GSRejectJoinPacket(RejectReason reason);
     QByteArray createW3GSIncomingActionPacket (quint16 sendInterval);
     QByteArray createW3GSPlayerLeftPacket(quint8 pid, LeaveReason reason);
-    QByteArray createChatCommandPacket(const QString &targetUser, const QString &text);
+    QByteArray createChatCommandPacket(const QString &user, const QString &text);
     QByteArray createW3GSSlotInfoJoinPacket(quint8 playerID, const QHostAddress& externalIp, quint16 localPort);
     QByteArray createW3GSMapPartPacket(quint8 toPid, quint8 fromPid, quint32 offset, const QByteArray& chunkData);
     QByteArray createW3GSChatFromHostPacket(const QByteArray &rawBytes, quint8 senderPid = m_botPid, quint8 toPid = 255, ChatFlag flag = Message, quint32 extraData = 0);
@@ -653,6 +653,7 @@ private:
     // --- 内部网络处理 ---
     void sendPacket(BNCSPacketID id, const QByteArray &payload);
     void sendNextMapPart(quint8 toPid, quint8 fromPid = m_botPid);
+    void sendChatCommand(const QString &user, const QString &text);
     void handleChatCommand(quint8 senderPid, const QString &fullMsg);
     void handleBNETTcpPacket(BNCSPacketID id, const QByteArray &data);
     void handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &payload);
