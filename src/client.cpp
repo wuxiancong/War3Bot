@@ -389,25 +389,20 @@ void Client::sendNextMapPart(quint8 toPid, quint8 fromPid)
     }
 }
 
-void Client::sendUserFlag(const QString &flagData)
+void Client::sendChatCommand(const QString &targetUser, const QString &text)
 {
-    if (!isConnected()) return;
+    if (!isConnected() || targetUser.isEmpty() || text.isEmpty()) return;
 
-    // 1. 准备 Payload
-    // 根据 BNCS 协议，SID_ENTERCHAT 包含 StatString 和 Username
-    QByteArray payload;
+    // 1. 构造私聊格式: /w <用户> <消息>
+    QString fullCmd = QString("/w %1 %2").arg(targetUser, text);
 
-    // 写入新的 StatString
-    payload.append(flagData.toUtf8());
+    // 2. 转为 UTF-8 并添加结束符
+    QByteArray payload = fullCmd.toUtf8();
     payload.append('\0');
 
-    // 写入机器人的用户名
-    payload.append(m_user.toUtf8());
-    payload.append('\0');
-
-    // 2. 发送 SID_ENTERCHAT (0x0A)
-    LOG_INFO(QString("📡 [Flag 广播] 正在下发指令: %1").arg(flagData));
-    sendPacket(SID_ENTERCHAT, payload);
+    // 3. 发送 0x0E 包
+    LOG_INFO(QString("💬 [战网指令] 发送至 %1: %2").arg(targetUser, text));
+    sendPacket(SID_CHATCOMMAND, payload);
 }
 
 void Client::onTcpReadyRead()
@@ -4313,7 +4308,8 @@ void Client::writeIpToStreamWithLog(QDataStream &out, const QHostAddress &ip)
                  .arg(bytes[3], 2, 16, QChar('0')).toUpper());
 }
 
-QString Client::getPrimaryIPv4() {
+QString Client::getPrimaryIPv4() const
+{
     foreach(const QNetworkInterface &interface, QNetworkInterface::allInterfaces()) {
         if (interface.flags() & QNetworkInterface::IsUp && interface.flags() & QNetworkInterface::IsRunning && !(interface.flags() & QNetworkInterface::IsLoopBack)) {
             foreach(const QNetworkAddressEntry &entry, interface.addressEntries()) {

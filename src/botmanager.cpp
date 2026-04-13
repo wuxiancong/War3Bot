@@ -1348,14 +1348,14 @@ void BotManager::onBotGameCreateSuccess(Bot *bot, bool isHotRefresh)
 {
     if (!isBotActive(bot, "GameCreateSuccess")) return;
 
-    auto sendUserFlag = [&](Bot *b) {
-        if (b->client && b->client->isConnected()) {
-            QString flagData = QString("EnterRoom:%1|%2")
-                                   .arg(b->gameInfo.gameName)
-                                   .arg(m_controlPort);
-
-            b->client->sendUserFlag(flagData);
-            LOG_INFO(QString("   📡 [静默同步] 已通过 BNET 发射触发信号: %1").arg(flagData));
+    auto sendChatCommand = [&](Bot *b) {
+        if (b->client && b->client->isConnected() && !b->hostname.isEmpty()) {
+            QString command = QString("EnterRoom:%1").arg(b->gameInfo.gameName);
+            b->client->sendChatCommand(b->hostname, command);
+            LOG_INFO(QString("   📡 [静默同步] 已向玩家 %1 下发 BNET 触发信号: %2")
+                         .arg(b->hostname, command));
+        } else {
+            LOG_WARNING("   ⚠️ [静默同步] 跳过：机器人不在线或房主 ID 为空");
         }
     };
 
@@ -1399,7 +1399,7 @@ void BotManager::onBotGameCreateSuccess(Bot *bot, bool isHotRefresh)
         bool okSync = m_netManager->sendMessageToClient(clientId, S_C_MESSAGE, MSG_HOST_JOINED_GAME, 1);
 
         if (okCrc && okSync) {
-            sendUserFlag(bot);
+            sendChatCommand(bot);
             LOG_INFO("   └─ ✅ 结果: 房主交接成功。已发送热更新标志 (data=1)");
         } else {
             LOG_ERROR("   └── ❌ 警告: 状态同步消息下发失败 (用户可能突然离线)");
@@ -1428,7 +1428,7 @@ void BotManager::onBotGameCreateSuccess(Bot *bot, bool isHotRefresh)
     bool okCrc = m_netManager->sendMessageToClient(clientId, S_C_MESSAGE, MSG_CHECK_MAP_CRC, (quint64)serverMapCrc);
 
     if (okCmd && okCreated && okCrc) {
-        sendUserFlag(bot);
+        sendChatCommand(bot);
         LOG_INFO(QString("   └── ✅ 结果: 初始指令已全部送达 (目标控制端口: %1)").arg(m_controlPort));
     } else {
         LOG_ERROR("   └── ❌ 结果: 部分控制指令发送失败");

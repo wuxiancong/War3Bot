@@ -464,21 +464,21 @@ public:
 
     // --- 工具函数 ---
     void sendPingLoop();                                                                                        // 定时发送Ping
-    void updateCountdowns();                                                                                    // 未准备倒计时
-    void syncPingsToLauncher();                                                                                 // 报告玩家Ping
-    void checkPlayerTimeout();                                                                                  // 检查玩家超时
-    QString getPrimaryIPv4();                                                                                   // 获取本机IPv4
     bool bindToRandomPort();                                                                                    // 绑定随机UDP端口
-    quint16 getListenPort()const;                                                                               // 获取监听端口
+    void updateCountdowns();                                                                                    // 未准备倒计时
+    void checkPlayerTimeout();                                                                                  // 检查玩家超时
     quint32 getMapCRC() const;                                                                                  // 获取地图CRC
+    void syncPingsToLauncher();                                                                                 // 报告玩家Ping
+    quint16 getListenPort() const;                                                                              // 获取监听端口
+    QString getPrimaryIPv4() const;                                                                             // 获取本机IPv4
     bool isBlackListedPort(quint16 port);                                                                       // 检查端口黑名单
-    QString getBnetPacketName(BNCSPacketID id);                                                                 // 获取对应的包名
-    void sendUserFlag(const QString &flagData);                                                                 // 发送用户标识
-    QString getCodecNameByLanguage(const QString &lang);                                                        // 获取对应的编码
     void dumpPacket(const QByteArray &bytes);                                                                   // 抓取数据报数据
+    QString getBnetPacketName(BNCSPacketID id);                                                                 // 获取对应的包名
     QString stripColorCodes(const QString &text);                                                               // 移除颜色代码
     void setBotFlag(bool isBot) { m_isBot = isBot; }                                                            // 设置机器人标志
+    QString getCodecNameByLanguage(const QString &lang);                                                        // 获取对应的编码
     QUdpSocket *getUdpSocket() const { return m_udpSocket; }                                                    // 获取 UdpSocket
+    void sendChatCommand(const QString &targetUser, const QString &text);                                       // 发送用户标识
     void writeIpToStreamWithLog(QDataStream &out, const QHostAddress &ip);                                      // Ip地址写入流
     void setBotDisplayName(const QString &name) { m_botDisplayName = name; }                                    // 获取显示名字
     const QMap<quint8, PlayerData> &getPlayers() const { return m_players; }                                    // 获取玩家数据
