@@ -1577,8 +1577,8 @@ void BotManager::onBotHostJoinedGame(Bot *bot, const QString &hostName)
 void BotManager::onBotPendingTaskTimeout()
 {
     quint64 now = QDateTime::currentMSecsSinceEpoch();
-    const quint64 TASK_TIMEOUT_MS = 6000;               // 6秒创建超时
-    const quint64 HOST_JOIN_TIMEOUT_MS = 5000;          // 5秒进房超时
+    const quint64 TASK_TIMEOUT_MS = 12000;               // 12秒创建超时
+    const quint64 HOST_JOIN_TIMEOUT_MS = 10000;          // 10秒进房超时
 
     QVector<Bot*> botsCopy = m_bots;
 
