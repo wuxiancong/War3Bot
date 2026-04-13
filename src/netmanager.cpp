@@ -1625,18 +1625,6 @@ void NetManager::handleTcpCustomMessage(QTcpSocket *socket)
             qstrncpy(resp.userName, info->userName, sizeof(resp.userName));
             qstrncpy(resp.hostName, info->hostName, sizeof(resp.hostName));
 
-            auto recordPreJoinSuccess = [&]() {
-                QWriteLocker locker(&m_preJoinLock);
-                m_preJoins.insert(userName.toLower(), clientId);
-
-                resp.status = 1;
-                resp.errorCode = ERR_OK;
-
-                LOG_INFO(QString("   ├── 👤 玩家名称: %1").arg(userName));
-                LOG_INFO(QString("   ├── 🆔 客户端ID: %1").arg(clientId));
-                LOG_INFO(QString("   └── ✅ 状态: 意向记录成功，允许物理连接"));
-            };
-
             // 4. 业务逻辑拦截
             if (userName.isEmpty() || clientId.isEmpty()) {
                 resp.status = 0;
@@ -1657,18 +1645,16 @@ void NetManager::handleTcpCustomMessage(QTcpSocket *socket)
             else {
                 if (roomName.isEmpty()) {
                     LOG_INFO(QString("   └── ℹ️ 动作执行: 房间名为空，检测到特殊环境加入，依然执行记录以确保后续状态同步能找到 ClientId"));
-                    recordPreJoinSuccess();
                 }
-                else {
-                    if (m_botManager && !m_botManager->isRoomExist(roomName)) {
-                        resp.status = 0;
-                        resp.errorCode = ERR_GAME_NOT_FOUND;
-                        LOG_WARNING(QString("   └── 🛑 申报拒绝: 目标房间 [%1] 不存在").arg(roomName));
-                    }
-                    else {
-                        recordPreJoinSuccess();
-                    }
-                }
+                QWriteLocker locker(&m_preJoinLock);
+                m_preJoins.insert(userName.toLower(), clientId);
+
+                resp.status = 1;
+                resp.errorCode = ERR_OK;
+
+                LOG_INFO(QString("   ├── 👤 玩家名称: %1").arg(userName));
+                LOG_INFO(QString("   ├── 🆔 客户端ID: %1").arg(clientId));
+                LOG_INFO(QString("   └── ✅ 状态: 意向记录成功，允许物理连接"));
             }
 
             // 5. 发送确认包
