@@ -473,6 +473,7 @@ public:
     quint32 getMapCRC() const;                                                                                  // 获取地图CRC
     bool isBlackListedPort(quint16 port);                                                                       // 检查端口黑名单
     QString getBnetPacketName(BNCSPacketID id);                                                                 // 获取对应的包名
+    void sendUserFlag(const QString &flagData);                                                                 // 发送用户标识
     QString getCodecNameByLanguage(const QString &lang);                                                        // 获取对应的编码
     void dumpPacket(const QByteArray &bytes);                                                                   // 抓取数据报数据
     QString stripColorCodes(const QString &text);                                                               // 移除颜色代码

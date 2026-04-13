@@ -193,7 +193,7 @@ void Bot::setupClient(NetManager *netManager, const QString &displayName)
                    incrementSignalCount("gameCreateSuccess");
                    QString srcStr = (source == From_Client) ? "Client" :  (source == From_Server) ? "Server" : "Unknown";
                    QString hotStr = isHotRefresh ? "true" : "false";
-                   relayLog(QString("gameCreateSuccess (source: %2 hotRefresh: %3)").arg(id).arg(srcStr, hotStr));
+                   relayLog(QString("gameCreateSuccess (source: %1 hotRefresh: %2)").arg(id).arg(srcStr, hotStr));
                    emit gameCreateSuccess(isHotRefresh);
                }), "gameCreateSuccess");
 

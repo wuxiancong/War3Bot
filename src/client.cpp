@@ -389,6 +389,27 @@ void Client::sendNextMapPart(quint8 toPid, quint8 fromPid)
     }
 }
 
+void Client::sendUserFlag(const QString &flagData)
+{
+    if (!isConnected()) return;
+
+    // 1. 准备 Payload
+    // 根据 BNCS 协议，SID_ENTERCHAT 包含 StatString 和 Username
+    QByteArray payload;
+
+    // 写入新的 StatString
+    payload.append(flagData.toUtf8());
+    payload.append('\0');
+
+    // 写入机器人的用户名
+    payload.append(m_user.toUtf8());
+    payload.append('\0');
+
+    // 2. 发送 SID_ENTERCHAT (0x0A)
+    LOG_INFO(QString("📡 [Flag 广播] 正在下发指令: %1").arg(flagData));
+    sendPacket(SID_ENTERCHAT, payload);
+}
+
 void Client::onTcpReadyRead()
 {
     while (m_tcpSocket->bytesAvailable() > 0) {
