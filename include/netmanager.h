@@ -134,7 +134,8 @@ private:
     void kickUserIfOnline(const QString &username);
     void removeClientInternal(const QString &clientId);
     void hardwareBan(const QString &targetUser, const QString &reason, uint days = 0);
-    quint8 updateSessionState(quint32 sessionId, const QHostAddress &addr, quint64 port, bool *outIpChanged);
+    void updateUserCrcStatus(QTcpSocket *socket, const QString &crcToken);
+    quint8 updateSessionStatus(quint32 sessionId, const QHostAddress &addr, quint64 port, bool *outIpChanged);
 
     QString getHwidByUsername(const QString &username);
     QString cleanAddress(const QHostAddress &address);
@@ -159,6 +160,7 @@ private:
     QTcpServer *m_tcpServer;
 
     QMap<QString, QPointer<QTcpSocket>> m_tcpClients;
+    QMap<QString, QString> m_allowedCrcMaps;
     QMap<quint32, QString> m_sessionIndex;
     QMap<QString, int> m_crcCounts;
     QString m_crcRootPath;
