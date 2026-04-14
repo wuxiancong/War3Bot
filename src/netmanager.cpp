@@ -1157,43 +1157,55 @@ void NetManager::hardwareBan(const QString &targetUser, const QString &reason, u
 
 void NetManager::handleCheckMapCRC(const PacketHeader *header, const CSCheckMapCRCPacket *packet, const QHostAddress &senderAddr, quint64 senderPort)
 {
-    // 1. 统一转为大写
+    // 1. 提取并清理数据
     QString crcHex = QString::fromUtf8(packet->crcHex, strnlen(packet->crcHex, sizeof(packet->crcHex))).trimmed().toUpper();
 
-    // 2. 增加校验端白名单拦截
+    // 准备通用的响应结构体
+    SCCheckMapCRCPacket resp;
+    memset(&resp, 0, sizeof(resp));
+    qstrncpy(resp.crcHex, crcHex.toUtf8().constData(), sizeof(resp.crcHex));
+
+    // 2. 校验端白名单拦截（第一道防线）
     if (!m_allowedCrcMaps.contains(crcHex)) {
         LOG_WARNING(QString("🛡️ [CRC拒绝] 非白名单请求: %1 来自 %2").arg(crcHex, senderAddr.toString()));
-        SCCheckMapCRCPacket resp;
-        memset(&resp, 0, sizeof(resp));
-        strncpy(resp.crcHex, crcHex.toStdString().c_str(), sizeof(resp.crcHex) - 1);
+        resp.exists = 1; // 告诉客户端“已存在”，从而诱骗其放弃上传
+        sendUdpPacket(senderAddr, senderPort, S_C_CHECKMAPCRC, &resp, sizeof(resp), header->sessionId);
+        return;
+    }
+
+    // 3. 检查文件夹总数（第二道防线）
+    QDir rootDir(m_crcRootPath);
+    QStringList subDirs = rootDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
+    const int MAX_CRC_FOLDERS = 20;
+
+    // 如果超过上限且当前 CRC 还没有对应的文件夹
+    if (subDirs.size() >= MAX_CRC_FOLDERS && !subDirs.contains(crcHex)) {
+        LOG_CRITICAL(QString("⚠️ [磁盘保护] CRC 缓存文件夹已达上限 (%1), 拒绝新图上传").arg(MAX_CRC_FOLDERS));
         resp.exists = 1;
         sendUdpPacket(senderAddr, senderPort, S_C_CHECKMAPCRC, &resp, sizeof(resp), header->sessionId);
         return;
     }
 
+    // 4. 物理文件存在性校验
     QString scriptDir = m_crcRootPath + "/" + crcHex;
-    QDir dir(scriptDir);
+    // 必须 common.j, blizzard.j, war3map.j 三者全在才视为 exists
+    bool isFullyPrecached = QFile::exists(scriptDir + "/common.j") &&
+                            QFile::exists(scriptDir + "/blizzard.j") &&
+                            QFile::exists(scriptDir + "/war3map.j");
 
-    // 3. 全部脚本存在，才视为已存在
-    bool exists = dir.exists() && (
-                      QFile::exists(scriptDir + "/common.j") &&
-                      QFile::exists(scriptDir + "/war3map.j") &&
-                      QFile::exists(scriptDir + "/blizzard.j")
-                      );
+    if (isFullyPrecached) {
+        LOG_INFO(QString("✅ [CRC校验通过] %1 及其脚本已在服务器就绪").arg(crcHex));
+        resp.exists = 1;
+    } else {
+        LOG_INFO(QString("🔍 [CRC脚本缺失] %1 正在授权上传 (SessionID: %2)").arg(crcHex).arg(header->sessionId));
+        resp.exists = 0;
 
-    SCCheckMapCRCPacket resp;
-    memset(&resp, 0, sizeof(resp));
-    strncpy(resp.crcHex, crcHex.toStdString().c_str(), sizeof(resp.crcHex) - 1);
-    resp.exists = exists ? 1 : 0;
-
-    if (!exists) {
+        // 5. 只有在确定要上传时，才生成授权令牌
         QWriteLocker locker(&m_tokenLock);
         m_pendingUploadTokens.insert(crcHex, header->sessionId);
-        LOG_INFO(QString("🔍 [CRC检测] %1 不存在，已授权上传").arg(crcHex));
-    } else {
-        LOG_INFO(QString("✅ [CRC检测] %1 已匹配成功").arg(crcHex));
     }
 
+    // 6. 发送最终判定的响应包
     sendUdpPacket(senderAddr, senderPort, S_C_CHECKMAPCRC, &resp, sizeof(resp), header->sessionId);
 }
 
@@ -1383,7 +1395,7 @@ void NetManager::handleTcpUploadMessage(QTcpSocket *socket)
 
             // 4. 文件大小与存在性检查 (只记录不上传)
             qint64 fileSize; in >> fileSize;
-            if (fileSize <= 0 || fileSize > 10*1024*1024) {
+            if (fileSize <= 0 || fileSize > 3 * 1024 * 1024) {
                 socket->disconnectFromHost();
                 return;
             }
@@ -2114,12 +2126,7 @@ void NetManager::updateMostFrequentCrc()
         QString path = m_crcRootPath + "/" + maxCrcToken;
         QDir dir(path);
 
-        // 支持多种脚本文件
-        bool hasScript = QFile::exists(path + "/common.j") &&
-                         QFile::exists(path + "/war3map.j") &&
-                         QFile::exists(path + "/blizzard.j");
-
-        if (dir.exists() && hasScript) {
+        if (dir.exists()) {
             War3Map::setPriorityCrcDirectory(path);
             LOG_INFO(QString("🔥 更新热门地图 CRC: %1").arg(maxCrcToken));
         } else {
