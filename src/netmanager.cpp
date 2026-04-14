@@ -47,9 +47,9 @@ NetManager::NetManager(QObject *parent)
         writeRoot = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
     }
 
-    // 3. 定义 CRC 存放路径
+    // 3. 定义 CRC 存放路径中
     m_crcRootPath = writeRoot + "/war3files/crc";
-    m_allowedCrcMaps.insert("3AEBCEF3", "DotA v6.83d.w3x");
+    m_allowedCrcMaps << "3AEBCEF3";
 
     // 4. 尝试创建目录
     QDir dir;
@@ -961,7 +961,7 @@ void NetManager::handleUnregister(const PacketHeader *header, const QHostAddress
     }
 }
 
-quint8 NetManager::updateSessionStatus(quint32 sessionId, const QHostAddress &addr, quint64 port, bool *outIpChanged)
+quint8 NetManager::updateSessionState(quint32 sessionId, const QHostAddress &addr, quint64 port, bool *outIpChanged)
 {
     if (sessionId == 0) return Unregistered;
 
@@ -1028,7 +1028,7 @@ void NetManager::handleUdpPing(const PacketHeader *header, const QHostAddress &s
 {
     bool ipChanged = false;
     quint32 sessionId = header->sessionId;
-    int status = updateSessionStatus(sessionId, senderAddr, senderPort, &ipChanged);
+    int status = updateSessionState(sessionId, senderAddr, senderPort, &ipChanged);
 
     SCPongPacket pongPkt;
     pongPkt.status = status;
@@ -1157,11 +1157,29 @@ void NetManager::hardwareBan(const QString &targetUser, const QString &reason, u
 
 void NetManager::handleCheckMapCRC(const PacketHeader *header, const CSCheckMapCRCPacket *packet, const QHostAddress &senderAddr, quint64 senderPort)
 {
-    QString crcHex = QString::fromUtf8(packet->crcHex, strnlen(packet->crcHex, sizeof(packet->crcHex))).trimmed();
+    // 1. 统一转为大写
+    QString crcHex = QString::fromUtf8(packet->crcHex, strnlen(packet->crcHex, sizeof(packet->crcHex))).trimmed().toUpper();
 
-    QString scriptDir = QCoreApplication::applicationDirPath() + "/war3files/crc/" + crcHex;
+    // 2. 增加校验端白名单拦截
+    if (!m_allowedCrcMaps.contains(crcHex)) {
+        LOG_WARNING(QString("🛡️ [CRC拒绝] 非白名单请求: %1 来自 %2").arg(crcHex, senderAddr.toString()));
+        SCCheckMapCRCPacket resp;
+        memset(&resp, 0, sizeof(resp));
+        strncpy(resp.crcHex, crcHex.toStdString().c_str(), sizeof(resp.crcHex) - 1);
+        resp.exists = 1;
+        sendUdpPacket(senderAddr, senderPort, S_C_CHECKMAPCRC, &resp, sizeof(resp), header->sessionId);
+        return;
+    }
+
+    QString scriptDir = m_crcRootPath + "/" + crcHex;
     QDir dir(scriptDir);
-    bool exists = dir.exists() && QFile::exists(scriptDir + "/common.j");
+
+    // 3. 全部脚本存在，才视为已存在
+    bool exists = dir.exists() && (
+                      QFile::exists(scriptDir + "/common.j") &&
+                      QFile::exists(scriptDir + "/war3map.j") &&
+                      QFile::exists(scriptDir + "/blizzard.j")
+                      );
 
     SCCheckMapCRCPacket resp;
     memset(&resp, 0, sizeof(resp));
@@ -1171,10 +1189,9 @@ void NetManager::handleCheckMapCRC(const PacketHeader *header, const CSCheckMapC
     if (!exists) {
         QWriteLocker locker(&m_tokenLock);
         m_pendingUploadTokens.insert(crcHex, header->sessionId);
-        LOG_INFO(QString("🔍 请求CRC %1 不存在，等待上传 (Session: %2)")
-                     .arg(crcHex).arg(header->sessionId));
+        LOG_INFO(QString("🔍 [CRC检测] %1 不存在，已授权上传").arg(crcHex));
     } else {
-        LOG_INFO(QString("✅ 请求CRC %1 已存在").arg(crcHex));
+        LOG_INFO(QString("✅ [CRC检测] %1 已匹配成功").arg(crcHex));
     }
 
     sendUdpPacket(senderAddr, senderPort, S_C_CHECKMAPCRC, &resp, sizeof(resp), header->sessionId);
@@ -1314,183 +1331,158 @@ void NetManager::onTcpReadyRead()
 
 void NetManager::handleTcpUploadMessage(QTcpSocket *socket)
 {
-    // 使用 while 处理粘包，确保缓冲区数据被完全消化
+    if (!socket) return;
+
+    QDataStream in(socket);
+    in.setVersion(QDataStream::Qt_5_15);
+
     while (socket->bytesAvailable() > 0) {
-
-        // ==================== 阶段 1: 解析协议头部 ====================
+        // --- 阶段 1: 协议头解析 ---
         if (!socket->property("HeaderParsed").toBool()) {
-            // 基础固定长度: Magic(4) + Token(8) + NameLen(4) = 16 字节
-            const int PREFIX_SIZE = 16;
-            if (socket->bytesAvailable() < PREFIX_SIZE) return;
+            const int MIN_HEADER_SIZE = 16;
+            if (socket->bytesAvailable() < MIN_HEADER_SIZE) return;
 
-            // 1. 探测文件名长度 (Peek 不移动读指针)
-            QByteArray prefix = socket->peek(PREFIX_SIZE);
-            QDataStream peekStream(prefix);
-            peekStream.skipRawData(12); // 跳过 Magic 和 Token
-            quint32 nameLen;
-            peekStream >> nameLen;
+            QByteArray headerPeep = socket->peek(MIN_HEADER_SIZE);
+            QDataStream peepStream(headerPeep);
+            peepStream.skipRawData(12);
+            quint32 nameLenPreview;
+            peepStream >> nameLenPreview;
 
-            // 2. 边界检查: 防止恶意超长文件名
-            if (nameLen > 255) {
-                LOG_WARNING("🛡️ [TCP 拦截] 非法文件名长度: " + QString::number(nameLen));
+            if (nameLenPreview > 256 || socket->bytesAvailable() < MIN_HEADER_SIZE + nameLenPreview) return;
+
+            // 1. 校验魔数
+            if (socket->read(4) != "W3UP") {
                 socket->disconnectFromHost();
                 return;
             }
 
-            // 3. 检查总头部是否到齐 (固定16字节 + 文件名 + 8字节Size)
-            int totalHeaderSize = PREFIX_SIZE + nameLen + 8;
-            if (socket->bytesAvailable() < totalHeaderSize) return;
-
-            // 4. 原子化读取完整头部 (数据到齐了，一次性读出)
-            QByteArray header = socket->read(totalHeaderSize);
-            QDataStream in(header);
-            in.setVersion(QDataStream::Qt_5_15);
-
-            // A. 校验 Magic Number
-            char magic[4]; in.readRawData(magic, 4);
-            if (memcmp(magic, "W3UP", 4) != 0) {
-                LOG_ERROR("❌ [TCP 协议错误] Magic 不匹配");
-                sendUploadResult(socket, "", "Invalid Magic", false, UPLOAD_ERR_MAGIC);
+            // 2. CRC 白名单校验
+            QString crcToken = QString::fromLatin1(socket->read(8)).trimmed().toUpper();
+            if (!m_allowedCrcMaps.contains(crcToken)) {
+                LOG_WARNING("🛡️ [拒绝] 非白名单CRC: " + crcToken);
+                sendUploadResult(socket, crcToken, "Forbidden CRC", false, UPLOAD_ERR_TOKEN);
                 socket->disconnectFromHost();
                 return;
             }
 
-            // B. 校验 CRC Token
-            char tokenBuf[8]; in.readRawData(tokenBuf, 8);
-            QString crcToken = QString::fromLatin1(tokenBuf, 8).trimmed().toUpper();
-
-            quint32 sessionId = 0;
+            // 3. 提取 Session & 文件名
+            quint32 sid = 0;
             {
                 QReadLocker locker(&m_tokenLock);
-                if (!m_allowedCrcMaps.contains(crcToken) || !m_pendingUploadTokens.contains(crcToken)) {
-                    LOG_WARNING("🛡️ [TCP 拒绝] 未授权或不在白名单的 CRC: " + crcToken);
-                    sendUploadResult(socket, crcToken, "Unauthorized", false, UPLOAD_ERR_TOKEN);
-                    socket->disconnectFromHost();
-                    return;
-                }
-                sessionId = m_pendingUploadTokens.value(crcToken);
+                sid = m_pendingUploadTokens.value(crcToken, 0);
             }
+            socket->setProperty("CrcToken", crcToken);
+            socket->setProperty("SessionId", sid);
 
-            // C. 解析文件名与大小
-            in.device()->seek(PREFIX_SIZE); // 定位到文件名起始位置
-            QString fileName = QFileInfo(QString::fromUtf8(header.mid(PREFIX_SIZE, nameLen))).fileName();
-
-            qint64 fileSize;
-            in.device()->seek(PREFIX_SIZE + nameLen); // 定位到 Size 起始位置
-            in >> fileSize;
-
-            if (!isValidFileName(fileName) || fileSize <= 0 || fileSize > 3 * 1024 * 1024) {
-                LOG_WARNING(QString("❌ [TCP 拒绝] 文件非法或过大: %1 (%2 bytes)").arg(fileName).arg(fileSize));
-                sendUploadResult(socket, crcToken, fileName, false, UPLOAD_ERR_SIZE);
+            quint32 nameLen; in >> nameLen;
+            QString fileName = QFileInfo(QString::fromUtf8(socket->read(nameLen))).fileName();
+            if (!isValidFileName(fileName)) {
                 socket->disconnectFromHost();
                 return;
             }
 
-            // 5. 存储属性并处理文件 IO
-            socket->setProperty("CrcToken", crcToken);
-            socket->setProperty("SessionId", sessionId);
-            socket->setProperty("FileName", fileName);
-            socket->setProperty("BytesTotal", fileSize);
-            socket->setProperty("BytesWritten", (qint64)0);
+            // 4. 文件大小与存在性检查 (只记录不上传)
+            qint64 fileSize; in >> fileSize;
+            if (fileSize <= 0 || fileSize > 10*1024*1024) {
+                socket->disconnectFromHost();
+                return;
+            }
 
             QString savePath = m_crcRootPath + "/" + crcToken + "/" + fileName;
-
-            // 秒传逻辑：如果文件已存在且大小一致
-            if (QFile::exists(savePath) && QFileInfo(savePath).size() == fileSize) {
-                LOG_INFO("⚡ [TCP 秒传] 命中缓存: " + fileName);
-                updateUserCrcStatus(socket, crcToken);
+            if (QFile::exists(savePath)) {
+                LOG_INFO(QString("⚡ [跳过上传] 文件已存在: %1/%2").arg(crcToken, fileName));
+                updatePlayerCrcRecord(sid, crcToken, cleanAddress(socket->peerAddress()));
                 sendUploadResult(socket, crcToken, fileName, true, UPLOAD_OK);
-                socket->disconnectFromHost();
+                updateMostFrequentCrc();
+                socket->disconnectFromHost(); // 任务完成，断开即可
                 return;
             }
 
-            // 创建目录并打开文件
-            QDir().mkpath(QFileInfo(savePath).absolutePath());
+            // 5. 准备写入文件
+            QDir().mkpath(m_crcRootPath + "/" + crcToken);
             QFile *file = new QFile(savePath);
             if (!file->open(QIODevice::WriteOnly)) {
-                LOG_ERROR("❌ [TCP IO 错误] 无法写文件: " + file->errorString());
-                sendUploadResult(socket, crcToken, fileName, false, UPLOAD_ERR_IO);
-                delete file; socket->disconnectFromHost(); return;
+                delete file;
+                socket->disconnectFromHost();
+                return;
             }
 
             socket->setProperty("FilePtr", QVariant::fromValue((void*)file));
+            socket->setProperty("BytesTotal", fileSize);
+            socket->setProperty("BytesWritten", (qint64)0);
             socket->setProperty("HeaderParsed", true);
-            LOG_INFO(QString("🚀 [TCP 接收开始] %1 (%2 KB)").arg(fileName).arg(fileSize / 1024));
+            socket->setProperty("FileName", fileName);
         }
 
-        // ==================== 阶段 2: 接收文件内容 ====================
+        // --- 阶段 2: 数据流写入 ---
         if (socket->property("HeaderParsed").toBool()) {
             QFile *file = static_cast<QFile*>(socket->property("FilePtr").value<void*>());
-            if (!file) return;
+            if (!file) break;
 
             qint64 total = socket->property("BytesTotal").toLongLong();
             qint64 current = socket->property("BytesWritten").toLongLong();
-            qint64 toRead = qMin(total - current, socket->bytesAvailable());
+            qint64 bytesToRead = qMin((qint64)(total - current), socket->bytesAvailable());
 
-            if (toRead > 0) {
-                file->write(socket->read(toRead));
-                current += toRead;
+            if (bytesToRead > 0) {
+                file->write(socket->read(bytesToRead));
+                current += bytesToRead;
                 socket->setProperty("BytesWritten", current);
 
                 if (current >= total) {
-                    file->close();
-                    file->deleteLater();
-                    socket->setProperty("FilePtr", QVariant::fromValue((void*)nullptr));
+                    file->flush();
+                    file->close(); // 关闭但不删除，标记成功
+                    socket->setProperty("UploadSuccess", true);
 
-                    QString token = socket->property("CrcToken").toString();
-                    QString name  = socket->property("FileName").toString();
+                    updatePlayerCrcRecord(socket->property("SessionId").toUInt(),
+                                          socket->property("CrcToken").toString(),
+                                          cleanAddress(socket->peerAddress()));
 
-                    updateUserCrcStatus(socket, token);
-                    sendUploadResult(socket, token, name, true, UPLOAD_OK);
-
-                    LOG_INFO("✅ [TCP 传输完成] 用户状态已同步: " + name);
+                    sendUploadResult(socket, socket->property("CrcToken").toString(),
+                                     socket->property("FileName").toString(), true, UPLOAD_OK);
+                    updateMostFrequentCrc();
                     socket->disconnectFromHost();
                     return;
                 }
-            }
-            break; // 退出当前循环等待更多数据到达
+            } else break;
         }
     }
 }
 
-void NetManager::updateUserCrcStatus(QTcpSocket *socket, const QString &crcToken)
+void NetManager::updatePlayerCrcRecord(quint32 sessionId, const QString &crcToken, const QString &senderIp)
 {
-    quint32 sessionId = socket->property("SessionId").toUInt();
-    bool updated = false;
-    QString username = "Unknown";
+    if (crcToken.isEmpty()) return;
 
     QWriteLocker locker(&m_registerInfosLock);
+    bool updated = false;
 
-    // 1. 尝试通过 SessionID 定位
-    if (m_sessionIndex.contains(sessionId)) {
+    // 1. 优先通过 SessionID 定位
+    if (sessionId != 0 && m_sessionIndex.contains(sessionId)) {
         QString clientId = m_sessionIndex.value(sessionId);
         if (m_registerInfos.contains(clientId)) {
             m_registerInfos[clientId].crcToken = crcToken;
-            username = m_registerInfos[clientId].username;
             updated = true;
+            LOG_INFO(QString("🗺️ [CRC关联] 用户: %1 (SID:%2) -> %3")
+                         .arg(m_registerInfos[clientId].username).arg(sessionId).arg(crcToken));
         }
     }
 
     // 2. 备选方案：通过 IP 定位
-    if (!updated) {
-        QString senderIp = cleanAddress(socket->peerAddress().toString());
+    if (!updated && !senderIp.isEmpty()) {
         for (auto it = m_registerInfos.begin(); it != m_registerInfos.end(); ++it) {
             if (it.value().publicIp == senderIp) {
                 it.value().crcToken = crcToken;
-                username = it.value().username;
                 updated = true;
+                LOG_INFO(QString("🗺️ [CRC关联] 用户: %1 (via IP:%2) -> %3")
+                             .arg(it.value().username, senderIp, crcToken));
                 break;
             }
         }
     }
 
-    if (updated) {
-        LOG_INFO(QString("    👤 状态同步: 用户 [%1] -> MapCRC: %2").arg(username, crcToken));
-    } else {
-        LOG_WARNING(QString("    ⚠️ 状态同步失败: 找不到匹配的 SessionID(%1)").arg(sessionId));
+    if (!updated) {
+        LOG_WARNING(QString("⚠️ [CRC记录失败] 地图已处理，但找不到对应的在线用户来同步记录 (SID: %1, IP: %2)")
+                        .arg(sessionId).arg(senderIp));
     }
-
-    updateMostFrequentCrc(); // 更新全局统计
 }
 
 void NetManager::handleTcpCustomMessage(QTcpSocket *socket)
@@ -1741,22 +1733,34 @@ void NetManager::onNewTcpConnection()
 
 void NetManager::onTcpDisconnected() {
     QTcpSocket *socket = qobject_cast<QTcpSocket*>(sender());
-    if (socket) {
-        QVariant fileVar = socket->property("FilePtr");
-        if (fileVar.isValid()) {
-            QFile *file = static_cast<QFile*>(fileVar.value<void*>());
-            if (file) {
-                if (file->isOpen()) file->close();
-                delete file;
+    if (!socket) return;
+
+    // 提取并清理文件指针
+    QVariant fileVar = socket->property("FilePtr");
+    if (fileVar.isValid()) {
+        QFile *file = static_cast<QFile*>(fileVar.value<void*>());
+        if (file) {
+            bool success = socket->property("UploadSuccess").toBool();
+            if (file->isOpen()) file->close();
+
+            // 如果断开时还没传完，且没有标记成功，删除磁盘上的半成品
+            if (!success) {
+                file->remove();
+                LOG_WARNING("🧹 [清理] 删除了未完成的文件: " + file->fileName());
             }
+
+            delete file;
+            socket->setProperty("FilePtr", QVariant());
         }
-        QString clientId = socket->property("clientId").toString();
-        if (!clientId.isEmpty()) {
-            m_tcpClients.remove(clientId);
-            LOG_INFO(QString("🧹 已从控制列表移除断开的客户端: %1").arg(clientId));
-        }
-        socket->deleteLater();
     }
+
+    // 清理控制列表
+    QString clientId = socket->property("clientId").toString();
+    if (!clientId.isEmpty() && m_tcpClients.value(clientId) == socket) {
+        m_tcpClients.remove(clientId);
+    }
+
+    socket->deleteLater();
 }
 
 bool NetManager::sendEnterRoomCommand(const QString &clientId, const QString &roomName, bool isServerCmd)
@@ -2110,18 +2114,17 @@ void NetManager::updateMostFrequentCrc()
         QString path = m_crcRootPath + "/" + maxCrcToken;
         QDir dir(path);
 
-        // 确保该目录确实存在 .j 文件，否则设置了也没用
-        if (dir.exists() && QFile::exists(path + "/common.j")) {
+        // 支持多种脚本文件
+        bool hasScript = QFile::exists(path + "/common.j") &&
+                         QFile::exists(path + "/war3map.j") &&
+                         QFile::exists(path + "/blizzard.j");
+
+        if (dir.exists() && hasScript) {
             War3Map::setPriorityCrcDirectory(path);
-            LOG_INFO(QString("🔥 更新热门地图 CRC: %1 (在线人数: %2)").arg(maxCrcToken).arg(maxCount));
+            LOG_INFO(QString("🔥 更新热门地图 CRC: %1").arg(maxCrcToken));
         } else {
-            // 目录不完整，回退
-            LOG_WARNING(QString("⚠️ 热门 CRC %1 数据缺失，回退默认").arg(maxCrcToken));
             War3Map::setPriorityCrcDirectory("");
         }
-    } else {
-        // 没有热门地图，回退
-        War3Map::setPriorityCrcDirectory("");
     }
 }
 

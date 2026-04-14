@@ -5,6 +5,7 @@
 #include <QDebug>
 #include <QtEndian>
 #include <QFileInfo>
+#include <QCoreApplication>
 #include <QCryptographicHash>
 
 #include <zlib.h>
@@ -247,17 +248,6 @@ bool War3Map::load(const QString &mapPath)
     }
 
     // 辅助读取函数
-    auto readLocalScript = [&](const QString &name) -> QByteArray {
-        QString priorityCrcDir = getPriorityCrcDirectory();
-        if (!priorityCrcDir.isEmpty()) {
-            QFile f(priorityCrcDir + "/" + name);
-            if (f.exists() && f.open(QIODevice::ReadOnly)) return f.readAll();
-        }
-        QFile fDefault("war3files/" + name);
-        if (fDefault.open(QIODevice::ReadOnly)) return fDefault.readAll();
-        return QByteArray();
-    };
-
     auto readMpqFile = [&](const QString &name) -> QByteArray {
         HANDLE hFile = NULL;
         QByteArray buf;
@@ -273,11 +263,37 @@ bool War3Map::load(const QString &mapPath)
         return buf;
     };
 
+    auto readScriptWithOrder = [&](const QString &name) -> QByteArray {
+        QByteArray data;
+
+        // 1. 如果是 war3map.j，必须先看地图 MPQ 内部
+        if (name == "war3map.j") {
+            data = readMpqFile("war3map.j");
+            if (data.isEmpty()) data = readMpqFile("scripts\\war3map.j");
+            if (!data.isEmpty()) return data;
+        }
+
+        // 2. 服务器全局默认目录 (war3files/ 文件夹)
+        QFile fileDefault(QCoreApplication::applicationDirPath() + "/war3files/" + name);
+        if (fileDefault.open(QIODevice::ReadOnly)) return fileDefault.readAll();
+
+        // 3.用户上传的 CRC 专用目录
+        QString priorityDir = getPriorityCrcDirectory();
+        if (!priorityDir.isEmpty()) {
+            QFile file(priorityDir + "/" + name);
+            if (file.exists() && file.open(QIODevice::ReadOnly)) {
+                LOG_INFO(QString("   ├─ 💡 使用了保底(Fallback)脚本: %1/%2").arg(priorityDir, name));
+                return file.readAll();
+            }
+        }
+
+        return QByteArray();
+    };
+
     // 🔐 哈希计算
-    QByteArray dataCommon = readLocalScript("common.j");
-    QByteArray dataBlizzard = readLocalScript("blizzard.j");
-    QByteArray dataMapScript = readMpqFile("war3map.j");
-    if (dataMapScript.isEmpty()) dataMapScript = readMpqFile("scripts\\war3map.j");
+    QByteArray dataCommon = readScriptWithOrder("common.j");
+    QByteArray dataBlizzard = readScriptWithOrder("blizzard.j");
+    QByteArray dataMapScript = readScriptWithOrder("war3map.j");
 
     if (dataCommon.isEmpty() || dataBlizzard.isEmpty() || dataMapScript.isEmpty()) {
         LOG_ERROR("   └─ ❌ [错误] 核心脚本缺失，无法计算 Hash");
@@ -679,8 +695,14 @@ void War3Map::analyzeStatString(const QString &label, const QByteArray &encodedD
 void War3Map::setPriorityCrcDirectory(const QString &dirPath)
 {
     QMutexLocker locker(&s_priorityCrcDirMutex);
-    s_priorityCrcDir = dirPath;
-    LOG_INFO(QString("[War3Map] 设置计算CRC的文件搜索路径: %1").arg(dirPath));
+    if (s_priorityCrcDir != dirPath) {
+        s_priorityCrcDir = dirPath;
+
+        QMutexLocker cacheLocker(&s_cacheMutex);
+        s_cache.clear();
+
+        LOG_INFO(QString("[War3Map] 🔄 路径已切至: %1 (缓存已清理，下次加载将重算CRC)").arg(dirPath));
+    }
 }
 
 QString War3Map::getPriorityCrcDirectory()
