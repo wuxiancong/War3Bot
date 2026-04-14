@@ -1024,8 +1024,8 @@ void BotManager::handleHostCommand(const QString &userName, const QString &clien
 
     // 3. 模式校验
     static const QVector<QString> allowModels = {
-        "ap", "cm", "rd", "sd", "ar", "xl", "aptb", "cmtb", "rdtb", "sdtb", "artb", "xltb",
-        "ap83", "cm83", "rd83", "sd83", "ar83", "xl83", "ap83tb", "cm83tb", "rd83tb", "sd83tb", "ar83tb", "xl83tb"
+        "ap", "cm", "rd", "sd", "ar", "xl", "aptb", "cmtb", "rdtb", "sdtb", "artb", "xltb", "solo",
+        "ap83", "cm83", "rd83", "sd83", "ar83", "xl83", "solo83", "ap83tb", "cm83tb", "rd83tb", "sd83tb", "ar83tb", "xl83tb"
     };
 
     if (!allowModels.contains(mapModel)) {
