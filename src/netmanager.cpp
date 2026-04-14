@@ -1314,143 +1314,141 @@ void NetManager::onTcpReadyRead()
 
 void NetManager::handleTcpUploadMessage(QTcpSocket *socket)
 {
-    QDataStream in(socket);
-    in.setVersion(QDataStream::Qt_5_15);
-
+    // 使用 while 处理粘包，确保缓冲区数据被完全消化
     while (socket->bytesAvailable() > 0) {
 
-        // ==================== 阶段 1: 解析头部 ====================
+        // ==================== 阶段 1: 解析协议头部 ====================
         if (!socket->property("HeaderParsed").toBool()) {
-            const int MIN_HEADER_SIZE = 16;
-            if (socket->bytesAvailable() < MIN_HEADER_SIZE) return;
+            // 基础固定长度: Magic(4) + Token(8) + NameLen(4) = 16 字节
+            const int PREFIX_SIZE = 16;
+            if (socket->bytesAvailable() < PREFIX_SIZE) return;
 
-            // 预览文件名长度防止恶意长包
-            QByteArray headerPeep = socket->peek(MIN_HEADER_SIZE);
-            QDataStream peepStream(headerPeep);
-            peepStream.skipRawData(12); // 跳过 Magic(4) + Token(8)
-            quint32 nameLenPreview;
-            peepStream >> nameLenPreview;
+            // 1. 探测文件名长度 (Peek 不移动读指针)
+            QByteArray prefix = socket->peek(PREFIX_SIZE);
+            QDataStream peekStream(prefix);
+            peekStream.skipRawData(12); // 跳过 Magic 和 Token
+            quint32 nameLen;
+            peekStream >> nameLen;
 
-            if (nameLenPreview > 256) {
-                LOG_WARNING("└── ❌ 拒绝: 文件名长度异常");
+            // 2. 边界检查: 防止恶意超长文件名
+            if (nameLen > 255) {
+                LOG_WARNING("🛡️ [TCP 拦截] 非法文件名长度: " + QString::number(nameLen));
                 socket->disconnectFromHost();
                 return;
             }
 
-            if (socket->bytesAvailable() < MIN_HEADER_SIZE + nameLenPreview) return;
+            // 3. 检查总头部是否到齐 (固定16字节 + 文件名 + 8字节Size)
+            int totalHeaderSize = PREFIX_SIZE + nameLen + 8;
+            if (socket->bytesAvailable() < totalHeaderSize) return;
 
-            // 1. 验证 Magic
-            if (socket->read(4) != "W3UP") {
-                LOG_WARNING("└── ❌ 错误: Magic Number 不匹配");
-                sendUploadResult(socket, "", "Bad Magic", false, UPLOAD_ERR_MAGIC);
+            // 4. 原子化读取完整头部 (数据到齐了，一次性读出)
+            QByteArray header = socket->read(totalHeaderSize);
+            QDataStream in(header);
+            in.setVersion(QDataStream::Qt_5_15);
+
+            // A. 校验 Magic Number
+            char magic[4]; in.readRawData(magic, 4);
+            if (memcmp(magic, "W3UP", 4) != 0) {
+                LOG_ERROR("❌ [TCP 协议错误] Magic 不匹配");
+                sendUploadResult(socket, "", "Invalid Magic", false, UPLOAD_ERR_MAGIC);
                 socket->disconnectFromHost();
                 return;
             }
 
-            // 2. 读取并验证 CRC Token
-            QString crcToken = QString::fromLatin1(socket->read(8)).trimmed().toUpper();
-            LOG_INFO(QString("├── 📥 收到上传请求 | CRC: [%1]").arg(crcToken));
+            // B. 校验 CRC Token
+            char tokenBuf[8]; in.readRawData(tokenBuf, 8);
+            QString crcToken = QString::fromLatin1(tokenBuf, 8).trimmed().toUpper();
 
-            // --- A. 白名单校验 ---
-            if (!m_allowedCrcMaps.contains(crcToken)) {
-                LOG_WARNING("├── 🛡️ 拒绝: 该地图不在白名单内");
-                sendUploadResult(socket, crcToken, "Forbidden CRC", false, UPLOAD_ERR_TOKEN);
-                socket->disconnectFromHost();
-                return;
-            }
-
-            // --- B. Token 授权校验 ---
-            quint32 sid = 0;
+            quint32 sessionId = 0;
             {
                 QReadLocker locker(&m_tokenLock);
-                if (m_pendingUploadTokens.contains(crcToken)) {
-                    sid = m_pendingUploadTokens.value(crcToken);
-                } else {
-                    LOG_WARNING("├── 🔑 拒绝: Token 未经授权或已过期");
+                if (!m_allowedCrcMaps.contains(crcToken) || !m_pendingUploadTokens.contains(crcToken)) {
+                    LOG_WARNING("🛡️ [TCP 拒绝] 未授权或不在白名单的 CRC: " + crcToken);
                     sendUploadResult(socket, crcToken, "Unauthorized", false, UPLOAD_ERR_TOKEN);
                     socket->disconnectFromHost();
                     return;
                 }
+                sessionId = m_pendingUploadTokens.value(crcToken);
             }
-            socket->setProperty("CrcToken", crcToken);
-            socket->setProperty("SessionId", sid);
 
-            // 3. 读取文件名与大小
-            quint32 nameLen;
-            in >> nameLen;
-            QString fileName = QFileInfo(QString::fromUtf8(socket->read(nameLen))).fileName();
+            // C. 解析文件名与大小
+            in.device()->seek(PREFIX_SIZE); // 定位到文件名起始位置
+            QString fileName = QFileInfo(QString::fromUtf8(header.mid(PREFIX_SIZE, nameLen))).fileName();
 
-            if (socket->bytesAvailable() < 8) return;
             qint64 fileSize;
+            in.device()->seek(PREFIX_SIZE + nameLen); // 定位到 Size 起始位置
             in >> fileSize;
 
-            if (!isValidFileName(fileName) || fileSize <= 0 || fileSize > 2 * 1024 * 1024) {
-                LOG_WARNING(QString("├── ❌ 拒绝: 文件非法或过大 (%1 bytes)").arg(fileSize));
+            if (!isValidFileName(fileName) || fileSize <= 0 || fileSize > 3 * 1024 * 1024) {
+                LOG_WARNING(QString("❌ [TCP 拒绝] 文件非法或过大: %1 (%2 bytes)").arg(fileName).arg(fileSize));
                 sendUploadResult(socket, crcToken, fileName, false, UPLOAD_ERR_SIZE);
                 socket->disconnectFromHost();
                 return;
             }
 
-            // --- C. 秒传逻辑 (文件已存在) ---
-            QString saveDir = m_crcRootPath + "/" + crcToken;
-            QString savePath = saveDir + "/" + fileName;
+            // 5. 存储属性并处理文件 IO
+            socket->setProperty("CrcToken", crcToken);
+            socket->setProperty("SessionId", sessionId);
+            socket->setProperty("FileName", fileName);
+            socket->setProperty("BytesTotal", fileSize);
+            socket->setProperty("BytesWritten", (qint64)0);
 
-            if (QFile::exists(savePath)) {
-                LOG_INFO("├── ⚡ 触发秒传: 文件已存在，直接同步状态");
+            QString savePath = m_crcRootPath + "/" + crcToken + "/" + fileName;
+
+            // 秒传逻辑：如果文件已存在且大小一致
+            if (QFile::exists(savePath) && QFileInfo(savePath).size() == fileSize) {
+                LOG_INFO("⚡ [TCP 秒传] 命中缓存: " + fileName);
                 updateUserCrcStatus(socket, crcToken);
                 sendUploadResult(socket, crcToken, fileName, true, UPLOAD_OK);
                 socket->disconnectFromHost();
                 return;
             }
 
-            // 4. 准备写入文件
-            QDir().mkpath(saveDir);
+            // 创建目录并打开文件
+            QDir().mkpath(QFileInfo(savePath).absolutePath());
             QFile *file = new QFile(savePath);
             if (!file->open(QIODevice::WriteOnly)) {
-                LOG_ERROR("└── ❌ 错误: 无法创建文件 " + file->errorString());
+                LOG_ERROR("❌ [TCP IO 错误] 无法写文件: " + file->errorString());
                 sendUploadResult(socket, crcToken, fileName, false, UPLOAD_ERR_IO);
-                delete file;
-                socket->disconnectFromHost();
-                return;
+                delete file; socket->disconnectFromHost(); return;
             }
 
             socket->setProperty("FilePtr", QVariant::fromValue((void*)file));
-            socket->setProperty("BytesTotal", fileSize);
-            socket->setProperty("BytesWritten", (qint64)0);
-            socket->setProperty("FileName", fileName);
             socket->setProperty("HeaderParsed", true);
-
-            LOG_INFO(QString("└── 🚀 开始接收流: %1 (%2 KB)").arg(fileName).arg(fileSize/1024));
+            LOG_INFO(QString("🚀 [TCP 接收开始] %1 (%2 KB)").arg(fileName).arg(fileSize / 1024));
         }
 
         // ==================== 阶段 2: 接收文件内容 ====================
         if (socket->property("HeaderParsed").toBool()) {
             QFile *file = static_cast<QFile*>(socket->property("FilePtr").value<void*>());
+            if (!file) return;
+
             qint64 total = socket->property("BytesTotal").toLongLong();
             qint64 current = socket->property("BytesWritten").toLongLong();
-            qint64 bytesToRead = qMin(total - current, socket->bytesAvailable());
+            qint64 toRead = qMin(total - current, socket->bytesAvailable());
 
-            if (bytesToRead > 0) {
-                file->write(socket->read(bytesToRead));
-                current += bytesToRead;
+            if (toRead > 0) {
+                file->write(socket->read(toRead));
+                current += toRead;
                 socket->setProperty("BytesWritten", current);
 
                 if (current >= total) {
                     file->close();
                     file->deleteLater();
+                    socket->setProperty("FilePtr", QVariant::fromValue((void*)nullptr));
 
                     QString token = socket->property("CrcToken").toString();
-                    QString name = socket->property("FileName").toString();
+                    QString name  = socket->property("FileName").toString();
 
-                    // 使用封装函数更新状态
                     updateUserCrcStatus(socket, token);
-
                     sendUploadResult(socket, token, name, true, UPLOAD_OK);
-                    LOG_INFO("└── ✅ 传输完成并已同步用户状态");
+
+                    LOG_INFO("✅ [TCP 传输完成] 用户状态已同步: " + name);
                     socket->disconnectFromHost();
                     return;
                 }
-            } else { break; }
+            }
+            break; // 退出当前循环等待更多数据到达
         }
     }
 }
