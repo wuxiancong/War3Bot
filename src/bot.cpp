@@ -263,19 +263,21 @@ void Bot::setupClient(NetManager *netManager, const QString &displayName)
     LOG_INFO(QString("   └── ✅ Bot-%1 引擎构建及信号代理完成").arg(id));
 }
 
-void Bot::setupPendingTask(const QString &host, const QString &name, const QString &clientId, CommandSource source)
+void Bot::setupPendingTask(const QString &host, const QString &name, const QString &mode, const QString &clientId, CommandSource source)
 {
     LOG_INFO(QString("⏳ [任务挂起] Bot-%1: 正在预约异步创建任务...").arg(id));
 
     pendingTask.hasTask = true;
     pendingTask.hostName = host;
     pendingTask.gameName = name;
+    pendingTask.gameMode = mode;
     pendingTask.clientId = clientId;
     pendingTask.commandSource = source;
     pendingTask.requestTime = QDateTime::currentMSecsSinceEpoch();
 
     LOG_INFO(QString("   ├─ 👤 预约房主: %1").arg(host));
     LOG_INFO(QString("   ├─ 📝 预约房名: %1").arg(name));
+    LOG_INFO(QString("   ├─ 🚩 预约模式: %1").arg(mode));
     LOG_INFO(QString("   └─ 📅 戳记时间: %1").arg(pendingTask.requestTime));
 }
 
@@ -292,6 +294,7 @@ void Bot::setupGameInfo(const QString &host, const QString &name, const QString 
     gameInfo.gameName = name;
     gameInfo.gameMode = mode;
     gameInfo.clientId = clientId;
+    pendingTask.commandSource = source;
     gameInfo.createTime = QDateTime::currentMSecsSinceEpoch();
 
     if (client && client->getUdpSocket()) {

@@ -635,12 +635,12 @@ bool BotManager::createGame(const QString &hostName, const QString &gameName, co
                              .arg(targetBot->gameInfo.port).arg(targetBot->username));
             }
             else {
-                targetBot->setupPendingTask(hostName, gameName, clientId, commandSource);
+                targetBot->setupPendingTask(hostName, gameName, gameMode, clientId, commandSource);
                 LOG_INFO(QString("   ⏳ [异步预约] 机器人 [%1] 正在拨号/认证中，任务已挂载，成功后自动触发").arg(targetBot->username));
             }
         }
         else {
-            targetBot->setupPendingTask(hostName, gameName, clientId, commandSource);
+            targetBot->setupPendingTask(hostName, gameName, gameMode, clientId, commandSource);
             targetBot->setupClient(m_netManager, m_botDisplayName);
             targetBot->state = BotState::Connecting;
             targetBot->client->connectToHost(m_targetServer, m_targetPort);
@@ -720,6 +720,31 @@ void BotManager::removeGame(Bot *bot, bool disconnectFlag, const QString &reason
     if (bot->client) {
         LOG_INFO(QString("   └─ 📡 协议动作: 调用底层 Client::cancelGame"));
         bot->client->cancelGame();
+    }
+}
+
+void BotManager::rejectCommandWithNotice(Bot *bot, const QString &clientId, const QString &command)
+{
+    LOG_INFO(QString("🚫 [指令拒绝序列] 捕捉到非法操作: %1").arg(command));
+
+    if (isBotActive(bot, "Reject Command With Notice")) {
+        quint8 myPid = bot->client->getPidByClientId(clientId);
+        if (myPid != 0) {
+            LOG_INFO(QString("   ├─ 👤 目标确认: %1 (PID: %2) @ %3")
+                         .arg(bot->client->getPlayerNameByPid(myPid))
+                         .arg(myPid)
+                         .arg(bot->username));
+            bot->client->sendAccessDeniedMessage(myPid, command);
+        } else {
+            LOG_INFO(QString("   ├─ 👤 目标定位失败: ClientId [%1] 当前不在房间中").arg(clientId));
+        }
+    } else {
+        LOG_WARNING("   ├─ ⚠️ 动作受限: 机器人实例未激活，跳过游戏内通知");
+    }
+
+    if (m_netManager) {
+        m_netManager->sendMessageToClient(clientId, S_C_ERROR, ERR_PERMISSION_DENIED);
+        LOG_INFO(QString("   └─ 📡 平台同步: 已向客户端 %1 发送权限拒绝码").arg(clientId));
     }
 }
 
@@ -1244,7 +1269,7 @@ void BotManager::onBotCommandReceived(const QString &userName,
                         targetBot->client->swapSlots(s1, s2);
                         LOG_INFO(QString("   └── ✅ 执行成功: 槽位对调完成"));
                     } else {
-                        m_netManager->sendMessageToClient(clientId, S_C_ERROR, ERR_PERMISSION_DENIED);
+                        rejectCommandWithNotice(targetBot, clientId, "/swap");
                         LOG_INFO(QString("   └── 🚫 执行终止: 原因 - %1").arg(denyReason));
                     }
                 } else {
@@ -1304,19 +1329,36 @@ void BotManager::onBotCommandReceived(const QString &userName,
     if (!isBotActive(myBot, "CommandReceived")) {
         LOG_INFO(QString("   └─ ❌ 拒绝: 用户名下当前没有活跃房间，无法执行 %1")
                      .arg(trimmedCommand));
-        m_netManager->sendMessageToClient(clientId, S_C_ERROR,
-                                          ERR_PERMISSION_DENIED);
+        rejectCommandWithNotice(myBot, clientId, trimmedCommand);
         return;
     }
 
     if (trimmedCommand == "/start") {
         if (myBot->state == BotState::Waiting && myBot->client) {
-            // if (!myBot->client->isAllPlayersReady()) { ... }
 
-            LOG_INFO("   └─ 🚀 执行动作: 启动游戏");
+            // --- 1. 人数判定逻辑 ---
+            QString mode = myBot->gameInfo.gameMode.toLower();
+            int currentCount = myBot->client->getHumanCount();
+            int requiredCount = (mode == "solo" || mode == "solo83") ? 2 : 10;
+
+            if (currentCount < requiredCount) {
+                LOG_INFO(QString("   └─ ❌ 拒绝: 人数不足 (当前:%1, 所需:%2, 模式:%3)")
+                             .arg(currentCount).arg(requiredCount).arg(mode));
+                quint8 myPid = myBot->client->getPidByClientId(clientId);
+                if (myPid != 0) {
+                    myBot->client->sendStartConditionFailedMessage(myPid, currentCount, requiredCount);
+                }
+
+                m_netManager->sendMessageToClient(clientId, S_C_ERROR, ERR_NOT_ENOUGH_PLAYERS);
+                return;
+            }
+
+            // --- 2. 满足条件，启动游戏 ---
+            LOG_INFO(QString("   └─ 🚀 执行动作: 满足条件(%1/%2)，启动游戏").arg(currentCount).arg(requiredCount));
             myBot->client->startGame();
             myBot->state = BotState::Starting;
             emit botStateChanged(myBot->id, myBot->username, myBot->state);
+
         } else {
             LOG_WARNING(QString("   └─ ⚠️ 忽略: 状态 %1 不满足开始条件")
                             .arg(static_cast<int>(myBot->state)));
@@ -1953,23 +1995,32 @@ void BotManager::onBotEnteredChat(Bot *bot)
     if (bot->pendingTask.hasTask) {
         LOG_INFO(QString("   ├─ 🎮 [任务触发] Bot-%1 立即执行挂起任务").arg(bot->id));
 
-        // 1. 切换状态为创建中
+        bot->setupGameInfo(
+            bot->pendingTask.hostName,
+            bot->pendingTask.gameName,
+            bot->pendingTask.gameMode,
+            bot->pendingTask.commandSource,
+            bot->pendingTask.clientId
+            );
+
         bot->state = BotState::Creating;
 
-        // 2. 立即下发创建指令
-        bot->client->setHost(bot->pendingTask.hostName);
+        // 立即下发创建指令
+        bot->client->setHost(bot->gameInfo.hostName);
+        bot->client->setBotDisplayName(m_botDisplayName);
         bot->client->createGame(
-            bot->pendingTask.gameName,
+            bot->gameInfo.gameName,
             "",
             Provider_TFT_New,
             Game_TFT_Custom,
             SubType_None,
             Ladder_None,
-            bot->pendingTask.commandSource
+            bot->gameInfo.commandSource
             );
 
-        // 3. 清理任务标记
+        // 清理任务标记
         bot->pendingTask.hasTask = false;
+
     } else {
         bot->state = BotState::Idle;
     }

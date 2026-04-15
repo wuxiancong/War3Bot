@@ -34,6 +34,7 @@ public:
     Bot *findBotByClientId(const QString &clientId, bool onlyActive = true);
     bool checkCooldown(const QString &clientId, const QString &command, qint64 now);
     bool createBotAccountFilesIfNotExist(bool allowAutoGenerate, int targetListNumber);
+    void rejectCommandWithNotice(Bot *bot, const QString &clientId, const QString &command);
     void handleHostCommand(const QString &userName, const QString &clientId, const QString &text);
     void removeGame(Bot *bot, bool disconnectFlag = false, const QString &reason = "None");
     bool createGame(const QString &hostName, const QString &gameName, const QString &gameMode, CommandSource commandSource, const QString &clientId);

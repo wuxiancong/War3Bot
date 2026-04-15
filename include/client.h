@@ -482,8 +482,15 @@ public:
     void setBotDisplayName(const QString &name) { m_botDisplayName = name; }                                    // 获取显示名字
     const QMap<quint8, PlayerData> &getPlayers() const { return m_players; }                                    // 获取玩家数据
     QString translateSocketError(QAbstractSocket::SocketError err, const QString &errString);
+    QString getColoredTextBySystem(const QString &text);                                                        // 获取颜色文本
+    QString getColoredText(const QString &text, const QString &colorHex);                                       // 获取颜色文本
     QString getColoredTextByState(quint8 pid, const QString &text, bool isPlayerName = false);                  // 获取颜色文本
     QString getColoredTextByState(const PlayerData &p, const QString &text, bool isPlayerName = false);         // 获取颜色文本
+    QString coloredGreenName(const QString &name);
+    QString coloredBlueName(const QString &name);
+    QString coloredRedName(const QString &name);
+    QString coloredUnready();
+    QString coloredReady();
 
     // --- IP转换辅助 ---
     quint32 ipToUint32(const QString &ipAddress);
@@ -492,6 +499,7 @@ public:
     // --- 槽位信息辅助 ---
     quint8 findFreePid() const;
     quint8 getTotalSlots() const;
+    quint8 getHumanCount() const;
     quint8 getOccupiedSlots() const;
     QString getSlotInfoString() const;
     bool isSlotOccupied(int slotIndex) const;
@@ -503,6 +511,10 @@ public:
     QString getPlayerNameBySocket(QTcpSocket *socket) const;
     QTextCodec *getCodecBySocket(QTcpSocket *socket) const;
     QTextCodec *getCodecByPid(quint8 pid) const;
+
+    // --- 发送消息提醒
+    void sendAccessDeniedMessage(quint8 targetPid, const QString &command);
+    void sendStartConditionFailedMessage(quint8 targetPid, int current, int required);
 
 signals:
     void connected();

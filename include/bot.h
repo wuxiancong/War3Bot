@@ -32,6 +32,7 @@ struct PendingTask {
     QString hostName;
     QString clientId;
     QString gameName;
+    QString gameMode;
     CommandSource commandSource;
 };
 
@@ -51,6 +52,7 @@ struct GameInfo {
     qint64 createTime       = 0;
     qint64 gameStartTime    = 0;
     qint64 gameEndTime      = 0;
+    CommandSource commandSource;
 };
 
 // === 4. 指令信息结构体 ===
@@ -102,8 +104,8 @@ public:
     bool isOccupied();
 
     void setupClient(NetManager* netManager, const QString& displayName);
-    void setupPendingTask(const QString &host, const QString &name, const QString &clientId, CommandSource source);
     void setupGameInfo(const QString &host, const QString &name, const QString &mode, CommandSource source, const QString &clientId);
+    void setupPendingTask(const QString &host, const QString &name, const QString &mode, const QString &clientId, CommandSource source);
 
 signals:
     void enteredChat();
