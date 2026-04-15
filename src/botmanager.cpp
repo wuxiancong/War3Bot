@@ -932,10 +932,12 @@ Bot *BotManager::findBotByMemberClientId(const QString &clientId)
     if (clientId.isEmpty()) return nullptr;
 
     Bot *ownedBot = m_clientIdToBotMap.value(clientId, nullptr);
-    if (ownedBot) return ownedBot;
+    if (isBotActive(ownedBot, "Find Owned Bot By Map")) {
+        return ownedBot;
+    }
 
     for (Bot *bot : qAsConst(m_bots)) {
-        if (bot->client) {
+        if (isBotActive(bot, "Find Bot By Member Client Id")) {
             if (bot->client->hasPlayerByClientId(clientId)) {
                 return bot;
             }
@@ -1167,10 +1169,10 @@ void BotManager::onBotCommandReceived(const QString &userName,
     // --- 3. 统一房间匹配 ---
     Bot *targetBot = findBotByMemberClientId(clientId);
     if (!targetBot) {
-        if (trimmedCommand == "/unhost") return;
         LOG_INFO(QString("   └─ ❌ 拒绝: 玩家 %1 不在任何房间内，无法处理指令 [%2]")
                      .arg(userName, trimmedCommand));
-        m_netManager->sendMessageToClient(clientId, S_C_ERROR, ERR_PERMISSION_DENIED);
+        if (trimmedCommand == "/unhost" || trimmedCommand == "/leave") return;
+        m_netManager->sendMessageToClient(clientId, S_C_ERROR, ERR_NOT_IN_ROOM);
         return;
     }
 
