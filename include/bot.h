@@ -83,7 +83,8 @@ public:
     GameInfo gameInfo;
     PendingTask pendingTask;
     Client *client = nullptr;
-    qint64 finishingStartTime = 0;
+    quint64 finishingStartTime = 0;
+    quint64 firstResetGameTime = 0;
 
     bool hostJoined = false;
     CommandSource commandSource = From_Server;

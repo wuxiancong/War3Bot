@@ -849,8 +849,9 @@ bool BotManager::isGhostRoom(Bot *bot, const QString &mappedName)
                          bot->state == BotState::Disconnected ||
                          bot->state == BotState::Finishing);
 
-    bool dataMismatch = (bot->gameInfo.gameName.isEmpty() ||
-                         bot->gameInfo.gameName.toLower() != mappedName.toLower());
+    bool dataMismatch = (bot->gameInfo.hostName.isEmpty() ||
+                         bot->gameInfo.gameName.isEmpty() ||
+                         bot->gameInfo.gameName != mappedName);
 
     return invalidState || dataMismatch;
 }
@@ -907,21 +908,33 @@ void BotManager::cleanupGhostRooms()
 void BotManager::cleanupGhostBots()
 {
     quint64 now = QDateTime::currentMSecsSinceEpoch();
-    const quint64 GHOST_TIMEOUT_MS = 5000;
+    const quint64 GHOST_TIMEOUT_MS = 10000;
 
     for (int i = m_bots.size() - 1; i >= 0; --i) {
         Bot *bot = m_bots[i];
 
         if (bot->state == BotState::Finishing) {
-            quint64 elapsed = now - bot->finishingStartTime;
-
-            if (elapsed > GHOST_TIMEOUT_MS) {
-                LOG_ERROR(QString("👻 [幽灵清理] 发现僵尸机器人 Bot-%1 长期卡在 Finishing 状态")
-                              .arg(bot->id));
-                LOG_ERROR(QString("   ├── ⏱️ 已停留: %1 ms").arg(elapsed));
-                LOG_ERROR(QString("   └── 🚨 强制执行物理弹出与销毁"));
+            if (now - bot->finishingStartTime > 5000) {
+                LOG_ERROR(QString("👻 [幽灵清理] Bot-%1 长期卡在 Finishing").arg(bot->id));
                 unregisterBotMappings(bot->gameInfo.clientId, bot->hostname, bot->gameInfo.gameName);
-                bot->resetGame(false, "CleanupGhostBots");
+                bot->resetGame(false, "Cleanup-Finishing-Timeout");
+            }
+        }
+
+        else if (bot->state == BotState::Idle) {
+            if (!bot->hostname.isEmpty()) {
+                quint64 idleElapsed = now - bot->firstResetGameTime;
+
+                if (idleElapsed > GHOST_TIMEOUT_MS) {
+                    LOG_WARNING(QString("🧹 [状态纠错] Bot-%1 处于 %2 状态已停留 %3ms 且残留房主 [%4]，判定为创建失败，执行强制重置")
+                                    .arg(bot->id)
+                                    .arg(bot->botStateToString(bot->state))
+                                    .arg(idleElapsed)
+                                    .arg(bot->hostname));
+
+                    unregisterBotMappings(bot->gameInfo.clientId, bot->hostname, bot->gameInfo.gameName);
+                    bot->resetGame(false, "Cleanup-Idle-Zombie");
+                }
             }
         }
     }
@@ -932,32 +945,20 @@ Bot *BotManager::findBotByMemberClientId(const QString &clientId)
     if (clientId.isEmpty()) return nullptr;
 
     Bot *ownedBot = m_clientIdToBotMap.value(clientId, nullptr);
-    if (isBotActive(ownedBot, "Find Owned Bot By Map")) {
-        return ownedBot;
+    if (isBotActive(ownedBot, "FindMember-Owner")) {
+        if (!ownedBot->gameInfo.gameName.isEmpty() && !ownedBot->gameInfo.hostName.isEmpty()) {
+            return ownedBot;
+        }
     }
 
     for (Bot *bot : qAsConst(m_bots)) {
-        if (isBotActive(bot, "Find Bot By Member Client Id")) {
-            if (bot->client->hasPlayerByClientId(clientId)) {
-                return bot;
+        if (isBotActive(bot, "FindMember-Guest")) {
+            if (!bot->gameInfo.gameName.isEmpty() && !bot->gameInfo.hostName.isEmpty()) {
+                if (bot->client->hasPlayerByClientId(clientId)) {
+                    return bot;
+                }
             }
         }
-    }
-
-    return nullptr;
-}
-
-Bot *BotManager::findBotByOwnerClientId(const QString &clientId, bool onlyOccupied)
-{
-    if (clientId.isEmpty()) return nullptr;
-
-    Bot *bot = m_clientIdToBotMap.value(clientId, nullptr);
-
-    if (bot) {
-        if (onlyOccupied && !bot->isOccupied()) {
-            return nullptr;
-        }
-        return bot;
     }
 
     return nullptr;
@@ -969,6 +970,26 @@ Bot *BotManager::findBotByHostName(const QString &hostName, bool onlyOccupied)
     QString lowerName = hostName.toLower();
 
     Bot *bot = m_hostNameToBotMap.value(lowerName, nullptr);
+
+    if (bot && isBotActive(bot, "FindHostByName")) {
+        if (bot->gameInfo.gameName.isEmpty() || bot->gameInfo.hostName.isEmpty()) {
+            return nullptr;
+        }
+
+        if (onlyOccupied && !bot->isOccupied()) {
+            return nullptr;
+        }
+        return bot;
+    }
+
+    return nullptr;
+}
+
+Bot *BotManager::findBotByOwnerClientId(const QString &clientId, bool onlyOccupied)
+{
+    if (clientId.isEmpty()) return nullptr;
+
+    Bot *bot = m_clientIdToBotMap.value(clientId, nullptr);
 
     if (bot) {
         if (onlyOccupied && !bot->isOccupied()) {
@@ -993,7 +1014,7 @@ bool BotManager::checkCooldown(const QString &clientId, const QString &command, 
         cooldownRules.insert("/swap", 500);
         cooldownRules.insert("/ready", 1000);
         cooldownRules.insert("/unready", 1000);
-        cooldownRules.insert("/swapself", 100);
+        cooldownRules.insert("/swapself", 10);
     }
     const qint64 DEFAULT_COOLDOWN = 1000;
 
@@ -1171,7 +1192,7 @@ void BotManager::onBotCommandReceived(const QString &userName,
     if (!targetBot) {
         LOG_INFO(QString("   └─ ❌ 拒绝: 玩家 %1 不在任何房间内，无法处理指令 [%2]")
                      .arg(userName, trimmedCommand));
-        if (trimmedCommand == "/unhost" || trimmedCommand == "/leave") return;
+        if (trimmedCommand == "/unhost" || trimmedCommand == "/leave" || trimmedCommand == "/swapself") return;
         m_netManager->sendMessageToClient(clientId, S_C_ERROR, ERR_NOT_IN_ROOM);
         return;
     }

@@ -50,6 +50,7 @@ void Bot::resetGame(bool disconnectFlag, const QString &context)
     commandSource           = From_Server;
     activeOperations        = 0;
     pendingRemovalReason    = "None";
+    firstResetGameTime      = QDateTime::currentMSecsSinceEpoch();
 
     m_triggerCounts.clear();
 
