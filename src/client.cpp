@@ -973,9 +973,9 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         finalPacket.append(createPlayerInfoPacket(m_botPid, m_botDisplayName, QHostAddress("0.0.0.0"), 0, QHostAddress("0.0.0.0"), 0)); // 0x06 (Bot)
 
         for (auto it = m_players.begin(); it != m_players.end(); ++it) {
-            const PlayerData &p = it.value();
-            if (p.pid == newPid || p.pid == m_botPid) continue;
-            finalPacket.append(createPlayerInfoPacket(p.pid, p.name, p.extIp, p.extPort, p.intIp, p.intPort));
+            const PlayerData &playerData = it.value();
+            if (playerData.pid == newPid || playerData.pid == m_botPid) continue;
+            finalPacket.append(createPlayerInfoPacket(playerData.pid, playerData.name, playerData.extIp, playerData.extPort, playerData.intIp, playerData.intPort));
         }
 
         finalPacket.append(createW3GSMapCheckPacket()); // 0x3D
@@ -1469,11 +1469,11 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
         qint64 now = QDateTime::currentMSecsSinceEpoch();
         quint32 nowTick = static_cast<quint32>(QDateTime::currentMSecsSinceEpoch() & 0xFFFFFFFF);
-        PlayerData &p = m_players[currentPid];
-        p.currentLatency = nowTick - sentTick;
-        p.lastResponseTime = now;
+        PlayerData &playerData = m_players[currentPid];
+        playerData.currentLatency = nowTick - sentTick;
+        playerData.lastResponseTime = now;
 
-        LOG_DEBUG(QString("💓 Pong [PID:%1]: %2 ms").arg(currentPid).arg(p.currentLatency));
+        LOG_DEBUG(QString("💓 Pong [PID:%1]: %2 ms").arg(currentPid).arg(playerData.currentLatency));
 
         QMap<quint8, quint32> pingMap;
         for (auto it = m_players.begin(); it != m_players.end(); ++it) {
@@ -1707,7 +1707,7 @@ void Client::onPlayerDisconnected()
 
     // 更新真人数量并向外发射信号
     int humanCount = 0;
-    for(const auto& p : qAsConst(m_players)) if(p.pid != m_botPid) humanCount++;
+    for(const auto& player : qAsConst(m_players)) if(player.pid != m_botPid) humanCount++;
     emit playerCountChanged(humanCount);
 
     LOG_INFO(QString("🔌 [断开连接] 玩家离线: %1 (PID: %2) | 剩余真人: %3")
@@ -1872,29 +1872,29 @@ void Client::onGameTick()
 
         for (auto it = m_players.begin(); it != m_players.end(); ++it) {
             quint8 pid = it.key();
-            const PlayerData &p = it.value();
+            const PlayerData &playerData = it.value();
 
             if (pid == m_botPid) continue;
 
             QString statusStr;
-            if (!p.socket) {
+            if (!playerData.socket) {
                 statusStr = "❌ [错误] Socket 指针为空";
             }
-            else if (p.socket->state() != QAbstractSocket::ConnectedState) {
-                statusStr = QString("⚠️ [异常] Socket 状态不对 (%1)").arg(p.socket->state());
+            else if (playerData.socket->state() != QAbstractSocket::ConnectedState) {
+                statusStr = QString("⚠️ [异常] Socket 状态不对 (%1)").arg(playerData.socket->state());
             }
-            else if (!p.socket->isValid()) {
+            else if (!playerData.socket->isValid()) {
                 statusStr = "❌ [错误] Socket 句柄无效";
             }
             else {
-                statusStr = QString("✅ [正常] 缓冲: %1 bytes").arg(p.socket->bytesToWrite());
+                statusStr = QString("✅ [正常] 缓冲: %1 bytes").arg(playerData.socket->bytesToWrite());
                 canSend = true;
                 validTargets++;
             }
 
             LOG_INFO(QString("      ├─ 🎯 玩家 [%1] %2 -> %3")
                          .arg(pid)
-                         .arg(p.name, statusStr));
+                         .arg(playerData.name, statusStr));
         }
 
         if (validTargets == 0 || !canSend) {
@@ -3315,6 +3315,32 @@ void Client::sendChatCommand(const QString &user, const QString &text)
     }
 }
 
+void Client::sendChatMessage(quint8 targetPid, const MultiLangMsg& msg)
+{
+    if (!m_players.contains(targetPid)) return;
+
+    PlayerData &playerData = m_players[targetPid];
+    if (!playerData.socket || playerData.socket->state() != QAbstractSocket::ConnectedState) return;
+
+    // 1. 获取该玩家对应语言的文本
+    QString text = msg.get(playerData.language);
+
+    // 2. 转码
+    QByteArray finalBytes = playerData.codec->fromUnicode(text);
+
+    // 3. 构造聊天包 (0x0F)
+    // 参数：内容, 发送者PID(机器人), 接收者PID, 类型
+    QByteArray chatPacket = createW3GSChatFromHostPacket(
+        finalBytes,
+        m_botPid,
+        targetPid,
+        ChatFlag::Message
+        );
+
+    playerData.socket->write(chatPacket);
+    playerData.socket->flush();
+}
+
 void Client::broadcastChatMessage(const MultiLangMsg& msg, quint8 excludePid)
 {
     if (m_gameStarted || m_startTimer->isActive()) {
@@ -3394,11 +3420,33 @@ void Client::sendJoinMessage(const QString &playerName)
         if (it.key() != m_botPid) realPlayerCount++;
     }
 
-    MultiLangMsg msg;
-    msg.add("zh_CN", QString("欢迎 %1 加入！当前已有 %2 个玩家，请耐心等待...").arg(playerName).arg(realPlayerCount))
-        .add("en", QString("Welcome %1! %2 players present, please wait...").arg(playerName).arg(realPlayerCount));
+    // 计算序数词 (st, nd, rd, th)
+    QString suffix = "th";
+    if (realPlayerCount % 100 < 11 || realPlayerCount % 100 > 13) {
+        switch (realPlayerCount % 10) {
+        case 1: suffix = "st"; break;
+        case 2: suffix = "nd"; break;
+        case 3: suffix = "rd"; break;
+        default: suffix = "th"; break;
+        }
+    }
 
-    broadcastChatMessage(msg, 0);
+    MultiLangMsg broadcastMsg;
+    broadcastMsg.add("zh_CN", QString("玩家 [%1] 已加入房间 (%2/%3)。")
+                                  .arg(playerName).arg(realPlayerCount).arg(getTotalSlots()))
+        .add("en", QString("Player [%1] joined (%2/%3).")
+                       .arg(playerName).arg(realPlayerCount).arg(getTotalSlots()));
+
+    broadcastChatMessage(broadcastMsg, 0);
+
+    quint8 pid = getPidByPlayerName(playerName);
+    if (pid != 0) {
+        MultiLangMsg privateMsg;
+        privateMsg.add("zh_CN", "提示：请在 10 秒内输入 /ready 进行准备，否则会被自动踢出。")
+            .add("en", " Hint: Please type /ready within 10s or you will be kicked.");
+
+        sendChatMessage(pid, privateMsg);
+    }
 }
 
 void Client::sendLeaveMessage(const QString &playerName, const QString &newHostName)
@@ -4040,34 +4088,20 @@ void Client::updateCountdowns()
     QList<quint8> pidsToKick;
 
     for (auto it = m_players.begin(); it != m_players.end(); ++it) {
-        PlayerData &p = it.value();
+        PlayerData &playerData = it.value();
 
-        // 机器人和房主不需要准备
-        if (it.key() == m_botPid || p.isVisualHost) continue;
+        if (it.key() == m_botPid || playerData.isVisualHost) continue;
 
-        if (!p.isReady) {
-            if (p.readyCountdown > 0) {
-                p.readyCountdown--;
+        if (!playerData.isReady) {
+            if (playerData.readyCountdown > 0) {
+                playerData.readyCountdown--;
                 needSync = true;
-
-                // 仅在 10秒 和 5秒 时提醒，避免刷屏
-                if (p.readyCountdown == 9 || p.readyCountdown == 4) {
+                if (playerData.readyCountdown == 4) {
                     MultiLangMsg msg;
-                    int seconds = p.readyCountdown + 1; // 补偿显示的秒数
+                    msg.add("zh_CN", "⚠️ 最后警告：请在 5 秒内输入 /ready 准备，否则将被移除。")
+                        .add("en", "⚠️ Last warning: Please type /ready within 5s or you will be kicked.");
 
-                    msg.add("zh_CN", QString("玩家 [%1] 请在 %2 秒内输入 /ready 准备，否则将被踢出。")
-                                         .arg(p.name).arg(seconds))
-                        .add("en", QString("Player [%1], please type /ready within %2s or you will be kicked.")
-                                       .arg(p.name).arg(seconds));
-
-                    broadcastChatMessage(msg);
-
-                    if (p.readyCountdown == 9) {
-                        MultiLangMsg helpMsg;
-                        helpMsg.add("zh_CN", "指令：输入 /ready 准备，/unready 取消。")
-                            .add("en", "Commands: Type /ready to ready up, /unready to cancel.");
-                        broadcastChatMessage(helpMsg);
-                    }
+                    sendChatMessage(playerData.pid, msg);
                 }
             } else {
                 pidsToKick.append(it.key());
@@ -4079,18 +4113,18 @@ void Client::updateCountdowns()
         syncPlayerReadyStates();
     }
 
-    // 踢出逻辑
     for (quint8 pid : pidsToKick) {
         if (m_players.contains(pid)) {
-            PlayerData &p = m_players[pid];
+            PlayerData &playerData = m_players[pid];
 
             MultiLangMsg kickMsg;
-            kickMsg.add("zh_CN", QString("玩家 [%1] 因未准备被移除。").arg(p.name))
-                .add("en", QString("Player [%1] was kicked for not being ready.").arg(p.name));
+            kickMsg.add("zh_CN", QString("玩家 [%1] 因超时未准备，已被系统移除。").arg(playerData.name))
+                .add("en", QString("Player [%1] was kicked for being idle (not ready).").arg(playerData.name));
+
             broadcastChatMessage(kickMsg);
 
-            if (p.socket) {
-                p.socket->disconnectFromHost();
+            if (playerData.socket) {
+                playerData.socket->disconnectFromHost();
             }
         }
     }
@@ -4112,31 +4146,31 @@ void Client::syncPlayerReadyStates()
 
     int count = playersToSync.size();
     for (int i = 0; i < count; ++i) {
-        const PlayerData &p = playersToSync[i];
+        const PlayerData &playerData = playersToSync[i];
         bool isLast = (i == count - 1);
         QString prefix = isLast ? "   └── " : "   ├── ";
         QString indent = isLast ? "       " : "   │   ";
 
         QVariantMap pInfo;
-        pInfo["r"] = p.isReady;
-        pInfo["c"] = p.readyCountdown;
-        pInfo["pid"] = p.pid;
-        pInfo["name"] = p.name;
+        pInfo["r"] = playerData.isReady;
+        pInfo["c"] = playerData.readyCountdown;
+        pInfo["pid"] = playerData.pid;
+        pInfo["name"] = playerData.name;
 
-        QString statusDesc = p.isReady ? "✅ 已就绪" : QString("⏳ 未准备 (%1s)").arg(p.readyCountdown);
-        LOG_INFO(QString("%1[PID: %2] 状态: %3").arg(prefix).arg(p.pid, -2).arg(statusDesc));
+        QString statusDesc = playerData.isReady ? "✅ 已就绪" : QString("⏳ 未准备 (%1s)").arg(playerData.readyCountdown);
+        LOG_INFO(QString("%1[PID: %2] 状态: %3").arg(prefix).arg(playerData.pid, -2).arg(statusDesc));
 
-        if (p.name.isEmpty()) {
+        if (playerData.name.isEmpty()) {
             LOG_WARNING(QString("%1⚠️  [警告] 玩家 PID %2 的名字为空！魔兽客户端无法实时更新准备状态。")
-                            .arg(indent).arg(p.pid));
+                            .arg(indent).arg(playerData.pid));
         } else {
-            LOG_INFO(QString("%1👤 玩家名: %2").arg(indent, p.name));
+            LOG_INFO(QString("%1👤 玩家名: %2").arg(indent, playerData.name));
         }
 
-        syncMap.insert(QString::number(p.pid), pInfo);
+        syncMap.insert(QString::number(playerData.pid), pInfo);
 
-        if (!p.name.isEmpty()) {
-            syncMap.insert(p.name, pInfo);
+        if (!playerData.name.isEmpty()) {
+            syncMap.insert(playerData.name, pInfo);
         }
     }
 
@@ -4158,11 +4192,11 @@ void Client::setPlayerReadyStates(const QString &clientId, const QString &name, 
     LOG_INFO(QString("   └─ 🚩 目标动作: %1").arg(ready ? "✅ READY" : "⏳ UNREADY"));
 
     for (auto it = m_players.begin(); it != m_players.end(); ++it) {
-        PlayerData &p = it.value();
+        PlayerData &playerData = it.value();
 
         // 执行判定
-        bool clientIdMatch = (!clientId.isEmpty() && p.clientId == clientId);
-        bool nameMatch = (!name.isEmpty() && p.name.compare(name, Qt::CaseInsensitive) == 0);
+        bool clientIdMatch = (!clientId.isEmpty() && playerData.clientId == clientId);
+        bool nameMatch = (!name.isEmpty() && playerData.name.compare(name, Qt::CaseInsensitive) == 0);
 
         if (clientIdMatch || nameMatch) {
             found = true;
@@ -4170,13 +4204,13 @@ void Client::setPlayerReadyStates(const QString &clientId, const QString &name, 
             matchType = clientIdMatch ? "ClientId 匹配成功" : "名字匹配成功";
 
             // 2. 命中日志
-            LOG_INFO(QString("   ├── ✅ 命中玩家: %1 (PID: %2)").arg(p.name).arg(matchedPid));
+            LOG_INFO(QString("   ├── ✅ 命中玩家: %1 (PID: %2)").arg(playerData.name).arg(matchedPid));
             LOG_INFO(QString("   │   ├─ 🔍 匹配结果: %1").arg(matchType));
 
             // 更新状态
-            p.isReady = ready;
+            playerData.isReady = ready;
             if (!ready) {
-                p.readyCountdown = 10;
+                playerData.readyCountdown = 10;
             }
 
             break;
@@ -4210,8 +4244,8 @@ void Client::setPlayerReadyStates(const QString &clientId, const QString &name, 
 }
 
 bool Client::hasPlayerByClientId(const QString &clientId) const {
-    for (const auto &p : m_players) {
-        if (p.clientId == clientId) return true;
+    for (const auto &player : m_players) {
+        if (player.clientId == clientId) return true;
     }
     return false;
 }
@@ -4289,10 +4323,10 @@ void Client::checkPlayerTimeout()
 
     for (quint8 pid : pidsToKick) {
         if (m_players.contains(pid)) {
-            PlayerData &p = m_players[pid];
-            if (p.socket && p.pid != m_botPid) {
+            PlayerData &playerData = m_players[pid];
+            if (playerData.socket && playerData.pid != m_botPid) {
                 LOG_INFO(QString("🔌 [执行踢出] 断开 PID %1 的连接").arg(pid));
-                p.socket->disconnectFromHost();
+                playerData.socket->disconnectFromHost();
             }
         }
     }
@@ -4391,7 +4425,7 @@ QString Client::getCodecNameByLanguage(const QString &lang)
     return "Windows-1252";
 }
 
-QString Client::getColoredTextByState(const PlayerData &p, const QString &text, bool isPlayerName)
+QString Client::getColoredTextByState(const PlayerData &playerData, const QString &text, bool isPlayerName)
 {
     // 1. 如果是处理玩家名字，且长度超过15，则完全不加颜色代码
     if (isPlayerName && text.length() >= 15) {
@@ -4400,7 +4434,7 @@ QString Client::getColoredTextByState(const PlayerData &p, const QString &text, 
 
     // 2. 根据玩家状态判定颜色代码
     // 房主或已准备：绿色 (|cff00ff00)，未准备：红色 (|cffff0000)
-    QString colorCode = (p.isVisualHost || p.isReady) ? "|cff00ff00" : "|cffff0000";
+    QString colorCode = (playerData.isVisualHost || playerData.isReady) ? "|cff00ff00" : "|cffff0000";
 
     // 3. 返回着色文本
     return QString("%1%2|r").arg(colorCode, text);

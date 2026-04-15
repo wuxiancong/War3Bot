@@ -1969,32 +1969,26 @@ bool NetManager::sendRoomPings(const QString &clientId, const QVariantMap &pings
     return false;
 }
 
-void NetManager::sendRoomReadyStates(const QString &clientId, const QVariantMap &readyStates)
+void NetManager::sendRoomReadyStates(const QSet<QString> &clientIds, const QVariantMap &readyStates)
 {
-    // 1. 获取对应的 Socket
-    QPointer<QTcpSocket> socket = m_tcpClients.value(clientId);
-
-    if (socket.isNull()) {
-        LOG_ERROR(QString("   ⚠️ [准备状态下发中止] 客户端 %1 映射不存在或已离线").arg(clientId));
-        return;
-    }
-
-    // 2.检查 Socket 类型标签
-    int connType = socket->property("ConnType").toInt();
-    if (connType != Tcp_Custom) {
-        LOG_CRITICAL(QString("🛡️ [安全拦截] 企图向非控制通道 (%1) 发送 JSON 状态包！已拦截防止掉线。").arg(clientId));
-        return;
-    }
-
-    // 3. 构建 JSON 数据流
     QJsonDocument doc = QJsonDocument::fromVariant(readyStates);
     QByteArray payload = doc.toJson(QJsonDocument::Compact);
     if (payload.isEmpty()) payload = "{}";
 
-    // 4. 发送 TCP 数据包
-    if (sendTcpPacket(socket.data(), PacketType::S_C_READY_LIST, payload.data(), payload.size())) {
-        LOG_INFO(QString("🚀 [TCP 下发] 准备状态表 -> Client:%1 (Len: %2)")
-                     .arg(clientId).arg(payload.size()));
+    int successCount = 0;
+
+    for (const QString &clientId : clientIds) {
+        QPointer<QTcpSocket> socket = m_tcpClients.value(clientId);
+        if (socket.isNull() || socket->state() != QAbstractSocket::ConnectedState) continue;
+        if (socket->property("ConnType").toInt() != Tcp_Custom) continue;
+
+        if (sendTcpPacket(socket.data(), PacketType::S_C_READY_LIST, payload.data(), payload.size())) {
+            successCount++;
+        }
+    }
+
+    if (successCount > 0) {
+        LOG_INFO(QString("📢 [定向广播] 准备状态已同步至房间内 %1 个成员").arg(successCount));
     }
 }
 

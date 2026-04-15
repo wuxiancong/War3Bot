@@ -83,7 +83,7 @@ public:
     void sendRoomPong(const QHostAddress &targetAddr, quint16 targetPort, quint64 clientTime, quint8 current, quint8 max,
                       const QString &hostName, const QString &clientId);
     bool sendEnterRoomCommand(const QString &clientId, const QString &roomName, bool isServerCmd);
-    void sendRoomReadyStates(const QString &clientId, const QVariantMap &readyStates);
+    void sendRoomReadyStates(const QSet<QString> &clientIds, const QVariantMap &readyStates);
     bool sendRoomPings(const QString &clientId, const QVariantMap &pings);
     bool sendRetryCommand(QTcpSocket *socket);
 

@@ -1863,18 +1863,9 @@ void BotManager::onBotReadyStateChanged(Bot *bot, const QVariantMap &readyData)
 
     LOG_INFO(QString("   ├─ 📡 最终广播发送目标: %1 个去重后的终端").arg(targetClientIds.size()));
 
-    // 3. 执行下发
-    int sendSuccessCount = 0;
-    for (const QString &clientId : targetClientIds) {
-        if (m_netManager) {
-            m_netManager->sendRoomReadyStates(clientId, vMap);
-            sendSuccessCount++;
-        }
+    if (m_netManager && !targetClientIds.isEmpty()) {
+        m_netManager->sendRoomReadyStates(targetClientIds, vMap);
     }
-
-    LOG_INFO(QString("   └─ ✅ 任务完成。已同步 %1 个玩家的双索引状态至 %2 个终端。")
-                 .arg(vMap.size() / 2)
-                 .arg(sendSuccessCount));
 }
 
 void BotManager::onBotError(Bot *bot, QString error)
