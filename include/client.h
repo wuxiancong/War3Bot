@@ -651,6 +651,8 @@ private:
     QByteArray createPlayerInfoPacket(quint8 pid, const QString& name, const QHostAddress& externalIp, quint16 externalPort, const QHostAddress& internalIp, quint16 internalPort);
 
     // --- 内部网络处理 ---
+    void sendJoinMessage(const QString &newPlayerName);
+    void sendLeaveMessage(const QString &playerName, const QString &newHostName);
     void sendPacket(BNCSPacketID id, const QByteArray &payload);
     void sendNextMapPart(quint8 toPid, quint8 fromPid = m_botPid);
     void sendChatCommand(const QString &user, const QString &text);

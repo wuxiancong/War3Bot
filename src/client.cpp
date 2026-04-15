@@ -990,19 +990,20 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         QByteArray newPlayerInfoPacket = createPlayerInfoPacket(
             playerData.pid, playerData.name, playerData.extIp, playerData.extPort, playerData.intIp, playerData.intPort);
         broadcastPacket(newPlayerInfoPacket, newPid);
+        sendJoinMessage(clientPlayerName);
         broadcastSlotInfo();
         syncPlayerReadyStates();
 
         LOG_INFO("   └─ 📢 广播状态: 同步新玩家信息 & 刷新槽位");
+        break;
     }
-    break;
 
     case W3GS_LEAVEREQ: // [0x21] 客户端发送离开房间
     {
         LOG_INFO(QString("   └─ 👋 [离开请求] 来源: %1").arg(socket->peerAddress().toString()));
         socket->disconnectFromHost();
+        break;
     }
-    break;
 
     case W3GS_GAMELOADED_SELF: // [0x23] 客户端发送加载完成信号
     {
@@ -1013,8 +1014,8 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
         // 触发检查
         checkAllPlayersLoaded();
+        break;
     }
-    break;
 
     case W3GS_OUTGOING_ACTION: // [0x26] 客户端发送的游戏内操作
     {
@@ -1055,8 +1056,8 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
             m_players[currentPid].lastResponseTime = QDateTime::currentMSecsSinceEpoch();
             LOG_DEBUG(QString("💓 [游戏心跳] 玩家 %1 发送了空动作包 (KeepAlive)").arg(currentPid));
         }
+        break;
     }
-    break;
 
     case W3GS_OUTGOING_KEEPALIVE: // [0x27] 客户端发送的保持连接包
     {
@@ -1080,8 +1081,8 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         LOG_INFO(QString("   ├─ ❓ 标志: 0x%1").arg(QString::number(unknownByte, 16).toUpper().rightJustified(2, '0')));
         LOG_INFO(QString("   ├─ 🛡️ 校验: 0x%1 (CheckSum)").arg(QString::number(checkSum, 16).toUpper().rightJustified(8, '0')));
         LOG_INFO(QString("   └─ ⏱️ 动作: 刷新活跃时间戳 -> %1").arg(now));
+        break;
     }
-    break;
 
     case W3GS_CHAT_TO_HOST: // [0x28] 客户端发送聊天/大厅指令
     {
@@ -1242,8 +1243,8 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         else {
             LOG_INFO("   └─ ⚠️ [未知] 无法解析的 Payload 数据");
         }
+        break;
     }
-    break;
 
     case W3GS_CLIENTINFO: // [0x37] 客户端信息
         LOG_INFO(QString("ℹ️ [W3GS] 客户端 PID %1 已确认收到槽位信息 (0x37)").arg((quint8)payload[8]));
@@ -1277,8 +1278,8 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         } else {
             LOG_INFO("   └─ ℹ️ 忽略: 玩家已有地图或槽位无效");
         }
+        break;
     }
-    break;
 
     case W3GS_MAPSIZE: // [0x42] 客户端报告地图状态
     {
@@ -1347,8 +1348,8 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
             }
         }
         if (slotUpdated) broadcastSlotInfo();
+        break;
     }
-    break;
 
     case W3GS_MAPPARTOK: //  [0x44] 客户端报告成功
     {
@@ -1431,8 +1432,8 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
             // 发送下一块
             sendNextMapPart(currentPid);
         }
+        break;
     }
-    break;
 
     case W3GS_MAPPARTNOTOK: // [0x45] 客户端报告失败
     {
@@ -1456,8 +1457,8 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         LOG_INFO("      ├─ ❷ [Game.dll + 67FA82] 偏移量不匹配: Packet Offset != Client Expected");
         LOG_INFO("      ├─ ❸ [Game.dll + 67FA8C] 数据越界: (Offset + ChunkSize) > MapTotalSize");
         LOG_INFO("      └─ ❹ [Game.dll + 67FAA3] CRC 校验失败: 算出值(EAX) != 包内值(Stack)");
+        break;
     }
-    break;
 
     case W3GS_PONG_TO_HOST: //  [0x46] 客户端回复 PING
     {
@@ -1481,8 +1482,8 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         }
 
         emit roomPingsUpdated(pingMap);
+        break;
     }
-    break;
 
     default:
         LOG_INFO(QString("   └─ ❓ [未知包] 忽略处理"));
@@ -1778,15 +1779,8 @@ void Client::onPlayerDisconnected()
     }
 
     // C. 发送聊天通知
-    MultiLangMsg leaveMsg;
-    leaveMsg.add("zh_CN", QString("玩家 [%1] 离开了房间。").arg(nameToRemove))
-        .add("en", QString("Player [%1] has left the game.").arg(nameToRemove));
-
-    if (heirPid != 0) {
-        leaveMsg.add("zh_CN", QString("房主已更换为 [%1]。").arg(m_host))
-            .add("en", QString("Host left. [%1] is the new host.").arg(m_host));
-    }
-    broadcastChatMessage(leaveMsg, 0);
+    QString newHost = (heirPid != 0) ? m_host : "";
+    sendLeaveMessage(nameToRemove, newHost);
 
     // D. 刷新所有人的 Slot 列表和准备状态
     broadcastSlotInfo();
@@ -3393,6 +3387,42 @@ void Client::broadcastPacket(const QByteArray &packet, quint8 pid, bool includeO
     }
 }
 
+void Client::sendJoinMessage(const QString &playerName)
+{
+    int realPlayerCount = 0;
+    for(auto it = m_players.begin(); it != m_players.end(); ++it) {
+        if (it.key() != m_botPid) realPlayerCount++;
+    }
+
+    MultiLangMsg msg;
+    msg.add("zh_CN", QString("欢迎 %1 加入！当前已有 %2 个玩家，请耐心等待...").arg(playerName).arg(realPlayerCount))
+        .add("en", QString("Welcome %1! %2 players present, please wait...").arg(playerName).arg(realPlayerCount));
+
+    broadcastChatMessage(msg, 0);
+}
+
+void Client::sendLeaveMessage(const QString &playerName, const QString &newHostName)
+{
+    int realPlayerCount = 0;
+    for(auto it = m_players.begin(); it != m_players.end(); ++it) {
+        if (it.key() != m_botPid) realPlayerCount++;
+    }
+
+    MultiLangMsg msg;
+    msg.add("zh_CN", QString("玩家 [%1] 离开了房间。").arg(playerName))
+        .add("en", QString("Player [%1] has left the game.").arg(playerName));
+
+    if (!newHostName.isEmpty()) {
+        msg.add("zh_CN", QString("房主已更换为 [%1]。").arg(newHostName))
+            .add("en", QString("Host left. [%1] is the new host.").arg(newHostName));
+    }
+
+    msg.add("zh_CN", QString("当前剩余 %1 个玩家。").arg(realPlayerCount))
+        .add("en", QString("Remaining players: %1.").arg(realPlayerCount));
+
+    broadcastChatMessage(msg, 0);
+}
+
 void Client::broadcastSlotInfo(quint8 excludePid)
 {
     QByteArray slotPacket = createW3GSSlotInfoPacket();
@@ -3979,7 +4009,6 @@ void Client::syncPingsToLauncher()
 
 void Client::sendPingLoop()
 {
-    // 状态检查：如果游戏已开始或正在倒计时，必须停止！
     if (m_gameStarted || m_startTimer->isActive()) {
         if (m_pingTimer->isActive()) {
             m_pingTimer->stop();
@@ -3989,7 +4018,6 @@ void Client::sendPingLoop()
     }
 
     updateCountdowns();
-
     checkPlayerTimeout();
 
     if (!isConnected() || m_players.isEmpty()) {
@@ -3998,47 +4026,11 @@ void Client::sendPingLoop()
 
     QByteArray pingPacket = createW3GSPingFromHostPacket();
 
-    bool shouldSendChat = false;
-
-    MultiLangMsg waitMsg;
-
-    m_chatIntervalCounter++;
-    if (m_chatIntervalCounter >= 10) {
-        int realPlayerCount = 0;
-        for(auto it = m_players.begin(); it != m_players.end(); ++it) {
-            if (it.key() != m_botPid) realPlayerCount++;
+    for (auto it = m_players.begin(); it != m_players.end(); ++it) {
+        PlayerData &playerData = it.value();
+        if (playerData.socket && playerData.socket->state() == QAbstractSocket::ConnectedState) {
+            playerData.socket->write(pingPacket);
         }
-
-        // 填充多语言内容
-        waitMsg.add("zh_CN", QString("请耐心等待，当前已有 %1 个玩家...").arg(realPlayerCount))
-            .add("en", QString("Please wait, %1 players present...").arg(realPlayerCount));
-
-        shouldSendChat = true;
-        m_chatIntervalCounter = 0;
-    }
-
-    QList<quint8> pids = m_players.keys();
-    for (quint8 pid : qAsConst(pids)) {
-        if (!m_players.contains(pid)) continue;
-        PlayerData &playerData = m_players[pid];
-        QTcpSocket *socket = playerData.socket;
-
-        if (!socket || socket->state() != QAbstractSocket::ConnectedState) continue;
-
-        // A. 发送 Ping
-        socket->write(pingPacket);
-
-        // B. 发送聊天
-        if (shouldSendChat) {
-            // 获取对应语言文本
-            QString text = waitMsg.get(playerData.language);
-            QByteArray finalBytes = playerData.codec->fromUnicode(text);
-
-            QByteArray chatPacket = createW3GSChatFromHostPacket(finalBytes, m_botPid, pid, ChatFlag::Message);
-            socket->write(chatPacket);
-        }
-
-        socket->flush();
     }
 }
 
