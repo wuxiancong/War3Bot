@@ -309,13 +309,13 @@ bool BotManager::isBotValid(Bot *bot, const QString &context)
 {
     // 1. 基础非空检查
     if (!bot) {
-        if (context.isEmpty()) LOG_INFO(QString("❌ [致命] %1 收到空 Bot 指针").arg(context));
+        if (!context.isEmpty()) LOG_INFO(QString("❌ [致命] %1 收到空 Bot 指针").arg(context));
         return false;
     }
 
     // 2. bot 是否还在管理池中
     if (!m_bots.contains(bot)) {
-        if (context.isEmpty()) LOG_WARNING(QString("⚠️ [拦截] %1 收到已失效/销毁的 Bot (ID:%2)").arg(context).arg(bot->id));
+        if (!context.isEmpty()) LOG_WARNING(QString("⚠️ [拦截] %1 收到已失效/销毁的 Bot (ID:%2)").arg(context).arg(bot->id));
         return false;
     }
 
@@ -326,13 +326,13 @@ bool BotManager::isBotActive(Bot *bot, const QString &context)
 {
     // 1. 第一层：内存与容器校验
     if (!bot || !m_bots.contains(bot)) {
-        if (context.isEmpty()) LOG_INFO(QString("⚠️ [拦截] %1: Bot 实例已销毁或不在管理列表中").arg(context));
+        if (!context.isEmpty()) LOG_INFO(QString("⚠️ [拦截] %1: Bot 实例已销毁或不在管理列表中").arg(context));
         return false;
     }
 
     // 2. 第二层：组件校验
     if (!bot->client) {
-        if (context.isEmpty()) LOG_INFO(QString("❌ [拒绝] %1: Bot-%2 (%3) 的网络组件 (Client) 为空")
+        if (!context.isEmpty()) LOG_INFO(QString("❌ [拒绝] %1: Bot-%2 (%3) 的网络组件 (Client) 为空")
                          .arg(context).arg(bot->id).arg(bot->username));
         return false;
     }
@@ -927,7 +927,25 @@ void BotManager::cleanupGhostBots()
     }
 }
 
-Bot *BotManager::findBotByClientId(const QString &clientId, bool onlyOccupied)
+Bot *BotManager::findBotByMemberClientId(const QString &clientId)
+{
+    if (clientId.isEmpty()) return nullptr;
+
+    Bot *ownedBot = m_clientIdToBotMap.value(clientId, nullptr);
+    if (ownedBot) return ownedBot;
+
+    for (Bot *bot : qAsConst(m_bots)) {
+        if (bot->client) {
+            if (bot->client->hasPlayerByClientId(clientId)) {
+                return bot;
+            }
+        }
+    }
+
+    return nullptr;
+}
+
+Bot *BotManager::findBotByOwnerClientId(const QString &clientId, bool onlyOccupied)
 {
     if (clientId.isEmpty()) return nullptr;
 
@@ -1006,37 +1024,27 @@ void BotManager::handleHostCommand(const QString &userName, const QString &clien
     cleanupGhostRooms();
     cleanupGhostBots();
 
-    // 1. 重复开房检查
-    Bot *existingBotByCid = findBotByClientId(clientId);
-    Bot *existingBotByName = findBotByHostName(userName);
+    // --- 1. 重复开房/在房检查 ---
+    Bot *existingBot = findBotByMemberClientId(clientId);
 
-    if (existingBotByCid != nullptr || existingBotByName != nullptr) {
-        LOG_WARNING("   ├── 🛡️ [重复开房拦截] 系统检测到活跃冲突");
+    if (!existingBot) {
+        existingBot = findBotByHostName(userName);
+    }
 
-        // 1. 检查基于设备/ClientId的映射
-        if (existingBotByCid) {
-            LOG_INFO(QString("   │   ├─ 📱 来源: 设备匹配 (ClientId: %1)").arg(clientId));
-            LOG_INFO(QString("   │   ├─ 🏠 所在房间: [%1]").arg(existingBotByCid->gameInfo.gameName));
-            LOG_INFO(QString("   │   └─ 👤 房间主人: %1").arg(existingBotByCid->hostname));
-        }
+    if (existingBot) {
+        LOG_WARNING("   ├── 🛡️ [开房拦截] 玩家已在游戏中或账号已占用机器人");
 
-        // 2. 检查基于账号/用户名的映射
-        if (existingBotByName) {
-            bool isDifferentBot = (existingBotByCid != existingBotByName);
+        bool isOwner = existingBot->isOwner(clientId) || (existingBot->hostname == userName);
+        LOG_INFO(QString("   │   ├─ 👤 玩家身份: %1").arg(isOwner ? "房主 (Owner)" : "成员 (Guest)"));
+        LOG_INFO(QString("   │   ├─ 🏠 所在房间: [%1]").arg(existingBot->gameInfo.gameName));
+        LOG_INFO(QString("   │   └─ 🤖 占用机器人: %1").arg(existingBot->username));
 
-            LOG_INFO(QString("   │   ├─ 👤 来源: 账号匹配 (用户名: %1)").arg(userName));
-            LOG_INFO(QString("   │   ├─ 🏠 所在房间: [%1]").arg(existingBotByName->gameInfo.gameName));
-            LOG_INFO(QString("   │   └─ 🆔 绑定ClientId: %1 %2")
-                         .arg(existingBotByName->gameInfo.clientId, isDifferentBot ? "[⚠️ 与当前请求ID不符]" : ""));
-        }
-
-        LOG_WARNING(QString("   └── 🚫 动作: 拒绝创建请求，已向客户端 %1 发送 ERR_ALREADY_IN_GAME").arg(userName));
-
+        LOG_WARNING(QString("   └── 🚫 动作: 拒绝创建，请先通过 /leave 或 /unhost 退出当前房间"));
         m_netManager->sendMessageToClient(clientId, S_C_ERROR, ERR_ALREADY_IN_GAME);
         return;
     }
 
-    // 2. 参数解析
+    // --- 2. 指令参数解析 ---
     QStringList parts = text.split(" ", Qt::SkipEmptyParts);
     if (parts.size() < 2) {
         LOG_ERROR("   └─ ❌ 错误: 参数不足 (用法: /host <模式> <房名>)");
@@ -1047,7 +1055,7 @@ void BotManager::handleHostCommand(const QString &userName, const QString &clien
     QString mapModel = parts[0].toLower();
     QString inputGameName = parts.mid(1).join(" ");
 
-    // 3. 模式校验
+    // --- 3. 游戏模式校验 ---
     static const QVector<QString> allowModels = {
         "ap", "cm", "rd", "sd", "ar", "xl", "aptb", "cmtb", "rdtb", "sdtb", "artb", "xltb", "solo",
         "ap83", "cm83", "rd83", "sd83", "ar83", "xl83", "solo83", "ap83tb", "cm83tb", "rd83tb", "sd83tb", "ar83tb", "xl83tb"
@@ -1059,10 +1067,9 @@ void BotManager::handleHostCommand(const QString &userName, const QString &clien
         return;
     }
 
-    // 4. 房名预处理 (截断与后缀)
+    // --- 4. 房间名预处理 ---
     QString displayMode = mapModel.toUpper();
-    QString baseName = inputGameName.trimmed();
-    if (baseName.isEmpty()) baseName = QString("%1's Game").arg(userName);
+    QString baseName = inputGameName.trimmed().isEmpty() ? QString("%1's Game").arg(userName) : inputGameName.trimmed();
 
     QString prefix = QString("[%1] ").arg(displayMode);
     const int MAX_BYTES = 31;
@@ -1076,30 +1083,30 @@ void BotManager::handleHostCommand(const QString &userName, const QString &clien
             if (tryStr.toUtf8().size() == nameBytes.size() && !tryStr.contains(QChar::ReplacementCharacter)) break;
             nameBytes.chop(1);
         }
-        LOG_INFO(QString("   ├─ ✂️ 房名过长，已执行 UTF-8 安全截断"));
+        LOG_INFO("   ├─ ✂️ 房名过长，已执行 UTF-8 安全截断");
     }
 
     QString finalGameName = prefix + QString::fromUtf8(nameBytes);
 
-    // 5. 重名检查
+    // --- 5. 重名房间检查 ---
     if (isRoomExist(finalGameName)) {
         LOG_ERROR(QString("   └─ ❌ 错误: 房间名 [%1] 已存在").arg(finalGameName));
         m_netManager->sendMessageToClient(clientId, S_C_ERROR, ERR_GAME_NAME_EXISTS);
         return;
     }
 
-    // 6. 缓存指令信息
+    // --- 6. 执行创建游戏 ---
     CommandInfo info;
     info.clientId = clientId;
     info.text = text.trimmed();
     info.timestamp = QDateTime::currentMSecsSinceEpoch();
     m_commandInfos.insert(userName, info);
 
-    LOG_INFO(QString("   ├─ ✅ 最终房名: [%1]").arg(finalGameName));
-    LOG_INFO(QString("   └─ 🚀 提交任务: 调用 createGame()"));
+    LOG_INFO(QString("   ├─ ✅ 验证通过: 最终房名 [%1]").arg(finalGameName));
+    LOG_INFO(QString("   └─ 🚀 正在分配机器人并创建游戏..."));
 
-    // 7. 执行创建
     if (!createGame(userName, finalGameName, displayMode, From_Client, clientId)) {
+        LOG_ERROR("   └─ ❌ 失败: 没有可用的空闲机器人");
         m_netManager->sendMessageToClient(clientId, S_C_ERROR, ERR_NO_BOTS_AVAILABLE);
     }
 }
@@ -1124,7 +1131,7 @@ void BotManager::onBotAccountCreated(Bot *bot)
 
 void BotManager::onBotClientExpired(const QString &clientId)
 {
-    Bot *bot = findBotByClientId(clientId);
+    Bot *bot = findBotByOwnerClientId(clientId);
     if (bot) {
         LOG_INFO(QString("🧹 [系统自动回收] 检测到 ClientId %1 会话已过期，正在强制解散房间").arg(clientId));
         removeGame(bot, true, "Session Expired");
@@ -1140,8 +1147,7 @@ void BotManager::onBotCommandReceived(const QString &userName,
 
     // --- 1. 基础校验 ---
     if (!m_netManager->isClientRegistered(clientId)) {
-        m_netManager->sendMessageToClient(clientId, S_C_ERROR,
-                                          ERR_PERMISSION_DENIED);
+        m_netManager->sendMessageToClient(clientId, S_C_ERROR, ERR_PERMISSION_DENIED);
         return;
     }
 
@@ -1152,226 +1158,140 @@ void BotManager::onBotCommandReceived(const QString &userName,
     LOG_INFO(QString("   ├─ 👤 发送者: %1 (ClientId: %2)").arg(userName, clientId));
     LOG_INFO(QString("   └─ 💬 内容:   %1 %2").arg(trimmedCommand, text));
 
-    // --- 2. 指令逻辑分发 ---
+    // --- 2. 全局指令 ---
     if (trimmedCommand == "/host") {
         handleHostCommand(userName, clientId, text);
         return;
     }
 
-    // --- 3. 处理准备/取消准备 (所有玩家可用) ---
-    if (trimmedCommand == "/ready" || trimmedCommand == "/unready" ||
-        trimmedCommand == "/swapself" || trimmedCommand == "/swap" ||
-        trimmedCommand == "/leave") {
-        LOG_INFO(QString("[指令处理] 收到玩家 %1 (ClientId: %2) 的指令: %3")
-                     .arg(userName, clientId, trimmedCommand));
+    // --- 3. 统一房间匹配 ---
+    Bot *targetBot = findBotByMemberClientId(clientId);
+    if (!targetBot) {
+        if (trimmedCommand == "/unhost") return;
+        LOG_INFO(QString("   └─ ❌ 拒绝: 玩家 %1 不在任何房间内，无法处理指令 [%2]")
+                     .arg(userName, trimmedCommand));
+        m_netManager->sendMessageToClient(clientId, S_C_ERROR, ERR_PERMISSION_DENIED);
+        return;
+    }
 
-        Bot *targetBot = nullptr;
+    Client *client = targetBot->client;
+    if (!client) return;
 
-        for (Bot *bot : qAsConst(m_bots)) {
-            if (!isBotActive(bot, "CommandReceived Continue")) continue;
+    // --- 4. 成员级别指令 ---
+    if (trimmedCommand == "/ready" || trimmedCommand == "/unready") {
+        bool isReady = (trimmedCommand == "/ready");
+        LOG_DEBUG(QString("   └─ ⚙️ 执行状态变更: [%1] -> %2").arg(userName, isReady ? "READY" : "UNREADY"));
 
-            bool isHost = bot->isOwner(clientId) || (bot->hostname.compare(userName, Qt::CaseInsensitive) == 0);
+        client->setPlayerReadyStates(clientId, userName, isReady);
+        client->syncPlayerReadyStates();
 
-            bool isMember = bot->client->hasPlayerByClientId(clientId) || bot->client->hasPlayerByUserName(userName);
+        LOG_INFO(QString("   └─ ✅ 执行成功: 玩家 %1 状态已同步为 [%2]")
+                     .arg(userName, isReady ? "已准备" : "已取消准备"));
+        return;
+    }
+    else if (trimmedCommand == "/leave") {
+        LOG_INFO(QString("   └─ 🚪 玩家 %1 请求离开房间 [%2]").arg(userName, targetBot->username));
 
-            if (isHost || isMember) {
-                targetBot = bot;
-                LOG_INFO(QString("   └─ 📍 匹配成功: 玩家 %1 属于机器人 [%2] 的房间").arg(userName, bot->username));
-                break;
-            }
+        bool success = client->disconnectPlayerByClientId(clientId);
+        if (!success) {
+            LOG_INFO("   ├─ 🔍 ClientId 匹配失败，尝试通过 UserName 匹配...");
+            success = client->disconnectPlayerByUserName(userName);
         }
 
-        if (!targetBot) {
-            LOG_WARNING(QString("   └─ ❌ 失败: 玩家 %1 不在任何活跃房间中").arg(userName));
-            return;
-        }
+        m_netManager->sendMessageToClient(clientId, S_C_MESSAGE, MSG_PLAYER_LEAVE_GAME, success ? 1 : 0);
+        LOG_INFO(QString("   └─ %1 执行结果: %2").arg(success ? "✅" : "❌", success ? "已断开" : "未找到玩家"));
+        return;
+    }
+    else if (trimmedCommand == "/swapself") {
+        quint8 myPid = client->getPidByClientId(clientId);
+        if (myPid == 0) myPid = client->getPidByPlayerName(userName);
 
-        Client *client = targetBot->client;
-        if (client) {
-            if (trimmedCommand == "/ready" || trimmedCommand == "/unready") {
-                bool isReady = (trimmedCommand == "/ready");
-
-                LOG_DEBUG(QString("   └─ ⚙️ 执行状态变更: [%1] -> %2")
-                              .arg(userName, isReady ? "READY" : "UNREADY"));
-
-                client->setPlayerReadyStates(clientId, userName, isReady);
-                client->syncPlayerReadyStates();
-
-                LOG_INFO(QString("   └─ ✅ 执行成功: 玩家 %1 状态已同步为 [%2]")
-                             .arg(userName, isReady ? "已准备" : "已取消准备"));
-
-            }
-            else if (trimmedCommand == "/swapself") {
-                quint8 myPid = client->getPidByClientId(clientId);
-                if (myPid == 0) {
-                    myPid = client->getPidByPlayerName(userName);
-                }
-
-                if (myPid == 0) {
-                    LOG_DEBUG(QString("   └─ ℹ️ 忽略刷新: 玩家 %1 已离线").arg(userName));
-                    return;
-                }
-
-                int mySlotIndex = client->getSlotIndexByPid(myPid);
-                if (mySlotIndex != -1) {
-                    int userFriendlyIndex = mySlotIndex + 1;
-                    client->swapSlots(userFriendlyIndex, userFriendlyIndex);
-                    LOG_INFO(QString("   └─ ✅ 执行成功: 玩家 %1 (PID:%2) 状态已刷新").arg(userName).arg(myPid));
-                }
-            }
-            else if (trimmedCommand == "/swap") {
-                QStringList parts = text.split(" ", Qt::SkipEmptyParts);
-                if (parts.size() >= 2 && targetBot->client) {
-                    int s1 = parts[0].toInt();
-                    int s2 = parts[1].toInt();
-
-                    quint8 myPid = targetBot->client->getPidByPlayerName(userName);
-                    int mySlotIdx = targetBot->client->getSlotIndexByPid(myPid);
-                    int myUserFriendlySlot = mySlotIdx + 1;
-
-                    bool isOwner = targetBot->isOwner(clientId);
-                    bool s1Occupied = targetBot->client->isSlotOccupied(s1);
-                    bool s2Occupied = targetBot->client->isSlotOccupied(s2);
-                    bool involvesMe = (s1 == myUserFriendlySlot || s2 == myUserFriendlySlot);
-
-                    LOG_INFO(QString("   └─ 🔍 交换请求: %1 <-> %2 | 玩家位置: %3 | 目标状态: [%4, %5]")
-                                 .arg(s1).arg(s2).arg(myUserFriendlySlot)
-                                 .arg(s1Occupied ? "占用" : "空闲", s2Occupied ? "占用" : "空闲"));
-
-                    bool permissionAllowed = false;
-                    QString denyReason;
-
-                    if (isOwner) {
-                        permissionAllowed = true;
-                        LOG_INFO(QString("   ├── 👑 权限确认: 房主操作，允许强制交换任意槽位"));
-                    } else {
-                        if (!involvesMe) {
-                            permissionAllowed = false;
-                            denyReason = QString("你只能交换自己所在的槽位 (当前在 %1 号位)").arg(myUserFriendlySlot);
-                            LOG_INFO(QString("   ├── ❌ 权限拒绝: 玩家 %1 试图操作他人槽位").arg(userName));
-                        } else {
-                            int targetSlot = (s1 == myUserFriendlySlot) ? s2 : s1;
-                            bool targetOccupied = (s1 == myUserFriendlySlot) ? s2Occupied : s1Occupied;
-
-                            if (targetOccupied) {
-                                permissionAllowed = false;
-                                denyReason = QString("目标槽位 %1 已被占用，普通玩家无法交换").arg(targetSlot);
-                                LOG_INFO(QString("   ├── ❌ 权限拒绝: 玩家 %1 试图交换到已占用的槽位 %2").arg(userName).arg(targetSlot));
-                            } else {
-                                permissionAllowed = true;
-                                LOG_INFO(QString("   ├── 👤 权限确认: 普通玩家合法移动 (从 %1 到 %2)")
-                                             .arg(myUserFriendlySlot).arg(targetSlot));
-                            }
-                        }
-                    }
-
-                    if (permissionAllowed) {
-                        targetBot->client->swapSlots(s1, s2);
-                        LOG_INFO(QString("   └── ✅ 执行成功: 槽位对调完成"));
-                    } else {
-                        rejectCommandWithNotice(targetBot, clientId, "/swap");
-                        LOG_INFO(QString("   └── 🚫 执行终止: 原因 - %1").arg(denyReason));
-                    }
-                } else {
-                    LOG_WARNING("   └─ ⚠️ 参数错误: /swap 指令格式不正确");
-                }
-            }
-            else if (trimmedCommand == "/leave") {
-                LOG_INFO(QString("🚪 [指令] 玩家 %1 (ClientId: %2) 请求离开房间").arg(userName, clientId));
-                LOG_INFO(QString("   └─ 📍 匹配成功: 正在从机器人 [%1] 的房间中移除玩家").arg(targetBot->username));
-
-                // 1. 优先尝试使用 ClientId 断开
-                bool success = targetBot->client->disconnectPlayerByClientId(clientId);
-
-                // 2. 如果失败，则尝试使用 UserName 兜底
-                if (!success) {
-                    LOG_INFO("   ├─ 🔍 ClientId 匹配失败，尝试通过 UserName 匹配...");
-                    success = targetBot->client->disconnectPlayerByUserName(userName);
-                }
-
-                // 3. 根据最终结果发送反馈给 Launcher
-                if (success) {
-                    LOG_INFO("   └─ ✅ 执行结果: 玩家已成功断开");
-                    m_netManager->sendMessageToClient(clientId, S_C_MESSAGE, MSG_PLAYER_LEAVE_GAME, 1);
-                } else {
-                    LOG_WARNING("   └─ ❌ 执行结果: 无法在 Socket 列表中找到该玩家");
-                    m_netManager->sendMessageToClient(clientId, S_C_MESSAGE, MSG_PLAYER_LEAVE_GAME, 0);
-                }
-                return;
+        if (myPid != 0) {
+            int mySlotIndex = client->getSlotIndexByPid(myPid);
+            if (mySlotIndex != -1) {
+                client->swapSlots(mySlotIndex + 1, mySlotIndex + 1);
+                LOG_INFO(QString("   └─ ✅ 执行成功: 玩家 %1 状态已刷新").arg(userName));
             }
         }
         return;
     }
-
-    // --- 4. 特殊处理 /unhost (仅限当前真正的房主) ---
-    if (trimmedCommand == "/unhost") {
-        LOG_INFO(QString("🧹 [指令] 玩家 %1 (ClientId: %2) 请求解散房间").arg(userName, clientId));
-
-        Bot *myBot = findBotByClientId(clientId);
-
-        if (!myBot) {
-            LOG_WARNING(QString("   └── 🛑 [拒绝] 玩家 %1 并非当前活跃房主（ClientId不匹配），忽略解散请求").arg(userName));
+    else if (trimmedCommand == "/swap") {
+        QStringList parts = text.split(" ", Qt::SkipEmptyParts);
+        if (parts.size() < 2) {
+            LOG_WARNING("   └─ ⚠️ 参数错误: /swap 指令格式不正确");
             return;
         }
 
-        if (!myBot->isOwner(clientId)) {
-            LOG_WARNING(QString("   └── 🛑 [权限拦截] 房间已易主，旧房主 %1 的解散指令已被废弃").arg(userName));
-            return;
+        int s1 = parts[0].toInt();
+        int s2 = parts[1].toInt();
+        quint8 myPid = client->getPidByPlayerName(userName);
+        int myUserFriendlySlot = client->getSlotIndexByPid(myPid) + 1;
+
+        bool isOwner = targetBot->isOwner(clientId);
+        bool involvesMe = (s1 == myUserFriendlySlot || s2 == myUserFriendlySlot);
+        bool targetOccupied = (s1 == myUserFriendlySlot) ? client->isSlotOccupied(s2) : client->isSlotOccupied(s1);
+
+        // 权限判定：房主随意换，普通玩家只能互换自己所在的空位
+        bool permissionAllowed = isOwner || (involvesMe && !targetOccupied);
+
+        if (permissionAllowed) {
+            client->swapSlots(s1, s2);
+            LOG_INFO(QString("   └── ✅ 执行成功: 槽位对调完成 (%1 <-> %2)").arg(s1).arg(s2));
+        } else {
+            QString reason = !involvesMe ? "只能交换自己" : "目标槽位已被占用";
+            LOG_INFO(QString("   └── 🚫 权限拒绝: %1").arg(reason));
+            rejectCommandWithNotice(targetBot, clientId, "/swap");
         }
-
-        removeGame(myBot, false, "User /unhost Command");
-        m_netManager->sendMessageToClient(clientId, S_C_MESSAGE, MSG_HOST_UNHOST_GAME);
+        return;
+    }
+    else if (trimmedCommand == "/unhost") {
+        if (targetBot->isOwner(clientId)) {
+            LOG_INFO(QString("🧹 [指令] 房主 %1 执行解散房间").arg(userName));
+            removeGame(targetBot, false, "User /unhost Command");
+            m_netManager->sendMessageToClient(clientId, S_C_MESSAGE, MSG_HOST_UNHOST_GAME);
+        } else {
+            LOG_DEBUG(QString("   └─ ℹ️ 忽略: 玩家 %1 (Guest) 尝试解散他人房间，已静默拦截").arg(userName));
+        }
         return;
     }
 
-    // --- 5. 其他控制指令 (仅限房主/管理员) ---
-    Bot *myBot = findBotByClientId(clientId);
-    if (!isBotActive(myBot, "CommandReceived")) {
-        LOG_INFO(QString("   └─ ❌ 拒绝: 用户名下当前没有活跃房间，无法执行 %1")
-                     .arg(trimmedCommand));
-        rejectCommandWithNotice(myBot, clientId, trimmedCommand);
+    // --- 5. 房主/管理员权限校验 ---
+    if (!targetBot->isOwner(clientId)) {
+        LOG_INFO(QString("   └─ 🛑 拦截: 玩家 %1 (Guest) 试图执行管理指令 %2")
+                     .arg(userName, trimmedCommand));
+        rejectCommandWithNotice(targetBot, clientId, trimmedCommand);
         return;
     }
 
+    // --- 6. 房主级别指令 ---
     if (trimmedCommand == "/start") {
-        if (myBot->state == BotState::Waiting && myBot->client) {
-
-            // --- 1. 人数判定逻辑 ---
-            QString mode = myBot->gameInfo.gameMode.toLower();
-            int currentCount = myBot->client->getHumanCount();
+        if (targetBot->state == BotState::Waiting) {
+            QString mode = targetBot->gameInfo.gameMode.toLower();
+            int currentCount = client->getHumanCount();
             int requiredCount = (mode == "solo" || mode == "solo83") ? 2 : 10;
 
             if (currentCount < requiredCount) {
-                LOG_INFO(QString("   └─ ❌ 拒绝: 人数不足 (当前:%1, 所需:%2, 模式:%3)")
-                             .arg(currentCount).arg(requiredCount).arg(mode));
-                quint8 myPid = myBot->client->getPidByClientId(clientId);
-                if (myPid != 0) {
-                    myBot->client->sendStartConditionFailedMessage(myPid, currentCount, requiredCount);
-                }
-
+                LOG_INFO(QString("   └─ ❌ 拒绝: 人数不足 (%1/%2)").arg(currentCount).arg(requiredCount));
+                quint8 myPid = client->getPidByClientId(clientId);
+                if (myPid != 0) client->sendStartConditionFailedMessage(myPid, currentCount, requiredCount);
                 m_netManager->sendMessageToClient(clientId, S_C_ERROR, ERR_NOT_ENOUGH_PLAYERS);
-                return;
+            } else {
+                LOG_INFO(QString("   └─ 🚀 满足条件，正在启动游戏..."));
+                client->startGame();
+                targetBot->state = BotState::Starting;
+                emit botStateChanged(targetBot->id, targetBot->username, targetBot->state);
             }
-
-            // --- 2. 满足条件，启动游戏 ---
-            LOG_INFO(QString("   └─ 🚀 执行动作: 满足条件(%1/%2)，启动游戏").arg(currentCount).arg(requiredCount));
-            myBot->client->startGame();
-            myBot->state = BotState::Starting;
-            emit botStateChanged(myBot->id, myBot->username, myBot->state);
-
-        } else {
-            LOG_WARNING(QString("   └─ ⚠️ 忽略: 状态 %1 不满足开始条件")
-                            .arg(static_cast<int>(myBot->state)));
         }
-    } else if (trimmedCommand == "/latency" || trimmedCommand == "/lat") {
+    }
+    else if (trimmedCommand == "/latency" || trimmedCommand == "/lat") {
         int val = text.toInt();
-        if (val >= 10 && val <= 100 && myBot->client) {
+        if (val >= 10 && val <= 100) {
             LOG_INFO(QString("   └─ 🚀 执行动作: 修改延迟为 %1ms").arg(val));
-            myBot->client->setGameTickInterval((quint16)val);
+            client->setGameTickInterval((quint16)val);
         }
-    } else {
-        LOG_INFO(
-            QString("   └─ ❓ 未知命令: %1 (将被忽略)").arg(trimmedCommand));
+    }
+    else {
+        LOG_INFO(QString("   └─ ❓ 未知命令: %1 (忽略)").arg(trimmedCommand));
     }
 }
 
@@ -1674,11 +1594,11 @@ void BotManager::onBotRoomPingReceived(const QHostAddress &addr, quint16 port, c
     // 1. 根据模式执行查找逻辑
     switch (mode) {
     case ByClientId:
-        bot = findBotByClientId(identifier);
+        bot = findBotByMemberClientId(identifier);
         modeTag = "ClientId Only";
         break;
     case ByBoth:
-        bot = findBotByClientId(identifier);
+        bot = findBotByMemberClientId(identifier);
         if (!bot) bot = findBotByHostName(identifier);
         modeTag = "Both (Name & ClientId)";
         break;

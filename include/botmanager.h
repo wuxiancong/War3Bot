@@ -29,9 +29,10 @@ public:
     bool isRoomExist(const QString &roomName);
     void setNetManager(NetManager *netManager);
     bool isGhostRoom(Bot *bot, const QString &mappedName);
+    Bot *findBotByMemberClientId(const QString &clientId);
     void initializeBots(quint32 initialCount, const QString &configPath);
     Bot *findBotByHostName(const QString &hostName, bool onlyActive = true);
-    Bot *findBotByClientId(const QString &clientId, bool onlyActive = true);
+    Bot *findBotByOwnerClientId(const QString &clientId, bool onlyActive = true);
     bool checkCooldown(const QString &clientId, const QString &command, qint64 now);
     bool createBotAccountFilesIfNotExist(bool allowAutoGenerate, int targetListNumber);
     void rejectCommandWithNotice(Bot *bot, const QString &clientId, const QString &command);
