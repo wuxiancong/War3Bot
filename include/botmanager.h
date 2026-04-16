@@ -32,7 +32,9 @@ public:
     void initializeBots(quint32 initialCount, const QString &configPath);
     Bot *findBotByHostName(const QString &hostName, bool onlyOccupied = true);
     Bot *findBotByOwnerClientId(const QString &clientId, bool onlyOccupied = true);
+    Bot *findBotByOwnerUserName(const QString &userName, bool onlyOccupied = true);
     Bot *findBotByMemberClientId(const QString &clientId, bool onlyOccupied = true);
+    Bot *findBotByMemberUserName(const QString &userName, bool onlyOccupied = true);
     bool checkCooldown(const QString &clientId, const QString &command, qint64 now);
     bool createBotAccountFilesIfNotExist(bool allowAutoGenerate, int targetListNumber);
     void rejectCommandWithNotice(Bot *bot, const QString &clientId, const QString &command);

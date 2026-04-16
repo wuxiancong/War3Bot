@@ -1005,11 +1005,14 @@ void NetManager::handleTcpPing(QTcpSocket *socket)
         if (header.magic == PROTOCOL_MAGIC && (header.command == C_S_PING || header.command == C_S_HEARTBEAT)) {
             socket->read(sizeof(PacketHeader));
 
-            // 1. 备份原有的 sessionId 属性
-            QVariant oldSid = socket->property("sessionId");
-
-            // 2. 强制将探测包里的 detectId 设置为当前 Socket 的属性
+            // 1. 强制将探测包里的 detectId 设置为当前 Socket 的属性
             socket->setProperty("sessionId", header.sessionId);
+
+            // 2. 刷新 Session 活跃时间，防止 5 分钟后被清理掉！
+            if (header.sessionId != 0) {
+                bool ipChanged = false;
+                updateSessionState(header.sessionId, socket->peerAddress(), socket->peerPort(), &ipChanged);
+            }
 
             SCPongPacket pong;
             pong.status = 2;
@@ -1275,29 +1278,6 @@ void NetManager::onTcpReadyRead()
     if (!socket) {
         LOG_ERROR("❌ [onTcpReadyRead] 异常：无法获取信号发送者 Socket");
         return;
-    }
-
-    if (socket->bytesAvailable() >= (qint64)sizeof(PacketHeader)) {
-        PacketHeader header;
-        socket->peek(reinterpret_cast<char*>(&header), sizeof(PacketHeader));
-        if (header.magic == PROTOCOL_MAGIC &&
-            (header.command == C_S_PING || header.command == C_S_HEARTBEAT)) {
-            bool isRegistered = false;
-            {
-                QReadLocker locker(&m_registerInfosLock);
-                isRegistered = m_sessionIndex.contains(header.sessionId);
-            }
-
-            if (!isRegistered && header.sessionId != 0) {
-                LOG_INFO(QString("🔍 [TCP 链路探测] 收到探测标识: %1 | 来自: %2")
-                             .arg(header.sessionId)
-                             .arg(socket->peerAddress().toString()));
-            }
-
-            handleTcpPing(socket);
-
-            if (socket->bytesAvailable() < (qint64)sizeof(PacketHeader)) return;
-        }
     }
 
     // 获取当前连接类型
@@ -1976,19 +1956,46 @@ void NetManager::sendRoomReadyStates(const QSet<QString> &clientIds, const QVari
     if (payload.isEmpty()) payload = "{}";
 
     int successCount = 0;
+    int totalCount = clientIds.size();
+
+    LOG_INFO(QString("🌐 [NetManager] 开始执行状态定向广播 | 目标总数: %1").arg(totalCount));
 
     for (const QString &clientId : clientIds) {
         QPointer<QTcpSocket> socket = m_tcpClients.value(clientId);
-        if (socket.isNull() || socket->state() != QAbstractSocket::ConnectedState) continue;
-        if (socket->property("ConnType").toInt() != Tcp_Custom) continue;
 
+        // 1. 检查 Socket 是否存在于字典中或是否已被销毁
+        if (socket.isNull()) {
+            LOG_WARNING(QString("   ├─ ❌ [失败] 目标: %1 -> 找不到 Socket (连接已销毁或 ClientId 无效)").arg(clientId));
+            continue;
+        }
+
+        // 2. 检查 Socket 的物理连接状态
+        if (socket->state() != QAbstractSocket::ConnectedState) {
+            LOG_WARNING(QString("   ├─ ❌ [失败] 目标: %1 -> Socket 状态异常 (当前状态值: %2)").arg(clientId).arg(socket->state()));
+            continue;
+        }
+
+        // 3. 检查自定义属性类型
+        int connType = socket->property("ConnType").toInt();
+        if (connType != Tcp_Custom) {
+            LOG_WARNING(QString("   ├─ ❌ [失败] 目标: %1 -> ConnType 属性不符 (当前值: %2)").arg(clientId).arg(connType));
+            continue;
+        }
+
+        // 4. 执行底层发送
         if (sendTcpPacket(socket.data(), PacketType::S_C_READY_LIST, payload.data(), payload.size())) {
+            LOG_INFO(QString("   ├─ ✅ [成功] 目标: %1").arg(clientId));
             successCount++;
+        } else {
+            LOG_WARNING(QString("   ├─ ❌ [失败] 目标: %1 -> sendTcpPacket 写入失败").arg(clientId));
         }
     }
 
-    if (successCount > 0) {
-        LOG_INFO(QString("📢 [定向广播] 准备状态已同步至房间内 %1 个成员").arg(successCount));
+    // 总结报告
+    if (successCount == totalCount) {
+        LOG_INFO(QString("📢 [定向广播总结] 完美送达: %1/%2").arg(successCount).arg(totalCount));
+    } else {
+        LOG_WARNING(QString("📢 [定向广播总结] 部分或全部失败: 成功 %1 个 / 总计 %2 个").arg(successCount).arg(totalCount));
     }
 }
 

@@ -974,10 +974,37 @@ Bot *BotManager::findBotByMemberClientId(const QString &clientId, bool onlyOccup
     }
 
     for (Bot *bot : qAsConst(m_bots)) {
-        if (isBotActive(bot, "FindMember-Guest")) {
+        if (isBotActive(bot, "FindMemberByClientId-Guest")) {
             bool stateValid = !onlyOccupied || bot->isOccupied();
             if (stateValid && !bot->gameInfo.gameName.isEmpty() && !bot->gameInfo.hostName.isEmpty()) {
                 if (bot->client->hasPlayerByClientId(clientId)) {
+                    return bot;
+                }
+            }
+        }
+    }
+
+    return nullptr;
+}
+
+Bot *BotManager::findBotByMemberUserName(const QString &userName, bool onlyOccupied)
+{
+    if (userName.isEmpty()) return nullptr;
+    QString lowerName = userName.toLower();
+
+    Bot *ownedBot = m_hostNameToBotMap.value(lowerName, nullptr);
+    if (ownedBot) {
+        bool stateValid = !onlyOccupied || ownedBot->isOccupied();
+        if (stateValid && !ownedBot->gameInfo.gameName.isEmpty() && !ownedBot->gameInfo.hostName.isEmpty()) {
+            return ownedBot;
+        }
+    }
+
+    for (Bot *bot : qAsConst(m_bots)) {
+        if (isBotActive(bot, "FindMemberByUserName-Guest")) {
+            bool stateValid = !onlyOccupied || bot->isOccupied();
+            if (stateValid && !bot->gameInfo.gameName.isEmpty() && !bot->gameInfo.hostName.isEmpty()) {
+                if (bot->client->hasPlayerByUserName(userName)) {
                     return bot;
                 }
             }
@@ -992,6 +1019,24 @@ Bot *BotManager::findBotByOwnerClientId(const QString &clientId, bool onlyOccupi
     if (clientId.isEmpty()) return nullptr;
 
     Bot *bot = m_clientIdToBotMap.value(clientId, nullptr);
+
+    if (bot) {
+        if (onlyOccupied && !bot->isOccupied()) {
+            return nullptr;
+        }
+        return bot;
+    }
+
+    return nullptr;
+}
+
+Bot *BotManager::findBotByOwnerUserName(const QString &userName, bool onlyOccupied)
+{
+    if (userName.isEmpty()) return nullptr;
+
+    QString lowerName = userName.toLower();
+
+    Bot *bot = m_hostNameToBotMap.value(lowerName, nullptr);
 
     if (bot) {
         if (onlyOccupied && !bot->isOccupied()) {
@@ -1191,6 +1236,9 @@ void BotManager::onBotCommandReceived(const QString &userName,
 
     // --- 3. 统一房间匹配 ---
     Bot *targetBot = findBotByMemberClientId(clientId);
+    if (!targetBot) {
+        targetBot = findBotByMemberUserName(userName);
+    }
     if (!targetBot) {
         LOG_INFO(QString("   └─ ❌ 拒绝: 玩家 %1 不在任何房间内，无法处理指令 [%2]")
                      .arg(userName, trimmedCommand));
