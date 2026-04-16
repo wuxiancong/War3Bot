@@ -1457,6 +1457,11 @@ void BotManager::onBotRoomHostChanged(Bot *bot, const quint8 heirPid)
 {
     if (!isBotActive(bot, "RoomHostChanged")) return;
 
+    if (bot->state == BotState::Finishing || bot->pendingRemoval) {
+        LOG_INFO(QString("🛡️ [静默拦截] Bot-%1 正在解散或已标记为待移除，丢弃房主交接广播").arg(bot->id));
+        return;
+    }
+
     const auto &players = bot->client->getPlayers();
     if (!players.contains(heirPid)) return;
 
@@ -1492,6 +1497,11 @@ void BotManager::onBotVisualHostLeft(Bot *bot)
 {
     if (!isBotActive(bot, "VisualHostLeft")) return;
 
+    if (bot->state == BotState::Finishing || bot->pendingRemoval) {
+        LOG_INFO(QString("🛡️ [静默拦截] Bot-%1 正在解散或已标记为待移除，中止寻找继承人").arg(bot->id));
+        return;
+    }
+
     // 进入关键操作保护区
     bot->enterCriticalOperation();
 
@@ -1516,8 +1526,6 @@ void BotManager::onBotVisualHostLeft(Bot *bot)
     if (!newClientId.isEmpty()) {
         LOG_INFO(QString("👑 [房主移交成功] 目标: %1 | 新房主: %2 (PID: %3)")
                      .arg(bot->gameInfo.gameName, newHostName).arg(newHostPid));
-
-        bot->pendingRemoval = false;
 
         // 3. 向全房间广播通知
         for (const auto &p : players) {
