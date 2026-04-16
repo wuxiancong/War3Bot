@@ -851,7 +851,7 @@ bool BotManager::isGhostRoom(Bot *bot, const QString &mappedName)
 
     bool dataMismatch = (bot->gameInfo.hostName.isEmpty() ||
                          bot->gameInfo.gameName.isEmpty() ||
-                         bot->gameInfo.gameName != mappedName);
+                         bot->gameInfo.gameName.compare(mappedName, Qt::CaseInsensitive) != 0);
 
     return invalidState || dataMismatch;
 }
@@ -940,30 +940,6 @@ void BotManager::cleanupGhostBots()
     }
 }
 
-Bot *BotManager::findBotByMemberClientId(const QString &clientId)
-{
-    if (clientId.isEmpty()) return nullptr;
-
-    Bot *ownedBot = m_clientIdToBotMap.value(clientId, nullptr);
-    if (isBotActive(ownedBot, "FindMember-Owner")) {
-        if (!ownedBot->gameInfo.gameName.isEmpty() && !ownedBot->gameInfo.hostName.isEmpty()) {
-            return ownedBot;
-        }
-    }
-
-    for (Bot *bot : qAsConst(m_bots)) {
-        if (isBotActive(bot, "FindMember-Guest")) {
-            if (!bot->gameInfo.gameName.isEmpty() && !bot->gameInfo.hostName.isEmpty()) {
-                if (bot->client->hasPlayerByClientId(clientId)) {
-                    return bot;
-                }
-            }
-        }
-    }
-
-    return nullptr;
-}
-
 Bot *BotManager::findBotByHostName(const QString &hostName, bool onlyOccupied)
 {
     if (hostName.isEmpty()) return nullptr;
@@ -971,7 +947,7 @@ Bot *BotManager::findBotByHostName(const QString &hostName, bool onlyOccupied)
 
     Bot *bot = m_hostNameToBotMap.value(lowerName, nullptr);
 
-    if (bot && isBotActive(bot, "FindHostByName")) {
+    if (bot) {
         if (bot->gameInfo.gameName.isEmpty() || bot->gameInfo.hostName.isEmpty()) {
             return nullptr;
         }
@@ -980,6 +956,32 @@ Bot *BotManager::findBotByHostName(const QString &hostName, bool onlyOccupied)
             return nullptr;
         }
         return bot;
+    }
+
+    return nullptr;
+}
+
+Bot *BotManager::findBotByMemberClientId(const QString &clientId, bool onlyOccupied)
+{
+    if (clientId.isEmpty()) return nullptr;
+
+    Bot *ownedBot = m_clientIdToBotMap.value(clientId, nullptr);
+    if (ownedBot) {
+        bool stateValid = !onlyOccupied || ownedBot->isOccupied();
+        if (stateValid && !ownedBot->gameInfo.gameName.isEmpty() && !ownedBot->gameInfo.hostName.isEmpty()) {
+            return ownedBot;
+        }
+    }
+
+    for (Bot *bot : qAsConst(m_bots)) {
+        if (isBotActive(bot, "FindMember-Guest")) {
+            bool stateValid = !onlyOccupied || bot->isOccupied();
+            if (stateValid && !bot->gameInfo.gameName.isEmpty() && !bot->gameInfo.hostName.isEmpty()) {
+                if (bot->client->hasPlayerByClientId(clientId)) {
+                    return bot;
+                }
+            }
+        }
     }
 
     return nullptr;
