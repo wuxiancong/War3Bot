@@ -4556,7 +4556,7 @@ QString Client::getColoredTextByState(quint8 pid, const QString &text, bool isPl
 
 QString Client::coloredGreenText(const QString &name) { return getColoredText(name, "00ff00"); }
 QString Client::coloredBlueText(const QString &name) { return getColoredText(name, "0000ff"); }
-QString Client::coloredRedText(const QString &name) { return getColoredText(name, "00ff00"); }
+QString Client::coloredRedText(const QString &name) { return getColoredText(name, "ff0000"); }
 QString Client::coloredReady() { return getColoredText("/ready", "00ff00"); }
 QString Client::coloredUnready() { return getColoredText("/unready", "ff0000"); }
 
