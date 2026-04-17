@@ -486,9 +486,9 @@ public:
     QString getColoredText(const QString &text, const QString &colorHex);                                       // 获取颜色文本
     QString getColoredTextByState(quint8 pid, const QString &text, bool isPlayerName = false);                  // 获取颜色文本
     QString getColoredTextByState(const PlayerData &p, const QString &text, bool isPlayerName = false);         // 获取颜色文本
-    QString coloredGreenName(const QString &name);
-    QString coloredBlueName(const QString &name);
-    QString coloredRedName(const QString &name);
+    QString coloredGreenText(const QString &name);
+    QString coloredBlueText(const QString &name);
+    QString coloredRedText(const QString &name);
     QString coloredUnready();
     QString coloredReady();
 

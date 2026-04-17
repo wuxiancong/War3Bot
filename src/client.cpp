@@ -1521,7 +1521,7 @@ void Client::handleChatCommand(quint8 senderPid, const QString &fullMsg)
             LOG_INFO(QString("   └─ ✅ 玩家 [%1] 已准备").arg(sender.name));
 
             // 获取着色后的名字
-            QString cName = coloredGreenName(sender.name);
+            QString cName = coloredGreenText(sender.name);
 
             MultiLangMsg msg;
             msg.add("zh_CN", QString("[%1] 已准备。").arg(cName))
@@ -1540,7 +1540,7 @@ void Client::handleChatCommand(quint8 senderPid, const QString &fullMsg)
             sender.readyCountdown = 10;
             LOG_INFO(QString("   └─ 🔄 玩家 [%1] 取消准备").arg(sender.name));
 
-            QString cName = coloredRedName(sender.name);
+            QString cName = coloredRedText(sender.name);
             QString cReady = coloredReady();
 
             MultiLangMsg msg;
@@ -3388,24 +3388,29 @@ void Client::sendAccessDeniedMessage(quint8 targetPid, const QString &command)
 void Client::sendStartConditionFailedMessage(quint8 targetPid, int current, int required)
 {
     if (!m_players.contains(targetPid)) {
-        LOG_DEBUG(QString("   └─ ⚠️ [发送中止] PID %1 对应的玩家数据已不存在").arg(targetPid));
+        LOG_DEBUG(QString("   └─ ⚠️ [发送中止] PID %1 不存在，跳过启动失败通知").arg(targetPid));
         return;
     }
 
     PlayerData &playerData = m_players[targetPid];
 
-    LOG_INFO(QString("🛑 [启动准入拦截] 触发者: %1 (PID: %2)").arg(playerData.name).arg(targetPid));
-    LOG_INFO(QString("   ├─ 📊 校验失败: 真人数量未达开赛门槛"));
-    LOG_INFO(QString("   ├─ 🔢 实时状态: %1 (当前) / %2 (所需)").arg(current).arg(required));
-    LOG_INFO(QString("   └─ 💬 动作反馈: 正在向玩家控制台推送警告..."));
+    // 服务器后台详细日志
+    LOG_INFO(QString("🛑 [启动准入拦截] 触发者: %1 (PID: %2) | 当前: %3 | 所需: %4")
+                 .arg(playerData.name).arg(targetPid).arg(current).arg(required));
 
-    QString warnPrefix = "|cffffff00[启动失败]|r ";
-    QString curStr = coloredBlueName(QString::number(current));
-    QString reqStr = coloredBlueName(QString::number(required));
+    // 游戏内显示的数值染色
+    QString curStr = coloredRedText(QString::number(current));
+    QString reqStr = coloredGreenText(QString::number(required));
 
     MultiLangMsg msg;
-    msg.add("zh_CN", warnPrefix + QString("当前人数不足。当前：%1，所需：%2。").arg(curStr, reqStr))
-        .add("en",    warnPrefix + QString("Not enough players. Current: %1, Required: %2.").arg(curStr, reqStr));
+
+    // 中文：[启动失败] 当前人数不足。当前：X，所需：Y。
+    msg.add("zh_CN", QString::fromUtf8("%1[启动失败]%2 当前人数不足。当前：%3，所需：%4。")
+                         .arg(COLOR_YELLOW, COLOR_END, curStr, reqStr));
+
+    // 英文：[Start Failed] Not enough players. Current: X, Required: Y.
+    msg.add("en",    QString("%1[Start Failed]%2 Not enough players. Current: %3, Required: %4.")
+                      .arg(COLOR_YELLOW, COLOR_END, curStr, reqStr));
 
     sendChatMessage(targetPid, msg);
 }
@@ -3499,7 +3504,7 @@ void Client::sendJoinMessage(const QString &playerName)
         }
     }
 
-    QString cName = coloredGreenName(playerName);
+    QString cName = coloredGreenText(playerName);
 
     MultiLangMsg broadcastMsg;
     broadcastMsg.add("zh_CN", QString("玩家 [%1] 已加入房间 (%2/%3)。").arg(cName).arg(realPlayerCount).arg(getTotalSlots()))
@@ -3529,15 +3534,15 @@ void Client::sendLeaveMessage(const QString &playerName, const QString &newHostN
 
     // 第一条广播：离开
     MultiLangMsg msg1;
-    msg1.add("zh_CN", QString("玩家 [%1] 离开了房间。").arg(coloredRedName(playerName)))
-        .add("en", QString("Player [%1] has left the game.").arg(coloredRedName(playerName)));
+    msg1.add("zh_CN", QString("玩家 [%1] 离开了房间。").arg(coloredRedText(playerName)))
+        .add("en", QString("Player [%1] has left the game.").arg(coloredRedText(playerName)));
     broadcastChatMessage(msg1, 0);
 
     // 第二条广播：更替房主
     if (!newHostName.isEmpty()) {
         MultiLangMsg msg2;
-        msg2.add("zh_CN", QString("房主已更换为 [%1]。").arg(coloredRedName(newHostName)))
-            .add("en", QString("Host left. [%1] is the new host.").arg(coloredRedName(newHostName)));
+        msg2.add("zh_CN", QString("房主已更换为 [%1]。").arg(coloredRedText(newHostName)))
+            .add("en", QString("Host left. [%1] is the new host.").arg(coloredRedText(newHostName)));
         broadcastChatMessage(msg2, 0);
     }
 
@@ -4209,7 +4214,7 @@ void Client::updateCountdowns()
     for (quint8 pid : pidsToKick) {
         if (m_players.contains(pid)) {
             PlayerData &playerData = m_players[pid];
-            QString cName = coloredBlueName(playerData.name);
+            QString cName = coloredBlueText(playerData.name);
 
             MultiLangMsg kickMsg;
             kickMsg.add("zh_CN", QString("玩家 [%1] 因超时未准备，已被系统移除。").arg(cName))
@@ -4549,9 +4554,9 @@ QString Client::getColoredTextByState(quint8 pid, const QString &text, bool isPl
     return text;
 }
 
-QString Client::coloredGreenName(const QString &name) { return getColoredText(name, "00ff00"); }
-QString Client::coloredBlueName(const QString &name) { return getColoredText(name, "0000ff"); }
-QString Client::coloredRedName(const QString &name) { return getColoredText(name, "00ff00"); }
+QString Client::coloredGreenText(const QString &name) { return getColoredText(name, "00ff00"); }
+QString Client::coloredBlueText(const QString &name) { return getColoredText(name, "0000ff"); }
+QString Client::coloredRedText(const QString &name) { return getColoredText(name, "00ff00"); }
 QString Client::coloredReady() { return getColoredText("/ready", "00ff00"); }
 QString Client::coloredUnready() { return getColoredText("/unready", "ff0000"); }
 
