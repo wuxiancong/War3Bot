@@ -321,7 +321,7 @@ QString Bot::botStateToString(BotState state)
     case BotState::Idle:          return "Idle (空闲待机)";
     case BotState::Creating:      return "Creating (创建中)";
     case BotState::Reserved:      return "Reserved (已预留)";
-    case BotState::Waiting:       return "Waiting (等待房主)";
+    case BotState::Waiting:       return "Waiting (等待玩家)";
     case BotState::Starting:      return "Starting (启动中)";
     case BotState::InGame:        return "InGame (游戏内)";
     case BotState::Finishing:     return "Finishing (清理中)";
