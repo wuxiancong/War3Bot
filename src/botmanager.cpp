@@ -1096,22 +1096,34 @@ ErrorCode BotManager::checkStartCondition(Bot *bot, const QString &clientId, qui
     if (bot->state != BotState::Waiting) return ERR_UNKNOWN;
     if (!bot->isOwner(clientId)) return ERR_PERMISSION_DENIED;
 
-    // 2. 统计各队伍真人玩家数量
+    // 2. 初始化统计变量
     int sentinelHumans = 0;
     int scourgeHumans = 0;
+    bool allReady = true;
 
     const QVector<GameSlot> &gameSlots = bot->client->getGameSlots();
+    const QMap<quint8, PlayerData> &playerDataMap = bot->client->getPlayers();
+
     for (const GameSlot &gameSlot : gameSlots) {
-        if (gameSlot.slotStatus == Occupied && gameSlot.computer == Human&& gameSlot.pid != 0 && gameSlot.pid != 2) {
+        if (gameSlot.slotStatus == Occupied && gameSlot.computer == Human && gameSlot.pid != 0 && gameSlot.pid != 2) {
+
+            // A. 统计队伍人数
             if (gameSlot.team == 0) sentinelHumans++;
             else if (gameSlot.team == 1) scourgeHumans++;
+
+            // B. 检查准备状态
+            if (playerDataMap.contains(gameSlot.pid)) {
+                if (!playerDataMap[gameSlot.pid].isReady) {
+                    allReady = false;
+                }
+            }
         }
     }
 
     current = sentinelHumans + scourgeHumans;
     QString mode = bot->gameInfo.gameMode.toLower();
 
-    // 3. 执行 Solo 专项判定
+    // 3. 执行人数与对阵判定
     if (mode.contains("solo")) {
         required = 2;
         if (sentinelHumans < 1 || scourgeHumans < 1) {
@@ -1119,10 +1131,32 @@ ErrorCode BotManager::checkStartCondition(Bot *bot, const QString &clientId, qui
         }
     } else {
         required = 10;
-        // 普通模式：总人数至少 10 人
         if (current < required) {
             return ERR_NOT_ENOUGH_PLAYERS;
         }
+    }
+
+    // 4. 执行全员准备判定
+    if (!allReady) {
+        QStringList unreadyNames;
+        for (const GameSlot &slot : gameSlots) {
+            if (slot.slotStatus == Occupied && slot.pid != 0 && slot.pid != 2) {
+                if (playerDataMap.contains(slot.pid) && !playerDataMap[slot.pid].isReady) {
+                    unreadyNames << bot->client->getColoredTextByState(slot.pid, playerDataMap[slot.pid].name, true);
+                }
+            }
+        }
+
+        MultiLangMsg msg;
+        QString namesText = unreadyNames.join(", ");
+
+        msg.add("zh_CN", "无法开始游戏，请等待以下玩家准备: " + namesText)
+            .add("en", "Cannot start. Waiting for: " + namesText);
+
+        // 广播给所有人
+        bot->client->broadcastChatMessage(msg);
+
+        return ERR_PLAYERS_NOT_READY;
     }
 
     return ERR_OK;
@@ -1408,23 +1442,22 @@ void BotManager::onBotCommandReceived(const QString &userName,
 
     // --- 6. 房主级别指令 ---
     if (trimmedCommand == "/start") {
-        if (targetBot->state == BotState::Waiting) {
-            QString mode = targetBot->gameInfo.gameMode.toLower();
-            int currentCount = client->getHumanCount();
-            int requiredCount = (mode == "solo" || mode == "solo83") ? 2 : 10;
+        quint8 current = 0;
+        quint8 required = 0;
+        ErrorCode err = checkStartCondition(targetBot, clientId, current, required);
 
-            if (currentCount < requiredCount) {
-                LOG_INFO(QString("   └─ ❌ 拒绝: 人数不足 (%1/%2)").arg(currentCount).arg(requiredCount));
-                quint8 myPid = client->getPidByClientId(clientId);
-                if (myPid != 0) client->sendStartConditionFailedMessage(myPid, currentCount, requiredCount);
-                m_netManager->sendMessageToClient(clientId, S_C_ERROR, ERR_NOT_ENOUGH_PLAYERS);
-            } else {
-                LOG_INFO(QString("   └─ 🚀 满足条件，正在启动游戏..."));
-                client->startGame();
-                targetBot->state = BotState::Starting;
-                emit botStateChanged(targetBot->id, targetBot->username, targetBot->state);
-            }
+        if (err == ERR_OK) {
+            LOG_INFO(QString("   └─ 🚀 准入校验通过，正在启动游戏..."));
+            client->startGame();
+            targetBot->state = BotState::Starting;
+            emit botStateChanged(targetBot->id, targetBot->username, targetBot->state);
+            m_netManager->sendMessageToClient(clientId, S_C_MESSAGE, MSG_GAME_STATE_CHANGE, (quint64)GAME_STATE_LOADING);
         }
+        else {
+            LOG_INFO(QString("   └─ ❌ 启动被拒绝: 错误码 %1 (当前:%2/所需:%3)")
+                         .arg(err).arg(current).arg(required));
+        }
+        return;
     }
     else if (trimmedCommand == "/latency" || trimmedCommand == "/lat") {
         int val = text.toInt();

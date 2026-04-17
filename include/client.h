@@ -513,9 +513,14 @@ public:
     QTextCodec *getCodecBySocket(QTcpSocket *socket) const;
     QTextCodec *getCodecByPid(quint8 pid) const;
 
-    // --- 发送消息提醒
+    // --- 消息提醒 ---
     void sendAccessDeniedMessage(quint8 targetPid, const QString &command);
     void sendStartConditionFailedMessage(quint8 targetPid, int current, int required);
+
+    // --- 消息广播 ---
+    void broadcastPacket(const QByteArray &packet, quint8 excludePid, bool includeOnly = false);
+    void broadcastChatMessage(const MultiLangMsg &msg, quint8 excludePid = 0);
+    void broadcastSlotInfo(quint8 excludePid = m_botPid);
 
 signals:
     void connected();
@@ -635,11 +640,6 @@ private:
     quint64                         m_platformSeq           = 0;
 
 private:
-    // --- 消息广播 ---
-    void broadcastPacket(const QByteArray &packet, quint8 excludePid, bool includeOnly = false);
-    void broadcastChatMessage(const MultiLangMsg &msg, quint8 excludePid = 0);
-    void broadcastSlotInfo(quint8 excludePid = m_botPid);
-
     // --- 槽位管理 ---
     void initSlotsFromMap(quint8 maxPlayers = 10);
     void initSlots(quint8 maxPlayers = 10);
