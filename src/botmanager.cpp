@@ -1092,20 +1092,37 @@ ErrorCode BotManager::checkStartCondition(Bot *bot, const QString &clientId, qui
 {
     if (!isBotActive(bot, "CheckStartCondition")) return ERR_UNKNOWN;
 
-    if (bot->state != BotState::Waiting) {
-        return ERR_UNKNOWN;
+    // 1. 状态与权限检查
+    if (bot->state != BotState::Waiting) return ERR_UNKNOWN;
+    if (!bot->isOwner(clientId)) return ERR_PERMISSION_DENIED;
+
+    // 2. 统计各队伍真人玩家数量
+    int sentinelHumans = 0;
+    int scourgeHumans = 0;
+
+    const QVector<GameSlot> &gameSlots = bot->client->getGameSlots();
+    for (const GameSlot &gameSlot : gameSlots) {
+        if (gameSlot.slotStatus == Occupied && gameSlot.computer == Human&& gameSlot.pid != 0 && gameSlot.pid != 2) {
+            if (gameSlot.team == 0) sentinelHumans++;
+            else if (gameSlot.team == 1) scourgeHumans++;
+        }
     }
 
-    if (!bot->isOwner(clientId)) {
-        return ERR_PERMISSION_DENIED;
-    }
-
+    current = sentinelHumans + scourgeHumans;
     QString mode = bot->gameInfo.gameMode.toLower();
-    current = bot->client->getHumanCount();
-    required = (mode.contains("solo")) ? 2 : 10;
 
-    if (current < required) {
-        return ERR_NOT_ENOUGH_PLAYERS;
+    // 3. 执行 Solo 专项判定
+    if (mode.contains("solo")) {
+        required = 2;
+        if (sentinelHumans < 1 || scourgeHumans < 1) {
+            return ERR_NOT_ENOUGH_PLAYERS;
+        }
+    } else {
+        required = 10;
+        // 普通模式：总人数至少 10 人
+        if (current < required) {
+            return ERR_NOT_ENOUGH_PLAYERS;
+        }
     }
 
     return ERR_OK;

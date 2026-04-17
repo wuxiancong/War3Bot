@@ -3758,6 +3758,11 @@ quint8  Client::getTotalSlots() const
     return m_gameSlots.size();
 }
 
+QVector<GameSlot> Client::getGameSlots() const
+{
+    return m_gameSlots;
+}
+
 quint8  Client::getOccupiedSlots() const
 {
     if (m_gameSlots.isEmpty()) return 1;

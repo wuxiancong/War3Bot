@@ -502,6 +502,7 @@ public:
     quint8 getHumanCount() const;
     quint8 getOccupiedSlots() const;
     QString getSlotInfoString() const;
+    QVector<GameSlot> getGameSlots() const;
     bool isSlotOccupied(int slotIndex) const;
     int getSlotIndexByPid(quint8 pid) const;
     QString getPlayerNameByPid(quint8 pid) const;
