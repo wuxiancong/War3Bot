@@ -62,18 +62,21 @@ mkdir -p "$CONFIG_DIR" "$INSTALL_PREFIX/config"
 
 # 更新所有路径
 TARGET_FILES=("$ETC_INI" "$INSTALL_INI" "$BUILD_INI" "$SOURCE_INI")
+CLEAN_DISPLAY_NAME=$(echo "${INPUT_DISPLAY_NAME:-"CC.Dota.XXX"}" | tr -d '\r\n' | tr -cd '[:print:]')
 for FILE_PATH in "${TARGET_FILES[@]}"; do
     if [ -f "$FILE_PATH" ] || [ "$FILE_PATH" == "$ETC_INI" ]; then
         [ ! -f "$FILE_PATH" ] && cp "$SOURCE_INI" "$FILE_PATH" 2>/dev/null
         
-        # 先把整个文件的 Windows 换行符转为 Unix 换行符
-        sed -i 's/\r//g' "$FILE_PATH" 2>/dev/null
+        # 强制删除文件中的所有 Windows 换行符 \r，将其转为纯 Unix 文本
+        sed -i 's/\r//g' "$FILE_PATH"
         
-        # 使用更严格的正则：匹配整个 key=value 结构并替换为干净的字符串
-        # 确保 display_name 前后没有多余空格
-        sed -i "s|^display_name=.*|display_name=$BOT_DISPLAY_NAME|" "$FILE_PATH" 2>/dev/null
+        # 确保文件以 UTF-8 格式处理 (针对部分系统的 sed 兼容性)
+        # 使用 | 作为定界符，防止名字里带 / 导致报错
+        # 使用 ${CLEAN_DISPLAY_NAME} 确保写入的是清洗后的变量
+        sed -i "s|^display_name=.*|display_name=${CLEAN_DISPLAY_NAME}|" "$FILE_PATH"
+        sed -i "s|^list_number=.*|list_number=${BOT_LIST_NUMBER}|" "$FILE_PATH"
         
-        info "已同步: $FILE_PATH"
+        info "已同步 UTF-8 文本配置: $FILE_PATH"
     fi
 done
 
