@@ -1127,11 +1127,21 @@ ErrorCode BotManager::checkStartCondition(Bot *bot, const QString &clientId, qui
     if (mode.contains("solo")) {
         required = 2;
         if (sentinelHumans < 1 || scourgeHumans < 1) {
+            MultiLangMsg msg;
+            msg.add("zh_CN", "无法开始游戏。Solo模式需要对阵双方各就各位。")
+                .add("en", "Cannot start. Solo mode requires one player on each side.");
+
+            bot->client->broadcastChatMessage(msg);
             return ERR_NOT_ENOUGH_PLAYERS;
         }
     } else {
         required = 10;
         if (current < required) {
+            MultiLangMsg msg;
+            msg.add("zh_CN", QString("无法开始游戏。当前人数不足 (当前: %1, 所需: %2)。").arg(current).arg(required))
+                .add("en", QString("Cannot start. Not enough players (Current: %1, Required: %2).").arg(current).arg(required));
+
+            bot->client->broadcastChatMessage(msg);
             return ERR_NOT_ENOUGH_PLAYERS;
         }
     }
