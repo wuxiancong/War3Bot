@@ -1,4 +1,5 @@
 #include "dbmanager.h"
+#include "botmanager.h"
 #include "netmanager.h"
 #include "calculate.h"
 #include "war3map.h"
@@ -1636,6 +1637,18 @@ void NetManager::handleTcpCustomMessage(QTcpSocket *socket)
             }
         }
         break;
+
+        case PacketType::C_S_START_WAR3: {
+            if (pHeader->payloadLen >= sizeof(CSStartWar3Packet)) {
+                const CSStartWar3Packet *pkt = reinterpret_cast<const CSStartWar3Packet*>(payload);
+                QString clientId = QString::fromUtf8(pkt->clientId, strnlen(pkt->clientId, 40));
+                QString roomName = QString::fromUtf8(pkt->roomName, strnlen(pkt->roomName, 32));
+                if (m_botManager) {
+                    m_botManager->handleStartWar3(clientId, roomName);
+                }
+            }
+            break;
+        }
 
         case PacketType::C_S_COMMAND:
             LOG_INFO("🚩 [命中] 正在进入 TCP C_S_COMMAND 分支...");

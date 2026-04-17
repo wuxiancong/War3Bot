@@ -30,6 +30,7 @@ public:
     void setNetManager(NetManager *netManager);
     bool isGhostRoom(Bot *bot, const QString &mappedName);
     void initializeBots(quint32 initialCount, const QString &configPath);
+    void handleStartWar3(const QString &clientId, const QString &roomName);
     Bot *findBotByHostName(const QString &hostName, bool onlyOccupied = true);
     Bot *findBotByOwnerClientId(const QString &clientId, bool onlyOccupied = true);
     Bot *findBotByOwnerUserName(const QString &userName, bool onlyOccupied = true);
@@ -37,9 +38,10 @@ public:
     Bot *findBotByMemberUserName(const QString &userName, bool onlyOccupied = true);
     bool checkCooldown(const QString &clientId, const QString &command, qint64 now);
     bool createBotAccountFilesIfNotExist(bool allowAutoGenerate, int targetListNumber);
+    void removeGame(Bot *bot, bool disconnectFlag = false, const QString &reason = "None");
     void rejectCommandWithNotice(Bot *bot, const QString &clientId, const QString &command);
     void handleHostCommand(const QString &userName, const QString &clientId, const QString &text);
-    void removeGame(Bot *bot, bool disconnectFlag = false, const QString &reason = "None");
+    ErrorCode checkStartCondition(Bot *bot, const QString &clientId, quint8 &current, quint8 &required);
     bool createGame(const QString &hostName, const QString &gameName, const QString &gameMode, CommandSource commandSource, const QString &clientId);
 
 signals:

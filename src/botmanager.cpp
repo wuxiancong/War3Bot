@@ -1088,6 +1088,59 @@ bool BotManager::checkCooldown(const QString &clientId, const QString &command, 
     return true;
 }
 
+ErrorCode BotManager::checkStartCondition(Bot *bot, const QString &clientId, quint8 &current, quint8 &required)
+{
+    if (!isBotActive(bot, "CheckStartCondition")) return ERR_UNKNOWN;
+
+    if (bot->state != BotState::Waiting) {
+        return ERR_UNKNOWN;
+    }
+
+    if (!bot->isOwner(clientId)) {
+        return ERR_PERMISSION_DENIED;
+    }
+
+    QString mode = bot->gameInfo.gameMode.toLower();
+    current = bot->client->getHumanCount();
+    required = (mode.contains("solo")) ? 2 : 10;
+
+    if (current < required) {
+        return ERR_NOT_ENOUGH_PLAYERS;
+    }
+
+    return ERR_OK;
+}
+
+void BotManager::handleStartWar3(const QString& clientId, const QString& roomName)
+{
+    LOG_INFO(QString("🚀 [War3启动申请] ClientId: %1 | 房间: %2").arg(clientId, roomName));
+
+    Bot *bot = findBotByOwnerClientId(clientId);
+    if (!bot || bot->gameInfo.gameName != roomName) {
+        LOG_WARNING("   └─ ❌ 申请拒绝: 找不到关联的房间或机器人已释放");
+        m_netManager->sendMessageToClient(clientId, S_C_ERROR, ERR_NOT_IN_ROOM);
+        return;
+    }
+
+    quint8 current = 0, required = 0;
+    ErrorCode err = checkStartCondition(bot, clientId, current, required);
+
+    if (err == ERR_OK) {
+        LOG_INFO(QString("   └─ ✅ 验证通过: 允许 Launcher 唤起 War3.exe (当前:%1/所需:%2)")
+                     .arg(current).arg(required));
+        m_netManager->sendMessageToClient(clientId, S_C_START_WAR3, ERR_OK,
+                                          (quint64)current << 8 | required);
+    }
+    else {
+        LOG_ERROR(QString("   └─ ❌ 验证失败: 错误码 %1 | 状态: %2 | 人数: %3/%4")
+                      .arg(err)
+                      .arg(bot->botStateToString(bot->state))
+                      .arg(current).arg(required));
+        m_netManager->sendMessageToClient(clientId, S_C_START_WAR3, err,
+                                          (quint64)current << 8 | required);
+    }
+}
+
 void BotManager::handleHostCommand(const QString &userName, const QString &clientId, const QString &text)
 {
     LOG_INFO("🎮 [创建房间流程]");

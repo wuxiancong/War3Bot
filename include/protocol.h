@@ -30,7 +30,9 @@ enum PacketType : quint8 {
     C_S_PREJOINROOM                 = 0x13,
     S_C_PREJOINROOM                 = 0x14,
     C_S_ROOM_PING                   = 0x15,
-    S_C_ROOM_PONG                   = 0x16
+    S_C_ROOM_PONG                   = 0x16,
+    C_S_START_WAR3                  = 0x17,
+    S_C_START_WAR3                  = 0x18
 };
 
 // ==================== 错误码定义 ====================
@@ -195,6 +197,18 @@ struct SCRoomPongPacket {
     quint8  maxPlayers;
     char    targetHostName[32];
     char    targetClientId[64];
+};
+
+struct CSStartWar3Packet {
+    char clientId[40];
+    char roomName[32];
+};
+
+struct SCStartWar3Packet {
+    quint8 status;
+    quint8 errorCode;
+    quint8 current;
+    quint8 required;
 };
 #pragma pack(pop)
 
