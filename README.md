@@ -39,16 +39,21 @@ War3Bot --help
 - 安装方式二：
 
 # 7. 脚本运行（推荐）
+
+## 方式 A：通过 GitHub 克隆
 git clone https://github.com/wuxiancong/War3Bot.git
 cd War3Bot
 chmod +x install.sh
-./install.sh
+sudo ./install.sh  # 使用 sudo 运行
 
-## 非 github 克隆需输入下面命令 (如：通过上传文件夹的方式到服务器)
+## 方式 B：手动上传文件夹方式 (如：WinSCP/FTP 上传)
 cd War3Bot
-sed -i 's/\r$//' install.sh
+# 关键步骤：修复脚本本身的 Windows 换行符
+sed -i 's/\r$//' install.sh 
 chmod +x install.sh
-./install.sh
+# 建议运行前清理旧的损坏配置（仅需执行一次）
+sudo rm -f /etc/War3Bot/config/war3bot.ini 
+sudo ./install.sh
 
 ```
 

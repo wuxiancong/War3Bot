@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# ==========================================
-#  War3Bot 自动化安装脚本 (路径修复版)
-# ==========================================
+# ======================================================
+#  War3Bot 自动化安装脚本 (编码修复 & 路径纠偏版)
+# ======================================================
 
 GREEN='\033[0;32m'
 RED='\033[0;31m'
@@ -25,33 +25,36 @@ if [ "$EUID" -ne 0 ]; then
     error "请使用 sudo 或 root 运行！"
 fi
 
-# 交互式参数
+# ==========================================
+# 1. 交互式参数获取与变量清洗
+# ==========================================
 read -p "请输入机器人列表编号 (list_number) [默认: 1]: " INPUT_LIST_NUMBER
-BOT_LIST_NUMBER=${INPUT_LIST_NUMBER:-"1"}
+BOT_LIST_NUMBER=$(echo "${INPUT_LIST_NUMBER:-"1"}" | tr -d '\r\n' | tr -cd '[:print:]')
 
-# 交互式参数获取后立即清洗变量
 read -p "请输入机器人显示名称 (display_name) [默认: CC.Dota.XXX]: " INPUT_DISPLAY_NAME
-# 使用 tr 剔除可能存在的 \r 或其他控制字符
-BOT_DISPLAY_NAME=$(echo "${INPUT_DISPLAY_NAME:-"CC.Dota.XXX"}" | tr -d '\r' | tr -d '\n')
+# 【关键修复】剔除 \r, \n 和所有非打印控制字符，防止乱码和“双重行”现象
+CLEAN_DISPLAY_NAME=$(echo "${INPUT_DISPLAY_NAME:-"CC.Dota.XXX"}" | tr -d '\r\n' | tr -cd '[:print:]')
 
-# 编译
+info "准备安装机器人: $CLEAN_DISPLAY_NAME (编号: $BOT_LIST_NUMBER)"
+
+# ==========================================
+# 2. 编译与安装
+# ==========================================
 info "开始清理与编译..."
 rm -rf build && mkdir build && cd build
 cmake -DCMAKE_INSTALL_PREFIX="$INSTALL_PREFIX" .. && make -j$(nproc) && make install || error "编译失败"
 
-# ==========================================
 # ✨ 路径纠偏：删除 CMake 错误生成的嵌套目录
-# ==========================================
 if [ -d "$INSTALL_PREFIX/war3files/war3files" ]; then
     warn "检测到嵌套目录 /war3files/war3files，正在修正..."
-    # 移动文件到上一级
     cp -rn $INSTALL_PREFIX/war3files/war3files/* $INSTALL_PREFIX/war3files/
-    # 删除嵌套的文件夹
     rm -rf $INSTALL_PREFIX/war3files/war3files
     info "路径修正成功。"
 fi
 
-# 配置同步
+# ==========================================
+# 3. 配置文件同步与编码修复
+# ==========================================
 cd .. 
 ETC_INI="$CONFIG_DIR/war3bot.ini"
 INSTALL_INI="$INSTALL_PREFIX/config/war3bot.ini"
@@ -59,35 +62,50 @@ BUILD_INI="./build/config/war3bot.ini"
 SOURCE_INI="./config/war3bot.ini"
 
 mkdir -p "$CONFIG_DIR" "$INSTALL_PREFIX/config"
+mkdir -p "$LOG_DIR"
 
-# 更新所有路径
+# 需要同步的所有配置文件列表
 TARGET_FILES=("$ETC_INI" "$INSTALL_INI" "$BUILD_INI" "$SOURCE_INI")
-CLEAN_DISPLAY_NAME=$(echo "${INPUT_DISPLAY_NAME:-"CC.Dota.XXX"}" | tr -d '\r\n' | tr -cd '[:print:]')
+
 for FILE_PATH in "${TARGET_FILES[@]}"; do
-    if [ -f "$FILE_PATH" ] || [ "$FILE_PATH" == "$ETC_INI" ]; then
-        [ ! -f "$FILE_PATH" ] && cp "$SOURCE_INI" "$FILE_PATH" 2>/dev/null
-        
-        # 强制删除文件中的所有 Windows 换行符 \r，将其转为纯 Unix 文本
+    # 如果是 /etc 下的文件且不存在，则从源码拷贝
+    if [ ! -f "$FILE_PATH" ]; then
+        cp "$SOURCE_INI" "$FILE_PATH" 2>/dev/null
+    fi
+
+    if [ -f "$FILE_PATH" ]; then
+        # 删除所有回车符 \r，防止文件被识别为二进制或产生重叠乱码
         sed -i 's/\r//g' "$FILE_PATH"
         
-        # 确保文件以 UTF-8 格式处理 (针对部分系统的 sed 兼容性)
-        # 使用 | 作为定界符，防止名字里带 / 导致报错
-        # 使用 ${CLEAN_DISPLAY_NAME} 确保写入的是清洗后的变量
+        # 使用 | 作为 sed 定界符，防止内容包含 / 导致语法错误
+        # 确保 display_name 和 list_number 被正确替换为清洗后的变量
         sed -i "s|^display_name=.*|display_name=${CLEAN_DISPLAY_NAME}|" "$FILE_PATH"
         sed -i "s|^list_number=.*|list_number=${BOT_LIST_NUMBER}|" "$FILE_PATH"
         
-        info "已同步 UTF-8 文本配置: $FILE_PATH"
+        # 确保文件结尾有一个换行符
+        sed -i '$a\' "$FILE_PATH"
+        
+        info "已同步并修正编码: $FILE_PATH"
     fi
 done
 
-# 权限与服务
+# ==========================================
+# 4. 权限设置
+# ==========================================
+info "设置系统权限..."
 chown -R root:root "$INSTALL_PREFIX"
-# 给予执行用户读取权限
-if ! id "$USER_NAME" &>/dev/null; then useradd -r -s /bin/false "$USER_NAME"; fi
+
+if ! id "$USER_NAME" &>/dev/null; then 
+    useradd -r -s /bin/false "$USER_NAME"
+fi
+
+# 确保日志、配置和地图目录对运行用户可见
 chown -R $USER_NAME:$USER_NAME "$CONFIG_DIR" "$LOG_DIR" "$INSTALL_PREFIX/war3files"
 chmod -R 755 "$INSTALL_PREFIX"
 
-# Systemd
+# ==========================================
+# 5. Systemd 服务配置
+# ==========================================
 SERVICE_FILE="/etc/systemd/system/$SERVICE_NAME.service"
 cat > "$SERVICE_FILE" <<EOF
 [Unit]
@@ -99,6 +117,7 @@ Type=simple
 User=$USER_NAME
 Group=$USER_NAME
 WorkingDirectory=$INSTALL_PREFIX
+# 明确指定配置文件路径
 ExecStart=$INSTALL_PREFIX/bin/War3Bot --config $ETC_INI -p $SERVICE_PORT
 Restart=always
 RestartSec=10
@@ -107,11 +126,18 @@ RestartSec=10
 WantedBy=multi-user.target
 EOF
 
+# ==========================================
+# 6. 启动服务
+# ==========================================
+info "正在重启服务..."
 pkill -9 -f War3Bot || true
 systemctl daemon-reload
 systemctl enable $SERVICE_NAME
 systemctl restart $SERVICE_NAME
 
-info "✅ 安装成功！请检查日志。"
+info "✅ 安装成功！"
+info "配置路径: $ETC_INI"
+info "显示名称: $CLEAN_DISPLAY_NAME"
+info "----------------------------------------"
 sleep 2
 journalctl -u $SERVICE_NAME -f
