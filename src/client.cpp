@@ -3376,11 +3376,11 @@ void Client::sendAccessDeniedMessage(quint8 targetPid, const QString &command)
 
     // 中文消息
     msg.add("zh_CN", QString("%1[权限拒绝]%2 您没有权限执行 %3%4%5 指令。")
-                         .arg(COLOR_YELLOW, COLOR_END, COLOR_GREEN, formattedCmd, COLOR_END));
+                         .arg(COLOR_RED, COLOR_END, COLOR_GREEN, formattedCmd, COLOR_END));
 
     // 英文消息
     msg.add("en",    QString("%1[Access Denied]%2 You don't have permission to execute %3%4%5.")
-                      .arg(COLOR_YELLOW, COLOR_END, COLOR_GREEN, formattedCmd, COLOR_END));
+                      .arg(COLOR_RED, COLOR_END, COLOR_GREEN, formattedCmd, COLOR_END));
 
     sendChatMessage(targetPid, msg);
 }
@@ -3406,11 +3406,11 @@ void Client::sendStartConditionFailedMessage(quint8 targetPid, int current, int 
 
     // 中文：[启动失败] 当前人数不足。当前：X，所需：Y。
     msg.add("zh_CN", QString::fromUtf8("%1[启动失败]%2 当前人数不足。当前：%3，所需：%4。")
-                         .arg(COLOR_YELLOW, COLOR_END, curStr, reqStr));
+                         .arg(COLOR_RED, COLOR_END, curStr, reqStr));
 
     // 英文：[Start Failed] Not enough players. Current: X, Required: Y.
     msg.add("en",    QString("%1[Start Failed]%2 Not enough players. Current: %3, Required: %4.")
-                      .arg(COLOR_YELLOW, COLOR_END, curStr, reqStr));
+                      .arg(COLOR_RED, COLOR_END, curStr, reqStr));
 
     sendChatMessage(targetPid, msg);
 }
