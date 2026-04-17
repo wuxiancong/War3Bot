@@ -98,6 +98,7 @@ bool War3Bot::startServer(quint16 port, const QString &configFile)
     // 5. 业务参数解析与机器人集群启动
     if (QFile::exists(m_configPath)) {
         QSettings settings(m_configPath, QSettings::IniFormat);
+        settings.setIniCodec("UTF-8");
         LOG_INFO(QString("├── 📑 解析业务配置: [%1]").arg(QFileInfo(m_configPath).fileName()));
 
         QString botDisplayName = settings.value("bots/display_name", "CC.Dota.XXX").toString();

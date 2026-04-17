@@ -29,8 +29,10 @@ fi
 read -p "请输入机器人列表编号 (list_number) [默认: 1]: " INPUT_LIST_NUMBER
 BOT_LIST_NUMBER=${INPUT_LIST_NUMBER:-"1"}
 
+# 交互式参数获取后立即清洗变量
 read -p "请输入机器人显示名称 (display_name) [默认: CC.Dota.XXX]: " INPUT_DISPLAY_NAME
-BOT_DISPLAY_NAME=${INPUT_DISPLAY_NAME:-"CC.Dota.XXX"}
+# 使用 tr 剔除可能存在的 \r 或其他控制字符
+BOT_DISPLAY_NAME=$(echo "${INPUT_DISPLAY_NAME:-"CC.Dota.XXX"}" | tr -d '\r' | tr -d '\n')
 
 # 编译
 info "开始清理与编译..."
@@ -63,9 +65,14 @@ TARGET_FILES=("$ETC_INI" "$INSTALL_INI" "$BUILD_INI" "$SOURCE_INI")
 for FILE_PATH in "${TARGET_FILES[@]}"; do
     if [ -f "$FILE_PATH" ] || [ "$FILE_PATH" == "$ETC_INI" ]; then
         [ ! -f "$FILE_PATH" ] && cp "$SOURCE_INI" "$FILE_PATH" 2>/dev/null
-        sed -i 's/\r$//' "$FILE_PATH" 2>/dev/null
-        sed -i "s/^list_number=.*/list_number=$BOT_LIST_NUMBER/" "$FILE_PATH" 2>/dev/null
-        sed -i "s/^display_name=.*/display_name=$BOT_DISPLAY_NAME/" "$FILE_PATH" 2>/dev/null
+        
+        # 先把整个文件的 Windows 换行符转为 Unix 换行符
+        sed -i 's/\r//g' "$FILE_PATH" 2>/dev/null
+        
+        # 使用更严格的正则：匹配整个 key=value 结构并替换为干净的字符串
+        # 确保 display_name 前后没有多余空格
+        sed -i "s|^display_name=.*|display_name=$BOT_DISPLAY_NAME|" "$FILE_PATH" 2>/dev/null
+        
         info "已同步: $FILE_PATH"
     fi
 done
