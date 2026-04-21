@@ -120,6 +120,7 @@ struct SCMessagePacket {
     quint8 type;
     quint8 code;
     quint64 data;
+    char flag[8];
 };
 
 struct CSRegisterPacket {

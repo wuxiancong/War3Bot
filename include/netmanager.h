@@ -79,7 +79,7 @@ public:
     QList<RegisterInfo> getOnlinePlayers() const;
     QString getClientIdByPreJoinName(const QString &userName);
     bool isClientRegistered(const QString &clientId) const;
-    bool sendMessageToClient(const QString &clientId, PacketType type, quint8 code, quint64 data = 0, bool isUdp = false);
+    bool sendMessageToClient(const QString &clientId, PacketType type, quint8 code, quint64 data = 0, const QString &flag = "", bool isUdp = false);
     void sendRoomPong(const QHostAddress &targetAddr, quint16 targetPort, quint64 clientTime, quint8 current, quint8 max,
                       const QString &hostName, const QString &clientId);
     bool sendEnterRoomCommand(const QString &clientId, const QString &roomName, bool isServerCmd);

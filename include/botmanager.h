@@ -28,6 +28,7 @@ public:
     const QVector<Bot*> &getAllBots() const;
     bool isRoomExist(const QString &roomName);
     void setNetManager(NetManager *netManager);
+    QString extractCommandName(const QString &command);
     bool isGhostRoom(Bot *bot, const QString &mappedName);
     void initializeBots(quint32 initialCount, const QString &configPath);
     void handleStartWar3(const QString &clientId, const QString &roomName);

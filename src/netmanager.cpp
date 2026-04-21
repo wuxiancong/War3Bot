@@ -1842,52 +1842,51 @@ bool NetManager::sendRetryCommand(QTcpSocket *socket)
     return sendTcpPacket(socket, PacketType::S_C_COMMAND, &pkt, sizeof(pkt));
 }
 
-bool NetManager::sendMessageToClient(const QString &clientId, PacketType type, quint8 code, quint64 data, bool isUdp)
+bool NetManager::sendMessageToClient(const QString &clientId, PacketType type, quint8 code, quint64 data, const QString &flag, bool isUdp)
 {
-    // 1. 构造错误包
+    // 1. 构造协议包
     SCMessagePacket pkt;
     memset(&pkt, 0, sizeof(pkt));
-    pkt.type = type;
+    pkt.type = static_cast<quint8>(type);
     pkt.code = code;
     pkt.data = data;
 
-    // 2. 逻辑分支 A: 优先尝试 TCP 发送 (默认行为)
+    if (!flag.isEmpty()) {
+        QByteArray ba = flag.toUtf8();
+        strncpy(pkt.flag, ba.constData(), sizeof(pkt.flag) - 1);
+    }
+
+    // 2. 逻辑分支 A: 优先尝试 TCP 发送
     if (!isUdp) {
         if (m_tcpClients.contains(clientId)) {
             QTcpSocket *socket = m_tcpClients[clientId];
             if (socket && socket->state() == QAbstractSocket::ConnectedState) {
-
                 bool ok = sendTcpPacket(socket, type, &pkt, sizeof(pkt));
-
                 if (ok) {
-                    LOG_INFO(QString("🚫 [TCP Error] -> %1 | Code: %2").arg(clientId).arg(code));
+                    LOG_INFO(QString("🚫 [TCP Msg] -> %1 | Code: %2 | Flag: %3")
+                                 .arg(clientId).arg(code).arg(flag));
                     return true;
-                } else {
-                    LOG_WARNING(QString("⚠️ [TCP Error] 发送失败 -> %1 (Socket错误), 尝试回退到 UDP").arg(clientId));
-                    // 发送失败，向下穿透到 UDP 逻辑
                 }
             }
-        } else {
-            LOG_DEBUG(QString("ℹ️ [TCP Error] 目标无TCP连接 -> %1, 尝试回退到 UDP").arg(clientId));
         }
     }
 
-    // 3. 逻辑分支 B: UDP 发送 (回退方案或强制指定)
+    // 3. 逻辑分支 B: UDP 发送 (回退方案)
     QReadLocker locker(&m_registerInfosLock);
     if (m_registerInfos.contains(clientId)) {
         const RegisterInfo &info = m_registerInfos[clientId];
         QHostAddress targetAddr(info.publicIp);
-        quint64 targetPort = info.publicPort;
-
+        quint16 targetPort = static_cast<quint16>(info.publicPort);
         locker.unlock();
 
         sendUdpPacket(targetAddr, targetPort, type, &pkt, sizeof(pkt));
 
-        LOG_INFO(QString("🚫 [UDP Error] -> %1:%2 | Code: %3").arg(targetAddr.toString()).arg(targetPort).arg(code));
+        LOG_INFO(QString("🚫 [UDP Msg] -> %1:%2 | Code: %3 | Flag: %4")
+                     .arg(targetAddr.toString()).arg(targetPort).arg(code).arg(flag));
         return true;
     }
 
-    LOG_ERROR(QString("❌ [Error发送失败] 找不到目标用户: %1").arg(clientId));
+    LOG_ERROR(QString("❌ [发送失败] 找不到目标用户: %1").arg(clientId));
     return false;
 }
 
@@ -2244,7 +2243,7 @@ void NetManager::kickUserIfOnline(const QString &username)
     QWriteLocker locker(&m_registerInfosLock);
     for (auto it = m_registerInfos.begin(); it != m_registerInfos.end(); ++it) {
         if (it.value().username == username) {
-            sendMessageToClient(it.key(), PacketType::S_C_ERROR, ERR_PERMISSION_DENIED, 0, true);
+            sendMessageToClient(it.key(), PacketType::S_C_ERROR, ERR_PERMISSION_DENIED, 0, "kickUserIfOnline", true);
             QString clientId = it.key();
             m_sessionIndex.remove(it.value().sessionId);
             m_registerInfos.erase(it);

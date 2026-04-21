@@ -1048,9 +1048,27 @@ Bot *BotManager::findBotByOwnerUserName(const QString &userName, bool onlyOccupi
     return nullptr;
 }
 
+QString BotManager::extractCommandName(const QString &command)
+{
+    if (command.isEmpty()) return "";
+
+    QString name = command;
+
+    if (name.startsWith('/')) {
+        name = name.mid(1);
+    }
+
+    int spaceIdx = name.indexOf(' ');
+    if (spaceIdx != -1) {
+        name = name.left(spaceIdx);
+    }
+
+    return name.left(7).toLower().trimmed();
+}
+
 bool BotManager::checkCooldown(const QString &clientId, const QString &command, qint64 now)
 {
-    // 1. 定义冷却规则 (也可以定义为类成员变量以提高性能)
+    // 1. 定义冷却规则
     static QMap<QString, qint64> cooldownRules;
     if (cooldownRules.isEmpty()) {
         cooldownRules.insert("/host", 2000);
@@ -1074,11 +1092,12 @@ bool BotManager::checkCooldown(const QString &clientId, const QString &command, 
 
         if (diff < requiredWait) {
             quint32 remaining = static_cast<quint32>(requiredWait - diff);
+            QString flag = extractCommandName(command);
             // 通知客户端进入冷却
-            m_netManager->sendMessageToClient(clientId, S_C_ERROR, ERR_COOLDOWN, remaining);
+            m_netManager->sendMessageToClient(clientId, S_C_ERROR, ERR_COOLDOWN, remaining, flag, false);
 
-            LOG_INFO(QString("⏳ [频率限制] ClientId: %1 | 指令: %2 | 剩余: %3ms")
-                         .arg(clientId, command).arg(remaining));
+            LOG_INFO(QString("⏳ [频率限制] ClientId: %1 | 指令: %2 | 命令: %3 | 剩余: %4ms")
+                         .arg(clientId, command, flag).arg(remaining));
             return false;
         }
     }
@@ -1325,7 +1344,12 @@ void BotManager::onBotClientExpired(const QString &clientId)
 void BotManager::onBotCommandReceived(const QString &userName,
                                       const QString &clientId,
                                       const QString &command,
-                                      const QString &text) {
+                                      const QString &text)
+{
+    if (!command.trimmed().startsWith('/')) {
+        return;
+    }
+
     const QString trimmedCommand = command.trimmed().toLower();
     qint64 now = QDateTime::currentMSecsSinceEpoch();
 
