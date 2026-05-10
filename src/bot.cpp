@@ -261,6 +261,13 @@ void Bot::setupClient(NetManager *netManager, const QString &displayName)
                    emit rejoinRejected(clientId, remainingMs);
                }), "rejoinRejected");
 
+    // 18. 替换逻辑
+    checkRelay(connect(client, &Client::playerTransitioned, this, [this, relayLog](const QString &clientId, quint8 pid, const QString &playerName){
+                   incrementSignalCount("playerTransitioned");
+                   relayLog("playerTransitioned");
+                   emit playerTransitioned(clientId, pid, playerName);
+               }), "playerTransitioned");
+
     LOG_INFO(QString("   └── ✅ Bot-%1 引擎构建及信号代理完成").arg(id));
 }
 

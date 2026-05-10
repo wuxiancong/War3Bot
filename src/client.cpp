@@ -52,6 +52,10 @@ Client::Client(QObject *parent)
     m_startLagTimer = new QTimer(this);
     m_startLagTimer->setSingleShot(true);
 
+    m_launchTimeoutTimer = new QTimer(this);
+    m_launchTimeoutTimer->setSingleShot(true);
+    m_launchTimeoutTimer->setInterval(30000);
+
     m_gameTickTimer = new QTimer(this);
     m_gameTickTimer->setInterval(m_gameTickInterval);
 
@@ -60,6 +64,7 @@ Client::Client(QObject *parent)
     connect(m_startTimer, &QTimer::timeout, this, &Client::onGameStarted);
     connect(m_gameTickTimer, &QTimer::timeout, this, &Client::onGameTick);
     connect(m_startLagTimer, &QTimer::timeout, this, &Client::onStartLagFinished);
+    connect(m_launchTimeoutTimer, &QTimer::timeout, this, &Client::onLaunchTimeout);
 
     connect(m_tcpSocket, &QTcpSocket::connected, this, &Client::onConnected);
     connect(m_tcpSocket, &QTcpSocket::readyRead, this, &Client::onTcpReadyRead);
@@ -815,7 +820,11 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
         LOG_INFO(QString("   ├─ 🌍 内网IP: %1:%2").arg(iAddr.toString()).arg(clientInternalPort));
         LOG_INFO(QString("   ├─ 🔧 监听端口: %1").arg(clientListenPort));
 
-        QString currentClientId = (m_netManager) ? m_netManager->getClientIdByPreJoinName(clientPlayerName) : "";
+        PreJoinData preJoinData;
+        if (m_netManager) {
+            preJoinData = m_netManager->getClientIdByPreJoinName(clientPlayerName);
+        }
+        QString currentClientId = preJoinData.clientId;
         QString identifier = currentClientId.isEmpty() ? clientPlayerName : currentClientId;
 
         if (!identifier.isEmpty() && m_rejoinCooldowns.contains(identifier)) {
@@ -839,6 +848,47 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
                 return;
             } else {
                 m_rejoinCooldowns.remove(identifier);
+            }
+        }
+
+        if (m_isLaunching) {
+            quint8 existingPid = 0;
+            for(auto it = m_players.begin(); it != m_players.end(); ++it) {
+                if (it.value().name.compare(clientPlayerName, Qt::CaseInsensitive) == 0 &&
+                    it.value().source == Launcher) {
+                    existingPid = it.key();
+                    break;
+                }
+            }
+
+            if (existingPid != 0) {
+                LOG_INFO(QString("🔄 [连接替换] 检测到物理进场: 玩家 [%1] (PID: %2)")
+                             .arg(clientPlayerName).arg(existingPid));
+
+                PlayerData &playerData = m_players[existingPid];
+
+                // A. 断开旧的虚拟 Socket
+                if (playerData.socket && playerData.socket != socket) {
+                    LOG_INFO(QString("   ├─ 🧹 清理虚拟通道 (SocketID: %1)").arg(playerData.socket->socketDescriptor()));
+                    playerData.socket->disconnect(this);
+                    playerData.socket->disconnectFromHost();
+                }
+
+                // B. 连接新的物理 Socket
+                playerData.socket = socket;
+                playerData.extIp = socket->peerAddress();
+                playerData.extPort = socket->peerPort();
+                playerData.intIp = QHostAddress(qToBigEndian(clientInternalIP));
+                playerData.intPort = clientInternalPort;
+                playerData.lastResponseTime = QDateTime::currentMSecsSinceEpoch();
+
+                // C. 标记状态：替换成功
+                playerData.isRealConnection = true;
+                LOG_INFO(QString("   └─ ✅ 替换完成，魔兽进程已成功接管 PID %1").arg(existingPid));
+
+                // D. 发射信号，由 BotManager 处理后续握手包下发和 Launcher 状态同步
+                emit playerTransitioned(playerData.clientId, existingPid, playerData.name);
+                return;
             }
         }
 
@@ -960,6 +1010,13 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
                          .arg(clientPlayerName, playerData.clientId));
         } else {
             LOG_WARNING(QString("⚠️ [关联失败] 玩家 %1 确实没有申报 ClientId").arg(clientPlayerName));
+        }
+        if (preJoinData.source == War3Client) {
+            playerData.source = War3Client;
+            LOG_INFO(QString("👤 [%1] 来源: 魔兽客户端").arg(clientPlayerName));
+        } else {
+            playerData.source = Launcher;
+            LOG_INFO(QString("👤 [%1] 来源: 平台客户端").arg(clientPlayerName));
         }
 
         m_players.insert(newPid, playerData);
@@ -1949,6 +2006,14 @@ void Client::onStartLagFinished()
     emit gameStateChanged("", GAME_STATE_INGAME);
 }
 
+void Client::onLaunchTimeout()
+{
+    if (!m_isLaunching) return;
+    LOG_WARNING(QString("⏰ [Client] 启动接管窗口已关闭 (30s超时) | Bot: %1").arg(m_user));
+    m_isLaunching = false;
+    // 直接到结算画面
+}
+
 // =========================================================
 // 4. UDP 核心处理
 // =========================================================
@@ -2836,6 +2901,27 @@ void Client::abortGame()
     }
 }
 
+bool Client::isLaunching() const
+{
+    return m_isLaunching;
+}
+
+void Client::setIsLaunching(bool launching)
+{
+    if (m_isLaunching == launching) return;
+
+    m_isLaunching = launching;
+
+    LOG_INFO(QString("🚀 [Client] 物理接管大门: %1")
+                 .arg(launching ? "开启 (ON)" : "关闭 (OFF)"));
+
+    if (launching) {
+        m_launchTimeoutTimer->start();
+    } else {
+        m_launchTimeoutTimer->stop();
+    }
+}
+
 // =========================================================
 // 9. 地图数据处理
 // =========================================================
@@ -3551,6 +3637,30 @@ void Client::sendLeaveMessage(const QString &playerName, const QString &newHostN
     msg3.add("zh_CN", QString("当前剩余 %1 个玩家。").arg(realPlayerCount))
         .add("en", QString("Remaining players: %1.").arg(realPlayerCount));
     broadcastChatMessage(msg3, 0);
+}
+
+void Client::sendHandshakeSequence(quint8 targetPid, QTcpSocket *socket)
+{
+    if (!socket || socket->state() != QAbstractSocket::ConnectedState) return;
+
+    QByteArray finalPacket;
+    QHostAddress hostIp = socket->peerAddress();
+    quint16 hostPort = m_udpSocket->localPort();
+
+    finalPacket.append(createW3GSSlotInfoJoinPacket(targetPid, hostIp, hostPort));
+    finalPacket.append(createPlayerInfoPacket(m_botPid, m_botDisplayName, QHostAddress("0.0.0.0"), 0, QHostAddress("0.0.0.0"), 0));
+
+    for (auto it = m_players.begin(); it != m_players.end(); ++it) {
+        const PlayerData &pd = it.value();
+        if (pd.pid == targetPid || pd.pid == m_botPid) continue;
+        finalPacket.append(createPlayerInfoPacket(pd.pid, pd.name, pd.extIp, pd.extPort, pd.intIp, pd.intPort));
+    }
+
+    finalPacket.append(createW3GSMapCheckPacket());
+    finalPacket.append(createW3GSSlotInfoPacket());
+
+    socket->write(finalPacket);
+    socket->flush();
 }
 
 void Client::broadcastSlotInfo(quint8 excludePid)

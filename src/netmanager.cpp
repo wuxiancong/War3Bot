@@ -1590,6 +1590,8 @@ void NetManager::handleTcpCustomMessage(QTcpSocket *socket)
             QString hostName = QString::fromUtf8(info->hostName, strnlen(info->hostName, 32)).trimmed();
             QString clientId = QString::fromUtf8(info->clientId, strnlen(info->clientId, 64)).trimmed();
 
+            quint8 source = info->source;
+
             // 3. 准备回执包
             SCPreJoinRoomPacket resp;
             memset(&resp, 0, sizeof(resp));
@@ -1618,13 +1620,19 @@ void NetManager::handleTcpCustomMessage(QTcpSocket *socket)
                     LOG_INFO(QString("   └── ℹ️ 动作执行: 房间名为空，检测到特殊环境加入，依然执行记录以确保后续状态同步能找到 ClientId"));
                 }
                 QWriteLocker locker(&m_preJoinLock);
-                m_preJoins.insert(userName.toLower(), clientId);
+
+                PreJoinData preJoinData;
+                preJoinData.clientId = clientId;
+                preJoinData.source = source;
+
+                m_preJoins.insert(userName.toLower(), preJoinData);
 
                 resp.status = 1;
                 resp.errorCode = ERR_OK;
 
                 LOG_INFO(QString("   ├── 👤 玩家名称: %1").arg(userName));
                 LOG_INFO(QString("   ├── 🆔 客户端ID: %1").arg(clientId));
+                LOG_INFO(QString("   └── 🚩 来源标记: %1").arg(source == 0 ? "War3Client" : "Launcher"));
                 LOG_INFO(QString("   └── ✅ 状态: 意向记录成功，允许物理连接"));
             }
 
@@ -2334,21 +2342,21 @@ QString NetManager::getHwidByUsername(const QString &username)
     return hwid;
 }
 
-QString NetManager::getClientIdByPreJoinName(const QString &pName)
+PreJoinData NetManager::getClientIdByPreJoinName(const QString &playerName)
 {
-    if (pName.isEmpty()) return "";
+    PreJoinData preJoinData;
+    if (playerName.isEmpty()) return preJoinData;
 
-    QString lowerName = pName.toLower();
+    QString lowerName = playerName.toLower();
     QWriteLocker locker(&m_preJoinLock);
 
     if (m_preJoins.contains(lowerName)) {
-        QString clientId = m_preJoins.take(lowerName);
-        LOG_INFO(QString("🎯 [ClientId 匹配成功] 玩家: %1 -> ClientId: %2")
-                     .arg(pName, clientId));
-        return clientId;
+        preJoinData = m_preJoins.take(lowerName);
+        LOG_INFO(QString("🎯 [预报备匹配] 玩家: %1 | ID: %2 | 来源: %3")
+                     .arg(playerName, preJoinData.clientId, preJoinData.source == 0 ? "War3Client" : "Launcher"));
     }
 
-    return "";
+    return preJoinData;
 }
 
 bool NetManager::isValidFileName(const QString &name)

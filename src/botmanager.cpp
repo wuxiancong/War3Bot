@@ -531,6 +531,12 @@ void BotManager::setupBotConnections(Bot *bot)
                      this->onBotRejoinRejected(bot, clientId, remainingMs);
                  }), "rejoinRejected");
 
+    // 18. 虚拟替换通知
+    checkConnect(connect(bot, &Bot::playerTransitioned, this, [this, bot, arrivalLog](const QString &clientId, quint8 pid, const QString &playerName) {
+                     arrivalLog("playerTransitioned");
+                     this->onBotPlayerTransitioned(bot, clientId, pid, playerName);
+                 }), "playerTransitioned");
+
     LOG_INFO(QString("   │  ✅ Bot-%1 全部信号隧道建立完毕").arg(bot->id));
 }
 
@@ -1191,7 +1197,7 @@ ErrorCode BotManager::checkStartCondition(Bot *bot, const QString &clientId, qui
     return ERR_OK;
 }
 
-void BotManager::handleStartWar3(const QString& clientId, const QString& roomName)
+void BotManager::handleStartWar3(const QString &clientId, const QString& roomName)
 {
     LOG_INFO(QString("🚀 [War3启动申请] ClientId: %1 | 房间: %2").arg(clientId, roomName));
 
@@ -1210,6 +1216,9 @@ void BotManager::handleStartWar3(const QString& clientId, const QString& roomNam
                      .arg(current).arg(required));
         // status = 1 代表成功
         m_netManager->sendStartWar3(clientId, 1, ERR_OK, current, required);
+        if (bot->client) {
+            bot->client->setIsLaunching(true);
+        }
     }
     else {
         LOG_ERROR(QString("   └─ ❌ 验证失败: 错误码 %1 | 人数: %2/%3")
@@ -1873,6 +1882,26 @@ void BotManager::onBotRejoinRejected(Bot *bot, const QString &clientId, quint32 
 
     if (m_netManager && !clientId.isEmpty()) {
         m_netManager->sendMessageToClient(clientId, S_C_MESSAGE, MSG_REJECT_REJOIN, static_cast<quint64>(remainingMs));
+    }
+}
+
+void BotManager::onBotPlayerTransitioned(Bot *bot, const QString &clientId, quint8 pid, const QString &playerName)
+{
+    if (!isBotActive(bot, "onPlayerTransitioned")) return;
+
+    LOG_INFO(QString("🚀 [物理接管完成] 机器人: %1 | 房间: %2 | 玩家PID: %3 | 玩家名称: %4")
+                 .arg(bot->username, bot->gameInfo.gameName)
+                 .arg(pid).arg(playerName));
+
+    if (bot->client->getPlayers().contains(pid)) {
+        QTcpSocket* war3Socket = bot->client->getPlayers()[pid].socket;
+        bot->client->sendHandshakeSequence(pid, war3Socket);
+        LOG_INFO(QString("   ├─ 🎮 已驱动 Client 发送 W3GS 握手序列 (0x04, 0x06, 0x3D, 0x09)"));
+    }
+
+    if (m_netManager) {
+        m_netManager->sendMessageToClient(clientId, S_C_MESSAGE, MSG_GAME_STATE_CHANGE, (quint64)GAME_STATE_INROOM);
+        LOG_INFO(QString("   └─ ✅ 已通知 Launcher 终端 (ClientId: %1) 物理连接已就绪").arg(clientId));
     }
 }
 

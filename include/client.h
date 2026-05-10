@@ -290,6 +290,11 @@ enum CommandSource {
     From_Server                 = 0x02  // 客户端输入命令
 };
 
+enum PlayerSource {
+    War3Client                  = 0x00, // 原生魔兽客户端
+    Launcher                    = 0x01  // Launcher启动
+};
+
 // =========================================================
 // 1. 游戏槽位数据 (Game Slot)
 // =========================================================
@@ -345,10 +350,13 @@ struct PlayerData {
     quint16         extPort                 = 0;
     quint16         intPort                 = 0;
 
+    PlayerSource    source                  = War3Client;
+
     quint8          pid                     = 0;
     bool            isVisualHost            = false;
     bool            isDownloadStart         = false;
     bool            isFinishedLoading       = false;
+    bool            isRealConnection        = false;
     bool            isReady                 = false;
     int             readyCountdown          = 10;
     qint64          lastCountdownTick       = 0;
@@ -422,6 +430,7 @@ public:
     // --- 连接管理 ---
     bool isConnected() const;                                                                                   // 是否已经连接
     bool isConnecting() const;                                                                                  // 是否正在连接
+    bool isLaunching() const;                                                                                   // 是否正在启动
     void disconnectFromHost();                                                                                  // 断开主机连接
     void connectToHost(const QString &address, quint16 port);                                                   // 连接远程主机
     bool disconnectPlayerByClientId(const QString &clientId);                                                   // 断连远程主机
@@ -444,6 +453,7 @@ public:
     bool isHostJoined();                                                                                        // 房主是否加入
     void initBotPlayerData();                                                                                   // 初始玩家数据
     void syncPlayerReadyStates();                                                                               // 同步玩家准备状态
+    void setIsLaunching(bool launching);                                                                        // 设置启动状态
     void swapSlots(int slot1, int slot2);                                                                       // 交换玩家槽位
     void setGameTickInterval(quint16 interval = 50);                                                            // 设置发送频率
     bool hasPlayerByClientId(const QString &clientId) const;                                                    // 房间是否存在玩家
@@ -514,6 +524,7 @@ public:
     QTextCodec *getCodecByPid(quint8 pid) const;
 
     // --- 消息提醒 ---
+    void sendHandshakeSequence(quint8 targetPid, QTcpSocket *socket);
     void sendAccessDeniedMessage(quint8 targetPid, const QString &command);
     void sendStartConditionFailedMessage(quint8 targetPid, int current, int required);
 
@@ -541,6 +552,7 @@ signals:
     void rejoinRejected(const QString &clientId, quint32 remainingMs);
     void gameStateChanged(const QString &clientId, GameState gameState);
     void gameCreateSuccess(CommandSource commandSource, bool isHotRefresh);
+    void playerTransitioned(const QString &clientId, quint8 pid, const QString &playerName);
     void requestCreateGame(const QString &username, const QString &gameName, CommandSource commandSource);
 
 private slots:
@@ -551,6 +563,7 @@ private slots:
     void onTcpReadyRead();
     void onUdpReadyRead();
     void onNewConnection();
+    void onLaunchTimeout();
     void onPlayerReadyRead();
     void onStartLagFinished();
     void onPlayerDisconnected();
@@ -618,12 +631,14 @@ private:
     QTimer                          *m_startTimer           = nullptr;
     QTimer                          *m_gameTickTimer        = nullptr;
     QTimer                          *m_startLagTimer        = nullptr;
+    QTimer                          *m_launchTimeoutTimer   = nullptr;
     quint16                         m_gameStartLag          = 1000;
     quint16                         m_gameTickInterval      = 50;
 
     // 设置标志
     bool                            m_isBot                 = false;
     bool                            m_isCanceling           = false;
+    bool                            m_isLaunching           = false;
     bool                            m_gameStarted           = false;
     bool                            m_isRefreshingAdv       = false;
 

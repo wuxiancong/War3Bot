@@ -174,6 +174,7 @@ struct SCUploadResultPacket {
 };
 
 struct CSPreJoinRoomPacket {
+    quint8 source;
     char userName[32];
     char roomName[32];
     char hostName[32];

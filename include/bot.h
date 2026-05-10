@@ -126,6 +126,7 @@ signals:
     void roomPingsUpdated(const QMap<quint8, quint32> &pings);
     void rejoinRejected(const QString &clientId, quint32 remainingMs);
     void gameStateChanged(const QString &clientId, GameState gameState);
+    void playerTransitioned(const QString &clientId, quint8 pid, const QString &playerName);
 
 private:
     BotManager *m_manager;
