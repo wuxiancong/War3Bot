@@ -855,7 +855,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
             quint8 existingPid = 0;
             for(auto it = m_players.begin(); it != m_players.end(); ++it) {
                 if (it.value().name.compare(clientPlayerName, Qt::CaseInsensitive) == 0 &&
-                    it.value().source == Launcher) {
+                    it.value().joinSource == Launcher) {
                     existingPid = it.key();
                     break;
                 }
@@ -1012,10 +1012,12 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
             LOG_WARNING(QString("⚠️ [关联失败] 玩家 %1 确实没有申报 ClientId").arg(clientPlayerName));
         }
         if (preJoinData.source == War3Client) {
-            playerData.source = War3Client;
+            playerData.joinSource = War3Client;
+            playerData.isRealConnection = true;
             LOG_INFO(QString("👤 [%1] 来源: 魔兽客户端").arg(clientPlayerName));
         } else {
-            playerData.source = Launcher;
+            playerData.joinSource = Launcher;
+            playerData.isRealConnection = false;
             LOG_INFO(QString("👤 [%1] 来源: 平台客户端").arg(clientPlayerName));
         }
 

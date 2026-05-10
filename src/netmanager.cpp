@@ -1632,7 +1632,7 @@ void NetManager::handleTcpCustomMessage(QTcpSocket *socket)
 
                 LOG_INFO(QString("   ├── 👤 玩家名称: %1").arg(userName));
                 LOG_INFO(QString("   ├── 🆔 客户端ID: %1").arg(clientId));
-                LOG_INFO(QString("   └── 🚩 来源标记: %1").arg(source == 0 ? "War3Client" : "Launcher"));
+                LOG_INFO(QString("   └── 🚩 来源标记: %1").arg(source == War3Client ? "War3Client" : "Launcher"));
                 LOG_INFO(QString("   └── ✅ 状态: 意向记录成功，允许物理连接"));
             }
 
@@ -2353,7 +2353,7 @@ PreJoinData NetManager::getClientIdByPreJoinName(const QString &playerName)
     if (m_preJoins.contains(lowerName)) {
         preJoinData = m_preJoins.take(lowerName);
         LOG_INFO(QString("🎯 [预报备匹配] 玩家: %1 | ID: %2 | 来源: %3")
-                     .arg(playerName, preJoinData.clientId, preJoinData.source == 0 ? "War3Client" : "Launcher"));
+                     .arg(playerName, preJoinData.clientId, preJoinData.source == War3Client ? "War3Client" : "Launcher"));
     }
 
     return preJoinData;

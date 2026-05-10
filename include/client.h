@@ -290,9 +290,10 @@ enum CommandSource {
     From_Server                 = 0x02  // 客户端输入命令
 };
 
-enum PlayerSource {
-    War3Client                  = 0x00, // 原生魔兽客户端
-    Launcher                    = 0x01  // Launcher启动
+enum JoinSource {
+    Unknown                     = 0x00,
+    Launcher                    = 0x01, // 从 Launcher 游戏列表点击进入
+    War3Client                  = 0x02  // 直接在魔兽争霸游戏列表点击进入
 };
 
 // =========================================================
@@ -350,7 +351,7 @@ struct PlayerData {
     quint16         extPort                 = 0;
     quint16         intPort                 = 0;
 
-    PlayerSource    source                  = War3Client;
+    JoinSource      joinSource              = Unknown;
 
     quint8          pid                     = 0;
     bool            isVisualHost            = false;
