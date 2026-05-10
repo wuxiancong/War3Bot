@@ -1198,7 +1198,7 @@ void BotManager::handleStartWar3(const QString& clientId, const QString& roomNam
     Bot *bot = findBotByOwnerClientId(clientId);
     if (!bot || bot->gameInfo.gameName != roomName) {
         LOG_WARNING("   └─ ❌ 申请拒绝: 找不到关联的房间或机器人已释放");
-        m_netManager->sendMessageToClient(clientId, S_C_ERROR, ERR_NOT_IN_ROOM);
+        m_netManager->sendStartWar3(clientId, 0, ERR_NOT_IN_ROOM, 0, 0);
         return;
     }
 
@@ -1208,16 +1208,14 @@ void BotManager::handleStartWar3(const QString& clientId, const QString& roomNam
     if (err == ERR_OK) {
         LOG_INFO(QString("   └─ ✅ 验证通过: 允许 Launcher 唤起 War3.exe (当前:%1/所需:%2)")
                      .arg(current).arg(required));
-        m_netManager->sendMessageToClient(clientId, S_C_START_WAR3, ERR_OK,
-                                          (quint64)current << 8 | required);
+        // status = 1 代表成功
+        m_netManager->sendStartWar3(clientId, 1, ERR_OK, current, required);
     }
     else {
-        LOG_ERROR(QString("   └─ ❌ 验证失败: 错误码 %1 | 状态: %2 | 人数: %3/%4")
-                      .arg(err)
-                      .arg(bot->botStateToString(bot->state))
-                      .arg(current).arg(required));
-        m_netManager->sendMessageToClient(clientId, S_C_START_WAR3, err,
-                                          (quint64)current << 8 | required);
+        LOG_ERROR(QString("   └─ ❌ 验证失败: 错误码 %1 | 人数: %2/%3")
+                      .arg(err).arg(current).arg(required));
+        // status = 0 代表失败
+        m_netManager->sendStartWar3(clientId, 0, err, current, required);
     }
 }
 

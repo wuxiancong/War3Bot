@@ -82,6 +82,7 @@ public:
     bool sendMessageToClient(const QString &clientId, PacketType type, quint8 code, quint64 data = 0, const QString &flag = "", bool isUdp = false);
     void sendRoomPong(const QHostAddress &targetAddr, quint16 targetPort, quint64 clientTime, quint8 current, quint8 max,
                       const QString &hostName, const QString &clientId);
+    bool sendStartWar3(const QString &clientId, quint8 status, quint8 errorCode, quint8 current, quint8 required);
     bool sendEnterRoomCommand(const QString &clientId, const QString &roomName, bool isServerCmd);
     void sendRoomReadyStates(const QSet<QString> &clientIds, const QVariantMap &readyStates);
     bool sendRoomPings(const QString &clientId, const QVariantMap &pings);

@@ -1639,13 +1639,30 @@ void NetManager::handleTcpCustomMessage(QTcpSocket *socket)
         break;
 
         case PacketType::C_S_START_WAR3: {
-            if (pHeader->payloadLen >= sizeof(CSStartWar3Packet)) {
-                const CSStartWar3Packet *pkt = reinterpret_cast<const CSStartWar3Packet*>(payload);
-                QString clientId = QString::fromUtf8(pkt->clientId, strnlen(pkt->clientId, 40));
-                QString roomName = QString::fromUtf8(pkt->roomName, strnlen(pkt->roomName, 32));
-                if (m_botManager) {
-                    m_botManager->handleStartWar3(clientId, roomName);
-                }
+            LOG_INFO("🚀 [TCP 接收] C_S_START_WAR3 (申请启动游戏)");
+
+            // 1. 协议长度校验
+            if (pHeader->payloadLen < sizeof(CSStartWar3Packet)) {
+                LOG_ERROR(QString("   └── ❌ 校验失败: 负载长度不足 (%1 < %2)")
+                              .arg(pHeader->payloadLen).arg(sizeof(CSStartWar3Packet)));
+                break;
+            }
+
+            const CSStartWar3Packet *pkt = reinterpret_cast<const CSStartWar3Packet*>(payload);
+
+            // 2. 提取并清理字段
+            QString clientId = QString::fromUtf8(pkt->clientId, strnlen(pkt->clientId, 40)).trimmed();
+            QString roomName = QString::fromUtf8(pkt->roomName, strnlen(pkt->roomName, 32)).trimmed();
+
+            LOG_INFO(QString("   ├── 🔗 客户端ID: %1").arg(clientId));
+            LOG_INFO(QString("   ├── 🏠 房间名称: %1").arg(roomName));
+
+            // 3. 业务逻辑分发
+            if (m_botManager) {
+                LOG_INFO("   └── ⚡ 动作执行: 正在分发至 BotManager 执行启动自检...");
+                m_botManager->handleStartWar3(clientId, roomName);
+            } else {
+                LOG_WARNING("   └── ⚠️ 动作拦截: BotManager 实例不可用");
             }
             break;
         }
@@ -1840,6 +1857,47 @@ bool NetManager::sendRetryCommand(QTcpSocket *socket)
 
     // 发送 PacketType::S_C_COMMAND
     return sendTcpPacket(socket, PacketType::S_C_COMMAND, &pkt, sizeof(pkt));
+}
+
+bool NetManager::sendStartWar3(const QString &clientId, quint8 status, quint8 errorCode, quint8 current, quint8 required)
+{
+    // 1. 构造正确的业务数据包
+    SCStartWar3Packet pkt;
+    pkt.status = status;
+    pkt.errorCode = errorCode;
+    pkt.current = current;
+    pkt.required = required;
+
+    // 2. 逻辑分支 A: 优先尝试 TCP 发送
+    if (m_tcpClients.contains(clientId)) {
+        QTcpSocket *socket = m_tcpClients[clientId];
+        if (socket && socket->state() == QAbstractSocket::ConnectedState) {
+            bool ok = sendTcpPacket(socket, PacketType::S_C_START_WAR3, &pkt, sizeof(pkt));
+            if (ok) {
+                LOG_INFO(QString("✅ [TCP 启动回执] -> %1 | 状态:%2 | 人数:%3/%4")
+                             .arg(clientId).arg(status).arg(current).arg(required));
+                return true;
+            }
+        }
+    }
+
+    // 3. 逻辑分支 B: UDP 发送 (回退方案)
+    QReadLocker locker(&m_registerInfosLock);
+    if (m_registerInfos.contains(clientId)) {
+        const RegisterInfo &info = m_registerInfos[clientId];
+        QHostAddress targetAddr(info.publicIp);
+        quint16 targetPort = static_cast<quint16>(info.publicPort);
+        locker.unlock();
+
+        sendUdpPacket(targetAddr, targetPort, PacketType::S_C_START_WAR3, &pkt, sizeof(pkt));
+
+        LOG_INFO(QString("✅ [UDP 启动回执] -> %1:%2 | 状态:%3 | 人数:%4/%5")
+                     .arg(targetAddr.toString()).arg(targetPort).arg(status).arg(current).arg(required));
+        return true;
+    }
+
+    LOG_ERROR(QString("❌ [回执发送失败] 找不到目标用户: %1").arg(clientId));
+    return false;
 }
 
 bool NetManager::sendMessageToClient(const QString &clientId, PacketType type, quint8 code, quint64 data, const QString &flag, bool isUdp)
