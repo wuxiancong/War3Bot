@@ -2883,6 +2883,8 @@ void Client::startGame()
     if (m_gameStarted) return;
     if (m_startTimer->isActive()) return;
 
+    LOG_INFO("🚀 [Client] 游戏倒计时序列启动");
+
     // 1. 先关大门：停止广播，停止 Ping
     stopAdv("Start Game"); // 停止 UDP 广播
     if (m_pingTimer && m_pingTimer->isActive()) {
@@ -4326,6 +4328,10 @@ void Client::sendPingLoop()
 
 void Client::updateCountdowns()
 {
+    if (m_isLaunching) {
+        return;
+    }
+
     bool needSync = false;
     QList<quint8> pidsToKick;
 
@@ -4409,7 +4415,7 @@ void Client::syncPlayerReadyStates()
 
         QString statusDesc;
         if (m_isLaunching) {
-            statusDesc = "🚀 启动中(强制就绪)";
+            statusDesc = playerData.socket == nullptr ? "🚀 转换中(待接管)" : "🚀 启动中(强制就绪)";
         } else {
             statusDesc = playerData.isReady ? "✅ 已就绪" : QString("⏳ 未准备 (%1s)").arg(playerData.readyCountdown);
         }
