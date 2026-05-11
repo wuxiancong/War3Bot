@@ -895,6 +895,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
                 // D. 发射信号，由 BotManager 处理后续握手包下发和 Launcher 状态同步
                 emit playerTransitioned(playerData.clientId, existingPid, playerData.name);
                 syncPlayerReadyStates();
+                checkRealConnection();
                 return;
             }
         }
@@ -4494,6 +4495,36 @@ void Client::setPlayerReadyStates(const QString &clientId, const QString &name, 
                              .arg(it.value().name, it.value().clientId.isEmpty() ? "MISSING" : it.value().clientId));
             }
         }
+    }
+}
+
+void Client::checkRealConnection()
+{
+    if (!m_isLaunching) return;
+
+    bool allReady = true;
+    QStringList waitingFor;
+
+    // 遍历所有非机器人的玩家
+    for (auto it = m_players.constBegin(); it != m_players.constEnd(); ++it) {
+        if (it.key() == m_botPid) continue;
+
+        const PlayerData &playerData = it.value();
+
+        if (!playerData.isRealConnection) {
+            allReady = false;
+            waitingFor << playerData.name;
+        }
+    }
+
+    if (allReady) {
+        LOG_INFO("✅ [启动模式闭环] 房间内所有玩家均已完成魔兽进程连接。");
+        LOG_INFO("   └─ 🛡️ 动作：提前关闭启动保护门 (m_isLaunching -> false)");
+        setIsLaunching(false);
+    } else {
+        LOG_INFO(QString("⏳ [启动转换中] 仍有 %1 名玩家在加载中: %2")
+                     .arg(waitingFor.size())
+                     .arg(waitingFor.join(", ")));
     }
 }
 

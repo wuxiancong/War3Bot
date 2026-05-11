@@ -1199,9 +1199,10 @@ ErrorCode BotManager::checkStartCondition(Bot *bot, const QString &clientId, qui
 
 void BotManager::handleStartWar3(const QString &clientId, const QString& roomName)
 {
-    LOG_INFO(QString("🚀 [War3启动申请] ClientId: %1 | 房间: %2").arg(clientId, roomName));
+    LOG_INFO(QString("🚀 [War3启动申请] 来自房主 ClientId: %1 | 房间: %2").arg(clientId, roomName));
 
     Bot *bot = findBotByOwnerClientId(clientId);
+    // 1. 检查 bot 是否为空
     if (!bot || bot->gameInfo.gameName != roomName) {
         LOG_WARNING("   └─ ❌ 申请拒绝: 找不到关联的房间或机器人已释放");
         m_netManager->sendStartWar3(clientId, 0, ERR_NOT_IN_ROOM, 0, 0);
@@ -1212,18 +1213,40 @@ void BotManager::handleStartWar3(const QString &clientId, const QString& roomNam
     ErrorCode err = checkStartCondition(bot, clientId, current, required);
 
     if (err == ERR_OK) {
-        LOG_INFO(QString("   └─ ✅ 验证通过: 允许 Launcher 唤起 War3.exe (当前:%1/所需:%2)")
-                     .arg(current).arg(required));
-        // status = 1 代表成功
-        m_netManager->sendStartWar3(clientId, 1, ERR_OK, current, required);
+        LOG_INFO(QString("   └─ ✅ 验证通过: 准备全员广播启动指令 (当前:%1/所需:%2)").arg(current).arg(required));
+
         if (bot->client) {
+            // A. 开启替换模式锁
             bot->client->setIsLaunching(true);
+
+            // B. 获取房间内所有玩家数据
+            const QMap<quint8, PlayerData> &players = bot->client->getPlayers();
+            int broadcastCount = 0;
+
+            // C. 循环发送给每一个 Launcher 玩家
+            for (auto it = players.begin(); it != players.end(); ++it) {
+                const PlayerData &playerData = it.value();
+
+                // 跳过机器人 (PID 2)
+                if (playerData.pid == 2) continue;
+
+                if (!playerData.clientId.isEmpty()) {
+                    // 向每一个玩家的控制链路发送启动回执 (status=1)
+                    m_netManager->sendStartWar3(playerData.clientId, 1, ERR_OK, current, required);
+                    broadcastCount++;
+                    LOG_INFO(QString("      ├─ 🚀 已下发至玩家: %1 (%2)").arg(playerData.name, playerData.clientId));
+                }
+            }
+            LOG_INFO(QString("   └─ ✅ 启动指令已成功下发至 %1 名玩家").arg(broadcastCount));
+        } else {
+            // 兜底：如果 bot 存在但 client 丢失
+            LOG_ERROR("   └── ❌ 致命错误: Bot 实例存在但底层网络 Client 为空");
+            m_netManager->sendStartWar3(clientId, 0, ERR_CREATE_ERROR, 0, 0);
         }
     }
     else {
-        LOG_ERROR(QString("   └─ ❌ 验证失败: 错误码 %1 | 人数: %2/%3")
-                      .arg(err).arg(current).arg(required));
-        // status = 0 代表失败
+        // 验证失败，仅发给房主（申请者）告知原因
+        LOG_ERROR(QString("   └─ ❌ 验证失败: 错误码 %1 | 人数: %2/%3").arg(err).arg(current).arg(required));
         m_netManager->sendStartWar3(clientId, 0, err, current, required);
     }
 }

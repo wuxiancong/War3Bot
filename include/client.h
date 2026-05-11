@@ -453,6 +453,7 @@ public:
     // --- 游戏主机管理 ---
     bool isHostJoined();                                                                                        // 房主是否加入
     void initBotPlayerData();                                                                                   // 初始玩家数据
+    void checkRealConnection();                                                                                 // 检查所有玩家连接
     void syncPlayerReadyStates();                                                                               // 同步玩家准备状态
     void setIsLaunching(bool launching);                                                                        // 设置启动状态
     void swapSlots(int slot1, int slot2);                                                                       // 交换玩家槽位
