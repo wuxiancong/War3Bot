@@ -894,6 +894,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
                 // D. 发射信号，由 BotManager 处理后续握手包下发和 Launcher 状态同步
                 emit playerTransitioned(playerData.clientId, existingPid, playerData.name);
+                syncPlayerReadyStates();
                 return;
             }
         }
