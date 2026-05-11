@@ -543,6 +543,7 @@ signals:
     void authenticated();
     void accountCreated();
     void visualHostLeft();
+    void gameLaunchFail();
     void playerCountChanged(int count);
     void socketError(const QString &error);
     void roomHostChanged(const quint8 heirPid);

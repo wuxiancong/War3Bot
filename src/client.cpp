@@ -862,8 +862,13 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
             }
 
             if (existingPid != 0) {
-                LOG_INFO(QString("🔄 [连接替换] 检测到物理进场: 玩家 [%1] (PID: %2)")
-                             .arg(clientPlayerName).arg(existingPid));
+                int slotIdx = getSlotIndexByPid(existingPid);
+
+                LOG_INFO(QString("🔄 [槽位接管] 检测到真实魔兽连入: 玩家 [%1]")
+                             .arg(clientPlayerName));
+                LOG_INFO(QString("   ├─ 继承 PID: %1").arg(existingPid));
+                LOG_INFO(QString("   └─ 继承槽位: %1 (Index: %2)")
+                             .arg(slotIdx + 1).arg(slotIdx));
 
                 PlayerData &playerData = m_players[existingPid];
 
@@ -883,6 +888,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
                 playerData.lastResponseTime = QDateTime::currentMSecsSinceEpoch();
 
                 // C. 标记状态：替换成功
+                playerData.joinSource = War3Client;
                 playerData.isRealConnection = true;
                 LOG_INFO(QString("   └─ ✅ 替换完成，魔兽进程已成功接管 PID %1").arg(existingPid));
 
@@ -1733,6 +1739,24 @@ void Client::onPlayerDisconnected()
     }
 
     if (pidToRemove == 0) return;
+    bool isTransitioning = m_isLaunching &&
+                           m_players.contains(pidToRemove) &&
+                           m_players[pidToRemove].joinSource == Launcher &&
+                           !m_players[pidToRemove].isRealConnection;
+
+    if (isTransitioning) {
+        LOG_INFO(QString("⏳ [启动保护] 玩家 [%1] (PID: %2) 的 Launcher 虚拟连接已断开。")
+                     .arg(nameToRemove).arg(pidToRemove));
+        LOG_INFO(QString("   └─ 🛡️ 动作：拦截清理逻辑，保留槽位信息，等待魔兽进程接管。"));
+
+        m_playerSockets.removeAll(socket);
+        m_playerBuffers.remove(socket);
+        m_players[pidToRemove].socket = nullptr;
+
+        socket->deleteLater();
+        return;
+    }
+
     if (!clientIdToRemove.isEmpty()) {
         emit gameStateChanged(clientIdToRemove, GAME_STATE_IDLE);
     }
@@ -2011,9 +2035,12 @@ void Client::onStartLagFinished()
 void Client::onLaunchTimeout()
 {
     if (!m_isLaunching) return;
-    LOG_WARNING(QString("⏰ [Client] 启动接管窗口已关闭 (30s超时) | Bot: %1").arg(m_user));
+    LOG_WARNING(QString("🚨 [启动灾难] 接管窗口超时(30s)！部分玩家未及时连入，强制终止启动流程 | Bot: %1").arg(m_user));
     m_isLaunching = false;
-    // 直接到结算画面
+    emit gameLaunchFail();
+    resetGame();
+    cancelGame();
+    LOG_INFO("   └─ 🆑 房间已强制物理重置，机器人已回到空闲状态。");
 }
 
 // =========================================================
