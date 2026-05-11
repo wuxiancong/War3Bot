@@ -2744,6 +2744,7 @@ void Client::resetGame()
 
     // 5. 状态标志位复位
     m_gameStarted = false;
+    m_isLaunching = false;
     m_isRefreshingAdv = false;
 
     LOG_INFO(QString("   └─ ✅ 重置完成"));
@@ -4505,7 +4506,7 @@ void Client::checkRealConnection()
     bool allReady = true;
     QStringList waitingFor;
 
-    // 遍历所有非机器人的玩家
+    // 1. 遍历所有非机器人的玩家
     for (auto it = m_players.constBegin(); it != m_players.constEnd(); ++it) {
         if (it.key() == m_botPid) continue;
 
@@ -4517,12 +4518,15 @@ void Client::checkRealConnection()
         }
     }
 
+    // 2. 判定结果
     if (allReady) {
-        LOG_INFO("✅ [启动模式闭环] 房间内所有玩家均已完成魔兽进程连接。");
-        LOG_INFO("   └─ 🛡️ 动作：提前关闭启动保护门 (m_isLaunching -> false)");
+        LOG_INFO("✅ [启动模式闭环] 房间内所有玩家（10人）魔兽进程已全部连入");
+        LOG_INFO("   └─ 🚀 动作：立即关闭保护大门并下发游戏开始指令");
+
         setIsLaunching(false);
+        startGame();
     } else {
-        LOG_INFO(QString("⏳ [启动转换中] 仍有 %1 名玩家在加载中: %2")
+        LOG_INFO(QString("⏳ [启动转换中] 仍有 %1 名玩家正在调起魔兽: %2")
                      .arg(waitingFor.size())
                      .arg(waitingFor.join(", ")));
     }
