@@ -4377,8 +4377,6 @@ void Client::updateCountdowns()
 void Client::syncPlayerReadyStates()
 {
     QVariantMap syncMap;
-
-    // 1. 预筛选需要同步的玩家
     QList<PlayerData> playersToSync;
     for (auto it = m_players.constBegin(); it != m_players.constEnd(); ++it) {
         if (it.key() != m_botPid) {
@@ -4386,7 +4384,10 @@ void Client::syncPlayerReadyStates()
         }
     }
 
-    LOG_INFO(QString("📡 [状态同步] 正在构建准备状态表 (玩家数: %1)...").arg(playersToSync.size()));
+    QString modeTag = m_isLaunching ? " [启动模式-强制就绪]" : "";
+    LOG_INFO(QString("📡 [状态同步]%1 正在构建准备状态表 (玩家数: %2)...")
+                 .arg(modeTag)
+                 .arg(playersToSync.size()));
 
     int count = playersToSync.size();
     for (int i = 0; i < count; ++i) {
@@ -4396,31 +4397,35 @@ void Client::syncPlayerReadyStates()
         QString indent = isLast ? "       " : "   │   ";
 
         QVariantMap pInfo;
-        pInfo["r"] = playerData.isReady;
-        pInfo["c"] = playerData.readyCountdown;
+
+        bool finalReady = m_isLaunching ? true : playerData.isReady;
+        int finalCountdown = m_isLaunching ? 10 : playerData.readyCountdown;
+
+        pInfo["r"] = finalReady;
+        pInfo["c"] = finalCountdown;
         pInfo["pid"] = playerData.pid;
         pInfo["name"] = playerData.name;
 
-        QString statusDesc = playerData.isReady ? "✅ 已就绪" : QString("⏳ 未准备 (%1s)").arg(playerData.readyCountdown);
+        QString statusDesc;
+        if (m_isLaunching) {
+            statusDesc = "🚀 启动中(强制就绪)";
+        } else {
+            statusDesc = playerData.isReady ? "✅ 已就绪" : QString("⏳ 未准备 (%1s)").arg(playerData.readyCountdown);
+        }
+
         LOG_INFO(QString("%1[PID: %2] 状态: %3").arg(prefix).arg(playerData.pid, -2).arg(statusDesc));
 
         if (playerData.name.isEmpty()) {
-            LOG_WARNING(QString("%1⚠️  [警告] 玩家 PID %2 的名字为空！魔兽客户端无法实时更新准备状态。")
-                            .arg(indent).arg(playerData.pid));
+            LOG_WARNING(QString("%1⚠️  [警告] 玩家 PID %2 的名字为空！").arg(indent).arg(playerData.pid));
         } else {
-            LOG_INFO(QString("%1👤 玩家名: %2").arg(indent, playerData.name));
+            syncMap.insert(playerData.name, pInfo);
         }
 
         syncMap.insert(QString::number(playerData.pid), pInfo);
-
-        if (!playerData.name.isEmpty()) {
-            syncMap.insert(playerData.name, pInfo);
-        }
     }
 
     emit readyStateChanged(syncMap);
-
-    LOG_INFO(QString("   ✅ 同步完成。构建键值对: %1 (双索引模式)").arg(syncMap.size()));
+    LOG_INFO(QString("   ✅ 同步完成。构建键值对: %1").arg(syncMap.size()));
 }
 
 void Client::setPlayerReadyStates(const QString &clientId, const QString &name, bool ready)
