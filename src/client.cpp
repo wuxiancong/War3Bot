@@ -4328,9 +4328,7 @@ void Client::sendPingLoop()
 
 void Client::updateCountdowns()
 {
-    if (m_isLaunching) {
-        return;
-    }
+    if (m_isLaunching) return;
 
     bool needSync = false;
     QList<quint8> pidsToKick;
@@ -4520,6 +4518,8 @@ bool Client::hasPlayerByUserName(const QString &userName) const
 
 void Client::checkPlayerTimeout()
 {
+    if (m_isLaunching) return;
+
     if (m_startTimer->isActive() || m_gameStarted) {
         LOG_DEBUG("🛡️ [超时监控] 游戏启动/进行中 -> 跳过检测 (安全)");
         return;
