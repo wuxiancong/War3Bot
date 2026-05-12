@@ -464,6 +464,7 @@ public:
     quint16 getGameTickInterval() const { return m_gameTickInterval; }                                          // 获取发送频率
     void setMaxDownloadSpeed(quint32 kbps) { m_maxDownloadSpeed = kbps; }                                       // 设置地图最大下载数度
     void setPlayerReadyStates(const QString &clientId, const QString &name, bool ready);                        // 设置玩家准备状态
+    void handlePlayerReplaceByClientId(const QString &clientId, const QString &userName);                       // 玩家虚拟槽位替换
     void createGame(const QString &gameName, const QString &password,
                     ProviderVersion providerVersion, ComboGameType comboGameType,
                     SubGameType subGameType, LadderType ladderType,CommandSource commandSource);                // 创建游戏
@@ -544,7 +545,7 @@ signals:
     void authenticated();
     void accountCreated();
     void visualHostLeft();
-    void gameLaunchFail();
+    void protectionTimeout();
     void playerCountChanged(int count);
     void socketError(const QString &error);
     void roomHostChanged(const quint8 heirPid);
@@ -566,7 +567,7 @@ private slots:
     void onTcpReadyRead();
     void onUdpReadyRead();
     void onNewConnection();
-    void onLaunchTimeout();
+    void onProtectionTimeout();
     void onPlayerReadyRead();
     void onStartLagFinished();
     void onPlayerDisconnected();
@@ -634,7 +635,7 @@ private:
     QTimer                          *m_startTimer           = nullptr;
     QTimer                          *m_gameTickTimer        = nullptr;
     QTimer                          *m_startLagTimer        = nullptr;
-    QTimer                          *m_launchTimeoutTimer   = nullptr;
+    QTimer                          *m_rotectionTimeoutTimer   = nullptr;
     quint16                         m_gameStartLag          = 1000;
     quint16                         m_gameTickInterval      = 50;
 

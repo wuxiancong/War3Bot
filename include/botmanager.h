@@ -32,6 +32,7 @@ public:
     bool isGhostRoom(Bot *bot, const QString &mappedName);
     void initializeBots(quint32 initialCount, const QString &configPath);
     void handleStartWar3(const QString &clientId, const QString &roomName);
+    void handleReplaceSlot(const QString &clientId, const QString &userName);
     Bot *findBotByHostName(const QString &hostName, bool onlyOccupied = true);
     Bot *findBotByOwnerClientId(const QString &clientId, bool onlyOccupied = true);
     Bot *findBotByOwnerUserName(const QString &userName, bool onlyOccupied = true);
@@ -65,6 +66,7 @@ private slots:
     void onBotGameCreateSuccess(Bot *bot, bool isHotRefresh);
     void onBotPlayerCountChanged(Bot *bot, int count);
     void onBotError(Bot *bot, QString error);
+    void onBotProtectionTimeout(Bot *bot);
     void onBotVisualHostLeft(Bot *bot);
     void onBotAccountCreated(Bot *bot);
     void onBotAuthenticated(Bot *bot);

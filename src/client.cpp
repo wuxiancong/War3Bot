@@ -52,9 +52,9 @@ Client::Client(QObject *parent)
     m_startLagTimer = new QTimer(this);
     m_startLagTimer->setSingleShot(true);
 
-    m_launchTimeoutTimer = new QTimer(this);
-    m_launchTimeoutTimer->setSingleShot(true);
-    m_launchTimeoutTimer->setInterval(30000);
+    m_rotectionTimeoutTimer = new QTimer(this);
+    m_rotectionTimeoutTimer->setSingleShot(true);
+    m_rotectionTimeoutTimer->setInterval(30000);
 
     m_gameTickTimer = new QTimer(this);
     m_gameTickTimer->setInterval(m_gameTickInterval);
@@ -64,7 +64,7 @@ Client::Client(QObject *parent)
     connect(m_startTimer, &QTimer::timeout, this, &Client::onGameStarted);
     connect(m_gameTickTimer, &QTimer::timeout, this, &Client::onGameTick);
     connect(m_startLagTimer, &QTimer::timeout, this, &Client::onStartLagFinished);
-    connect(m_launchTimeoutTimer, &QTimer::timeout, this, &Client::onLaunchTimeout);
+    connect(m_rotectionTimeoutTimer, &QTimer::timeout, this, &Client::onProtectionTimeout);
 
     connect(m_tcpSocket, &QTcpSocket::connected, this, &Client::onConnected);
     connect(m_tcpSocket, &QTcpSocket::readyRead, this, &Client::onTcpReadyRead);
@@ -2034,15 +2034,15 @@ void Client::onStartLagFinished()
     emit gameStateChanged("", GAME_STATE_INGAME);
 }
 
-void Client::onLaunchTimeout()
+void Client::onProtectionTimeout()
 {
     if (!m_isLaunching) return;
-    LOG_WARNING(QString("🚨 [启动灾难] 接管窗口超时(30s)！部分玩家未及时连入，强制终止启动流程 | Bot: %1").arg(m_user));
+
     m_isLaunching = false;
-    emit gameLaunchFail();
-    resetGame();
-    cancelGame();
-    LOG_INFO("   └─ 🆑 房间已强制物理重置，机器人已回到空闲状态。");
+
+    LOG_INFO(QString("🛡️ [保护期结束] 30s接管窗口已关闭。允许新玩家正常加入 | Bot: %1").arg(m_user));
+
+    emit protectionTimeout();
 }
 
 // =========================================================
@@ -2950,9 +2950,9 @@ void Client::setIsLaunching(bool launching)
                  .arg(launching ? "开启 (ON)" : "关闭 (OFF)"));
 
     if (launching) {
-        m_launchTimeoutTimer->start();
+        m_rotectionTimeoutTimer->start();
     } else {
-        m_launchTimeoutTimer->stop();
+        m_rotectionTimeoutTimer->stop();
     }
 }
 
@@ -3507,32 +3507,47 @@ void Client::sendAccessDeniedMessage(quint8 targetPid, const QString &command)
 
 void Client::sendStartConditionFailedMessage(quint8 targetPid, int current, int required)
 {
-    if (!m_players.contains(targetPid)) {
-        LOG_DEBUG(QString("   └─ ⚠️ [发送中止] PID %1 不存在，跳过启动失败通知").arg(targetPid));
-        return;
+    MultiLangMsg msg;
+    QString tagCN = coloredRedText("[启动失败]");
+    QString tagEN = coloredRedText("[Start Failed]");
+
+    if (current < required) {
+        // 原因 A: 人数不足
+        QString curStr = coloredRedText(QString::number(current));
+        QString reqStr = coloredGreenText(QString::number(required));
+
+        msg.add("zh_CN", QString("%1 当前人数不足，无法开始游戏 (%2/%3)。").arg(tagCN, curStr, reqStr))
+            .add("en",    QString("%1 Not enough players (%2/%3).").arg(tagEN, curStr, reqStr));
+
+        LOG_INFO(QString("🛑 [准入拦截] 人数不足: 当前 %1, 所需 %2").arg(current).arg(required));
+    }
+    else {
+        // 原因 B: 有人没点准备
+        QStringList unreadyNames;
+        for (auto it = m_players.begin(); it != m_players.end(); ++it) {
+            if (it.key() != m_botPid && !it.value().isReady) {
+                unreadyNames << getColoredTextByState(it.key(), it.value().name, true);
+            }
+        }
+
+        if (!unreadyNames.isEmpty()) {
+            QString namesText = unreadyNames.join(", ");
+            msg.add("zh_CN", QString("%1 尚有玩家未准备就绪：%2").arg(tagCN, namesText))
+                .add("en",    QString("%1 Waiting for players to ready up: %2").arg(tagEN, namesText));
+
+            LOG_INFO(QString("🛑 [准入拦截] 尚有玩家未就绪: %1").arg(namesText));
+        } else {
+            msg.add("zh_CN", QString("%1 服务器校验未通过，请重试。").arg(tagCN))
+                .add("en",    QString("%1 Server validation failed, please try again.").arg(tagEN));
+        }
     }
 
-    PlayerData &playerData = m_players[targetPid];
-
-    // 服务器后台详细日志
-    LOG_INFO(QString("🛑 [启动准入拦截] 触发者: %1 (PID: %2) | 当前: %3 | 所需: %4")
-                 .arg(playerData.name).arg(targetPid).arg(current).arg(required));
-
-    // 游戏内显示的数值染色
-    QString curStr = coloredRedText(QString::number(current));
-    QString reqStr = coloredGreenText(QString::number(required));
-
-    MultiLangMsg msg;
-
-    // 中文：[启动失败] 当前人数不足。当前：X，所需：Y。
-    msg.add("zh_CN", QString::fromUtf8("%1[启动失败]%2 当前人数不足。当前：%3，所需：%4。")
-                         .arg(COLOR_RED, COLOR_END, curStr, reqStr));
-
-    // 英文：[Start Failed] Not enough players. Current: X, Required: Y.
-    msg.add("en",    QString("%1[Start Failed]%2 Not enough players. Current: %3, Required: %4.")
-                      .arg(COLOR_RED, COLOR_END, curStr, reqStr));
-
-    sendChatMessage(targetPid, msg);
+    if (targetPid == 0) {
+        broadcastChatMessage(msg);
+    }
+    else if (m_players.contains(targetPid)) {
+        sendChatMessage(targetPid, msg);
+    }
 }
 
 void Client::broadcastChatMessage(const MultiLangMsg& msg, quint8 excludePid)
@@ -4496,6 +4511,66 @@ void Client::setPlayerReadyStates(const QString &clientId, const QString &name, 
                              .arg(it.value().name, it.value().clientId.isEmpty() ? "MISSING" : it.value().clientId));
             }
         }
+    }
+}
+
+void Client::handlePlayerReplaceByClientId(const QString &clientId, const QString &userName)
+{
+    if (m_gameStarted) return;
+
+    bool found = false;
+    QString finalPlayerName;
+
+    // 1. 使用非 const 迭代器执行状态转换
+    for (auto it = m_players.begin(); it != m_players.end(); ++it) {
+        if ((!clientId.isEmpty() && it.value().clientId == clientId) ||
+            (it.value().name.compare(userName, Qt::CaseInsensitive) == 0)) {
+
+            it.value().isRealConnection = true;
+            it.value().joinSource = War3Client;
+            it.value().isReady = true;
+
+            finalPlayerName = it.value().name;
+            found = true;
+
+            LOG_INFO(QString("   ✅ [接管成功] 玩家 [%1] (PID:%2) 已通过验证").arg(finalPlayerName).arg(it.key()));
+            break;
+        }
+    }
+
+    if (found) {
+        // 2. 统计当前房间接管进度
+        int joinedCount = 0;
+        int totalHumans = 0;
+
+        for (const auto &player : qAsConst(m_players)) {
+            if (player.pid == m_botPid) continue;
+
+            totalHumans++;
+            if (player.isRealConnection && player.joinSource == War3Client) {
+                joinedCount++;
+            }
+        }
+
+        // 3. 构造并发送大厅广播消息
+        QString coloredName = coloredGreenText(finalPlayerName);
+        QString statsStr = QString("(%1/%2)").arg(joinedCount).arg(totalHumans);
+
+        MultiLangMsg msg;
+        msg.add("zh_CN", QString("玩家 [%1] 已成功载入魔兽进程 %2。").arg(coloredName, statsStr))
+            .add("en",    QString("Player [%1] successfully linked War3 %2.").arg(coloredName, statsStr));
+
+        // 向房间内所有人广播
+        broadcastChatMessage(msg);
+
+        // 4. 同步 UI 状态和槽位
+        syncPlayerReadyStates();
+        broadcastSlotInfo();
+
+        // 5. 检查是否全员到齐
+        checkRealConnection();
+    } else {
+        LOG_WARNING(QString("   ⚠️ [接管失败] 房间内找不到匹配的记录: %1").arg(userName));
     }
 }
 

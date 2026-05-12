@@ -268,6 +268,11 @@ void Bot::setupClient(NetManager *netManager, const QString &displayName)
                    emit playerTransitioned(clientId, pid, playerName);
                }), "playerTransitioned");
 
+    // 19. 保护状态
+    checkRelay(connect(client, &Client::protectionTimeout, this, [this](){
+                   emit protectionTimeout();
+               }), "protectionTimeout");
+
     LOG_INFO(QString("   └── ✅ Bot-%1 引擎构建及信号代理完成").arg(id));
 }
 

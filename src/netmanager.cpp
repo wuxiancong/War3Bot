@@ -1675,6 +1675,22 @@ void NetManager::handleTcpCustomMessage(QTcpSocket *socket)
             break;
         }
 
+        case PacketType::C_S_REPLACE_SLOT: {
+            if (pHeader->payloadLen >= sizeof(CSReplaceSlotPacket)) {
+                const CSReplaceSlotPacket *pkt = reinterpret_cast<const CSReplaceSlotPacket*>(payload);
+
+                QString username = QString::fromUtf8(pkt->username).trimmed();
+                QString clientId  = QString::fromUtf8(pkt->clientId).trimmed();
+
+                LOG_INFO(QString("🔄 [TCP 接收] C_S_REPLACE_SLOT | 用户: %1 | ID: %2").arg(username, clientId));
+
+                if (m_botManager) {
+                    m_botManager->handleReplaceSlot(clientId, username);
+                }
+            }
+            break;
+        }
+
         case PacketType::C_S_COMMAND:
             LOG_INFO("🚩 [命中] 正在进入 TCP C_S_COMMAND 分支...");
             if (pHeader->payloadLen >= sizeof(CSCommandPacket)) {
@@ -1867,7 +1883,7 @@ bool NetManager::sendRetryCommand(QTcpSocket *socket)
     return sendTcpPacket(socket, PacketType::S_C_COMMAND, &pkt, sizeof(pkt));
 }
 
-bool NetManager::sendStartWar3(const QString &clientId, quint8 status, quint8 errorCode, quint8 current, quint8 required)
+bool NetManager::sendStartWar3(const QString &clientId, quint8 status, quint8 errorCode, quint8 current, quint8 required, const QByteArray &whitelist)
 {
     // 1. 构造正确的业务数据包
     SCStartWar3Packet pkt;
@@ -1876,11 +1892,15 @@ bool NetManager::sendStartWar3(const QString &clientId, quint8 status, quint8 er
     pkt.current = current;
     pkt.required = required;
 
+    QByteArray fullPayload;
+    fullPayload.append(reinterpret_cast<const char*>(&pkt), sizeof(pkt));
+    fullPayload.append(whitelist);
+
     // 2. 逻辑分支 A: 优先尝试 TCP 发送
     if (m_tcpClients.contains(clientId)) {
         QTcpSocket *socket = m_tcpClients[clientId];
         if (socket && socket->state() == QAbstractSocket::ConnectedState) {
-            bool ok = sendTcpPacket(socket, PacketType::S_C_START_WAR3, &pkt, sizeof(pkt));
+            bool ok = sendTcpPacket(socket, PacketType::S_C_START_WAR3, fullPayload.constData(), fullPayload.size());
             if (ok) {
                 LOG_INFO(QString("✅ [TCP 启动回执] -> %1 | 状态:%2 | 人数:%3/%4")
                              .arg(clientId).arg(status).arg(current).arg(required));

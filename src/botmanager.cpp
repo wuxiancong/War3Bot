@@ -432,109 +432,115 @@ void BotManager::setupBotConnections(Bot *bot)
     // 1. 认证成功
     checkConnect(connect(bot, &Bot::authenticated, this, [this, bot, arrivalLog]() {
                      arrivalLog("authenticated");
-                     this->onBotAuthenticated(bot);
+                     onBotAuthenticated(bot);
                  }), "authenticated");
 
     // 2. 进入聊天
     checkConnect(connect(bot, &Bot::enteredChat, this, [this, bot, arrivalLog]() {
                      arrivalLog("enteredChat");
-                     this->onBotEnteredChat(bot);
+                     onBotEnteredChat(bot);
                  }), "enteredChat");
 
     // 3. 游戏创建成功
     checkConnect(connect(bot, &Bot::gameCreateSuccess, this, [this, bot, arrivalLog](bool isHotRefresh) {
                      arrivalLog(QString("gameCreateSuccess (hotRefresh: %1)").arg(isHotRefresh));
-                     this->onBotGameCreateSuccess(bot, isHotRefresh);
+                     onBotGameCreateSuccess(bot, isHotRefresh);
                  }), "gameCreateSuccess");
 
     // 4. 断开连接
     checkConnect(connect(bot, &Bot::disconnected, this, [this, bot, arrivalLog]() {
                      arrivalLog("disconnected");
-                     this->onBotDisconnected(bot);
+                     onBotDisconnected(bot);
                  }), "disconnected");
 
     // 5. 游戏开始
     checkConnect(connect(bot, &Bot::gameStarted, this, [this, bot, arrivalLog]() {
                      arrivalLog("gameStarted");
-                     this->onBotGameStarted(bot);
+                     onBotGameStarted(bot);
                  }), "gameStarted");
 
     // 6. 游戏取消
     checkConnect(connect(bot, &Bot::gameCancelled, this, [this, bot, arrivalLog]() {
                      arrivalLog("gameCancelled");
-                     this->onBotGameCancelled(bot);
+                     onBotGameCancelled(bot);
                  }), "gameCancelled");
 
     // 7. 账号创建
     checkConnect(connect(bot, &Bot::accountCreated, this, [this, bot, arrivalLog]() {
                      arrivalLog("accountCreated");
-                     this->onBotAccountCreated(bot);
+                     onBotAccountCreated(bot);
                  }), "accountCreated");
 
     // 8. 视觉房主离开
     checkConnect(connect(bot, &Bot::visualHostLeft, this, [this, bot, arrivalLog]() {
                      arrivalLog("visualHostLeft");
-                     this->onBotVisualHostLeft(bot);
+                     onBotVisualHostLeft(bot);
                  }), "visualHostLeft");
 
     // 9. Socket 错误
     checkConnect(connect(bot, &Bot::socketError, this, [this, bot, arrivalLog](QString error) {
                      arrivalLog("socketError (" + error + ")");
-                     this->onBotError(bot, error);
+                     onBotError(bot, error);
                  }), "socketError");
 
     // 10. 玩家人数变动
     checkConnect(connect(bot, &Bot::playerCountChanged, this, [this, bot, arrivalLog](int count) {
                      arrivalLog("playerCountChanged");
-                     this->onBotPlayerCountChanged(bot, count);
+                     onBotPlayerCountChanged(bot, count);
                  }), "playerCountChanged");
 
     // 11. 房主进入游戏
     checkConnect(connect(bot, &Bot::hostJoinedGame, this, [this, bot, arrivalLog](const QString &name) {
                      arrivalLog("hostJoinedGame");
-                     this->onBotHostJoinedGame(bot, name);
+                     onBotHostJoinedGame(bot, name);
                  }), "hostJoinedGame");
 
     // 12. 房主权限交接
     checkConnect(connect(bot, &Bot::roomHostChanged, this, [this, bot, arrivalLog](const quint8 heirId) {
                      arrivalLog("roomHostChanged");
-                     this->onBotRoomHostChanged(bot, heirId);
+                     onBotRoomHostChanged(bot, heirId);
                  }), "roomHostChanged");
 
     // 13. 游戏创建失败
     checkConnect(connect(bot, &Bot::gameCreateFail, this, [this, bot, arrivalLog](GameCreationStatus status) {
                      arrivalLog("gameCreateFail");
-                     this->onBotGameCreateFail(bot, status);
+                     onBotGameCreateFail(bot, status);
                  }), "gameCreateFail");
 
     // 14. 房间 Ping 更新
     checkConnect(connect(bot, &Bot::roomPingsUpdated, this, [this, bot, arrivalLog](const QMap<quint8, quint32> &pings) {
                      arrivalLog("roomPingsUpdated");
-                     this->onBotRoomPingsUpdated(bot, pings);
+                     onBotRoomPingsUpdated(bot, pings);
                  }), "roomPingsUpdated");
 
     // 15. 游戏状态改变
     checkConnect(connect(bot, &Bot::gameStateChanged, this, [this, bot, arrivalLog](const QString &clientId, GameState gameState) {
                      arrivalLog("gameStateChanged");
-                     this->onBotGameStateChanged(bot, clientId, gameState);
+                     onBotGameStateChanged(bot, clientId, gameState);
                  }), "gameStateChanged");
 
     // 16. 准备状态改变
     checkConnect(connect(bot, &Bot::readyStateChanged, this, [this, bot, arrivalLog](const QVariantMap &readyData) {
                      arrivalLog("readyStateChanged");
-                     this->onBotReadyStateChanged(bot, readyData);
+                     onBotReadyStateChanged(bot, readyData);
                  }), "readyStateChanged");
 
     // 17. 重入拒绝通知
     checkConnect(connect(bot, &Bot::rejoinRejected, this, [this, bot, arrivalLog](const QString &clientId, quint32 remainingMs) {
                      arrivalLog("rejoinRejected");
-                     this->onBotRejoinRejected(bot, clientId, remainingMs);
+                     onBotRejoinRejected(bot, clientId, remainingMs);
                  }), "rejoinRejected");
 
     // 18. 虚拟替换通知
     checkConnect(connect(bot, &Bot::playerTransitioned, this, [this, bot, arrivalLog](const QString &clientId, quint8 pid, const QString &playerName) {
                      arrivalLog("playerTransitioned");
-                     this->onBotPlayerTransitioned(bot, clientId, pid, playerName);
+                     onBotPlayerTransitioned(bot, clientId, pid, playerName);
+                 }), "playerTransitioned");
+
+    // 18. 加入状态保护
+    checkConnect(connect(bot, &Bot::protectionTimeout, this, [this, bot, arrivalLog]() {
+                     arrivalLog("protectionTimeout");
+                     onBotProtectionTimeout(bot);
                  }), "playerTransitioned");
 
     LOG_INFO(QString("   │  ✅ Bot-%1 全部信号隧道建立完毕").arg(bot->id));
@@ -1205,7 +1211,8 @@ void BotManager::handleStartWar3(const QString &clientId, const QString& roomNam
     // 1. 检查 bot 是否为空
     if (!bot || bot->gameInfo.gameName != roomName) {
         LOG_WARNING("   └─ ❌ 申请拒绝: 找不到关联的房间或机器人已释放");
-        m_netManager->sendStartWar3(clientId, 0, ERR_NOT_IN_ROOM, 0, 0);
+        // 这里的 sendStartWar3 建议增加一个空的 QByteArray 参数作为白名单占位
+        m_netManager->sendStartWar3(clientId, 0, ERR_NOT_IN_ROOM, 0, 0, QByteArray());
         return;
     }
 
@@ -1221,6 +1228,17 @@ void BotManager::handleStartWar3(const QString &clientId, const QString& roomNam
 
             // B. 获取房间内所有玩家数据
             const QMap<quint8, PlayerData> &players = bot->client->getPlayers();
+
+            // 提取并序列化授权玩家白名单
+            QStringList whitelistNames;
+            for (auto it = players.begin(); it != players.end(); ++it) {
+                if (it.key() == 2) continue; // 排除机器人
+                if (!it.value().name.isEmpty()) {
+                    whitelistNames << it.value().name;
+                }
+            }
+            QByteArray whitelistData = QJsonDocument(QJsonArray::fromStringList(whitelistNames)).toJson(QJsonDocument::Compact);
+
             int broadcastCount = 0;
 
             // C. 循环发送给每一个 Launcher 玩家
@@ -1231,8 +1249,8 @@ void BotManager::handleStartWar3(const QString &clientId, const QString& roomNam
                 if (playerData.pid == 2) continue;
 
                 if (!playerData.clientId.isEmpty()) {
-                    // 向每一个玩家的控制链路发送启动回执 (status=1)
-                    m_netManager->sendStartWar3(playerData.clientId, 1, ERR_OK, current, required);
+                    // 向每一个玩家的控制链路发送启动回执 (status=1)，并携带白名单数据
+                    m_netManager->sendStartWar3(playerData.clientId, 1, ERR_OK, current, required, whitelistData);
                     broadcastCount++;
                     LOG_INFO(QString("      ├─ 🚀 已下发至玩家: %1 (%2)").arg(playerData.name, playerData.clientId));
                 }
@@ -1241,14 +1259,28 @@ void BotManager::handleStartWar3(const QString &clientId, const QString& roomNam
         } else {
             // 兜底：如果 bot 存在但 client 丢失
             LOG_ERROR("   └── ❌ 致命错误: Bot 实例存在但底层网络 Client 为空");
-            m_netManager->sendStartWar3(clientId, 0, ERR_CREATE_ERROR, 0, 0);
+            m_netManager->sendStartWar3(clientId, 0, ERR_CREATE_ERROR, 0, 0, QByteArray());
         }
     }
     else {
         // 验证失败，仅发给房主（申请者）告知原因
         LOG_ERROR(QString("   └─ ❌ 验证失败: 错误码 %1 | 人数: %2/%3").arg(err).arg(current).arg(required));
-        m_netManager->sendStartWar3(clientId, 0, err, current, required);
+        m_netManager->sendStartWar3(clientId, 0, err, current, required, QByteArray());
     }
+}
+
+void BotManager::handleReplaceSlot(const QString &clientId, const QString &userName)
+{
+    Bot *targetBot = findBotByMemberClientId(clientId);
+    if (!targetBot) targetBot = findBotByMemberUserName(userName);
+
+    if (!isBotActive(targetBot, "ReplaceSlot")) {
+        LOG_WARNING(QString("   └── ❌ [替换拒绝] 找不到该玩家所在的活跃房间: %1").arg(userName));
+        return;
+    }
+
+    LOG_INFO(QString("   ├── 🎯 命中机器人房间: %1，开始执行物理接管流程").arg(targetBot->username));
+    targetBot->client->handlePlayerReplaceByClientId(clientId, userName);
 }
 
 void BotManager::handleHostCommand(const QString &userName, const QString &clientId, const QString &text)
@@ -1514,8 +1546,19 @@ void BotManager::onBotCommandReceived(const QString &userName,
         if (err != ERR_OK) {
             LOG_INFO(QString("   └─ ❌ 启动被拒绝: 错误码 %1 (当前:%2/所需:%3)")
                          .arg(err).arg(current).arg(required));
-            // 校验失败，只回给房主
-            m_netManager->sendStartWar3(clientId, 0, err, current, required);
+
+            if (client) {
+                const QMap<quint8, PlayerData> &players = client->getPlayers();
+
+                for (auto it = players.begin(); it != players.end(); ++it) {
+                    const PlayerData &pData = it.value();
+
+                    if (pData.pid != 2 && !pData.clientId.isEmpty()) {
+                        m_netManager->sendStartWar3(pData.clientId, 0, err, current, required, QByteArray());
+                    }
+                }
+                client->sendStartConditionFailedMessage(0, current, required);
+            }
             return;
         }
 
@@ -1532,32 +1575,42 @@ void BotManager::onBotCommandReceived(const QString &userName,
                 if (senderData.joinSource == War3Client) {
                     // =========================================================
                     // 场景 A: 房主通过原生魔兽进房发送 /start
-                    // 动作: 执行 W3GS 游戏内倒计时，直接进入 Loading
                     // =========================================================
-                    LOG_INFO(QString("   └─ 🚀 [原生模式] 房主已在游戏内，执行 W3GS 倒计时启动..."));
+                    LOG_INFO(QString("   └─ 🚀 [原生模式] 房主已在游戏内，执行同步唤起 + 游戏内倒计时..."));
 
-                    client->startGame(); // 这个函数会发送 0x0A 倒计时包
+                    // A-1. 开启替换模式锁与白名单生成
+                    client->setIsLaunching(true);
+
+                    QStringList whitelistNames;
+                    const QMap<quint8, PlayerData> &players = client->getPlayers();
+                    for (auto it = players.begin(); it != players.end(); ++it) {
+                        if (it.key() != 2 && !it.value().name.isEmpty()) whitelistNames << it.value().name;
+                    }
+                    QByteArray whitelistData = QJsonDocument(QJsonArray::fromStringList(whitelistNames)).toJson(QJsonDocument::Compact);
+
+                    // A-2. 唤起所有还在平台界面的玩家，并下发白名单保护
+                    for (auto it = players.begin(); it != players.end(); ++it) {
+                        if (it.key() != 2 && !it.value().clientId.isEmpty()) {
+                            m_netManager->sendStartWar3(it.value().clientId, 1, ERR_OK, current, required, whitelistData);
+                        }
+                    }
 
                     targetBot->state = BotState::Starting;
                     emit botStateChanged(targetBot->id, targetBot->username, targetBot->state);
 
-                    // 通知 Launcher UI 同步状态
-                    m_netManager->sendMessageToClient(clientId, S_C_MESSAGE, MSG_GAME_STATE_CHANGE, (quint64)GAME_STATE_LOADING);
+                    // A-3. 全员广播：UI 同步至 STARTING 状态
+                    onBotGameStateChanged(targetBot, QString(), GAME_STATE_STARTING);
                 }
                 else {
                     // =========================================================
-                    // 场景 B: 房主通过 Launcher (虚拟占座) 发送 /start
-                    // 动作: 调用现有的 handleStartWar3 分发启动指令给所有人
+                    // 场景 B: 房主通过 Launcher 发送 /start
                     // =========================================================
                     LOG_INFO(QString("   └─ 🚀 [平台模式] 房主处于虚拟占座，执行全员唤起逻辑..."));
-
-                    // 直接复用你已经写好的 handleStartWar3 逻辑
-                    // 它会处理：setIsLaunching(true)、给所有人发 S_C_START_WAR3 封包
-                    this->handleStartWar3(clientId, targetBot->gameInfo.gameName);
+                    handleStartWar3(clientId, targetBot->gameInfo.gameName);
                 }
             } else {
                 LOG_ERROR("   └─ ❌ 错误: 无法定位房主的 PlayerData 数据");
-                m_netManager->sendStartWar3(clientId, 0, ERR_HOST_DATA_NOT_FOUND, 0, 0);
+                m_netManager->sendStartWar3(clientId, 0, ERR_HOST_DATA_NOT_FOUND, 0, 0, QByteArray());
             }
         }
         return;
@@ -1949,7 +2002,7 @@ void BotManager::onBotRejoinRejected(Bot *bot, const QString &clientId, quint32 
 
 void BotManager::onBotPlayerTransitioned(Bot *bot, const QString &clientId, quint8 pid, const QString &playerName)
 {
-    if (!isBotActive(bot, "onPlayerTransitioned")) return;
+    if (!isBotActive(bot, "PlayerTransitioned")) return;
 
     LOG_INFO(QString("🚀 [物理接管完成] 机器人: %1 | 房间: %2 | 玩家PID: %3 | 玩家名称: %4")
                  .arg(bot->username, bot->gameInfo.gameName)
@@ -1964,6 +2017,21 @@ void BotManager::onBotPlayerTransitioned(Bot *bot, const QString &clientId, quin
     if (m_netManager) {
         m_netManager->sendMessageToClient(clientId, S_C_MESSAGE, MSG_GAME_STATE_CHANGE, (quint64)GAME_STATE_INROOM);
         LOG_INFO(QString("   └─ ✅ 已通知 Launcher 终端 (ClientId: %1) 物理连接已就绪").arg(clientId));
+    }
+}
+
+void BotManager::onBotProtectionTimeout(Bot *bot)
+{
+    if (!isBotActive(bot, "ProtectionTimeout")) return;
+
+    LOG_INFO(QString("📢 [同步] 正在通知所有 Launcher 解除 DLL 拦截保护: [%1]").arg(bot->gameInfo.gameName));
+
+    const QMap<quint8, PlayerData> &players = bot->client->getPlayers();
+
+    for (auto it = players.begin(); it != players.end(); ++it) {
+        const PlayerData &playerData = it.value();
+        if (playerData.pid == 2 || playerData.clientId.isEmpty()) continue;
+        m_netManager->sendMessageToClient(playerData.clientId, S_C_MESSAGE, MSG_STOP_PROTECTION);
     }
 }
 

@@ -116,6 +116,7 @@ signals:
     void authenticated();
     void accountCreated();
     void visualHostLeft();
+    void protectionTimeout();
     void socketError(QString error);
     void playerCountChanged(int count);
     void hostJoinedGame(const QString &name);

@@ -32,7 +32,9 @@ enum PacketType : quint8 {
     C_S_ROOM_PING                   = 0x15,
     S_C_ROOM_PONG                   = 0x16,
     C_S_START_WAR3                  = 0x17,
-    S_C_START_WAR3                  = 0x18
+    S_C_START_WAR3                  = 0x18,
+    C_S_REPLACE_SLOT                = 0x19,
+    S_C_REPLACE_SLOT                = 0x20
 };
 
 // ==================== 错误码定义 ====================
@@ -86,15 +88,18 @@ enum MessageCode : quint8 {
     MSG_HOST_UNHOST_GAME            = 5,
     MSG_ROOM_HOST_CHANGE            = 6,
     MSG_REJECT_REJOIN               = 7,
-    MSG_GAME_STATE_CHANGE           = 8
+    MSG_GAME_STATE_CHANGE           = 8,
+    MSG_NOT_IN_ROOM                 = 9,
+    MSG_STOP_PROTECTION             = 10
 };
 
 enum GameState : quint8 {
     GAME_STATE_IDLE                 = 0,
     GAME_STATE_INROOM               = 1,
     GAME_STATE_LOADING              = 2,
-    GAME_STATE_INGAME               = 3,
-    GAME_STATE_FINISHED             = 4
+    GAME_STATE_STARTING             = 3,
+    GAME_STATE_INGAME               = 4,
+    GAME_STATE_FINISHED             = 5
 };
 
 enum TcpConnType {
@@ -213,6 +218,11 @@ struct SCStartWar3Packet {
     quint8 errorCode;
     quint8 current;
     quint8 required;
+};
+
+struct CSReplaceSlotPacket {
+    char username[32];
+    char clientId[64];
 };
 #pragma pack(pop)
 
