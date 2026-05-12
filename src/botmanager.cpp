@@ -1506,20 +1506,59 @@ void BotManager::onBotCommandReceived(const QString &userName,
 
     // --- 6. 房主级别指令 ---
     if (trimmedCommand == "/start") {
+        // 1. 基础准入校验（人数、准备状态等）
         quint8 current = 0;
         quint8 required = 0;
         ErrorCode err = checkStartCondition(targetBot, clientId, current, required);
 
-        if (err == ERR_OK) {
-            LOG_INFO(QString("   └─ 🚀 准入校验通过，正在启动游戏..."));
-            client->startGame();
-            targetBot->state = BotState::Starting;
-            emit botStateChanged(targetBot->id, targetBot->username, targetBot->state);
-            m_netManager->sendMessageToClient(clientId, S_C_MESSAGE, MSG_GAME_STATE_CHANGE, (quint64)GAME_STATE_LOADING);
-        }
-        else {
+        if (err != ERR_OK) {
             LOG_INFO(QString("   └─ ❌ 启动被拒绝: 错误码 %1 (当前:%2/所需:%3)")
                          .arg(err).arg(current).arg(required));
+            // 校验失败，只回给房主
+            m_netManager->sendStartWar3(clientId, 0, err, current, required);
+            return;
+        }
+
+        // 2. 识别房主来源并执行不同启动策略
+        if (client) {
+            // 获取发送者 PID
+            quint8 senderPid = client->getPidByClientId(clientId);
+            if (senderPid == 0) senderPid = client->getPidByPlayerName(userName);
+
+            // 获取发送者数据
+            if (senderPid != 0 && client->getPlayers().contains(senderPid)) {
+                const PlayerData &senderData = client->getPlayers()[senderPid];
+
+                if (senderData.joinSource == War3Client) {
+                    // =========================================================
+                    // 场景 A: 房主通过原生魔兽进房发送 /start
+                    // 动作: 执行 W3GS 游戏内倒计时，直接进入 Loading
+                    // =========================================================
+                    LOG_INFO(QString("   └─ 🚀 [原生模式] 房主已在游戏内，执行 W3GS 倒计时启动..."));
+
+                    client->startGame(); // 这个函数会发送 0x0A 倒计时包
+
+                    targetBot->state = BotState::Starting;
+                    emit botStateChanged(targetBot->id, targetBot->username, targetBot->state);
+
+                    // 通知 Launcher UI 同步状态
+                    m_netManager->sendMessageToClient(clientId, S_C_MESSAGE, MSG_GAME_STATE_CHANGE, (quint64)GAME_STATE_LOADING);
+                }
+                else {
+                    // =========================================================
+                    // 场景 B: 房主通过 Launcher (虚拟占座) 发送 /start
+                    // 动作: 调用现有的 handleStartWar3 分发启动指令给所有人
+                    // =========================================================
+                    LOG_INFO(QString("   └─ 🚀 [平台模式] 房主处于虚拟占座，执行全员唤起逻辑..."));
+
+                    // 直接复用你已经写好的 handleStartWar3 逻辑
+                    // 它会处理：setIsLaunching(true)、给所有人发 S_C_START_WAR3 封包
+                    this->handleStartWar3(clientId, targetBot->gameInfo.gameName);
+                }
+            } else {
+                LOG_ERROR("   └─ ❌ 错误: 无法定位房主的 PlayerData 数据");
+                m_netManager->sendStartWar3(clientId, 0, ERR_HOST_DATA_NOT_FOUND, 0, 0);
+            }
         }
         return;
     }

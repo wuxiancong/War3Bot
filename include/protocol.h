@@ -73,7 +73,8 @@ enum ErrorCode : quint8 {
     ERR_GAME_STARTED                = 19,
     ERR_DUPLICATE_NAME              = 20,
     ERR_BANNED_USER                 = 21,
-    ERR_PLAYERS_NOT_READY           = 22
+    ERR_PLAYERS_NOT_READY           = 22,
+    ERR_HOST_DATA_NOT_FOUND         = 23
 };
 
 enum MessageCode : quint8 {
