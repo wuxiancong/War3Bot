@@ -4522,7 +4522,6 @@ void Client::checkRealConnection()
     if (allReady) {
         LOG_INFO("✅ [启动模式闭环] 房间内所有玩家（10人）魔兽进程已全部连入");
         LOG_INFO("   └─ 🚀 动作：立即关闭保护大门并下发游戏开始指令");
-
         setIsLaunching(false);
         startGame();
     } else {
