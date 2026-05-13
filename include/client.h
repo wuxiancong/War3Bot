@@ -455,6 +455,7 @@ public:
     void initBotPlayerData();                                                                                   // 初始玩家数据
     void checkRealConnection();                                                                                 // 检查所有玩家连接
     void syncPlayerReadyStates();                                                                               // 同步玩家准备状态
+    bool isStartSequenceLocked();                                                                               // 是否已被锁定
     void setIsLaunching(bool launching);                                                                        // 设置启动状态
     void swapSlots(int slot1, int slot2);                                                                       // 交换玩家槽位
     void setGameTickInterval(quint16 interval = 50);                                                            // 设置发送频率

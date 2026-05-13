@@ -2956,6 +2956,21 @@ void Client::setIsLaunching(bool launching)
     }
 }
 
+bool Client::isStartSequenceLocked()
+{
+    // 1. 如果没有开启启动模式
+    if (!m_isLaunching) return true;
+
+    // 2. 如果游戏已经标记为开始
+    if (m_gameStarted) return true;
+
+    // 3. 如果倒计时计时器正在运行
+    if (m_startTimer && m_startTimer->isActive()) return true;
+
+    // 只有同时满足
+    return false;
+}
+
 // =========================================================
 // 9. 地图数据处理
 // =========================================================
@@ -4516,7 +4531,10 @@ void Client::setPlayerReadyStates(const QString &clientId, const QString &name, 
 
 void Client::handlePlayerReplaceByClientId(const QString &clientId, const QString &userName)
 {
-    if (m_gameStarted) return;
+    if (isStartSequenceLocked()) {
+        LOG_DEBUG("🛡️ [替换拦截] 启动序列已锁定，忽略替换请求");
+        return;
+    }
 
     bool found = false;
     QString finalPlayerName;
@@ -4576,7 +4594,7 @@ void Client::handlePlayerReplaceByClientId(const QString &clientId, const QStrin
 
 void Client::checkRealConnection()
 {
-    if (!m_isLaunching) return;
+    if (isStartSequenceLocked()) return;
 
     bool allReady = true;
     QStringList waitingFor;
