@@ -1233,7 +1233,7 @@ void BotManager::handleStartWar3(const QString &clientId, const QString& roomNam
             // 提取并序列化授权玩家白名单
             QStringList whitelistNames;
             for (auto it = players.begin(); it != players.end(); ++it) {
-                if (it.key() == 2) continue; // 排除机器人
+                if (it.key() == bot->client->getBotPid()) continue; // 排除机器人
                 if (!it.value().name.isEmpty()) {
                     whitelistNames << it.value().name;
                 }
@@ -1247,7 +1247,7 @@ void BotManager::handleStartWar3(const QString &clientId, const QString& roomNam
                 const PlayerData &playerData = it.value();
 
                 // 跳过机器人 (PID 2)
-                if (playerData.pid == 2) continue;
+                if (playerData.pid == bot->client->getBotPid()) continue;
 
                 if (!playerData.clientId.isEmpty()) {
                     // 向每一个玩家的控制链路发送启动回执 (status=1)，并携带白名单数据
@@ -1619,7 +1619,7 @@ void BotManager::onBotCommandReceived(const QString &userName,
 
             if (success) {
                 LOG_INFO(QString("👞 [执行踢出] 房主 %1 踢出了玩家: %2 (PID: %3)")
-                             .arg(userName).arg(kickedPlayerName).arg(targetPid));
+                             .arg(userName, kickedPlayerName).arg(targetPid));
 
                 // 4. 发送魔兽内多语言广播
                 MultiLangMsg msg;
@@ -1871,7 +1871,7 @@ void BotManager::onBotRoomHostChanged(Bot *bot, const quint8 heirPid)
 
     // 4. 通知房间内所有玩家房主变了
     for (auto it = players.begin(); it != players.end(); ++it) {
-        if (it.key() == 2) continue;
+        if (it.key() == bot->client->getBotPid()) continue;
         m_netManager->sendMessageToClient(it.value().clientId, S_C_MESSAGE, MSG_ROOM_HOST_CHANGE, heirPid);
     }
 }
@@ -2104,7 +2104,7 @@ void BotManager::onBotProtectionTimeout(Bot *bot)
 
     for (auto it = players.begin(); it != players.end(); ++it) {
         const PlayerData &playerData = it.value();
-        if (playerData.pid == 2 || playerData.clientId.isEmpty()) continue;
+        if (playerData.pid == bot->client->getBotPid() || playerData.clientId.isEmpty()) continue;
         m_netManager->sendMessageToClient(playerData.clientId, S_C_MESSAGE, MSG_STOP_PROTECTION);
     }
 }
@@ -2260,7 +2260,7 @@ void BotManager::onBotReadyStateChanged(Bot *bot, const QVariantMap &readyData)
 
     const QMap<quint8, PlayerData> &players = bot->client->getPlayers();
     for (const auto &player : players) {
-        if (player.pid == 2) continue;
+        if (player.pid == bot->client->getBotPid()) continue;
 
         if (!player.clientId.isEmpty()) {
             targetClientIds.insert(player.clientId);
