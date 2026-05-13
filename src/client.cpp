@@ -2944,8 +2944,7 @@ void Client::createGame(const QString &gameName, const QString &password, Provid
 
 void Client::startGame()
 {
-    if (m_gameStarted) return;
-    if (m_startTimer->isActive()) return;
+    if (isStartSequenceLocked()) return;
 
     LOG_INFO("🚀 [Client] 游戏倒计时序列启动");
 
@@ -4679,7 +4678,7 @@ void Client::checkRealConnection()
 
     // 2. 判定结果
     if (allReady) {
-        LOG_INFO("✅ [启动模式闭环] 房间内所有玩家（10人）魔兽进程已全部连入");
+        LOG_INFO("✅ [启动模式闭环] 房间内所有玩家魔兽进程已全部连入");
         LOG_INFO("   └─ 🚀 动作：立即关闭保护大门并下发游戏开始指令");
         setIsLaunching(false);
         startGame();
