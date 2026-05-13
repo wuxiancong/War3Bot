@@ -1567,6 +1567,10 @@ void BotManager::onBotCommandReceived(const QString &userName,
             // 获取发送者 PID
             quint8 senderPid = client->getPidByClientId(clientId);
             if (senderPid == 0) senderPid = client->getPidByPlayerName(userName);
+            MultiLangMsg startMsg;
+            startMsg.add("zh_CN", client->coloredGreenText("房主已发起启动指令，正在调起全员魔兽进程..."))
+                .add("en",    client->coloredGreenText("Host started the game. Launching all clients..."));
+            client->broadcastChatMessage(startMsg);
 
             // 获取发送者数据
             if (senderPid != 0 && client->getPlayers().contains(senderPid)) {
