@@ -1643,8 +1643,8 @@ void NetManager::handleTcpCustomMessage(QTcpSocket *socket)
             } else {
                 LOG_ERROR("   └── ❌ 动作失败: 无法向客户端推送确认包");
             }
+            break;
         }
-        break;
 
         case PacketType::C_S_START_WAR3: {
             LOG_INFO("🚀 [TCP 接收] C_S_START_WAR3 (申请启动游戏)");
