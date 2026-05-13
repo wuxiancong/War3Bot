@@ -1091,6 +1091,7 @@ bool BotManager::checkCooldown(const QString &clientId, const QString &command, 
         cooldownRules.insert("/swap", 500);
         cooldownRules.insert("/ready", 1000);
         cooldownRules.insert("/unready", 1000);
+        cooldownRules.insert("/kick", 500);
         cooldownRules.insert("/swapself", 10);
     }
     const qint64 DEFAULT_COOLDOWN = 1000;
@@ -1567,6 +1568,67 @@ void BotManager::onBotCommandReceived(const QString &userName,
                 }
                 client->sendStartConditionFailedMessage(0, current, required);
             }
+            return;
+        }
+        else if (trimmedCommand == "/kick") {
+            if (text.trimmed().isEmpty()) return;
+
+            QString target = text.trimmed();
+            quint8 targetPid = 0;
+            QString kickedPlayerName;
+            bool success = false;
+
+            // 1. 尝试判断输入的是否是数字（槽位号 1-12）
+            bool isSlotNum;
+            int slotNum = target.toInt(&isSlotNum);
+
+            if (isSlotNum) {
+                // A. 按槽位号踢人
+                int idx = slotNum - 1;
+                const QVector<GameSlot>& gameSlots = client->getGameSlots();
+
+                if (idx >= 0 && idx < gameSlots.size()) {
+                    targetPid = gameSlots[idx].pid;
+                    kickedPlayerName = client->getPlayerNameByPid(targetPid);
+                }
+            } else {
+                // B. 按名字踢人
+                targetPid = client->getPidByPlayerName(target);
+                kickedPlayerName = target;
+            }
+
+            // 2. 执行踢出前的安全检查
+            if (targetPid == 0) {
+                LOG_WARNING(QString("   └─ ⚠️ [踢出失败] 找不到目标: %1").arg(target));
+                return;
+            }
+
+            if (targetPid == client->getBotPid()) {
+                LOG_WARNING("   └─ 🛡️ [保护] 拦截到踢出机器人的操作");
+                return;
+            }
+
+            // 防止房主踢出自己（可选）
+            if (client->getPidByClientId(clientId) == targetPid) {
+                LOG_WARNING("   └─ 🛡️ [保护] 房主尝试踢出自己，已忽略");
+                return;
+            }
+
+            // 3. 执行物理断开
+            success = client->disconnectPlayerByPid(targetPid);
+
+            if (success) {
+                LOG_INFO(QString("👞 [执行踢出] 房主 %1 踢出了玩家: %2 (PID: %3)")
+                             .arg(userName).arg(kickedPlayerName).arg(targetPid));
+
+                // 4. 发送魔兽内多语言广播
+                MultiLangMsg msg;
+                QString coloredName = client->coloredRedText(kickedPlayerName);
+                msg.add("zh_CN", QString("玩家 [%1] 被房主踢出了房间。").arg(coloredName))
+                    .add("en",    QString("Player [%1] was kicked by the host.").arg(coloredName));
+                client->broadcastChatMessage(msg);
+            }
+
             return;
         }
 

@@ -434,6 +434,7 @@ public:
     bool isLaunching() const;                                                                                   // 是否正在启动
     void disconnectFromHost();                                                                                  // 断开主机连接
     void connectToHost(const QString &address, quint16 port);                                                   // 连接远程主机
+    bool disconnectPlayerByPid(quint8 pid);                                                                     // 断连远程主机
     bool disconnectPlayerByClientId(const QString &clientId);                                                   // 断连远程主机
     bool disconnectPlayerByUserName(const QString &userName);                                                   // 断连远程主机
     void setCredentials(const QString &user, const QString &pass, LoginProtocol protocol = Protocol_SRP_0x53);  // 设置认证信息
@@ -452,20 +453,22 @@ public:
 
     // --- 游戏主机管理 ---
     bool isHostJoined();                                                                                        // 房主是否加入
-    bool isSoloMode() const { return m_isSoloMode; }
+    bool isSoloMode() const;                                                                                    // 是否为单挑模式
     void initBotPlayerData();                                                                                   // 初始玩家数据
     void checkRealConnection();                                                                                 // 检查所有玩家连接
     void syncPlayerReadyStates();                                                                               // 同步玩家准备状态
     bool isStartSequenceLocked();                                                                               // 是否已被锁定
+    void setBotFlag(bool isBot);                                                                                // 设置机器人标志
+    void setBotDisplayName(const QString &name);                                                                // 获取显示名字
     void setSoloMode(bool enable);                                                                              // 设置单挑模式
+    void setHost(QString creatorName);                                                                          // 设置房间房主名字
     void setIsLaunching(bool launching);                                                                        // 设置启动状态
     void swapSlots(int slot1, int slot2);                                                                       // 交换玩家槽位
+    void setMaxDownloadSpeed(quint32 kbps);                                                                     // 设置地图最大下载数度
+    quint16 getGameTickInterval() const;                                                                        // 获取发送频率
     void setGameTickInterval(quint16 interval = 50);                                                            // 设置发送频率
     bool hasPlayerByClientId(const QString &clientId) const;                                                    // 房间是否存在玩家
     bool hasPlayerByUserName(const QString &userName) const;                                                    // 房间是否存在玩家
-    void setHost(QString creatorName) { m_host = creatorName; };                                                // 设置房间房主名字
-    quint16 getGameTickInterval() const { return m_gameTickInterval; }                                          // 获取发送频率
-    void setMaxDownloadSpeed(quint32 kbps) { m_maxDownloadSpeed = kbps; }                                       // 设置地图最大下载数度
     void setPlayerReadyStates(const QString &clientId, const QString &name, bool ready);                        // 设置玩家准备状态
     void handlePlayerReplaceByClientId(const QString &clientId, const QString &userName);                       // 玩家虚拟槽位替换
     void createGame(const QString &gameName, const QString &password,
@@ -487,16 +490,14 @@ public:
     void syncPingsToLauncher();                                                                                 // 报告玩家Ping
     quint16 getListenPort() const;                                                                              // 获取监听端口
     QString getPrimaryIPv4() const;                                                                             // 获取本机IPv4
+    QUdpSocket *getUdpSocket() const;                                                                           // 获取 UdpSocket
     bool isBlackListedPort(quint16 port);                                                                       // 检查端口黑名单
     void dumpPacket(const QByteArray &bytes);                                                                   // 抓取数据报数据
     QString getBnetPacketName(BNCSPacketID id);                                                                 // 获取对应的包名
     QString stripColorCodes(const QString &text);                                                               // 移除颜色代码
-    void setBotFlag(bool isBot) { m_isBot = isBot; }                                                            // 设置机器人标志
+    const QMap<quint8, PlayerData> &getPlayers() const;                                                         // 获取玩家数据
     QString getCodecNameByLanguage(const QString &lang);                                                        // 获取对应的编码
-    QUdpSocket *getUdpSocket() const { return m_udpSocket; }                                                    // 获取 UdpSocket
     void writeIpToStreamWithLog(QDataStream &out, const QHostAddress &ip);                                      // Ip地址写入流
-    void setBotDisplayName(const QString &name) { m_botDisplayName = name; }                                    // 获取显示名字
-    const QMap<quint8, PlayerData> &getPlayers() const { return m_players; }                                    // 获取玩家数据
     QString translateSocketError(QAbstractSocket::SocketError err, const QString &errString);
     QString getColoredTextBySystem(const QString &text);                                                        // 获取颜色文本
     QString getColoredText(const QString &text, const QString &colorHex);                                       // 获取颜色文本
@@ -513,6 +514,7 @@ public:
     quint32 ipToUint32(const QHostAddress &address);
 
     // --- 槽位信息辅助 ---
+    quint8 getBotPid() const;
     quint8 findFreePid() const;
     quint8 getTotalSlots() const;
     quint8 getHumanCount() const;

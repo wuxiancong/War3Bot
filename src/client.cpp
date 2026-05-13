@@ -1719,6 +1719,18 @@ void Client::handleChatCommand(quint8 senderPid, const QString &fullMsg)
     }
 }
 
+bool Client::disconnectPlayerByPid(quint8 pid)
+{
+    if (m_players.contains(pid)) {
+        QTcpSocket *socket = m_players[pid].socket;
+        if (socket) {
+            socket->disconnectFromHost();
+            return true;
+        }
+    }
+    return false;
+}
+
 bool Client::disconnectPlayerByClientId(const QString &clientId)
 {
     if (clientId.isEmpty()) {
@@ -3032,10 +3044,25 @@ bool Client::isStartSequenceLocked()
     return false;
 }
 
+void Client::setBotDisplayName(const QString &name)
+{
+    m_botDisplayName = name;
+}
+
+void Client::setBotFlag(bool isBot)
+{
+    m_isBot = isBot;
+}
+
 void Client::setSoloMode(bool enable)
 {
     m_isSoloMode = enable;
 }
+
+void Client::setHost(QString creatorName)
+{
+    m_host = creatorName;
+};
 // =========================================================
 // 9. 地图数据处理
 // =========================================================
@@ -3062,20 +3089,9 @@ void Client::setCurrentMap(const QString &filePath)
     }
 }
 
-void Client::setGameTickInterval(quint16 interval)
+void Client::setMaxDownloadSpeed(quint32 kbps)
 {
-    if (interval < 50) interval = 50;
-    if (interval > 200) interval = 200;
-
-    if (m_gameTickInterval != interval) {
-        m_gameTickInterval = interval;
-
-        if (m_gameTickTimer) {
-            m_gameTickTimer->setInterval(m_gameTickInterval);
-        }
-
-        LOG_INFO(QString("⚙️ [设置时间] 游戏心跳间隔调整为: %1 ms").arg(m_gameTickInterval));
-    }
+    m_maxDownloadSpeed = kbps;
 }
 
 // =========================================================
@@ -4215,9 +4231,24 @@ QString Client::getSlotInfoString() const
     return QString("(%1/%2)").arg(getOccupiedSlots()).arg(getTotalSlots());
 }
 
+const QMap<quint8, PlayerData> &Client::getPlayers() const
+{
+    return m_players;
+}
+
+
+quint8 Client::getBotPid() const {
+    return m_botPid;
+}
+
 // =========================================================
 // 12. 玩家辅助函数
 // =========================================================
+
+bool Client::isSoloMode() const
+{
+    return m_isSoloMode;
+}
 
 bool Client::isHostJoined()
 {
@@ -4283,7 +4314,32 @@ void Client::checkAllPlayersLoaded()
 }
 
 // =========================================================
-// 13. 辅助工具函数
+// 13. 游戏内部数据
+// =========================================================
+
+void Client::setGameTickInterval(quint16 interval)
+{
+    if (interval < 50) interval = 50;
+    if (interval > 200) interval = 200;
+
+    if (m_gameTickInterval != interval) {
+        m_gameTickInterval = interval;
+
+        if (m_gameTickTimer) {
+            m_gameTickTimer->setInterval(m_gameTickInterval);
+        }
+
+        LOG_INFO(QString("⚙️ [设置时间] 游戏心跳间隔调整为: %1 ms").arg(m_gameTickInterval));
+    }
+}
+
+quint16 Client::getGameTickInterval() const
+{
+    return m_gameTickInterval;
+}
+
+// =========================================================
+// 14. 辅助工具函数
 // =========================================================
 
 void Client::dumpPacket(const QByteArray &bytes)
@@ -4810,6 +4866,11 @@ QString Client::getPrimaryIPv4() const
         }
     }
     return QString();
+}
+
+QUdpSocket *Client::getUdpSocket() const
+{
+    return m_udpSocket;
 }
 
 QString Client::getBnetPacketName(BNCSPacketID id)
