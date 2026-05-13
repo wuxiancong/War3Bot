@@ -933,10 +933,72 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
 
         // 2. 槽位分配
         int slotIndex = -1;
-        for (int i = 0; i < m_gameSlots.size(); ++i) {
-            if (m_gameSlots[i].slotStatus == Open && m_gameSlots[i].pid == 0) {
-                slotIndex = i;
-                break;
+        if (m_isSoloMode) {
+            // 1. 统计当前房间内的真人数量 (不含机器人)
+            int currentHumanCount = 0;
+            for (const auto &slot : qAsConst(m_gameSlots)) {
+                if (slot.slotStatus == Occupied && slot.pid != 0 && slot.pid != m_botPid) {
+                    currentHumanCount++;
+                }
+            }
+
+            // 2. 奇偶判定规则：
+            // 第0、2、4...个加入的玩家 -> 去左边 (Sentinel, 0-4)
+            // 第1、3、5...个加入的玩家 -> 去右边 (Scourge, 5-9)
+            bool preferLeftSide = (currentHumanCount % 2 == 0);
+
+            // 房主特权：房主始终强制尝试先占领左边
+            if (nameMatch) {
+                preferLeftSide = true;
+            }
+
+            // 3. 执行分配
+            if (preferLeftSide) {
+                // 优先找左边 (0-4)
+                for (int i = 0; i < 5; ++i) {
+                    if (m_gameSlots[i].slotStatus == Open) { slotIndex = i; break; }
+                }
+                // 如果左边满了(超过5人)，尝试去右边 (5-9)
+                if (slotIndex == -1) {
+                    for (int i = 5; i < 10; ++i) {
+                        if (m_gameSlots[i].slotStatus == Open) { slotIndex = i; break; }
+                    }
+                }
+            } else {
+                // 优先找右边 (5-9)
+                for (int i = 5; i < 10; ++i) {
+                    if (m_gameSlots[i].slotStatus == Open) { slotIndex = i; break; }
+                }
+                // 如果右边满了，尝试去左边 (0-4)
+                if (slotIndex == -1) {
+                    for (int i = 0; i < 5; ++i) {
+                        if (m_gameSlots[i].slotStatus == Open) { slotIndex = i; break; }
+                    }
+                }
+            }
+
+            // 4. 观战/裁判位处理 (Slot 11, 12)
+            if (slotIndex == -1 && m_gameSlots.size() > 10) {
+                for (int i = 10; i < m_gameSlots.size(); ++i) {
+                    if (m_gameSlots[i].slotStatus == Open) {
+                        slotIndex = i;
+                        break;
+                    }
+                }
+            }
+
+            QString sideName = (slotIndex < 5) ? "近卫" : (slotIndex < 10 ? "天灾" : "裁判位");
+            LOG_INFO(QString("   ├─ 📍 [SOLO奇偶] 玩家[%1] 序列:%2 -> 分配至%3 Slot %4")
+                         .arg(clientPlayerName)
+                         .arg(currentHumanCount)
+                         .arg(sideName)
+                         .arg(slotIndex + 1));
+        } else {
+            for (int i = 0; i < m_gameSlots.size(); ++i) {
+                if (m_gameSlots[i].slotStatus == Open && m_gameSlots[i].pid == 0) {
+                    slotIndex = i;
+                    break;
+                }
             }
         }
 
@@ -2971,6 +3033,10 @@ bool Client::isStartSequenceLocked()
     return false;
 }
 
+void Client::setSoloMode(bool enable)
+{
+    m_isSoloMode = enable;
+}
 // =========================================================
 // 9. 地图数据处理
 // =========================================================

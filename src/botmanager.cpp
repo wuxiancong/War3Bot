@@ -1370,9 +1370,17 @@ void BotManager::handleHostCommand(const QString &userName, const QString &clien
     LOG_INFO(QString("   ├─ ✅ 验证通过: 最终房名 [%1]").arg(finalGameName));
     LOG_INFO(QString("   └─ 🚀 正在分配机器人并创建游戏..."));
 
+    bool isSolo = mapModel.contains("solo", Qt::CaseInsensitive);
+
     if (!createGame(userName, finalGameName, displayMode, From_Client, clientId)) {
         LOG_ERROR("   └─ ❌ 失败: 没有可用的空闲机器人");
         m_netManager->sendMessageToClient(clientId, S_C_ERROR, ERR_NO_BOTS_AVAILABLE);
+    } else {
+        Bot *targetBot = findBotByOwnerClientId(clientId);
+        if (isBotActive(targetBot, "SetSoloMode")) {
+            targetBot->client->setSoloMode(isSolo);
+            LOG_INFO(QString("   └─ 🏆 模式识别: %1").arg(isSolo ? "单挑模式" : "普通模式"));
+        }
     }
 }
 

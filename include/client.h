@@ -452,10 +452,12 @@ public:
 
     // --- 游戏主机管理 ---
     bool isHostJoined();                                                                                        // 房主是否加入
+    bool isSoloMode() const { return m_isSoloMode; }
     void initBotPlayerData();                                                                                   // 初始玩家数据
     void checkRealConnection();                                                                                 // 检查所有玩家连接
     void syncPlayerReadyStates();                                                                               // 同步玩家准备状态
     bool isStartSequenceLocked();                                                                               // 是否已被锁定
+    void setSoloMode(bool enable);                                                                              // 设置单挑模式
     void setIsLaunching(bool launching);                                                                        // 设置启动状态
     void swapSlots(int slot1, int slot2);                                                                       // 交换玩家槽位
     void setGameTickInterval(quint16 interval = 50);                                                            // 设置发送频率
@@ -642,6 +644,7 @@ private:
 
     // 设置标志
     bool                            m_isBot                 = false;
+    bool                            m_isSoloMode            = false;
     bool                            m_isCanceling           = false;
     bool                            m_isLaunching           = false;
     bool                            m_gameStarted           = false;
