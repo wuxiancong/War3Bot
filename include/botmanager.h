@@ -44,7 +44,7 @@ public:
     void rejectCommandWithNotice(Bot *bot, const QString &clientId, const QString &command);
     void handleHostCommand(const QString &userName, const QString &clientId, const QString &text);
     ErrorCode checkStartCondition(Bot *bot, const QString &clientId, quint8 &current, quint8 &required);
-    bool createGame(const QString &hostName, const QString &gameName, const QString &gameMode, CommandSource commandSource, const QString &clientId);
+    bool createGame(const QString &hostName, const QString &gameName, const QString &gameMode, CommandSource commandSource, const QString &clientId, bool isSolo = false);
 
 signals:
     void botStateChanged(int botId, QString username, BotState newState);

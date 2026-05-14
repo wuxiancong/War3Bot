@@ -27,12 +27,13 @@ enum class BotState {
 
 // === 2. 挂起任务结构体 ===
 struct PendingTask {
-    bool hasTask = false;
-    qint64 requestTime = 0;
+    bool    hasTask         = false;
+    qint64  requestTime     = 0;
     QString hostName;
     QString clientId;
     QString gameName;
     QString gameMode;
+    bool    isSolo          = false;
     CommandSource commandSource;
 };
 
@@ -40,10 +41,12 @@ struct PendingTask {
 struct GameInfo {
     QString gameName        = "";
     QString gameMode        = "";
+    bool    isSolo          = false;
     QString mapName         = "";
     QString mapPath         = "";
     QString hostName        = "";
     QString clientId        = "";
+
 
     quint16 port            = 0;
     int maxPlayers          = 10;
@@ -105,8 +108,8 @@ public:
     bool isOccupied();
 
     void setupClient(NetManager* netManager, const QString& displayName);
-    void setupGameInfo(const QString &host, const QString &name, const QString &mode, CommandSource source, const QString &clientId);
-    void setupPendingTask(const QString &host, const QString &name, const QString &mode, const QString &clientId, CommandSource source);
+    void setupGameInfo(const QString &host, const QString &name, const QString &mode, CommandSource source, const QString &clientId, bool isSolo = false);
+    void setupPendingTask(const QString &host, const QString &name, const QString &mode, const QString &clientId, CommandSource source, bool isSolo = false);
 
 signals:
     void enteredChat();

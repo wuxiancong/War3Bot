@@ -276,7 +276,7 @@ void Bot::setupClient(NetManager *netManager, const QString &displayName)
     LOG_INFO(QString("   └── ✅ Bot-%1 引擎构建及信号代理完成").arg(id));
 }
 
-void Bot::setupPendingTask(const QString &host, const QString &name, const QString &mode, const QString &clientId, CommandSource source)
+void Bot::setupPendingTask(const QString &host, const QString &name, const QString &mode, const QString &clientId, CommandSource source, bool isSolo)
 {
     LOG_INFO(QString("⏳ [任务挂起] Bot-%1: 正在预约异步创建任务...").arg(id));
 
@@ -284,6 +284,7 @@ void Bot::setupPendingTask(const QString &host, const QString &name, const QStri
     pendingTask.hostName = host;
     pendingTask.gameName = name;
     pendingTask.gameMode = mode;
+    pendingTask.isSolo   = isSolo;
     pendingTask.clientId = clientId;
     pendingTask.commandSource = source;
     pendingTask.requestTime = QDateTime::currentMSecsSinceEpoch();
@@ -294,7 +295,7 @@ void Bot::setupPendingTask(const QString &host, const QString &name, const QStri
     LOG_INFO(QString("   └─ 📅 戳记时间: %1").arg(pendingTask.requestTime));
 }
 
-void Bot::setupGameInfo(const QString &host, const QString &name, const QString &mode, CommandSource source, const QString &clientId)
+void Bot::setupGameInfo(const QString &host, const QString &name, const QString &mode, CommandSource source, const QString &clientId, bool isSolo)
 {
     LOG_INFO(QString("📋 [元数据设置] Bot-%1: 正在初始化房间配置...").arg(id));
 
@@ -306,16 +307,20 @@ void Bot::setupGameInfo(const QString &host, const QString &name, const QString 
     gameInfo.hostName = host;
     gameInfo.gameName = name;
     gameInfo.gameMode = mode;
+    gameInfo.isSolo = isSolo;
     gameInfo.clientId = clientId;
     pendingTask.commandSource = source;
     gameInfo.createTime = QDateTime::currentMSecsSinceEpoch();
 
-    if (client && client->getUdpSocket()) {
-        gameInfo.port = client->getUdpSocket()->localPort();
-        LOG_INFO(QString("   ├─ 🔌 端口捕获: %1 (来自底层 Socket)").arg(gameInfo.port));
-    } else {
-        gameInfo.port = 0;
-        LOG_WARNING(QString("   ├─ 🔌 端口捕获: 0 (⚠️ 警告: 底层 Socket 尚未就绪)"));
+    if (client) {
+        client->setSoloMode(isSolo);
+        if (client->getUdpSocket()) {
+            gameInfo.port = client->getUdpSocket()->localPort();
+            LOG_INFO(QString("   ├─ 🔌 端口捕获: %1 (来自底层 Socket)").arg(gameInfo.port));
+        } else {
+            gameInfo.port = 0;
+            LOG_WARNING(QString("   ├─ 🔌 端口捕获: 0 (⚠️ 警告: 底层 Socket 尚未就绪)"));
+        }
     }
 
     LOG_INFO(QString("   ├─ 🏠 房间名称: %1").arg(name));

@@ -888,7 +888,7 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
                 playerData.lastResponseTime = QDateTime::currentMSecsSinceEpoch();
 
                 // C. 标记状态：替换成功
-                playerData.joinSource = War3Client;
+                playerData.isReady = true;
                 playerData.isRealConnection = true;
                 LOG_INFO(QString("   └─ ✅ 替换完成，魔兽进程已成功接管 PID %1").arg(existingPid));
 
@@ -988,17 +988,24 @@ void Client::handleW3GSPacket(QTcpSocket *socket, quint8 id, const QByteArray &p
             }
 
             QString sideName = (slotIndex < 5) ? "近卫" : (slotIndex < 10 ? "天灾" : "裁判位");
-            LOG_INFO(QString("   ├─ 📍 [SOLO奇偶] 玩家[%1] 序列:%2 -> 分配至%3 Slot %4")
+            LOG_INFO(QString("   ├─ 📍 [SOLO分配] 玩家[%1] 序列:%2 -> 分配至%3 Slot %4")
                          .arg(clientPlayerName)
                          .arg(currentHumanCount)
                          .arg(sideName)
                          .arg(slotIndex + 1));
         } else {
+            LOG_INFO(QString("   ├─ 🔍 [普通分配] 模式: 顺序查找 | 玩家: %1").arg(clientPlayerName));
+
             for (int i = 0; i < m_gameSlots.size(); ++i) {
                 if (m_gameSlots[i].slotStatus == Open && m_gameSlots[i].pid == 0) {
                     slotIndex = i;
+                    LOG_INFO(QString("   └─ ✅ 匹配成功: 选中第一个可用槽位 Slot %1").arg(i + 1));
                     break;
                 }
+            }
+
+            if (slotIndex == -1) {
+                LOG_ERROR(QString("   └─ ❌ 匹配失败: 房间已满，无法为玩家 [%1] 分配位置").arg(clientPlayerName));
             }
         }
 
@@ -2958,6 +2965,8 @@ void Client::startGame()
 {
     if (isStartSequenceLocked()) return;
 
+    setIsLaunching(false);
+
     LOG_INFO("🚀 [Client] 游戏倒计时序列启动");
 
     // 1. 先关大门：停止广播，停止 Ping
@@ -3057,6 +3066,7 @@ void Client::setBotFlag(bool isBot)
 void Client::setSoloMode(bool enable)
 {
     m_isSoloMode = enable;
+    LOG_INFO(QString("⚙️ [Client] 已切换至 %1 逻辑").arg(enable ? "SOLO 阵营分配" : "普通顺序分配"));
 }
 
 void Client::setHost(QString creatorName)
@@ -4666,7 +4676,6 @@ void Client::handlePlayerReplaceByClientId(const QString &clientId, const QStrin
             (it.value().name.compare(userName, Qt::CaseInsensitive) == 0)) {
 
             it.value().isRealConnection = true;
-            it.value().joinSource = War3Client;
             it.value().isReady = true;
 
             finalPlayerName = it.value().name;
@@ -4736,7 +4745,6 @@ void Client::checkRealConnection()
     if (allReady) {
         LOG_INFO("✅ [启动模式闭环] 房间内所有玩家魔兽进程已全部连入");
         LOG_INFO("   └─ 🚀 动作：立即关闭保护大门并下发游戏开始指令");
-        setIsLaunching(false);
         startGame();
     } else {
         LOG_INFO(QString("⏳ [启动转换中] 仍有 %1 名玩家正在调起魔兽: %2")
