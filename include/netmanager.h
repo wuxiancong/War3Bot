@@ -132,7 +132,6 @@ private:
     void cleanupResources();
     void loadConfiguration();
     bool setupSocketOptions();
-    void broadcastServerInfo();
     void updateMostFrequentCrc();
     void cleanupExpiredClients();
     bool bindSocket(quint64 port);

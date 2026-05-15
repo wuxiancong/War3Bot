@@ -27,9 +27,9 @@ NetManager::NetManager(QObject *parent)
     : QObject(parent)
     , m_isRunning(false)
     , m_enableBroadcast(false)
-    , m_cleanupInterval(60000)
-    , m_broadcastInterval(30000)
-    , m_peerTimeout(300000)
+    , m_cleanupInterval(20000)
+    , m_broadcastInterval(10000)
+    , m_peerTimeout(60000)
     , m_listenPort(0)
     , m_broadcastPort(6112)
     , m_settings(nullptr)
@@ -461,9 +461,10 @@ bool NetManager::startServer(quint64 port, const QString &configFile)
 
 void NetManager::loadConfiguration()
 {
-    m_peerTimeout = m_settings->value("server/peer_timeout", 300000).toInt();
-    m_cleanupInterval = m_settings->value("server/cleanup_interval", 60000).toInt();
+    m_peerTimeout = m_settings->value("server/peer_timeout", 60000).toInt();
+    m_cleanupInterval = m_settings->value("server/cleanup_interval", 20000).toInt();
     m_enableBroadcast = m_settings->value("server/enable_broadcast", false).toBool();
+    m_broadcastInterval = m_settings->value("server/broadcast_interval", 10000).toInt();
 }
 
 bool NetManager::setupSocketOptions()
@@ -495,9 +496,12 @@ void NetManager::setupTimers()
     m_cleanupTimer->start(m_cleanupInterval);
 
     if (m_enableBroadcast) {
+        int interval = m_broadcastInterval != 0 ? m_broadcastInterval :
+                           m_settings->value("server/broadcast_interval", 10000).toInt();
         m_broadcastTimer = new QTimer(this);
         connect(m_broadcastTimer, &QTimer::timeout, this, &NetManager::onBroadcastTimeout);
-        m_broadcastTimer->start(30000);
+        m_broadcastTimer->start(interval);
+        LOG_INFO(QString("📢 广播服务已开启，频率: %1 ms").arg(interval));
     }
 }
 
@@ -1781,29 +1785,30 @@ void NetManager::onTcpDisconnected() {
     QTcpSocket *socket = qobject_cast<QTcpSocket*>(sender());
     if (!socket) return;
 
-    // 提取并清理文件指针
+    // 1. 处理文件上传半途断开的情况
     QVariant fileVar = socket->property("FilePtr");
     if (fileVar.isValid()) {
         QFile *file = static_cast<QFile*>(fileVar.value<void*>());
         if (file) {
-            bool success = socket->property("UploadSuccess").toBool();
             if (file->isOpen()) file->close();
-
-            // 如果断开时还没传完，且没有标记成功，删除磁盘上的半成品
-            if (!success) {
+            if (!socket->property("UploadSuccess").toBool()) {
                 file->remove();
-                LOG_WARNING("🧹 [清理] 删除了未完成的文件: " + file->fileName());
+                LOG_WARNING("🧹 [清理] 删除了未完成的地图文件: " + file->fileName());
             }
-
             delete file;
             socket->setProperty("FilePtr", QVariant());
         }
     }
 
-    // 清理控制列表
+    // 2. 清理在线状态
     QString clientId = socket->property("clientId").toString();
-    if (!clientId.isEmpty() && m_tcpClients.value(clientId) == socket) {
-        m_tcpClients.remove(clientId);
+    if (!clientId.isEmpty()) {
+        LOG_INFO(QString("🔌 [TCP断开] 立即同步清理玩家会话: %1").arg(clientId));
+        QWriteLocker locker(&m_registerInfosLock);
+        if (m_tcpClients.value(clientId) == socket) {
+            m_tcpClients.remove(clientId);
+            removeClientInternal(clientId);
+        }
     }
 
     socket->deleteLater();
@@ -2186,14 +2191,30 @@ void NetManager::onCleanupTimeout()
 
 void NetManager::onBroadcastTimeout()
 {
-    broadcastServerInfo();
-}
+    // 基础检查
+    if (!m_enableBroadcast || !m_udpSocket || !m_settings) return;
 
-void NetManager::broadcastServerInfo()
-{
-    if (!m_enableBroadcast || !m_udpSocket) return;
-    QByteArray msg = QString("WAR3BOT_SERVER|%1").arg(m_listenPort).toUtf8();
-    m_udpSocket->writeDatagram(msg, QHostAddress::Broadcast, m_broadcastPort);
+    // 1. 从配置文件动态读取 display_name
+    QString displayName = m_settings->value("bots/display_name", "CC.Dota.XXX").toString();
+
+    // 2. 构造二进制 Payload
+    SCServerInfo payload;
+    memset(&payload, 0, sizeof(payload));
+
+    // 设置监听端口
+    payload.listenPort = static_cast<quint16>(m_listenPort);
+
+    // 设置显示名称
+    QByteArray byteArray = displayName.toUtf8();
+    strncpy(payload.displayName, byteArray.constData(), sizeof(payload.displayName) - 1);
+
+    // 3. 使用统一的加密和 CRC 流程发送 UDP 广播包
+    sendUdpPacket(QHostAddress::Broadcast, m_broadcastPort,
+                  PacketType::S_C_SERVERINFO,
+                  &payload, sizeof(payload), 0);
+
+    LOG_DEBUG(QString("📡 [局域网广播] 名称: %1 | 端口: %2")
+                  .arg(displayName).arg(m_listenPort));
 }
 
 void NetManager::updateMostFrequentCrc()

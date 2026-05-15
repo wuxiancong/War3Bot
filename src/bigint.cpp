@@ -106,8 +106,12 @@ BigInt::BigInt(const unsigned char *input, int input_size, int blockSize, bool b
 }
 
 // === 比较运算符实现 ===
-bool BigInt::operator== (const BigInt &right) const { return m_data == right.m_data; }
-bool BigInt::operator!= (const BigInt &right) const { return m_data != right.m_data; }
+bool BigInt::operator== (const BigInt &right) const
+{
+    return m_data.size() == right.m_data.size() &&
+           std::equal(m_data.begin(), m_data.end(), right.m_data.begin());
+}
+bool BigInt::operator!= (const BigInt &right) const { return !(*this == right); }
 
 bool BigInt::operator< (const BigInt &right) const
 {

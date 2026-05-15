@@ -9,32 +9,33 @@ const quint8  PROTOCOL_VERSION      = 0x01;     // 版本号
 
 // ==================== 指令集 ====================
 enum PacketType : quint8 {
-    C_S_HEARTBEAT                   = 0x01,
-    C_S_REGISTER                    = 0x02,
-    S_C_REGISTER                    = 0x03,
-    C_S_UNREGISTER                  = 0x04,
-    S_C_UNREGISTER                  = 0x05,
-    C_S_GAMEDATA                    = 0x06,
-    S_C_GAMEDATA                    = 0x07,
-    C_S_COMMAND                     = 0x08,
-    S_C_COMMAND                     = 0x09,
-    C_S_CHECKMAPCRC                 = 0x0A,
-    S_C_CHECKMAPCRC                 = 0x0B,
-    C_S_PING                        = 0x0C,
-    S_C_PONG                        = 0x0D,
-    S_C_ERROR                       = 0x0E,
-    S_C_MESSAGE                     = 0x0F,
-    S_C_UPLOADRESULT                = 0x10,
-    S_C_PING_LIST                   = 0x11,
-    S_C_READY_LIST                  = 0x12,
-    C_S_PREJOINROOM                 = 0x13,
-    S_C_PREJOINROOM                 = 0x14,
-    C_S_ROOM_PING                   = 0x15,
-    S_C_ROOM_PONG                   = 0x16,
-    C_S_START_WAR3                  = 0x17,
-    S_C_START_WAR3                  = 0x18,
-    C_S_REPLACE_SLOT                = 0x19,
-    S_C_REPLACE_SLOT                = 0x20
+    S_C_SERVERINFO                  = 0x01,
+    C_S_HEARTBEAT                   = 0x02,
+    C_S_REGISTER                    = 0x03,
+    S_C_REGISTER                    = 0x04,
+    C_S_UNREGISTER                  = 0x05,
+    S_C_UNREGISTER                  = 0x06,
+    C_S_GAMEDATA                    = 0x07,
+    S_C_GAMEDATA                    = 0x08,
+    C_S_COMMAND                     = 0x09,
+    S_C_COMMAND                     = 0x0A,
+    C_S_CHECKMAPCRC                 = 0x0B,
+    S_C_CHECKMAPCRC                 = 0x0C,
+    C_S_PING                        = 0x0D,
+    S_C_PONG                        = 0x0E,
+    S_C_ERROR                       = 0x0F,
+    S_C_MESSAGE                     = 0x10,
+    S_C_UPLOADRESULT                = 0x11,
+    S_C_PING_LIST                   = 0x12,
+    S_C_READY_LIST                  = 0x13,
+    C_S_PREJOINROOM                 = 0x14,
+    S_C_PREJOINROOM                 = 0x15,
+    C_S_ROOM_PING                   = 0x16,
+    S_C_ROOM_PONG                   = 0x17,
+    C_S_START_WAR3                  = 0x18,
+    S_C_START_WAR3                  = 0x19,
+    C_S_REPLACE_SLOT                = 0x20,
+    S_C_REPLACE_SLOT                = 0x21
 };
 
 // ==================== 错误码定义 ====================
@@ -110,6 +111,10 @@ enum TcpConnType {
 };
 
 #pragma pack(push, 1)
+struct SCServerInfo {
+    quint16 listenPort;
+    char displayName[32];
+};
 
 struct PacketHeader {
     quint16 magic;

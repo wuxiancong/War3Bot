@@ -236,7 +236,7 @@ int main(int argc, char *argv[]) {
         QFile defaultConfig(writePath);
         if (defaultConfig.open(QIODevice::WriteOnly | QIODevice::Text)) {
             QTextStream out(&defaultConfig);
-            out << "[server]\nbroadcast_port=6112\nenable_broadcast=false\npeer_timeout=300000\ncleanup_interval=60000\nbroadcast_interval=30000\n";
+            out << "[server]\nbroadcast_port=6112\nenable_broadcast=false\npeer_timeout=60000\ncleanup_interval=20000\nbroadcast_interval=10000\n";
             out << "\n[log]\nlevel=info\nenable_console=true\nlog_file=/var/log/War3Bot/war3bot.log\nmax_size=5000000\nbackup_count=5\n";
             out << "\n[bnet]\nserver=127.0.0.1\nport=6112\npassword=wxc123\n";
             out << "\n[bots]\nlist_number=1\ninit_count=10\nauto_generate=false\ndisplay_name=CC.Dota.XXX\n";
