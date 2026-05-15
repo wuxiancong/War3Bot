@@ -16,6 +16,8 @@ LOG_DIR="/var/log/War3Bot"
 SERVICE_NAME="war3bot"
 USER_NAME="war3bot"
 SERVICE_PORT=6116
+# Nginx 用户，通常是 www-data
+WEB_USER="www-data"
 
 info() { echo -e "${GREEN}[INFO] $1${NC}"; }
 error() { echo -e "${RED}[ERROR] $1${NC}"; exit 1; }
@@ -23,6 +25,12 @@ warn()  { echo -e "${YELLOW}[WARN] $1${NC}"; }
 
 if [ "$EUID" -ne 0 ]; then
     error "请使用 sudo 或 root 运行！"
+fi
+
+# 检查依赖 (确保有 python3)
+if ! command -v python3 &> /dev/null; then
+    info "正在安装 Python3..."
+    apt update && apt install -y python3
 fi
 
 # ==========================================
@@ -51,6 +59,24 @@ sudo rm -f "$INSTALL_PREFIX/config/war3bot.ini"
 info "开始清理与编译..."
 rm -rf build && mkdir build && cd build
 cmake -DCMAKE_INSTALL_PREFIX="$INSTALL_PREFIX" .. && make -j$(nproc) && make install || error "编译失败"
+
+# ✨ 3.1 执行 Python 脚本生成 Launcher 更新清单
+info "正在生成 Launcher 更新清单 (version.json)..."
+PY_SCRIPT="$INSTALL_PREFIX/updates/version.py"
+
+if [ -f "$PY_SCRIPT" ]; then
+    # 切换到 updates 目录执行，因为 py 脚本里通常使用相对路径 "./"
+    cd "$INSTALL_PREFIX/updates"
+    python3 gen_version.py
+    if [ $? -eq 0 ]; then
+        info "✅ 清单生成成功: $INSTALL_PREFIX/updates/version.json"
+    else
+        warn "❌ 清单生成脚本执行出错"
+    fi
+    cd - > /dev/null
+else
+    warn "⚠️ 未在 $PY_SCRIPT 找到 Python 脚本，请检查 CMakeLists.txt 是否安装了该文件"
+fi
 
 # ✨ 路径纠偏
 if [ -d "$INSTALL_PREFIX/war3files/war3files" ]; then
@@ -108,10 +134,24 @@ done
 # 5. 权限与 Systemd 设置
 # ==========================================
 info "设置权限与服务..."
-chown -R root:root "$INSTALL_PREFIX"
+
+# 确保用户存在
 if ! id "$USER_NAME" &>/dev/null; then useradd -r -s /bin/false "$USER_NAME"; fi
-chown -R $USER_NAME:$USER_NAME "$CONFIG_DIR" "$LOG_DIR" "$INSTALL_PREFIX/war3files"
+
+# 通用权限归属
+chown -R root:root "$INSTALL_PREFIX"
 chmod -R 755 "$INSTALL_PREFIX"
+
+# 特殊权限 1: 机器人程序和日志
+chown -R $USER_NAME:$USER_NAME "$CONFIG_DIR" "$LOG_DIR" "$INSTALL_PREFIX/war3files"
+
+# ✨ 特殊权限 2: 给 Nginx 开放 updates 目录读取权限
+# 这样 Launcher 访问 version.json 才不会报 403 错误
+if id "$WEB_USER" &>/dev/null; then
+    chown -R $USER_NAME:$WEB_USER "$INSTALL_PREFIX/updates"
+    chmod -R 755 "$INSTALL_PREFIX/updates"
+    info "已授权 $WEB_USER 访问 updates 目录"
+fi
 
 SERVICE_FILE="/etc/systemd/system/$SERVICE_NAME.service"
 cat > "$SERVICE_FILE" <<EOF
@@ -140,9 +180,14 @@ systemctl daemon-reload
 systemctl enable $SERVICE_NAME
 systemctl restart $SERVICE_NAME
 
-info "✅ 安装成功！"
+info "✅ 安装与清单更新成功！"
 info "配置路径: $ETC_INI"
 info "最终显示名称: $CLEAN_DISPLAY_NAME"
+info "更新目录: $INSTALL_PREFIX/updates"
 info "----------------------------------------"
 sleep 2
+# 验证一下 json 是否生成
+if [ -f "$INSTALL_PREFIX/updates/version.json" ]; then
+    ls -l "$INSTALL_PREFIX/updates/version.json"
+fi
 journalctl -u $SERVICE_NAME -f

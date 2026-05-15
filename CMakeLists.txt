@@ -128,22 +128,22 @@ if(MSVC)
         COMMAND ${CMAKE_COMMAND} -E copy_if_different "${GMP_ROOT}/bin/gmp-10.dll" "$<TARGET_FILE_DIR:War3Bot>/gmp-10.dll"
         COMMENT "部署 gmp-10.dll..."
     )
-    if(EXISTS "${GMP_ROOT}/bin/gmpxx-4.dll")
-        add_custom_command(TARGET War3Bot POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different "${GMP_ROOT}/bin/gmpxx-4.dll" "$<TARGET_FILE_DIR:War3Bot>/gmpxx-4.dll"
-            COMMENT "部署 gmpxx-4.dll..."
-        )
-    endif()
-
-    # [StormLib]
-    set(STORMLIB_ROOT "${LOCAL_LIB_ROOT}/msvc/stormLib")
-    target_include_directories(War3Bot PRIVATE "${STORMLIB_ROOT}/include")
-    target_link_libraries(War3Bot PRIVATE
-        "${STORMLIB_ROOT}/lib/StormLib.lib"
-        "${STORMLIB_ROOT}/lib/zlib.lib"
-        "${STORMLIB_ROOT}/lib/bz2.lib"
+if(EXISTS "${GMP_ROOT}/bin/gmpxx-4.dll")
+    add_custom_command(TARGET War3Bot POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${GMP_ROOT}/bin/gmpxx-4.dll" "$<TARGET_FILE_DIR:War3Bot>/gmpxx-4.dll"
+        COMMENT "部署 gmpxx-4.dll..."
     )
-    target_compile_definitions(War3Bot PRIVATE STORMLIB_NO_AUTO_LINK_LIB)
+endif()
+
+# [StormLib]
+set(STORMLIB_ROOT "${LOCAL_LIB_ROOT}/msvc/stormLib")
+target_include_directories(War3Bot PRIVATE "${STORMLIB_ROOT}/include")
+target_link_libraries(War3Bot PRIVATE
+    "${STORMLIB_ROOT}/lib/StormLib.lib"
+    "${STORMLIB_ROOT}/lib/zlib.lib"
+    "${STORMLIB_ROOT}/lib/bz2.lib"
+)
+target_compile_definitions(War3Bot PRIVATE STORMLIB_NO_AUTO_LINK_LIB)
 
 # --- Windows (MinGW) ---
 elseif(MINGW)
@@ -181,18 +181,18 @@ elseif(UNIX)
             pthread
             dl
         )
-    else()
-        message(FATAL_ERROR "未在 ${LINUX_STORM_LIB} 找到库文件！请在 Linux 上编译 StormLib 并放入该目录。")
-    endif()
+else()
+    message(FATAL_ERROR "未在 ${LINUX_STORM_LIB} 找到库文件！请在 Linux 上编译 StormLib 并放入该目录。")
+endif()
 
-    # [GMP] (通常使用系统库)
-    find_library(GMP_LIB gmp)
-    find_library(GMPXX_LIB gmpxx)
-    if(GMP_LIB)
-        target_link_libraries(War3Bot PRIVATE ${GMPXX_LIB} ${GMP_LIB})
-    else()
-        message(FATAL_ERROR "未找到 GMP 系统库，请运行: apt-get install libgmp-dev")
-    endif()
+# [GMP] (通常使用系统库)
+find_library(GMP_LIB gmp)
+find_library(GMPXX_LIB gmpxx)
+if(GMP_LIB)
+    target_link_libraries(War3Bot PRIVATE ${GMPXX_LIB} ${GMP_LIB})
+else()
+    message(FATAL_ERROR "未找到 GMP 系统库，请运行: apt-get install libgmp-dev")
+endif()
 
 endif()
 
@@ -238,10 +238,22 @@ if(UNIX AND NOT APPLE)
         PATTERN "*.user" EXCLUDE
     )
 
-    # 2. 安装 war3files 文件夹 -> /opt/War3Bot/war3files
-    install(DIRECTORY war3files
-        DESTINATION "."
-        FILE_PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ
-        DIRECTORY_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
-    )
+# 2. 安装 war3files 文件夹 -> /opt/War3Bot/war3files
+install(DIRECTORY war3files
+    DESTINATION "."
+    FILE_PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ
+    DIRECTORY_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
+)
+
+# ✨ 3. 安装 updates 文件夹 -> /opt/War3Bot/updates
+install(DIRECTORY updates
+    DESTINATION "."  # "." 表示安装到 CMAKE_INSTALL_PREFIX 根目录，即 /opt/War3Bot
+
+    # 权限设置 (755 目录, 644 文件)
+    DIRECTORY_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
+    FILE_PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ
+
+    # 排除开发用的临时文件
+    PATTERN ".git" EXCLUDE
+)
 endif()
