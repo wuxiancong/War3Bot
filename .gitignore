@@ -37,8 +37,10 @@ war3bot
 *.dylib
 *.dll
 *.lib
+!updates/
 !lib/linux/*.a
 !war3files/*.dll
+!updates/**/*.dll
 
 # Mpq File
 !war3files/*.mpq
