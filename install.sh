@@ -67,7 +67,7 @@ PY_SCRIPT="$INSTALL_PREFIX/updates/version.py"
 if [ -f "$PY_SCRIPT" ]; then
     # 切换到 updates 目录执行，因为 py 脚本里通常使用相对路径 "./"
     cd "$INSTALL_PREFIX/updates"
-    python3 gen_version.py
+    python3 version.py
     if [ $? -eq 0 ]; then
         info "✅ 清单生成成功: $INSTALL_PREFIX/updates/version.json"
     else
