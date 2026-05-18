@@ -1,4 +1,0 @@
-Common Hash:   32EA6CF8
-Blizzard Hash: CC4E5CF6
-Map Hash:      ED3582F4
-Final Result:  3AEBCEF3
